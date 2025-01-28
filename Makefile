@@ -33,7 +33,7 @@ all:	$(OBJDIR) $(TARGET) examples
 $(TARGET): $(OBJDIR) $(OBJECTS)
 	$(CXX) $(LDFLAGS) -o $(TARGET) $(OBJECTS)
 
-examples:
+examples: $(TARGET)
 	$(MAKE) -C examples all
 
 clean:
@@ -48,7 +48,7 @@ distclean: clean
 
 package: distclean
 	rm -rf "$(TMP)/$(PACKAGE)"
-	mkdir "$(TMP)/$(PACKAGE)"
+	mkdir -p "$(TMP)/$(PACKAGE)"
 	cp * "$(TMP)/$(PACKAGE)" -R
 	find "$(TMP)/$(PACKAGE)" -type d | while read f ; do chmod 755 "$$f" ; done
 	find "$(TMP)/$(PACKAGE)" -type f | while read f ; do chmod 644 "$$f" ; done
@@ -63,7 +63,7 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 $(OBJDIR):
-	mkdir $(OBJDIR)
+	mkdir -p $(OBJDIR)
 
 # automatic dependency updates
 $(DEPENDFILE): $(SOURCES) $(HEADERS)

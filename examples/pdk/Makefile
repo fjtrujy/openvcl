@@ -18,7 +18,7 @@ all: $(EE_OBJS_DIR) $(VU_OBJECTS) $(EE_LIB_DIR) $(EE_LIB)
 	$(EE_DVP) $< -o $@
 
 $(EE_LIB_DIR):
-	mkdir $(EE_LIB_DIR)
+	mkdir -p $(EE_LIB_DIR)
 
 clean:
 	rm -f -r *.o $(EE_LIB_DIR)

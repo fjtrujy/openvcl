@@ -12,7 +12,7 @@ EE_INCS = -I../pdk/src
 EE_LDFLAGS = -L../pdk/lib
 EE_BIN = triangle.elf
 EE_OBJS = main.o vu1Triangle.o
-EE_LIBS = -lc -lkernel -lsyscall -lpdk -lc
+EE_LIBS = -lpdk
 EE_DVP = dvp-as
 VCL = ../../openvcl
 
@@ -28,7 +28,6 @@ clean:
 	$(VCL) -o $@ $<
 
 
-		
 include $(PS2SDK)/samples/Makefile.pref
 include $(PS2SDK)/samples/Makefile.eeglobal
 

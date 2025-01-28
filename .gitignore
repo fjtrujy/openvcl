@@ -3,3 +3,8 @@ obj
 openvcl
 .tundra*
 t2-output
+
+*.o
+*.elf
+*.vsm
+*.a
