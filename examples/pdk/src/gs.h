@@ -18,9 +18,15 @@
 // masking could be removed, but we keep it for now for safety precautions
 #define GS_BIT_ENCODE(val,ofs,count) (((u64)(val))&(((u64)~0)>>(64-count)))<<ofs
 
-// NOTE: this is actually a function, but we think of it as a macro
-// not inlined here because of crappy gcc
-u32 GS_FLOAT_ENCODE(float f);
+static inline u32 GS_FLOAT_ENCODE(float f)
+{
+  union {
+	float f;
+	u32 u;
+  } t;
+  t.f = f;
+  return t.u;
+}
 
 #define GS_PAGE_ADDRESS(a) ((a)>>13)
 
