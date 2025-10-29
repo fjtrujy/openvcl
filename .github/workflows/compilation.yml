@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  repository_dispatch:
+    types: [run_build]
+  workflow_dispatch: {}
+
+jobs:
+  ps2:
+    runs-on: ubuntu-latest
+    container: ps2dev/ps2sdk:latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup dependencies
+      run: |
+        apk update
+        apk add build-base make git
+
+    - name: Compile project & Install
+      run: |
+        make -j $(getconf _NPROCESSORS_ONLN) clean
+        make -j $(getconf _NPROCESSORS_ONLN)
+        make -j $(getconf _NPROCESSORS_ONLN) install
+
+    - name: Get short SHA
+      id: slug
+      run: echo "sha8=$(echo ${GITHUB_SHA} | cut -c1-8)" >> $GITHUB_OUTPUT
+
+    - name: Upload artifacts
+      if: ${{ success() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: openvcl-${{ steps.slug.outputs.sha8 }}
+        path: |
+          openvcl
+          examples/**/*.elf
