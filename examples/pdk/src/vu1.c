@@ -9,9 +9,10 @@
  */
 
 #include <tamtypes.h>
-#include <fileio.h>
 #include <kernel.h>
 #include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include "vu1.h"
 #include "dma.h"
 #include "output.h"
@@ -216,19 +217,19 @@ int pdkVu1Size(u32* start, u32* end)
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-int FileWrite( const char* pName, void* pData, int size )
+static int fileWrite( const char* pName, void* pData, int size )
 {
 	int fd;
-	fd = fioOpen( pName, O_CREAT|O_WRONLY );
+	fd = open( pName, O_CREAT|O_WRONLY );
 	
 	if( fd > 0 )
 	{
-		if( fioWrite( fd, pData, size) != size )
+		if( write( fd, pData, size) != size )
 		{
-			fioClose(fd);
+			close(fd);
 			SleepThread();
 		}
-		fioClose(fd);
+		close(fd);
 	}
 	else
 	{
@@ -251,8 +252,8 @@ void pdkVu1Dump()
 		"nop\n"
 		"nop\n" );
   
-  FileWrite( "host:VU1MICROMEM",((void*)0x11008000),1024*16 );
-  FileWrite( "host:VU1MEM", ((void*)0x1100c000),1024*16 );
+  fileWrite( "VU1MICROMEM",((void*)0x11008000),1024*16 );
+  fileWrite( "VU1MEM", ((void*)0x1100c000),1024*16 );
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
