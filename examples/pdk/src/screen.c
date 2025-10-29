@@ -106,7 +106,7 @@ void pdkScreenVsync(pdkGsEnv* env)
 void pdkScreenFlip(pdkGsEnv* env)
 {
   u32  t;
-  static u8 tempDma[64] ALIGNED(16);
+  static u8 tempDma[128] ALIGNED(16);
   u64* dmaList = (u64*)&tempDma;
 
   GS_WRITE( DISPFB_2,GS_DISPFB(env->Screen1>>13,env->Width/64,env->Psm,0,0));

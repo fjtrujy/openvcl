@@ -42,18 +42,24 @@ void pdkVu1UploadProg(int Dest, void* start, void* end)
   {
     u32 current_count = count > 256 ? 256 : count;
     
-    *((u64*) chain)++ = DMA_REF_TAG( (u32)start, current_count/2 );
-    *((u32*) chain)++ = VIF_CODE( VIF_NOP,0,0 );
-    *((u32*) chain)++ = VIF_CODE( VIF_MPG,current_count&0xff,Dest );
+    *((u64*) chain) = DMA_REF_TAG( (u32)start, current_count/2 );
+    chain += sizeof(u64);
+    *((u32*) chain) = VIF_CODE( VIF_NOP,0,0 );
+    chain += sizeof(u32);
+    *((u32*) chain) = VIF_CODE( VIF_MPG,current_count&0xff,Dest );
+    chain += sizeof(u32);
 
     start += current_count*2;
     count -= current_count; 
     Dest += current_count;
   }
 
-  *((u64*) chain)++ = DMA_END_TAG( 0 );
-  *((u32*) chain)++ = VIF_CODE(VIF_NOP,0,0);
-  *((u32*) chain)++ = VIF_CODE(VIF_NOP,0,0);
+  *((u64*) chain) = DMA_END_TAG( 0 );
+  chain += sizeof(u64);
+  *((u32*) chain) = VIF_CODE(VIF_NOP,0,0);
+  chain += sizeof(u32);
+  *((u32*) chain) = VIF_CODE(VIF_NOP,0,0);
+  chain += sizeof(u32);
 
   // Send it to vif1
   FlushCache(0);
@@ -85,9 +91,12 @@ void pdkVu1ListData(int destAdress,void* data,int quadSize)
     pdkOut("Data to pdkVu1ListAddData is not 16byte aligned!, data WILL be wrong\n");
   }
 
-  *((u64*)currentBuffer)++ = DMA_REF_TAG( (u32)data, quadSize );
-  *((u32*)currentBuffer)++ = VIF_CODE( VIF_STCYL,0,0x0101 );
-  *((u32*)currentBuffer)++ = VIF_CODE( VIF_UNPACK_V4_32,quadSize,destAdress );
+  *((u64*)currentBuffer) = DMA_REF_TAG( (u32)data, quadSize );
+  currentBuffer += sizeof(u64);
+  *((u32*)currentBuffer) = VIF_CODE( VIF_STCYL,0,0x0101 );
+  currentBuffer += sizeof(u32);
+  *((u32*)currentBuffer) = VIF_CODE( VIF_UNPACK_V4_32,quadSize,destAdress );
+  currentBuffer += sizeof(u32);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -99,9 +108,12 @@ void pdkVu1ListAddBegin(int adress)
 
   buildList.cntDmaDest = adress;
   buildList.offset = currentBuffer;
-  *((u64*)currentBuffer)++ = DMA_CNT_TAG(0);
-  *((u32*)currentBuffer)++ = VIF_CODE(VIF_STCYL,0,0x0101 );
-  *((u32*)currentBuffer)++ = VIF_CODE(VIF_UNPACK_V4_32,0,0);
+  *((u64*)currentBuffer) = DMA_CNT_TAG(0);
+  currentBuffer += sizeof(u64);
+  *((u32*)currentBuffer) = VIF_CODE(VIF_STCYL,0,0x0101 );
+  currentBuffer += sizeof(u32);
+  *((u32*)currentBuffer) = VIF_CODE(VIF_UNPACK_V4_32,0,0);
+  currentBuffer += sizeof(u32);
   buildList.isBuidingCnt = 1;
 }
 
@@ -111,8 +123,10 @@ void pdkVu1ListAdd128(u64 v1,u64 v2)
 {
   pdkVu1ListCheckCnt();
 
-  *((u64*)currentBuffer)++ = v1;
-  *((u64*)currentBuffer)++ = v2;
+  *((u64*)currentBuffer) = v1;
+  currentBuffer += sizeof(u64);
+  *((u64*)currentBuffer) = v2;
+  currentBuffer += sizeof(u64);
 
   buildList.dmaSize += 16;
 }
@@ -123,7 +137,8 @@ void pdkVu1ListAdd64(u64 v)
 {
   pdkVu1ListCheckCnt();
 
-  *((u64*)currentBuffer)++ = v;
+  *((u64*)currentBuffer) = v;
+  currentBuffer += sizeof(u64);
 
   buildList.dmaSize += 8;
 }
@@ -134,7 +149,8 @@ void pdkVu1ListAdd32(u32 v)
 {
   pdkVu1ListCheckCnt();
 
-  *((u32*)currentBuffer)++ = v;
+  *((u32*)currentBuffer) = v;
+  currentBuffer += sizeof(u32);
 
   buildList.dmaSize += 4;
 }
@@ -145,7 +161,8 @@ void pdkVu1ListAddFloat(float v)
 {
   pdkVu1ListCheckCnt();
 
-  *((float*)currentBuffer)++ = v;
+  *((float*)currentBuffer) = v;
+  currentBuffer += sizeof(float);
 
   buildList.dmaSize += 4;
 }
@@ -154,13 +171,21 @@ void pdkVu1ListAddFloat(float v)
 
 void pdkVu1ListEnd(int start)
 {
-  *((u64*)currentBuffer)++ = DMA_END_TAG(0);
-  *((u32*)currentBuffer)++ = VIF_CODE(VIF_NOP,0,0);
+  *((u64*)currentBuffer) = DMA_END_TAG(0);
+  currentBuffer += sizeof(u64);
+  *((u32*)currentBuffer) = VIF_CODE(VIF_NOP,0,0);
+  currentBuffer += sizeof(u32);
 
   if(start>=0)
-    *((u32*)currentBuffer)++ = VIF_CODE(VIF_MSCAL,0,start);
+  {
+    *((u32*)currentBuffer) = VIF_CODE(VIF_MSCAL,0,start);
+    currentBuffer += sizeof(u32);
+  }
   else
-    *((u32*)currentBuffer)++ = VIF_CODE(VIF_NOP,0,0);
+  {
+    *((u32*)currentBuffer) = VIF_CODE(VIF_NOP,0,0);
+    currentBuffer += sizeof(u32);
+  }
 
   pdkDmaWait(1);
   pdkDma01SendChain(buildList.kickBuffer);
@@ -188,13 +213,17 @@ void pdkVu1ListAddEnd()
   // pad to qword alignment
   while((buildList.dmaSize & 0xf))
   {
-    *((u32*)currentBuffer)++ = 0;    
+    *((u32*)currentBuffer) = 0;
+    currentBuffer += sizeof(u32);
     buildList.dmaSize += 4;
   }
     
-  *((u64*)buildList.offset)++ = DMA_CNT_TAG(buildList.dmaSize >> 4);
-  *((u32*)buildList.offset)++ = VIF_CODE(VIF_STCYL,0,0x0101 );
-  *((u32*)buildList.offset)++ = VIF_CODE(VIF_UNPACK_V4_32,buildList.dmaSize >> 4,buildList.cntDmaDest);
+  *((u64*)buildList.offset) = DMA_CNT_TAG(buildList.dmaSize >> 4);
+  buildList.offset  += sizeof(u64);
+  *((u32*)buildList.offset) = VIF_CODE(VIF_STCYL,0,0x0101 );
+  buildList.offset  += sizeof(u32);
+  *((u32*)buildList.offset) = VIF_CODE(VIF_UNPACK_V4_32,buildList.dmaSize >> 4,buildList.cntDmaDest);
+  buildList.offset  += sizeof(u32);
   
   buildList.isBuidingCnt = 0;
 }
