@@ -57,7 +57,7 @@ suitable for gas to consume.
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#include "getopt.h"
+#include <getopt.h>
 
 #ifdef HAVE_STDLIB_H
 #include <stdlib.h>
@@ -67,20 +67,18 @@ suitable for gas to consume.
 extern char *malloc ();
 #endif
 
-#include "ansidecl.h"
-#include "libiberty.h"
-#include "safe-ctype.h"
+#include "compat.h"
 #include "sb.h"
 #include "macro.h"
 #include "asintl.h"
-#include "xregex.h"
+#include <regex.h>
 
 char *program_version = PACKAGE_VERSION;
 
 /* This is normally declared in as.h, but we don't include that.  We
    need the function because other files linked with masp.c might call
    it.  */
-extern void as_abort PARAMS ((const char *, int, const char *));
+extern void as_abort(const char *, int, const char *);
 
 /* The default obstack chunk size.  If we set this to zero, the
    obstack code will use whatever will fit in a 4096 byte block.  This
@@ -310,100 +308,100 @@ int masp_syntax; // whether we are using the new MASP syntax, or the
 		 // old GASP one
 int line_info;  // Include line number info in output file?
 
-static void quit PARAMS ((void));
-static void hash_new_table PARAMS ((int, hash_table *));
-static int hash PARAMS ((sb *));
-static hash_entry *hash_create PARAMS ((hash_table *, sb *));
-static void hash_add_to_string_table PARAMS ((hash_table *, sb *, sb *, int));
-static void hash_add_to_int_table PARAMS ((hash_table *, sb *, int));
-static hash_entry *hash_lookup PARAMS ((hash_table *, sb *));
-static void checkconst PARAMS ((int, exp_t *));
-static int is_flonum PARAMS ((int, sb *));
-static int chew_flonum PARAMS ((int, sb *, sb *));
-static int sb_strtol PARAMS ((int, sb *, int, int *));
-static int level_0 PARAMS ((int, sb *, exp_t *));
-static int level_1 PARAMS ((int, sb *, exp_t *));
-static int level_2 PARAMS ((int, sb *, exp_t *));
-static int level_3 PARAMS ((int, sb *, exp_t *));
-static int level_4 PARAMS ((int, sb *, exp_t *));
-static int level_5 PARAMS ((int, sb *, exp_t *));
-static int exp_parse PARAMS ((int, sb *, exp_t *));
-static void exp_string PARAMS ((exp_t *, sb *));
-static int exp_get_abs PARAMS ((const char *, int, sb *, int *));
+static void quit(void);
+static void hash_new_table(int size, hash_table *ptr);
+static int hash(const sb *key);
+static hash_entry *hash_create(hash_table *tab, const sb *key);
+static void hash_add_to_string_table(hash_table *tab, const sb *key, const sb *name, int again);
+static void hash_add_to_int_table(hash_table *tab, const sb *key, int name);
+static hash_entry *hash_lookup(hash_table *tab, const sb *key);
+static void checkconst(int op, exp_t *term);
+static int is_flonum(int idx, const sb *in);
+static int chew_flonum(int idx, const sb *in, sb *out);
+static int sb_strtol(int idx, const sb *in, int base, int *ptr);
+static int level_0(int idx, const sb *in, exp_t *term);
+static int level_1(int idx, const sb *in, exp_t *term);
+static int level_2(int idx, const sb *in, exp_t *term);
+static int level_3(int idx, const sb *in, exp_t *term);
+static int level_4(int idx, const sb *in, exp_t *term);
+static int level_5(int idx, const sb *in, exp_t *term);
+static int exp_parse(int idx, const sb *in, exp_t *term);
+static void exp_string(exp_t *term, sb *out);
+static int exp_get_abs(const char *name, int len, const sb *in, int *val);
 #if 0
-static void strip_comments PARAMS ((sb *));
+static void strip_comments(sb *);
 #endif
-static void unget PARAMS ((int));
-static void include_buf PARAMS ((sb *, sb *, include_type, int));
-static void include_print_where_line PARAMS ((FILE *));
-static void include_print_line PARAMS ((FILE *));
-static int get_line PARAMS ((sb *));
-static int grab_label PARAMS ((sb *, sb *));
-static void change_base PARAMS ((int, sb *, sb *));
-static void do_end PARAMS ((sb *));
-static void do_assign PARAMS ((int, int, sb *));
-static void do_radix PARAMS ((sb *));
-static int get_opsize PARAMS ((int, sb *, int *));
-static int eol PARAMS ((int, sb *));
-static void do_data PARAMS ((int, sb *, int));
-static void do_datab PARAMS ((int, sb *));
-static void do_align PARAMS ((int, sb *));
-static void do_res PARAMS ((int, sb *, int));
-static void do_export PARAMS ((sb *));
-static void do_print PARAMS ((int, sb *));
-static void do_heading PARAMS ((int, sb *));
-static void do_page PARAMS ((void));
-static void do_form PARAMS ((int, sb *));
-static int get_any_string PARAMS ((int, sb *, sb *, int, int));
-static int skip_openp PARAMS ((int, sb *));
-static int skip_closep PARAMS ((int, sb *));
-static int dolen PARAMS ((int, sb *, sb *));
-static int doinstr PARAMS ((int, sb *, sb *));
-static int dosubstr PARAMS ((int, sb *, sb *));
-static void process_assigns PARAMS ((int, sb *, sb *));
-static int get_and_process PARAMS ((int, sb *, sb *));
-static void process_file PARAMS ((void));
-static void free_old_entry PARAMS ((hash_entry *));
-static void do_assigna PARAMS ((int, sb *));
-static void do_assignc PARAMS ((int, sb *));
-static void do_reg PARAMS ((int, sb *));
-static int condass_lookup_name PARAMS ((sb *, int, sb *, int));
-static int whatcond PARAMS ((int, sb *, int *));
-static int istrue PARAMS ((int, sb *));
-static void do_aif PARAMS ((int, sb *));
-static void do_aelse PARAMS ((void));
-static void do_aendi PARAMS ((void));
-static int condass_on PARAMS ((void));
-static void do_if PARAMS ((int, sb *, int));
-static int get_mri_string PARAMS ((int, sb *, sb *, int));
-static void do_ifc PARAMS ((int, sb *, int));
-static void do_aendr PARAMS ((void));
-static void do_awhile PARAMS ((int, sb *));
-static void do_aendw PARAMS ((void));
-static void do_exitm PARAMS ((void));
-static void do_arepeat PARAMS ((int, sb *));
-static void do_endm PARAMS ((void));
-static void do_irp PARAMS ((int, sb *, int));
-static void do_local PARAMS ((int, sb *));
-static void do_macro PARAMS ((int, sb *));
-static int macro_op PARAMS ((int, sb *));
-static int getstring PARAMS ((int, sb *, sb *));
-static void do_sdata PARAMS ((int, sb *, int));
-static void do_sdatab PARAMS ((int, sb *));
-static int new_file PARAMS ((const char *));
-static void do_include PARAMS ((int, sb *));
-static void include_pop PARAMS ((void));
-static int get PARAMS ((void));
-static int linecount PARAMS ((void));
-static int include_next_index PARAMS ((void));
-static void chartype_init PARAMS ((void));
-static int process_pseudo_op PARAMS ((int, sb *, sb *));
-static int process_pseudo_op2 PARAMS ((int, sb *, sb *));
-static void add_keyword PARAMS ((const char *, int));
-static void process_init PARAMS ((void));
-static void do_define PARAMS ((const char *));
-static void show_usage PARAMS ((FILE *, int));
-static void show_help PARAMS ((void));
+static void unget(int ch);
+static void include_buf(sb *name, sb *ptr, include_type type, int index);
+static void include_print_where_line(FILE *file);
+static void include_print_line(FILE *file);
+static int get_line(sb *in);
+static int grab_label(sb *in, sb *out);
+static void change_base(int idx, sb *in, sb *out);
+static void do_end(sb *in);
+static void do_assign(int again, int idx, sb *in);
+static void do_radix(sb *ptr);
+static int get_opsize(int idx, sb *in, int *size);
+static int eol(int idx, sb *line);
+static void do_data(int idx, sb *in, int size);
+static void do_datab(int idx, sb *in);
+static void do_align(int idx, sb *in);
+static void do_res(int idx, sb *in, int type);
+static void do_export(sb *in);
+static void do_print(int idx, sb *in);
+static void do_heading(int idx, sb *in);
+static void do_page(void);
+static void do_form(int idx, sb *in);
+static int get_any_string(int idx, sb *in, sb *out, int expand, int pretend_quoted);
+static int skip_openp(int idx, sb *in);
+static int skip_closep(int idx, sb *in);
+static int dolen(int idx, sb *in, sb *out);
+static int doinstr(int idx, sb *in, sb *out);
+static int dosubstr(int idx, sb *in, sb *out);
+static void process_assigns(int idx, sb *in, sb *buf);
+static int get_and_process(int idx, sb *in, sb *out);
+static void process_file(void);
+static void free_old_entry(hash_entry *ptr);
+static void do_assigna(int idx, sb *in);
+static void do_assignc(int idx, sb *in);
+static void do_reg(int idx, sb *in);
+static int condass_lookup_name(sb *inbuf, int idx, sb *out, int warn);
+static int whatcond(int idx, sb *in, int *val);
+static int istrue(int idx, sb *in);
+static void do_aif(int idx, sb *in);
+static void do_aelse(void);
+static void do_aendi(void);
+static int condass_on(void);
+static void do_if(int idx, sb *in, int cond);
+static int get_mri_string(int idx, sb *in, sb *val, int terminator);
+static void do_ifc(int idx, sb *in, int ifnc);
+static void do_aendr(void);
+static void do_awhile(int idx, sb *in);
+static void do_aendw(void);
+static void do_exitm(void);
+static void do_arepeat(int idx, sb *in);
+static void do_endm(void);
+static void do_irp(int idx, sb *in, int irpc);
+static void do_local(int idx, sb *in);
+static void do_macro(int idx, sb *in);
+static int macro_op(int idx, sb *in);
+static int getstring(int idx, const sb *in, sb *acc);
+static void do_sdata(int idx, sb *in, int type);
+static void do_sdatab(int idx, sb *in);
+static int new_file(const char *name);
+static void do_include(int idx, sb *in);
+static void include_pop(void);
+static int get(void);
+static int linecount(void);
+static int include_next_index(void);
+static void chartype_init(void);
+static int process_pseudo_op(int idx, sb *line, sb *acc);
+static int process_pseudo_op2(int idx, sb *line, sb *acc);
+static void add_keyword(const char *name, int code);
+static void process_init(void);
+static void do_define(const char *string);
+static void show_usage(FILE *file, int status);
+static void show_help(void);
 
 #define FATAL(x)				\
   do						\
@@ -436,7 +434,7 @@ static void show_help PARAMS ((void));
 /* Exit the program and return the right ERROR code.  */
 
 static void
-quit ()
+quit (void)
 {
   int exitcode;
   if (fatals + errors)
@@ -462,9 +460,7 @@ quit ()
    and fill in the info at ptr.  */
 
 static void
-hash_new_table (size, ptr)
-     int size;
-     hash_table *ptr;
+hash_new_table (int size, hash_table *ptr)
 {
   int i;
   ptr->size = size;
@@ -477,27 +473,23 @@ hash_new_table (size, ptr)
 /* Calculate and return the hash value of the sb at key.  */
 
 static int
-hash (key)
-     sb *key;
+hash(const sb *key)
 {
-  int k = 0x1234;
+  unsigned int k = 0x1234u;
   int i;
-  char *p = key->ptr;
+  const unsigned char *p = (const unsigned char *)key->ptr;
   for (i = 0; i < key->len; i++)
     {
-      k ^= (k << 2) ^ *p;
-      p++;
+      k ^= (k << 2) ^ p[i];
     }
-  return k & 0xf0fff;
+  return (int)(k & 0xf0fffu);
 }
 
 /* Look up key in hash_table tab.  If present, then return it,
    otherwise build a new one and fill it with hash_integer.  */
 
 static hash_entry *
-hash_create (tab, key)
-     hash_table *tab;
-     sb *key;
+hash_create (hash_table *tab, const sb *key)
 {
   int k = hash (key) % tab->size;
   hash_entry *p;
@@ -529,11 +521,7 @@ hash_create (tab, key)
    If replacing old value and again, then ERROR.  */
 
 static void
-hash_add_to_string_table (tab, key, name, again)
-     hash_table *tab;
-     sb *key;
-     sb *name;
-     int again;
+hash_add_to_string_table (hash_table *tab, const sb *key, const sb *name, int again)
 {
   hash_entry *ptr = hash_create (tab, key);
   if (ptr->type == hash_integer)
@@ -555,10 +543,7 @@ hash_add_to_string_table (tab, key, name, again)
 /* Add integer name to hash_table tab with sb key.  */
 
 static void
-hash_add_to_int_table (tab, key, name)
-     hash_table *tab;
-     sb *key;
-     int name;
+hash_add_to_int_table (hash_table *tab, const sb *key, int name)
 {
   hash_entry *ptr = hash_create (tab, key);
   ptr->value.i = name;
@@ -568,9 +553,7 @@ hash_add_to_int_table (tab, key, name)
    If found, return hash_entry result, else 0.  */
 
 static hash_entry *
-hash_lookup (tab, key)
-     hash_table *tab;
-     sb *key;
+hash_lookup (hash_table *tab, const sb *key)
 {
   int k = hash (key) % tab->size;
   hash_entry **table = tab->table;
@@ -605,9 +588,7 @@ hash_lookup (tab, key)
    If not the give the op ERROR.  */
 
 static void
-checkconst (op, term)
-     int op;
-     exp_t *term;
+checkconst (int op, exp_t *term)
 {
   if (term->add_symbol.len
       || term->sub_symbol.len)
@@ -620,10 +601,7 @@ checkconst (op, term)
    point to the next character after the flonum.  */
 
 static int
-chew_flonum (idx, string, out)
-     int idx;
-     sb *string;
-     sb *out;
+chew_flonum (int idx, const sb *string, sb *out)
 {
   sb buf;
   regex_t reg;
@@ -650,9 +628,7 @@ chew_flonum (idx, string, out)
 }
 
 static int
-is_flonum (idx, string)
-     int idx;
-     sb *string;
+is_flonum (int idx, const sb *string)
 {
   sb buf;
   regex_t reg;
@@ -676,11 +652,7 @@ is_flonum (idx, string)
    ptr, and return the index of the first character not in the number.  */
 
 static int
-sb_strtol (idx, string, base, ptr)
-     int idx;
-     sb *string;
-     int base;
-     int *ptr;
+sb_strtol (int idx, const sb *string, int base, int *ptr)
 {
   int value = 0;
   idx = sb_skip_white (idx, string);
@@ -718,10 +690,7 @@ sb_strtol (idx, string, base, ptr)
 }
 
 static int
-level_0 (idx, string, lhs)
-     int idx;
-     sb *string;
-     exp_t *lhs;
+level_0 (int idx, const sb *string, exp_t *lhs)
 {
   lhs->add_symbol.len = 0;
   lhs->add_symbol.name = 0;
@@ -786,10 +755,7 @@ level_0 (idx, string, lhs)
 }
 
 static int
-level_1 (idx, string, lhs)
-     int idx;
-     sb *string;
-     exp_t *lhs;
+level_1 (int idx, const sb *string, exp_t *lhs)
 {
   idx = sb_skip_white (idx, string);
 
@@ -814,6 +780,10 @@ level_1 (idx, string, lhs)
 	    break;
 	  case exp_t_double:
 	    lhs->d_value = -lhs->d_value;
+      break;
+    case exp_t_float:
+      lhs->f_value = -lhs->f_value;
+      break;
 	  }
 	t = lhs->add_symbol;
 	lhs->add_symbol = lhs->sub_symbol;
@@ -836,10 +806,7 @@ level_1 (idx, string, lhs)
 }
 
 static int
-level_2 (idx, string, lhs)
-     int idx;
-     sb *string;
-     exp_t *lhs;
+level_2 (int idx, const sb *string, exp_t *lhs)
 {
   exp_t rhs;
 
@@ -863,6 +830,9 @@ level_2 (idx, string, lhs)
 	    case exp_t_double:
 	      lhs->d_value *= rhs.d_value;
 	      break;
+	    case exp_t_float:
+	      lhs->f_value *= rhs.f_value;
+	      break;
 	    }
 	  break;
 	case '/':
@@ -881,6 +851,9 @@ level_2 (idx, string, lhs)
 		lhs->d_value /= rhs.d_value;
 		//printf("double division\n"); //myrk
 		break;
+	      case exp_t_float:
+		lhs->f_value /= rhs.f_value;
+		break;
 	      }
 	  break;
 	}
@@ -889,10 +862,7 @@ level_2 (idx, string, lhs)
 }
 
 static int
-level_3 (idx, string, lhs)
-     int idx;
-     sb *string;
-     exp_t *lhs;
+level_3 (int idx, const sb *string, exp_t *lhs)
 {
   exp_t rhs;
 
@@ -928,10 +898,7 @@ level_3 (idx, string, lhs)
 }
 
 static int
-level_4 (idx, string, lhs)
-     int idx;
-     sb *string;
-     exp_t *lhs;
+level_4 (int idx, const sb *string, exp_t *lhs)
 {
   exp_t rhs;
 
@@ -955,10 +922,7 @@ level_4 (idx, string, lhs)
 }
 
 static int
-level_5 (idx, string, lhs)
-     int idx;
-     sb *string;
-     exp_t *lhs;
+level_5 (int idx, const sb *string, exp_t *lhs)
 {
   exp_t rhs;
 
@@ -991,10 +955,7 @@ level_5 (idx, string, lhs)
    expression.  */
 
 static int
-exp_parse (idx, string, res)
-     int idx;
-     sb *string;
-     exp_t *res;
+exp_parse (int idx, const sb *string, exp_t *res)
 {
   return level_5 (sb_skip_white (idx, string), string, res);
 }
@@ -1003,9 +964,7 @@ exp_parse (idx, string, res)
    string.  */
 
 static void
-exp_string (exp, string)
-     exp_t *exp;
-     sb *string;
+exp_string (exp_t *exp, sb *string)
 {
   int np = 0;
   int ad = 0;
@@ -1044,11 +1003,7 @@ exp_string (exp, string)
    the index of the first character past the end of the expression.  */
 
 static int
-exp_get_abs (emsg, idx, in, val)
-     const char *emsg;
-     int idx;
-     sb *in;
-     int *val;
+exp_get_abs (const char *emsg, int idx, const sb *in, int *val)
 {
   exp_t res;
   idx = exp_parse (idx, in, &res);
@@ -1093,8 +1048,7 @@ strip_comments (out)
 /* Push back character ch so that it can be read again.  */
 
 static void
-unget (ch)
-     int ch;
+unget (int ch)
 {
   if (ch == '\n')
     {
@@ -1110,11 +1064,7 @@ unget (ch)
    and index.  */
 
 static void
-include_buf (name, ptr, type, index)
-     sb *name;
-     sb *ptr;
-     include_type type;
-     int index;
+include_buf (sb *name, sb *ptr, include_type type, int index)
 {
   sp++;
   if (sp - include_stack >= MAX_INCLUDES)
@@ -1134,8 +1084,7 @@ include_buf (name, ptr, type, index)
    onto file.  */
 
 static void
-include_print_where_line (file)
-     FILE *file;
+include_print_where_line (FILE *file)
 {
   struct include_stack *p = include_stack + 1;
 
@@ -1149,8 +1098,7 @@ include_print_where_line (file)
 /* Used in listings, print the line number onto file.  */
 
 static void
-include_print_line (file)
-     FILE *file;
+include_print_line (FILE *file)
 {
   int n;
   struct include_stack *p = include_stack + 1;
@@ -1172,8 +1120,7 @@ include_print_line (file)
 /* Read a line from the top of the include stack into sb in.  */
 
 static int
-get_line (in)
-     sb *in;
+get_line (sb *in)
 {
   int online = 0;
   int more = 1;
@@ -1249,9 +1196,7 @@ get_line (in)
 /* Find a label from sb in and put it in out.  */
 
 static int
-grab_label (in, out)
-     sb *in;
-     sb *out;
+grab_label (sb *in, sb *out)
 {
   int i = 0;
   sb_reset (out);
@@ -1275,10 +1220,7 @@ grab_label (in, out)
    find all the other numbers and convert them from the default radix.  */
 
 static void
-change_base (idx, in, out)
-     int idx;
-     sb *in;
-     sb *out;
+change_base (int idx, sb *in, sb *out)
 {
   char buffer[20];
 
@@ -1388,7 +1330,7 @@ change_base (idx, in, out)
 
 }
 
-int is_base( char a )
+static int is_base( char a )
 {
   switch ( a )
     {
@@ -1745,8 +1687,7 @@ static void do_endifmode( int idx, sb *in )
 }
 
 static void
-do_end (in)
-     sb *in;
+do_end (sb *in)
 {
   had_end = 1;
   if (mri)
@@ -1756,10 +1697,7 @@ do_end (in)
 /* .assign  */
 
 static void
-do_assign (again, idx, in)
-     int again;
-     int idx;
-     sb *in;
+do_assign (int again, int idx, sb *in)
 {
   /* Stick label in symbol table with following value.  */
   exp_t e;
@@ -1775,8 +1713,7 @@ do_assign (again, idx, in)
 /* .radix [b|q|d|h]  */
 
 static void
-do_radix (ptr)
-     sb *ptr;
+do_radix (sb *ptr)
 {
   int idx = sb_skip_white (0, ptr);
   switch (ptr->ptr[idx])
@@ -1805,10 +1742,7 @@ do_radix (ptr)
 /* Parse off a .b, .w or .l.  */
 
 static int
-get_opsize (idx, in, size)
-     int idx;
-     sb *in;
-     int *size;
+get_opsize (int idx, sb *in, int *size)
 {
   *size = 4;
   if (in->ptr[idx] == '.')
@@ -1842,9 +1776,7 @@ get_opsize (idx, in, size)
 }
 
 static int
-eol (idx, line)
-     int idx;
-     sb *line;
+eol (int idx, sb *line)
 {
   idx = sb_skip_white (idx, line);
   if (idx < line->len
@@ -1859,10 +1791,7 @@ eol (idx, line)
     or d[bwl] <data>*  */
 
 static void
-do_data (idx, in, size)
-     int idx;
-     sb *in;
-     int size;
+do_data (int idx, sb *in, int size)
 {
   int opsize = 4;
   char *opname = ".yikes!";
@@ -1931,9 +1860,7 @@ do_data (idx, in, size)
 /* .datab [.b|.w|.l] <repeat>,<fill>  */
 
 static void
-do_datab (idx, in)
-     int idx;
-     sb *in;
+do_datab (int idx, sb *in)
 {
   int opsize;
   int repeat;
@@ -1951,9 +1878,7 @@ do_datab (idx, in)
 /* .align <size>  */
 
 static void
-do_align (idx, in)
-     int idx;
-     sb *in;
+do_align (int idx, sb *in)
 {
   int al, have_fill, fill;
 
@@ -1978,10 +1903,7 @@ do_align (idx, in)
 /* .res[.b|.w|.l] <size>  */
 
 static void
-do_res (idx, in, type)
-     int idx;
-     sb *in;
-     int type;
+do_res (int idx, sb *in, int type)
 {
   int size = 4;
   int count = 0;
@@ -2004,8 +1926,7 @@ do_res (idx, in, type)
 /* .export  */
 
 static void
-do_export (in)
-     sb *in;
+do_export (sb *in)
 {
   fprintf (outfile, ".global	%s\n", sb_name (in));
 }
@@ -2013,9 +1934,7 @@ do_export (in)
 /* .print [list] [nolist]  */
 
 static void
-do_print (idx, in)
-     int idx;
-     sb *in;
+do_print (int idx, sb *in)
 {
   idx = sb_skip_white (idx, in);
   while (idx < in->len)
@@ -2037,9 +1956,7 @@ do_print (idx, in)
 /* .head  */
 
 static void
-do_heading (idx, in)
-     int idx;
-     sb *in;
+do_heading (int idx, sb *in)
 {
   sb head;
   sb_new (&head);
@@ -2051,7 +1968,7 @@ do_heading (idx, in)
 /* .page  */
 
 static void
-do_page ()
+do_page (void)
 {
   fprintf (outfile, ".eject\n");
 }
@@ -2059,9 +1976,7 @@ do_page ()
 /* .form [lin=<value>] [col=<value>]  */
 
 static void
-do_form (idx, in)
-     int idx;
-     sb *in;
+do_form (int idx, sb *in)
 {
   int lines = 60;
   int columns = 132;
@@ -2097,12 +2012,7 @@ do_form (idx, in)
 */
 
 static int
-get_any_string (idx, in, out, expand, pretend_quoted)
-     int idx;
-     sb *in;
-     sb *out;
-     int expand;
-     int pretend_quoted;
+get_any_string (int idx, sb *in, sb *out, int expand, int pretend_quoted)
 {
   sb_reset (out);
   idx = sb_skip_white (idx, in);
@@ -2178,9 +2088,7 @@ get_any_string (idx, in, out, expand, pretend_quoted)
    whitespace.  Return the idx of the next char.  */
 
 static int
-skip_openp (idx, in)
-     int idx;
-     sb *in;
+skip_openp (int idx, sb *in)
 {
   idx = sb_skip_white (idx, in);
   if (in->ptr[idx] != '(')
@@ -2193,9 +2101,7 @@ skip_openp (idx, in)
    whitespace.  Return the idx of the next char.  */
 
 static int
-skip_closep (idx, in)
-     int idx;
-     sb *in;
+skip_closep (int idx, sb *in)
 {
   idx = sb_skip_white (idx, in);
   if (in->ptr[idx] != ')')
@@ -2207,10 +2113,7 @@ skip_closep (idx, in)
 /* .len  */
 
 static int
-dolen (idx, in, out)
-     int idx;
-     sb *in;
-     sb *out;
+dolen (int idx, sb *in, sb *out)
 {
 
   sb stringout;
@@ -2230,10 +2133,7 @@ dolen (idx, in, out)
 /* .instr  */
 
 static int
-doinstr (idx, in, out)
-     int idx;
-     sb *in;
-     sb *out;
+doinstr (int idx, sb *in, sb *out)
 {
   sb string;
   sb search;
@@ -2275,10 +2175,7 @@ doinstr (idx, in, out)
 }
 
 static int
-dosubstr (idx, in, out)
-     int idx;
-     sb *in;
-     sb *out;
+dosubstr (int idx, sb *in, sb *out)
 {
   sb string;
   int pos;
@@ -2316,10 +2213,7 @@ dosubstr (idx, in, out)
 /* Scan line, change tokens in the hash table to their replacements.  */
 
 static void
-process_assigns (idx, in, buf)
-     int idx;
-     sb *in;
-     sb *buf;
+process_assigns (int idx, sb *in, sb *buf)
 {
   while (idx < in->len)
     {
@@ -2463,10 +2357,7 @@ process_assigns (idx, in, buf)
 }
 
 static int
-get_and_process (idx, in, out)
-     int idx;
-     sb *in;
-     sb *out;
+get_and_process (int idx, sb *in, sb *out)
 {
   sb t;
   sb_new (&t);
@@ -2477,7 +2368,7 @@ get_and_process (idx, in, out)
 }
 
 static void
-process_file ()
+process_file (void)
 {
   sb line;
   sb t1, t2;
@@ -2606,8 +2497,7 @@ process_file ()
 }
 
 static void
-free_old_entry (ptr)
-     hash_entry *ptr;
+free_old_entry (hash_entry *ptr)
 {
   if (ptr)
     {
@@ -2619,9 +2509,7 @@ free_old_entry (ptr)
 /* name: .ASSIGNA <value>  */
 
 static void
-do_assigna (idx, in)
-     int idx;
-     sb *in;
+do_assigna (int idx, sb *in)
 {
   sb tmp;
   int val;
@@ -2647,9 +2535,7 @@ do_assigna (idx, in)
 /* name: .ASSIGNC <string>  */
 
 static void
-do_assignc (idx, in)
-     int idx;
-     sb *in;
+do_assignc (int idx, sb *in)
 {
   sb acc;
   sb_new (&acc);
@@ -2673,9 +2559,7 @@ do_assignc (idx, in)
 /* name: .REG (reg)  */
 
 static void
-do_reg (idx, in)
-     int idx;
-     sb *in;
+do_reg (int idx, sb *in)
 {
   /* Remove reg stuff from inside parens.  */
   sb what;
@@ -2697,11 +2581,7 @@ do_reg (idx, in)
 }
 
 static int
-condass_lookup_name (inbuf, idx, out, warn)
-     sb *inbuf;
-     int idx;
-     sb *out;
-     int warn;
+condass_lookup_name (sb *inbuf, int idx, sb *out, int warn)
 {
   hash_entry *ptr;
   sb condass_acc;
@@ -2754,10 +2634,7 @@ condass_lookup_name (inbuf, idx, out, warn)
 #define NEVER 7
 
 static int
-whatcond (idx, in, val)
-     int idx;
-     sb *in;
-     int *val;
+whatcond (int idx, sb *in, int *val)
 {
   int cond;
 
@@ -2795,9 +2672,7 @@ whatcond (idx, in, val)
 }
 
 static int
-istrue (idx, in)
-     int idx;
-     sb *in;
+istrue (int idx, sb *in)
 {
   int res;
   sb acc_a;
@@ -2883,9 +2758,7 @@ istrue (idx, in)
 /* .AIF  */
 
 static void
-do_aif (idx, in)
-     int idx;
-     sb *in;
+do_aif (int idx, sb *in)
 {
   if (ifi >= IFNESTING)
     {
@@ -2899,7 +2772,7 @@ do_aif (idx, in)
 /* .AELSE  */
 
 static void
-do_aelse ()
+do_aelse (void)
 {
   ifstack[ifi].on = ifstack[ifi - 1].on ? !ifstack[ifi].on : 0;
   if (ifstack[ifi].hadelse)
@@ -2912,7 +2785,7 @@ do_aelse ()
 /* .AENDI  */
 
 static void
-do_aendi ()
+do_aendi (void)
 {
   if (ifi != 0)
     {
@@ -2925,7 +2798,7 @@ do_aendi ()
 }
 
 static int
-condass_on ()
+condass_on (void)
 {
   return ifstack[ifi].on;
 }
@@ -2933,10 +2806,7 @@ condass_on ()
 /* MRI IFEQ, IFNE, IFLT, IFLE, IFGE, IFGT.  */
 
 static void
-do_if (idx, in, cond)
-     int idx;
-     sb *in;
-     int cond;
+do_if (int idx, sb *in, int cond)
 {
   int val;
   int res;
@@ -2967,11 +2837,7 @@ do_if (idx, in, cond)
 /* Get a string for the MRI IFC or IFNC pseudo-ops.  */
 
 static int
-get_mri_string (idx, in, val, terminator)
-     int idx;
-     sb *in;
-     sb *val;
-     int terminator;
+get_mri_string (int idx, sb *in, sb *val, int terminator)
 {
   idx = sb_skip_white (idx, in);
 
@@ -3014,10 +2880,7 @@ get_mri_string (idx, in, val, terminator)
 /* MRI IFC, IFNC  */
 
 static void
-do_ifc (idx, in, ifnc)
-     int idx;
-     sb *in;
-     int ifnc;
+do_ifc (int idx, sb *in, int ifnc)
 {
   sb first;
   sb second;
@@ -3053,7 +2916,7 @@ do_ifc (idx, in, ifnc)
 /* .ENDR  */
 
 static void
-do_aendr ()
+do_aendr (void)
 {
   if (!mri)
     ERROR ((stderr, _("AENDR without a AREPEAT.\n")));
@@ -3064,9 +2927,7 @@ do_aendr ()
 /* .AWHILE  */
 
 static void
-do_awhile (idx, in)
-     int idx;
-     sb *in;
+do_awhile (int idx, sb *in)
 {
   int line = linecount ();
   sb exp;
@@ -3115,7 +2976,7 @@ do_awhile (idx, in)
 /* .AENDW  */
 
 static void
-do_aendw ()
+do_aendw (void)
 {
   ERROR ((stderr, _("AENDW without a AENDW.\n")));
 }
@@ -3125,7 +2986,7 @@ do_aendw ()
    Pop things off the include stack until the type and index changes.  */
 
 static void
-do_exitm ()
+do_exitm (void)
 {
   include_type type = sp->type;
   if (type == include_repeat
@@ -3145,9 +3006,7 @@ do_exitm ()
 /* .AREPEAT  */
 
 static void
-do_arepeat (idx, in)
-     int idx;
-     sb *in;
+do_arepeat (int idx, sb *in)
 {
   int line = linecount ();
   sb exp;			/* Buffer with expression in it.  */
@@ -3207,7 +3066,7 @@ do_arepeat (idx, in)
 /* .ENDM  */
 
 static void
-do_endm ()
+do_endm (void)
 {
   ERROR ((stderr, _(".ENDM without a matching .MACRO.\n")));
 }
@@ -3215,10 +3074,7 @@ do_endm ()
 /* MRI IRP pseudo-op.  */
 
 static void
-do_irp (idx, in, irpc)
-     int idx;
-     sb *in;
-     int irpc;
+do_irp (int idx, sb *in, int irpc)
 {
   const char *err;
   sb out;
@@ -3239,17 +3095,13 @@ do_irp (idx, in, irpc)
 /* Parse off LOCAL n1, n2,... Invent a label name for it.  */
 
 static void
-do_local (idx, line)
-     int idx ATTRIBUTE_UNUSED;
-     sb *line ATTRIBUTE_UNUSED;
+do_local (int idx, sb *line)
 {
   ERROR ((stderr, _("LOCAL outside of MACRO")));
 }
 
 static void
-do_macro (idx, in)
-     int idx;
-     sb *in;
+do_macro (int idx, sb *in)
 {
   const char *err;
   int line = linecount ();
@@ -3260,9 +3112,7 @@ do_macro (idx, in)
 }
 
 static int
-macro_op (idx, in)
-     int idx;
-     sb *in;
+macro_op (int idx, sb *in)
 {
   const char *err;
   sb out;
@@ -3292,10 +3142,7 @@ macro_op (idx, in)
 /* String handling.  */
 
 static int
-getstring (idx, in, acc)
-     int idx;
-     sb *in;
-     sb *acc;
+getstring (int idx, const sb *in, sb *acc)
 {
   idx = sb_skip_white (idx, in);
 
@@ -3374,10 +3221,7 @@ getstring (idx, in, acc)
 /* .SDATA[C|Z] <string>  */
 
 static void
-do_sdata (idx, in, type)
-     int idx;
-     sb *in;
-     int type;
+do_sdata (int idx, sb *in, int type)
 {
   int nc = 0;
   int pidx = -1;
@@ -3439,9 +3283,7 @@ do_sdata (idx, in, type)
 /* .SDATAB <count> <string>  */
 
 static void
-do_sdatab (idx, in)
-     int idx;
-     sb *in;
+do_sdatab (int idx, sb *in)
 {
   int repeat;
   int i;
@@ -3471,8 +3313,7 @@ do_sdatab (idx, in)
 }
 
 static int
-new_file (name)
-     const char *name;
+new_file (const char *name)
 {
   FILE *newone = fopen (name, "r");
   if (!newone)
@@ -3499,9 +3340,7 @@ new_file (name)
 }
 
 static void
-do_include (idx, in)
-     int idx;
-     sb *in;
+do_include (int idx, sb *in)
 {
   sb t;
   sb cat;
@@ -3543,7 +3382,7 @@ do_include (idx, in)
 }
 
 static void
-include_pop ()
+include_pop (void)
 {
   if (sp != include_stack)
     {
@@ -3558,7 +3397,7 @@ include_pop ()
    the stack and try again.  Keep the linecount up to date.  */
 
 static int
-get ()
+get (void)
 {
   int r;
 
@@ -3605,13 +3444,13 @@ get ()
 }
 
 static int
-linecount ()
+linecount (void)
 {
   return sp->linecount;
 }
 
 static int
-include_next_index ()
+include_next_index (void)
 {
   static int index;
   if (!unreasonable
@@ -3623,7 +3462,7 @@ include_next_index ()
 /* Initialize the chartype vector.  */
 
 static void
-chartype_init ()
+chartype_init (void)
 {
   int x;
   for (x = 0; x < 256; x++)
@@ -3769,10 +3608,7 @@ static int do_set( int idx, sb *line )
    its handler.  */
 
 static int
-process_pseudo_op (idx, line, acc)
-     int idx;
-     sb *line;
-     sb *acc;
+process_pseudo_op (int idx, sb *line, sb *acc)
 {
   int oidx = idx;
 
@@ -4046,10 +3882,7 @@ process_pseudo_op (idx, line, acc)
 }
 
 static int
-process_pseudo_op2 (idx, line, acc)
-     int idx;
-     sb *line;
-     sb *acc;
+process_pseudo_op2 (int idx, sb *line, sb *acc)
 {
   int oidx = idx;
 
@@ -4323,9 +4156,7 @@ process_pseudo_op2 (idx, line, acc)
 /* Add a keyword to the hash table.  */
 
 static void
-add_keyword (name, code)
-     const char *name;
-     int code;
+add_keyword (const char *name, int code)
 {
   sb label;
   int j;
@@ -4347,7 +4178,7 @@ add_keyword (name, code)
    once upper and once lower case.  */
 
 static void
-process_init ()
+process_init (void)
 {
   int i;
 
@@ -4363,8 +4194,7 @@ process_init ()
 
 
 static void
-do_define (string)
-     const char *string;
+do_define (const char *string)
 {
   sb label;
   int res = 1;
@@ -4424,9 +4254,7 @@ static struct option long_options[] =
 
 /* Show a usage message and exit.  */
 static void
-show_usage (file, status)
-     FILE *file;
-     int status;
+show_usage (FILE *file, int status)
 {
   // Removed references of alternate and mri mode
   //   [-a]      [--alternate]         enter alternate macro mode
@@ -4456,18 +4284,14 @@ show_usage (file, status)
 /* Display a help message and exit.  */
 
 static void
-show_help ()
+show_help (void)
 {
   printf (_("%s: MASP, the Assembly Preprocessor\n"), program_name);
   show_usage (stdout, 0);
 }
 
-int main PARAMS ((int, char **));
-
 int
-main (argc, argv)
-     int argc;
-     char **argv;
+main (int argc, char *argv[])
 {
   int opt;
   char *out_name = 0;
@@ -4480,10 +4304,10 @@ main (argc, argv)
   ifstack[0].on = 1;
   ifi = 0;
 
-#if defined (HAVE_SETLOCALE) && defined (HAVE_LC_MESSAGES)
+#if defined (HAVE_SETLOCALE) && defined (HAVE_LC_MESSAGES) && defined (LC_MESSAGES)
   setlocale (LC_MESSAGES, "");
 #endif
-#if defined (HAVE_SETLOCALE)
+#if defined (HAVE_SETLOCALE) && defined (LC_CTYPE)
   setlocale (LC_CTYPE, "");
 #endif
   bindtextdomain (PACKAGE, LOCALEDIR);
@@ -4550,6 +4374,7 @@ main (argc, argv)
 	  break;
 	case 'h':
 	  show_help ();
+	  break;
 	  /* NOTREACHED  */
 	case 'v':
 	  /* This output is intended to follow the GNU standards document.  */
@@ -4619,10 +4444,9 @@ the GNU General Public License.  This program has absolutely no warranty.\n"));
 /* This function is used because an abort in some of the other files
    may be compiled into as_abort because they include as.h.  */
 
+__attribute__ ((noreturn))
 void
-as_abort (file, line, fn)
-     const char *file, *fn;
-     int line;
+as_abort (const char *file, int line, const char *fn)
 {
   fprintf (stderr, _("Internal error, aborting at %s line %d"), file, line);
   if (fn)

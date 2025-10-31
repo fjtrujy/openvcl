@@ -1,0 +1,22 @@
+/* Minimal config.h for MASP built with CMake */
+
+#define STDC_HEADERS 1
+
+/* Header availability */
+#define HAVE_STDLIB_H 1
+#define HAVE_STRING_H 1
+#define HAVE_STRINGS_H 1
+#define HAVE_UNISTD_H 1
+#define HAVE_SYS_TYPES_H 1
+#define HAVE_LOCALE_H 1
+#define HAVE_ALLOCA_H 1
+
+/* Functions/features */
+#define HAVE_SETLOCALE 1
+#define HAVE_LC_MESSAGES 1
+#define HAVE_REMOVE 1
+#define HAVE_UNLINK 1
+#define HAVE_STDARG_H 1
+#define HAVE_VARARGS_H 0
+
+

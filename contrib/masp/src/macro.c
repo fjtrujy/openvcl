@@ -58,8 +58,7 @@ extern void *alloca ();
 #ifdef HAVE_STDLIB_H
 #include <stdlib.h>
 #endif
-#include "libiberty.h"
-#include "safe-ctype.h"
+#include "compat.h"
 #include "sb.h"
 #include "hash.h"
 #include "macro.h"
@@ -74,16 +73,14 @@ extern int masp_syntax; // Are we using MASP or GASP syntax?
 
 /* Internal functions.  */
 
-static int get_token PARAMS ((int, sb *, sb *));
-static int getstring PARAMS ((int, sb *, sb *));
-static int get_any_string PARAMS ((int, sb *, sb *, int, int));
-static int do_formals PARAMS ((macro_entry *, int, sb *));
-static int get_apost_token PARAMS ((int, sb *, sb *, int));
-static int sub_actual
-  PARAMS ((int, sb *, sb *, struct hash_control *, int, sb *, int));
-static const char *macro_expand_body
-  PARAMS ((sb *, sb *, formal_entry *, struct hash_control *, int, int));
-static const char *macro_expand PARAMS ((int, sb *, macro_entry *, sb *, int));
+static int get_token(int, sb *, sb *);
+static int getstring(int, sb *, sb *);
+static int get_any_string(int, sb *, sb *, int, int);
+static int do_formals(macro_entry *, int, sb *);
+static int get_apost_token(int, sb *, sb *, int);
+static int sub_actual(int, sb *, sb *, struct hash_control *, int, sb *, int);
+static const char *macro_expand_body(sb *, sb *, formal_entry *, struct hash_control *, int, int);
+static const char *macro_expand(int, sb *, macro_entry *, sb *, int);
 
 #define ISWHITE(x) ((x) == ' ' || (x) == '\t')
 
@@ -121,7 +118,7 @@ static int macro_strip_at;
 
 /* Function to use to parse an expression.  */
 
-static int (*macro_expr) PARAMS ((const char *, int, sb *, int *));
+static int (*macro_expr)(const char *, int, const sb *, int *);
 
 /* Number of macro expansions that have been done.  */
 
@@ -130,11 +127,7 @@ static int macro_number;
 /* Initialize macro processing.  */
 
 void
-macro_init (alternate, mri, strip_at, expr)
-     int alternate;
-     int mri;
-     int strip_at;
-     int (*expr) PARAMS ((const char *, int, sb *, int *));
+macro_init (int alternate, int mri, int strip_at, int (*expr)(const char *, int, const sb *, int *))
 {
   macro_hash = hash_new ();
   macro_defined = 0;
@@ -164,7 +157,7 @@ buffer_and_nest (from, to, ptr, get_line)
      const char *from;
      const char *to;
      sb *ptr;
-     int (*get_line) PARAMS ((sb *));
+     int (*get_line) (sb *);
 {
   int from_len = strlen (from);
   int to_len = strlen (to);
@@ -644,7 +637,7 @@ define_macro (idx, in, label, get_line, namep)
      int idx;
      sb *in;
      sb *label;
-     int (*get_line) PARAMS ((sb *));
+     int (*get_line) (sb *);
      const char **namep;
 {
   macro_entry *macro;
@@ -694,7 +687,7 @@ define_macro (idx, in, label, get_line, namep)
   for (idx = 0; idx < name.len; idx++)
     name.ptr[idx] = TOLOWER (name.ptr[idx]);
   namestr = sb_terminate (&name);
-  hash_jam (macro_hash, namestr, (PTR) macro);
+  hash_jam (macro_hash, namestr, (void *) macro);
 
   macro_defined = 1;
 
@@ -707,11 +700,7 @@ define_macro (idx, in, label, get_line, namep)
 /* Scan a token, and then skip KIND.  */
 
 static int
-get_apost_token (idx, in, name, kind)
-     int idx;
-     sb *in;
-     sb *name;
-     int kind;
+get_apost_token (int idx, sb *in, sb *name, int kind)
 {
   idx = get_token (idx, in, name);
   if (idx < in->len
@@ -725,14 +714,7 @@ get_apost_token (idx, in, name, kind)
 /* Substitute the actual value for a formal parameter.  */
 
 static int
-sub_actual (start, in, t, formal_hash, kind, out, copyifnotthere)
-     int start;
-     sb *in;
-     sb *t;
-     struct hash_control *formal_hash;
-     int kind;
-     sb *out;
-     int copyifnotthere;
+sub_actual (int start, sb *in, sb *t, struct hash_control *formal_hash, int kind, sb *out, int copyifnotthere)
 {
   int src;
   formal_entry *ptr;
@@ -777,13 +759,7 @@ sub_actual (start, in, t, formal_hash, kind, out, copyifnotthere)
 /* Expand the body of a macro.  */
 
 static const char *
-macro_expand_body (in, out, formals, formal_hash, comment_char, locals)
-     sb *in;
-     sb *out;
-     formal_entry *formals;
-     struct hash_control *formal_hash;
-     int comment_char;
-     int locals;
+macro_expand_body (sb *in, sb *out, formal_entry *formals, struct hash_control *formal_hash, int comment_char, int locals)
 {
   sb t;
   int src = 0;
@@ -1023,12 +999,7 @@ macro_expand_body (in, out, formals, formal_hash, comment_char, locals)
    body.  */
 
 static const char *
-macro_expand (idx, in, m, out, comment_char)
-     int idx;
-     sb *in;
-     macro_entry *m;
-     sb *out;
-     int comment_char;
+macro_expand (int idx, sb *in, macro_entry *m, sb *out, int comment_char)
 {
   sb t;
   formal_entry *ptr;
@@ -1215,12 +1186,7 @@ macro_expand (idx, in, m, out, comment_char)
 
 
 static const char *
-macro_expand2 (idx, in, m, out, comment_char)
-     int idx;
-     sb *in;
-     macro_entry *m;
-     sb *out;
-     int comment_char;
+macro_expand2 (int idx, sb *in, macro_entry *m, sb *out, int comment_char)
 {
   sb t;
   formal_entry *ptr;
@@ -1391,12 +1357,7 @@ macro_expand2 (idx, in, m, out, comment_char)
    gasp.  Return 1 if a macro is found, 0 otherwise.  */
 
 int
-check_macro (line, expand, comment_char, error, info)
-     const char *line;
-     sb *expand;
-     int comment_char;
-     const char **error;
-     macro_entry **info;
+check_macro (const char *line, sb *expand, int comment_char, const char **error, macro_entry **info)
 {
   const char *s;
   char *copy, *cs;
@@ -1449,8 +1410,7 @@ check_macro (line, expand, comment_char, error, info)
 /* Delete a macro.  */
 
 void
-delete_macro (name)
-     const char *name;
+delete_macro (const char *name)
 {
   hash_delete (macro_hash, name);
 }
@@ -1460,13 +1420,7 @@ delete_macro (name)
    success, or an error message otherwise.  */
 
 const char *
-expand_irp (irpc, idx, in, out, get_line, comment_char)
-     int irpc;
-     int idx;
-     sb *in;
-     sb *out;
-     int (*get_line) PARAMS ((sb *));
-     int comment_char;
+expand_irp (int irpc, int idx, sb *in, sb *out, int (*get_line)(sb *), int comment_char)
 {
   const char *mn;
   sb sub;

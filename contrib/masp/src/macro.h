@@ -30,7 +30,6 @@
 
 #define MACRO_H
 
-#include "ansidecl.h"
 #include "sb.h"
 
 /* Structures used to store macros.
@@ -73,19 +72,14 @@ extern int macro_defined;
 
 extern int macro_nest;
 
-extern int buffer_and_nest
-  PARAMS ((const char *, const char *, sb *, int (*) PARAMS ((sb *))));
-extern void macro_init
-  PARAMS ((int alternate, int mri, int strip_at,
-	   int (*) PARAMS ((const char *, int, sb *, int *))));
-extern void macro_mri_mode PARAMS ((int));
-extern const char *define_macro
-  PARAMS ((int idx, sb *in, sb *label, int (*get_line) PARAMS ((sb *)),
-	   const char **namep));
-extern int check_macro PARAMS ((const char *, sb *, int, const char **,
-				macro_entry **));
-extern void delete_macro PARAMS ((const char *));
-extern const char *expand_irp
-  PARAMS ((int, int, sb *, sb *, int (*) PARAMS ((sb *)), int));
+extern int buffer_and_nest(const char *, const char *, sb *, int (*)(sb *));
+extern void macro_init(int alternate, int mri, int strip_at,
+	   int (*)(const char *, int, const sb *, int *));
+extern void macro_mri_mode(int);
+extern const char *define_macro(int idx, sb *in, sb *label, int (*get_line)(sb *),
+	   const char **namep);
+extern int check_macro(const char *, sb *, int, const char **, macro_entry **);
+extern void delete_macro(const char *);
+extern const char *expand_irp(int, int, sb *, sb *, int (*)(sb *), int);
 
 #endif

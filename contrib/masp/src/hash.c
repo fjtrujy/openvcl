@@ -34,8 +34,9 @@
    structure.  */
 
 #include "as.h"
-#include "safe-ctype.h"
 #include "obstack.h"
+#include <string.h>
+#include <ctype.h>
 
 extern void free( void * );
 
@@ -56,7 +57,7 @@ struct hash_entry {
      table.  */
   unsigned long hash;
   /* Pointer being stored in the hash table.  */
-  PTR data;
+  void *data;
 };
 
 /* A hash table.  */
@@ -83,7 +84,7 @@ struct hash_control {
 /* Create a hash table.  This return a control block.  */
 
 struct hash_control *
-hash_new ()
+hash_new (void)
 {
   unsigned int size;
   struct hash_control *ret;
@@ -115,8 +116,7 @@ hash_new ()
 //extern void free( void * );
 
 void
-hash_die (table)
-     struct hash_control *table;
+hash_die (struct hash_control *table)
 {
   obstack_free (&table->memory, 0);
   free (table);
@@ -131,17 +131,10 @@ hash_die (table)
    Each time we look up a string, we move it to the start of the list
    for its hash code, to take advantage of referential locality.  */
 
-static struct hash_entry *hash_lookup PARAMS ((struct hash_control *,
-					       const char *,
-					       struct hash_entry ***,
-					       unsigned long *));
+static struct hash_entry *hash_lookup(struct hash_control *, const char *, struct hash_entry ***, unsigned long *);
 
 static struct hash_entry *
-hash_lookup (table, key, plist, phash)
-     struct hash_control *table;
-     const char *key;
-     struct hash_entry ***plist;
-     unsigned long *phash;
+hash_lookup (struct hash_control *table, const char *key, struct hash_entry ***plist, unsigned long *phash)
 {
   register unsigned long hash;
   unsigned int len;
@@ -215,10 +208,7 @@ hash_lookup (table, key, plist, phash)
    hash table.  */
 
 const char *
-hash_insert (table, key, value)
-     struct hash_control *table;
-     const char *key;
-     PTR value;
+hash_insert (struct hash_control *table, const char *key, void *value)
 {
   struct hash_entry *p;
   struct hash_entry **list;
@@ -248,10 +238,7 @@ hash_insert (table, key, value)
    error.  If an entry already exists, its value is replaced.  */
 
 const char *
-hash_jam (table, key, value)
-     struct hash_control *table;
-     const char *key;
-     PTR value;
+hash_jam (struct hash_control *table, const char *key, void *value)
 {
   struct hash_entry *p;
   struct hash_entry **list;
@@ -288,14 +275,11 @@ hash_jam (table, key, value)
    value stored for the entry.  If the entry is not found in the hash
    table, this does nothing and returns NULL.  */
 
-PTR
-hash_replace (table, key, value)
-     struct hash_control *table;
-     const char *key;
-     PTR value;
+void *
+hash_replace (struct hash_control *table, const char *key, void *value)
 {
   struct hash_entry *p;
-  PTR ret;
+  void *ret;
 
   p = hash_lookup (table, key, NULL, NULL);
   if (p == NULL)
@@ -315,10 +299,8 @@ hash_replace (table, key, value)
 /* Find an entry in a hash table, returning its value.  Returns NULL
    if the entry is not found.  */
 
-PTR
-hash_find (table, key)
-     struct hash_control *table;
-     const char *key;
+void *
+hash_find (struct hash_control *table, const char *key)
 {
   struct hash_entry *p;
 
@@ -332,10 +314,8 @@ hash_find (table, key)
 /* Delete an entry from a hash table.  This returns the value stored
    for that entry, or NULL if there is no such entry.  */
 
-PTR
-hash_delete (table, key)
-     struct hash_control *table;
-     const char *key;
+void *
+hash_delete (struct hash_control *table, const char *key)
 {
   struct hash_entry *p;
   struct hash_entry **list;
@@ -364,9 +344,7 @@ hash_delete (table, key)
    hash table.  */
 
 void
-hash_traverse (table, pfn)
-     struct hash_control *table;
-     void (*pfn) PARAMS ((const char *key, PTR value));
+hash_traverse (struct hash_control *table, void (*pfn)(const char *key, void *value))
 {
   unsigned int i;
 
@@ -383,10 +361,7 @@ hash_traverse (table, pfn)
    name of the hash table, used for printing a header.  */
 
 void
-hash_print_statistics (f, name, table)
-     FILE *f ATTRIBUTE_UNUSED;
-     const char *name ATTRIBUTE_UNUSED;
-     struct hash_control *table ATTRIBUTE_UNUSED;
+hash_print_statistics (FILE *f, const char *name, struct hash_control *table)
 {
 #ifdef HASH_STATISTICS
   unsigned int i;
@@ -420,7 +395,7 @@ hash_print_statistics (f, name, table)
   fprintf (f, "\t%lu empty slots\n", empty);
 #endif
 }
-
+
 #ifdef TEST
 
 /* This test program is left over from the old hash table code.  */
@@ -454,11 +429,11 @@ char command;
 int number;
 
 int
-main ()
+main (void)
 {
-  void applicatee ();
-  void destroy ();
-  char *what ();
+  void applicatee (const char *key, void *value);
+  void destroy (const char *key, void *value);
+  char *what (const char *description);
   int *ip;
 
   number = 0;
@@ -553,8 +528,7 @@ main ()
 }
 
 char *
-what (description)
-     char *description;
+what (const char *description)
 {
   printf ("   %s : ", description);
   gets (answer);
@@ -562,18 +536,14 @@ what (description)
 }
 
 void
-destroy (string, value)
-     char *string;
-     char *value;
+destroy (const char *string, void *value)
 {
   free (string);
   free (value);
 }
 
 void
-applicatee (string, value)
-     char *string;
-     char *value;
+applicatee (const char *string, void *value)
 {
   printf ("%.20s-%.20s\n", string, value);
 }
@@ -582,27 +552,27 @@ applicatee (string, value)
    Also determine h: points to hash_control.  */
 
 void
-whattable ()
+whattable (void)
 {
   for (;;)
     {
       printf ("   what hash table (%d:%d) ?  ", 0, TABLES - 1);
-      gets (answer);
-      sscanf (answer, "%d", &number);
-      if (number >= 0 && number < TABLES)
-	{
-	  h = hashtable[number];
-	  if (!h)
-	    {
-	      printf ("warning: current hash-table-#%d. has no hash-control\n", number);
-	    }
-	  return;
-	}
-      else
-	{
-	  printf ("invalid hash table number: %d\n", number);
-	}
+      fgets (answer, sizeof(answer), stdin);
+      number = atoi(answer);
+      if (number < 0 || number >= TABLES)
+        {
+          printf ("invalid hash table number: %d\n", number);
+          continue;
+        }
+      h = hashtable[number];
+      if (!h)
+        {
+          printf ("warning: current hash-table-#%d. has no hash-control\n", number);
+          continue;
+        }
+      break;
     }
+  return;
 }
 
 #endif /* TEST */

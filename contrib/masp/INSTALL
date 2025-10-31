@@ -3,29 +3,40 @@
 MASP Assembly Preprocessor Installation Instructions
 ====================================================
 
-The installation procedure is as follows:
+Build requirements
+------------------
+- C compiler (GCC/Clang)
+- CMake 3.15+ (recommended)
 
-./configure
-make
-make install
+Quick build (CMake)
+-------------------
+mkdir -p build-cmake
+cmake -S . -B build-cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build build-cmake -j
 
-This will install 'masp' under /usr/local by default, to install MASP
-in another directory, you can pass the --prefix parameter to the
-configure script.  For example, to install 'masp' under /usr, type:
+This will produce the 'masp' executable under:
+  build-cmake/src/masp
 
-./configure --prefix=/usr
+Install
+-------
+By default, install path is /usr/local.
 
-This will install the 'masp' executable in /usr/bin.
+cmake --install build-cmake --prefix /usr/local
 
-For a complete list of parameters you can pass to configure, type:
+To install under /usr use:
 
-./configure --help
+cmake --install build-cmake --prefix /usr
+
+External dependencies
+---------------------
+None. MASP no longer depends on libiberty.
 
 Uninstall
-=========
+---------
+CMake does not generate an uninstall target by default. To uninstall, remove
+the installed 'masp' binary from the chosen prefix (e.g. /usr/local/bin/masp).
 
-There is a 'make uninstall' (I think, never tryed it), but the only
-thing that gets installed is the masp executable; by default in
-/usr/local/bin.
-
-As of yet, there is no documentation or config files.
+Notes
+-----
+- Legacy autotools files and workflow have been removed; use CMake.
+- There is currently no additional documentation or configuration files.

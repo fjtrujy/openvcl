@@ -30,7 +30,6 @@
 #define SB_H
 
 #include <stdio.h>
-#include "ansidecl.h"
 
 /* string blocks
 
@@ -82,25 +81,25 @@ typedef struct
 
 extern int string_count[sb_max_power_two];
 
-extern void sb_build PARAMS ((sb *, int));
-extern void sb_new PARAMS ((sb *));
-extern void sb_kill PARAMS ((sb *));
-extern void sb_add_sb PARAMS ((sb *, sb *));
-extern void sb_reset PARAMS ((sb *));
-extern void sb_add_char PARAMS ((sb *, int));
-extern void sb_add_string PARAMS ((sb *, const char *));
-extern void sb_add_buffer PARAMS ((sb *, const char *, int));
-extern void sb_print PARAMS ((FILE *, sb *));
-extern void sb_print_at PARAMS ((FILE *, int, sb *));
-extern char *sb_name PARAMS ((sb *));
-extern char *sb_terminate PARAMS ((sb *));
-extern int sb_skip_white PARAMS ((int, sb *));
-extern int sb_skip_comma PARAMS ((int, sb *));
+extern void sb_build(sb *ptr, int size);
+extern void sb_new(sb *ptr);
+extern void sb_kill(sb *ptr);
+extern void sb_add_sb(sb *ptr, const sb *s);
+extern void sb_reset(sb *ptr);
+extern void sb_add_char(sb *ptr, int c);
+extern void sb_add_string(sb *ptr, const char *s);
+extern void sb_add_buffer(sb *ptr, const char *s, int len);
+extern void sb_print(FILE *outfile, sb *ptr);
+extern void sb_print_at(FILE *outfile, int idx, sb *ptr);
+extern char *sb_name(sb *in);
+extern char *sb_terminate(sb *in);
+extern int sb_skip_white(int idx, const sb *ptr);
+extern int sb_skip_comma(int idx, const sb *ptr);
 
 // new functions, myrkraverk
-extern int sb_eat_literal( int, sb *, sb * ); // index, out, in
+extern int sb_eat_literal( int idx, sb *out, const sb *in ); // index, out, in
 
 /* Actually in input-scrub.c.  */
-extern void input_scrub_include_sb PARAMS ((sb *, char *, int));
+extern void input_scrub_include_sb(sb *ptr, const char *name, int again);
 
 #endif /* SB_H */
