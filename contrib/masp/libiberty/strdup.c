@@ -9,6 +9,9 @@ Returns a pointer to a copy of @var{s} in memory obtained from
 
 */
 
+#include <stdlib.h>
+#include <string.h>
+
 char *
 strdup(s)
      char *s;

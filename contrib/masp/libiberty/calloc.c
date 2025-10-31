@@ -14,6 +14,7 @@ Uses @code{malloc} to allocate storage for @var{nelem} objects of
  
 #include "ansidecl.h"
 #include "libiberty.h"
+#include <strings.h>
  
 #ifdef ANSI_PROTOTYPES
 #include <stddef.h>

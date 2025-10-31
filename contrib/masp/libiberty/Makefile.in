@@ -160,11 +160,8 @@ libiberty_a_SOURCES = _doprnt.c \
 	md5.c			\
 	memchr.c		\
 	memcmp.c		\
-	memcpy.c		\
-	memmove.c		\
 	memset.c		\
-	mkstemps.c		\
-	msdos.c			\
+    mkstemps.c		\
 	objalloc.c		\
 	obstack.c		\
 	partition.c		\
@@ -230,9 +227,8 @@ am_libiberty_a_OBJECTS = _doprnt.$(OBJEXT) alloca.$(OBJEXT) \
 	getpwd.$(OBJEXT) getruntime.$(OBJEXT) hashtab.$(OBJEXT) \
 	hex.$(OBJEXT) index.$(OBJEXT) insque.$(OBJEXT) \
 	lbasename.$(OBJEXT) make-temp-file.$(OBJEXT) md5.$(OBJEXT) \
-	memchr.$(OBJEXT) memcmp.$(OBJEXT) memcpy.$(OBJEXT) \
-	memmove.$(OBJEXT) memset.$(OBJEXT) mkstemps.$(OBJEXT) \
-	msdos.$(OBJEXT) objalloc.$(OBJEXT) obstack.$(OBJEXT) \
+    memchr.$(OBJEXT) memcmp.$(OBJEXT) memset.$(OBJEXT) mkstemps.$(OBJEXT) \
+    objalloc.$(OBJEXT) obstack.$(OBJEXT) \
 	partition.$(OBJEXT) pexecute.$(OBJEXT) putenv.$(OBJEXT) \
 	random.$(OBJEXT) regex.$(OBJEXT) rindex.$(OBJEXT) \
 	safe-ctype.$(OBJEXT) setenv.$(OBJEXT) sigsetmask.$(OBJEXT) \
@@ -248,7 +244,7 @@ am_libiberty_a_OBJECTS = _doprnt.$(OBJEXT) alloca.$(OBJEXT) \
 	xstrdup.$(OBJEXT) xstrerror.$(OBJEXT)
 libiberty_a_OBJECTS = $(am_libiberty_a_OBJECTS)
 
-DEFAULT_INCLUDES =  -I. -I$(srcdir) -I$(top_builddir)/include
+DEFAULT_INCLUDES =  -I. -I$(srcdir) -I$(top_builddir)/include -I$(top_srcdir)/include
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__depfiles_maybe = depfiles
 @AMDEP_TRUE@DEP_FILES = ./$(DEPDIR)/_doprnt.Po ./$(DEPDIR)/alloca.Po \
@@ -270,9 +266,8 @@ am__depfiles_maybe = depfiles
 @AMDEP_TRUE@	./$(DEPDIR)/lbasename.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/make-temp-file.Po ./$(DEPDIR)/md5.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/memchr.Po ./$(DEPDIR)/memcmp.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/memcpy.Po ./$(DEPDIR)/memmove.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/memset.Po ./$(DEPDIR)/mkstemps.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/msdos.Po ./$(DEPDIR)/objalloc.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/objalloc.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/obstack.Po ./$(DEPDIR)/partition.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/pexecute.Po ./$(DEPDIR)/putenv.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/random.Po ./$(DEPDIR)/regex.Po \
@@ -364,8 +359,6 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/md5.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/memchr.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/memcmp.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/memcpy.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/memmove.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/memset.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mkstemps.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/msdos.Po@am__quote@

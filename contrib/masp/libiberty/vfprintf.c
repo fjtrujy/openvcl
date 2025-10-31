@@ -11,6 +11,8 @@
 #include <stdio.h>
 #undef vfprintf
 
+int _doprnt (const char *format, va_list ap, FILE *stream);
+
 int
 vfprintf (stream, format, ap)
   FILE * stream;

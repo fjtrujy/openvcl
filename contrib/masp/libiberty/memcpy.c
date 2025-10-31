@@ -18,6 +18,7 @@ Copies @var{length} bytes from memory region @var{in} to region
 #else
 #define size_t unsigned long
 #endif
+#include <strings.h>
 
 PTR
 DEFUN(memcpy, (out, in, length), PTR out AND const PTR in AND size_t length)

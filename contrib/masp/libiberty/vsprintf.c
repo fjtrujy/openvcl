@@ -31,6 +31,8 @@ the executable file might be covered by the GNU General Public License. */
 #include <ansidecl.h>
 #undef vsprintf
 
+int _doprnt (const char *format, va_list ap, FILE *stream);
+
 #if defined _IOSTRG && defined _IOWRT
 
 int

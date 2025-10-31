@@ -18,6 +18,7 @@ Copies @var{count} bytes from memory area @var{from} to memory area
 #else
 #define size_t unsigned long
 #endif
+#include <strings.h>
 
 PTR
 memmove (s1, s2, n)

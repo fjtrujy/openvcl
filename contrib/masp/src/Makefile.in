@@ -166,7 +166,7 @@ masp_OBJECTS = $(am_masp_OBJECTS)
 masp_DEPENDENCIES = ../libiberty/libiberty.a
 masp_LDFLAGS =
 
-DEFAULT_INCLUDES =  -I. -I$(srcdir) -I$(top_builddir)/include
+DEFAULT_INCLUDES =  -I. -I$(srcdir) -I$(top_builddir)/include -I$(top_srcdir)/include
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__depfiles_maybe = depfiles
 @AMDEP_TRUE@DEP_FILES = ./$(DEPDIR)/hash.Po ./$(DEPDIR)/macro.Po \

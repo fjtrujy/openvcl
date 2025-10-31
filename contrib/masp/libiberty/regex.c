@@ -36,6 +36,12 @@
 # include <config.h>
 #endif
 
+#include <stdlib.h>
+
+#ifndef STDC_HEADERS
+# define STDC_HEADERS 1
+#endif
+
 #ifndef PARAMS
 # if defined __GNUC__ || (defined __STDC__ && __STDC__)
 #  define PARAMS(args) args

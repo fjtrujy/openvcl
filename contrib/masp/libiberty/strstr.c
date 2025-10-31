@@ -16,6 +16,8 @@ length, the function returns @var{string}.
 
 */
 
+#include <string.h>
+
 
 /* FIXME:  The above description is ANSI compiliant.  This routine has not
    been validated to comply with it.  -fnf */
