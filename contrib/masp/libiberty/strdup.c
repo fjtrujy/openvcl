@@ -14,7 +14,7 @@ Returns a pointer to a copy of @var{s} in memory obtained from
 
 char *
 strdup(s)
-     char *s;
+     const char *s;
 {
     char *result = (char*)malloc(strlen(s) + 1);
     if (result == (char*)0)

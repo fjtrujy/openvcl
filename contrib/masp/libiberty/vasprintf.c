@@ -22,11 +22,7 @@ Boston, MA 02111-1307, USA.  */
 #include "config.h"
 #endif
 #include <ansidecl.h>
-#ifdef ANSI_PROTOTYPES
 #include <stdarg.h>
-#else
-#include <varargs.h>
-#endif
 #include <stdio.h>
 #ifdef HAVE_STRING_H
 #include <string.h>
@@ -59,21 +55,20 @@ not be allocated, zero is returned and @code{NULL} is stored in
 
 */
 
-static int int_vasprintf PARAMS ((char **, const char *, va_list *));
+static int int_vasprintf PARAMS ((char **, const char *, va_list));
 
 static int
 int_vasprintf (result, format, args)
      char **result;
      const char *format;
-     va_list *args;
+     va_list args;
 {
   const char *p = format;
   /* Add one to make sure that it is never zero, which might cause malloc
      to return NULL.  */
   int total_width = strlen (format) + 1;
   va_list ap;
-
-  memcpy ((PTR) &ap, (PTR) args, sizeof (va_list));
+  va_copy(ap, args);
 
   while (*p != '\0')
     {
@@ -140,7 +135,7 @@ int_vasprintf (result, format, args)
 #endif
   *result = malloc (total_width);
   if (*result != NULL)
-    return vsprintf (*result, format, *args);
+    return vsprintf (*result, format, args);
   else
     return 0;
 }
@@ -155,7 +150,7 @@ vasprintf (result, format, args)
      va_list args;
 #endif
 {
-  return int_vasprintf (result, format, &args);
+  return int_vasprintf (result, format, args);
 }
 
 #ifdef TEST
