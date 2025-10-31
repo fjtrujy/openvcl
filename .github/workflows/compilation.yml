@@ -16,15 +16,17 @@ jobs:
     - name: Setup dependencies
       run: |
         apk update
-        apk add build-base make git
+        apk add build-base make git libtool
 
     - name: Compile masp
       run: |
         cd contrib/masp
         mkdir build
         cd build
-        ../configure --disable-dependency-tracking --prefix="$PS2DEV"
+        ../configure --disable-dependency-tracking --disable-maintainer-mode --prefix="$PS2DEV"
+        make -j $(getconf _NPROCESSORS_ONLN) clean
         make -j $(getconf _NPROCESSORS_ONLN)
+        make -j $(getconf _NPROCESSORS_ONLN) install
 
     - name: Compile OpenVCL & Install
       run: |
