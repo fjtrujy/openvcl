@@ -27,47 +27,42 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Install Ubuntu packages
-      if: startsWith(matrix.os.runs-on, 'ubuntu')
+      if: matrix.os[0] == 'ubuntu-latest'
       run: |
-        apt-get -y update
-        apt-get -y install autoconf automake libtool
+        sudo apt-get -y update
+        sudo apt-get -y install cmake
 
     - name: Install macOS packages (brew)
-      if: startsWith(matrix.os.runs-on, 'macos') && matrix.os.macos-package-manager == 'brew'
+      if: startsWith(matrix.os[0], 'macos-')
       run: |
         brew update
-        brew install autoconf automake libtool
+        brew install cmake
 
-    - name: Install macOS packages (port)
-      if: startsWith(matrix.os.runs-on, 'macos') && matrix.os.macos-package-manager == 'port'
-      run: |
-        curl -LO https://raw.githubusercontent.com/GiovanniBussi/macports-ci/master/macports-ci
-        . ./macports-ci install --remove-brew --version=2.11.5 --sync=rsync
-        sudo port install autoconf automake libtool
+    # MacPorts path not used in current matrix; keep commented sample if needed
 
     - name: Install MSYS2 packages
-      if: startsWith(matrix.os.runs-on, 'windows')
+      if: matrix.os[0] == 'windows-latest'
       uses: msys2/setup-msys2@v2
       with:
         msystem: MINGW32
         install: |
-          base-devel git make
-          autotools mingw-w64-i686-make libtool
+          base-devel git
+          mingw-w64-i686-gcc mingw-w64-i686-make mingw-w64-i686-cmake
         update: true
 
     - name: Compile masp
       run: |
         export PS2DEV=$PWD/ps2dev
+        export PATH="$PS2DEV/bin:$PATH"
         cd contrib/masp
-        mkdir build
-        cd build
-        ../configure --disable-dependency-tracking --disable-maintainer-mode --prefix="$PS2DEV"
-        make -j $(getconf _NPROCESSORS_ONLN)
-        make -j $(getconf _NPROCESSORS_ONLN) install
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_INTERNAL_LIBIBERTY=ON -DCMAKE_INSTALL_PREFIX="$PS2DEV"
+        cmake --build build -j $(getconf _NPROCESSORS_ONLN)
+        cmake --install build
 
     - name: Compile OpenVCL
       run: |
         export PS2DEV=$PWD/ps2dev
+        export PATH="$PS2DEV/bin:$PATH"
         make -j $(getconf _NPROCESSORS_ONLN) openvcl
         make -j $(getconf _NPROCESSORS_ONLN) install
 

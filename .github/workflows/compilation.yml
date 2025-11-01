@@ -16,17 +16,14 @@ jobs:
     - name: Setup dependencies
       run: |
         apk update
-        apk add build-base make git libtool
+        apk add build-base make git cmake
 
     - name: Compile masp
       run: |
         cd contrib/masp
-        mkdir build
-        cd build
-        ../configure --disable-dependency-tracking --disable-maintainer-mode --prefix="$PS2DEV"
-        make -j $(getconf _NPROCESSORS_ONLN) clean
-        make -j $(getconf _NPROCESSORS_ONLN)
-        make -j $(getconf _NPROCESSORS_ONLN) install
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_INTERNAL_LIBIBERTY=ON -DCMAKE_INSTALL_PREFIX="$PS2DEV"
+        cmake --build build -j $(getconf _NPROCESSORS_ONLN)
+        cmake --install build
 
     - name: Compile OpenVCL & Install
       run: |
