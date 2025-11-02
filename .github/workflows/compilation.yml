@@ -16,9 +16,16 @@ jobs:
     - name: Setup dependencies
       run: |
         apk update
-        apk add build-base make git
+        apk add build-base make git cmake
 
-    - name: Compile project & Install
+    - name: Compile masp
+      run: |
+        cd contrib/masp
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_INTERNAL_LIBIBERTY=ON -DCMAKE_INSTALL_PREFIX="$PS2DEV"
+        cmake --build build -j $(getconf _NPROCESSORS_ONLN)
+        cmake --install build
+
+    - name: Compile OpenVCL & Install
       run: |
         make -j $(getconf _NPROCESSORS_ONLN) clean
         make -j $(getconf _NPROCESSORS_ONLN)
