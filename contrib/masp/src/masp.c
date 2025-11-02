@@ -613,9 +613,16 @@ chew_flonum (int idx, const sb *string, sb *out)
   sb_add_char (&buf, '\0');
 
   if (regcomp (&reg, "([0-9]*\\.[0-9]+([eE][+-]?[0-9]+)?)", REG_EXTENDED) != 0)
-    return idx;
+    {
+      sb_kill (&buf);
+      return idx;
+    }
   if (regexec (&reg, &buf.ptr[idx], 1, &match, 0) != 0)
-    return idx;
+    {
+      sb_kill (&buf);
+      regfree (&reg);
+      return idx;
+    }
 
   /* Copy the match to the output.  */
   assert (match.rm_eo >= match.rm_so);
@@ -640,7 +647,10 @@ is_flonum (int idx, const sb *string)
   sb_add_char (&buf, '\0');
 
   if (regcomp (&reg, "^[0-9]*\\.[0-9]+([eE][+-]?[0-9]+)?", REG_EXTENDED) != 0)
-    return 0;
+    {
+      sb_kill (&buf);
+      return 0;
+    }
 
   rc = regexec (&reg, &buf.ptr[idx], 0, NULL, 0);
   sb_kill (&buf);
@@ -2292,12 +2302,25 @@ process_assigns (int idx, sb *in, sb *buf)
 	      idx++;
 	    }
 	  ptr = hash_lookup (&keyword_hash_table, &acc);
-	  //	  printf ( "Hash stuff: %d", ptr->value.i );
-
-	  switch( ptr->value.i )
+	  if (!ptr)
 	    {
-	    case K_EXPR:
-	      idx = do_expr( idx, in, buf );
+	      /* Unknown backslash keyword: leave as-is */
+	      sb_add_char (buf, '\\');
+	      sb_add_sb (buf, &acc);
+	    }
+	  else
+	    {
+	      switch (ptr->value.i)
+		{
+		case K_EXPR:
+		  idx = do_expr (idx, in, buf);
+		  break;
+		default:
+		  /* Unhandled known keyword: copy back */
+		  sb_add_char (buf, '\\');
+		  sb_add_sb (buf, &acc);
+		  break;
+		}
 	    }
 	  sb_kill (&acc);
 	}
@@ -2494,6 +2517,13 @@ process_file (void)
 
   if (!had_end && !mri)
     WARNING ((stderr, _("END missing from end of file.\n")));
+
+  /* Release temporary string buffers to avoid leaks under sanitizers. */
+  sb_kill (&label_in);
+  sb_kill (&acc);
+  sb_kill (&t2);
+  sb_kill (&t1);
+  sb_kill (&line);
 }
 
 static void
@@ -3388,6 +3418,9 @@ include_pop (void)
     {
       if (sp->handle)
 	fclose (sp->handle);
+      /* Free sb buffers associated with this include frame. */
+      sb_kill (&sp->pushback);
+      sb_kill (&sp->name);
       sp--;
     }
 }

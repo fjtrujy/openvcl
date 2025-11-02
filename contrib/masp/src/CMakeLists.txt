@@ -16,6 +16,7 @@ target_include_directories(masp
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_SOURCE_DIR}/include
 )
 
 target_compile_definitions(masp PRIVATE PACKAGE_VERSION="0.1.16")
@@ -55,3 +56,9 @@ include(GNUInstallDirs)
 install(TARGETS masp
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
+# Link against gnurx on MinGW where POSIX regex functions require an extra lib
+if(MINGW)
+  target_link_libraries(masp PRIVATE gnurx)
+endif()
+
