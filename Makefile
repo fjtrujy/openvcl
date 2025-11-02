@@ -10,7 +10,7 @@ SOURCES=$(wildcard $(SRCDIR)/*.cpp)
 HEADERS=$(wildcard $(SRCDIR)/*.h)
 OBJECTS=$(subst $(SRCDIR)/,$(OBJDIR)/,$(patsubst %.cpp,%.o,$(SOURCES)))
 
-CXXFLAGS:=$(CXXFLAGS) -ansi -pedantic -Wall -Werror -g
+CXXFLAGS:=$(CXXFLAGS) -ansi -pedantic -Wall -Werror -Wno-unused-but-set-variable -g
 LDFLAGS:=$(LDFLAGS) -g
 
 .PHONY: all examples clean distclean package install
