@@ -49,3 +49,9 @@ option(MASP_WERROR "Treat warnings as errors" OFF)
 if(MASP_WERROR)
   target_compile_options(masp PRIVATE -Werror)
 endif()
+
+# Standard install target
+include(GNUInstallDirs)
+install(TARGETS masp
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
