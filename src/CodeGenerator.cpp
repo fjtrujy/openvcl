@@ -24,6 +24,7 @@
 #include <sstream>
 #include <fstream>
 #include <assert.h>
+#include <cmath>
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Class
@@ -48,11 +49,29 @@ CodeGenerator::~CodeGenerator()
 
 bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 {
+	// Detect if the source already contains a .vu directive
+	bool hasVuDirective = false;
+	for( std::list<Token>::const_iterator it = tokens.begin(); it != tokens.end(); ++it )
+	{
+		if( (*it).operand() && (*it).operand()->isPreprocessor() && (*it).operand()->name() == ".vu" )
+		{
+			hasVuDirective = true;
+			break;
+		}
+	}
+
 	if( m_name.length() > 0 )
 	{
 		m_codeLines.push_back(std::string("                    .global ") + m_name + std::string("_CodeStart") );
 		m_codeLines.push_back(std::string("                    .global ") + m_name + std::string("_CodeEnd") );
 		m_codeLines.push_back( std::string(m_name) + "_CodeStart:" );
+	}
+
+	// Ensure assembler mode and alignment are present for dvp-as even if input omitted .vu
+	if( !hasVuDirective )
+	{
+		m_codeLines.push_back(std::string("                    .p2align 8"));
+		m_codeLines.push_back(std::string("                    .vu "));
 	}
 
 	bool exitWritten = true;
@@ -164,8 +183,10 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 
 	if( !exitWritten )
 	{
-		Error::Display( Error( "No exit directives" ) );
-		return false;
+		// Auto-terminate with an exit pair if the last instruction wasn't closed
+		m_codeLines.push_back(std::string("                    nop[E]                          nop"));
+		m_codeLines.push_back(std::string("                    nop                             nop"));
+		// Do not treat as an error; some VCL programs end in a loop
 	}
 
 	if( m_name.length() > 0 )
@@ -290,8 +311,20 @@ std::string CodeGenerator::immediateArg(const Token::Argument& arg, const Token&
 		if( !e.solve() )
 			return arg.immediate();
 
+		// Prefer non-scientific formatting; if value is integral, emit as integer
+		double value = e.result();
+		double nearest = std::floor(value + 0.5);
 		std::stringstream s;
-		s << e.result();
+		if( std::fabs(value - nearest) < 1e-9 )
+		{
+			// integer
+			s << static_cast<long>(nearest);
+		}
+		else
+		{
+			s.setf(std::ios::fixed);
+			s << std::setprecision(6) << value;
+		}
 
 		return s.str();
 	}

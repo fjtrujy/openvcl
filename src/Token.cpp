@@ -38,8 +38,12 @@ bool Token::process( bool newSyntax )
 	else if( processOperand( operand(), newSyntax, error ) )
 		return true;
 
-	Error::Display( Error( "Invalid argument", *this, *error ) );
-	return false;
+    // Guard against null error details; ensure we don't dereference a null pointer
+    if( error )
+        Error::Display( Error( "Invalid argument", *this, *error ) );
+    else
+        Error::Display( Error( "Invalid argument", *this ) );
+    return false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -469,7 +473,7 @@ bool Token::processOperand( const Operand* operand, bool newSyntax, Token::Argum
 	setBroadcast( activeBroadcast );
 
 	// TODO: make this optional through a commandline-parameter
-	//printInformation( operand, std::cerr );
+	printInformation( operand, std::cerr );
 
 	return true;
 }
@@ -527,6 +531,9 @@ unsigned int Token::extractModifiers( const std::string& list )
 			modifiers |= (1<<PREDEC);
 		else if( name == "bc" )
 			modifiers |= (1<<BROADCAST);
+		else if( name == "wcomp" )
+			// treat 'wcomp' like a single-component selector requirement
+			modifiers |= (1<<FLAG);
 		else if( name == "noalias" )
 			modifiers |= (1<<NOALIAS);
 		else if( name == "write" )
@@ -697,6 +704,42 @@ bool Token::extractRegister( std::string name, Argument& argument, unsigned int 
 						return false;
 
 					alias = name.substr( 0, start-1 );
+				}
+			}
+		}
+
+		// Support old-syntax component selection appended directly to aliases,
+		// e.g. "gif_tag11x" or "xformed_vertw" → treat trailing xyzw as fields.
+		// Only allowed when not using new syntax and when fields are valid for this operand.
+		if( alias.empty() )
+		{
+			if( !newSyntax && !indirect )
+			{
+				// Find contiguous trailing xyzw characters
+				std::string::size_type end = name.size();
+				std::string::size_type pos = end;
+				while( pos > 0 )
+				{
+					char c = name[pos-1];
+					if( c == 'x' || c == 'y' || c == 'z' || c == 'w' )
+						pos--;
+					else
+						break;
+				}
+
+				if( pos < end )
+				{
+					std::string fieldStr = name.substr( pos );
+					unsigned int parsedFields = 0;
+					if( extractFields( fieldStr, parsedFields ) )
+					{
+						// Ensure this operand allows fields on the argument (dest/broadcast/flag)
+						if( !( hasModifier( DEST, modifiers ) || hasModifier( BROADCAST, modifiers ) || hasModifier( FLAG, modifiers ) ) )
+							return false;
+
+						fields |= parsedFields;
+						alias = name.substr( 0, pos );
+					}
 				}
 			}
 		}
