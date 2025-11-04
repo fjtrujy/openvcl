@@ -37,7 +37,7 @@ examples: $(TARGET)
 	$(MAKE) -C examples all
 
 clean:
-	$(MAKE) -C examples clean
+	-$(MAKE) -C examples clean
 	-rm -f $(TARGET) $(OBJECTS)
 
 distclean: clean
@@ -66,6 +66,10 @@ $(OBJDIR):
 	mkdir -p $(OBJDIR)
 
 # automatic dependency updates
+ifneq (,$(filter clean distclean,$(MAKECMDGOALS)))
+# Skip dependency generation/inclusion during clean targets
+else
 $(DEPENDFILE): $(SOURCES) $(HEADERS)
-	$(CC) $(CFLAGS) -MM $(SOURCES) | sed "s/\([^:]*\):/$(subst /,\/,$(OBJDIR))\/\1:/" > $(DEPENDFILE)
+	$(CXX) $(CXXFLAGS) -MM $(SOURCES) | sed "s/\([^:]*\):/$(subst /,\/,$(OBJDIR))\/\1:/" > $(DEPENDFILE)
 -include $(DEPENDFILE)
+endif
