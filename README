@@ -149,9 +149,9 @@ What about GASP?
 ----------------
 
 As most will notice, gasp has been removed from newer versions of the
-binutils. To reduce the loss of this tool, the contrib/ folder contains
-a version of MASP. This version is slightly modified to fix a bug with
-comments, and does the job of replacing gasp a lot easier. To enable the
-use of this tool, compile and install it, and then pass '--gasp "masp"' as
-an argument to OpenVCL. MASP is licensed under the GPL, please read the MASP
-documentation for licensing terms.
+binutils. To reduce the loss of this tool, use MASP, which is provided
+as a separate repository. Install MASP on your system (so that the
+`masp` binary is available on your PATH), and then pass '--gasp "masp"'
+as an argument to OpenVCL. Alternatively, you can pass a full path,
+for example '--gasp "/path/to/masp"'. MASP is licensed under the GPL;
+please read the MASP documentation for licensing terms.
