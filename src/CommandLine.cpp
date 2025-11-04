@@ -36,6 +36,7 @@ CommandLine::CommandLine()
 	m_threshold = 16;
 	m_timeout	= 4;
 	m_showVersion = false;
+	m_showRegisterInfo = false;
 
 	m_gasp = "gasp";
 	m_cpp = "cpp";
@@ -67,6 +68,7 @@ CommandLine::CommandLine()
 	m_options.push_back(Option('\0',"cpp",CPP_NAME,true));
 	m_options.push_back(Option('\0',"bthres",BRANCH_THRESHOLD,true));
 	m_options.push_back(Option('\0',"version",SHOW_VERSION,false));
+	m_options.push_back(Option('\0',"show-reg-alloc",SHOW_REGISTER_INFO,false));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -162,6 +164,7 @@ bool CommandLine::parse( int argc, char* argv[] )
 				case CPP_NAME: m_cpp = argument; break;
 				case BRANCH_THRESHOLD: m_threshold = strtoul(argument.c_str(),NULL,10); break;
 				case SHOW_VERSION: m_showVersion = true; break;
+				case SHOW_REGISTER_INFO: m_showRegisterInfo = true; break;
 
 				case IGNORE: break;
 				break;
@@ -208,10 +211,11 @@ void CommandLine::showUsage( std::ostream& stream )
 
 	stream << std::endl << "  OpenVCL exclusive parameters:" << std::endl;
 
-	stream << "  --gasp <name>   Execute <name> instead of 'gasp' when preprocessing." << std::endl;
-	stream << "  --cpp <name>    Execute <name> instead of 'cpp' when preprocessing." << std::endl;
-	stream << "  --bthres <val>  Number of times a dynamic branch can be visited. (Default: 16)" << std::endl;
-	stream << "  --version       Show program version." << std::endl;
+	stream << "  --gasp <name>      Execute <name> instead of 'gasp' when preprocessing." << std::endl;
+	stream << "  --cpp <name>       Execute <name> instead of 'cpp' when preprocessing." << std::endl;
+	stream << "  --bthres <val>     Number of times a dynamic branch can be visited. (Default: 16)" << std::endl;
+	stream << "  --version          Show program version." << std::endl;
+	stream << "  --show-reg-alloc   Show register allocation information during compilation." << std::endl;
 
 	stream << std::endl << "  If no input or output file are specified, standard I/O will be used instead." << std::endl;
 

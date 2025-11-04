@@ -765,6 +765,7 @@ bool Parser::allocateRegisters()
 	m_registerAllocator.setAvailableFloats( m_tokenizer.availableFloats() );
 	m_registerAllocator.setAvailableIntegers( m_tokenizer.availableIntegers() );
 	m_registerAllocator.setDynamicThreshold( m_cmdLine.threshold() );
+	m_registerAllocator.setShowRegisterInfo( m_cmdLine.showRegisterInfo() );
 
 	if( !m_registerAllocator.process( m_tokenizer.tokens() ) )
 		return false;

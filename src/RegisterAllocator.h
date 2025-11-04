@@ -56,6 +56,7 @@ public:
 	const std::string& name();
 
 	void setDynamicThreshold( unsigned int threshold );
+	void setShowRegisterInfo( bool show );
 
 protected:
 
@@ -99,6 +100,7 @@ private:
 
 	std::map< const Token*, unsigned int > m_dynamicTracker;
 	unsigned int m_dynamicThreshold;
+	bool m_showRegisterInfo;
 
 	std::map<Alias*,Alias*> m_aliases;
 };

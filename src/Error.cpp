@@ -87,11 +87,21 @@ std::string Error::toString() const
 
 	if( m_content & TOKEN )
 	{
-		s << m_token->line().file().name() << "(" << m_token->line().originalNumber() << ") : ";
+		// Note: Safely access token line information
+		// In case of dangling references, use generic prefix
+		try {
+			s << m_token->line().file().name() << "(" << m_token->line().originalNumber() << ") : ";
+		} catch(...) {
+			s << "openvcl: ";
+		}
 	}
 	else if( m_content & LINE )
 	{
-		s << m_line->file().name() << "(" << m_line->originalNumber() << ") : ";
+		try {
+			s << m_line->file().name() << "(" << m_line->originalNumber() << ") : ";
+		} catch(...) {
+			s << "openvcl: ";
+		}
 	}
 	else
 	{

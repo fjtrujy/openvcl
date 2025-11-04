@@ -165,6 +165,7 @@ public:
 	bool process( bool newSyntax );
 
 	const Line& line() const;
+	unsigned int lineNumber() const; // Safe accessor that uses cached value
 
 	void setLabel( const std::string& label );
 	const std::string& label() const;
@@ -207,6 +208,7 @@ private:
 	static bool validateAlias( const std::string& alias );
 
 	const Line& m_line;
+	unsigned int m_cachedLineNumber; // Cached to avoid dangling reference issues
 
 	std::string m_label;
 	std::string m_name;

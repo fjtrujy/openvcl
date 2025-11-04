@@ -473,7 +473,7 @@ bool Token::processOperand( const Operand* operand, bool newSyntax, Token::Argum
 	setBroadcast( activeBroadcast );
 
 	// TODO: make this optional through a commandline-parameter
-	printInformation( operand, std::cerr );
+	// printInformation( operand, std::cerr );
 
 	return true;
 }

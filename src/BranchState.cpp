@@ -220,7 +220,7 @@ void BranchState::updateDependency( Token::Argument& argument, State& state, Ali
 
 	if( !depend )
 	{
-		newDependency->alias()->addRange( newDependency->token().line().number(), newDependency->token().line().number() );
+		newDependency->alias()->addRange( newDependency->token().lineNumber(), newDependency->token().lineNumber() );
 		state.clearTrace();
 		state.setDependency( newDependency );
 		return;
@@ -234,9 +234,9 @@ void BranchState::updateDependency( Token::Argument& argument, State& state, Ali
 			if( (*k).isEntryPoint() )
 				entry = &*(*k).location();
 			else
-				newDependency->alias()->addRange( entry->line().number(), (*(*k).location()).line().number() );
+				newDependency->alias()->addRange( entry->line().number(), (*(*k).location()).lineNumber() );
 		}
-		newDependency->alias()->addRange( entry->line().number(), (*current()).line().number() );
+		newDependency->alias()->addRange( entry->line().number(), (*current()).lineNumber() );
 
 		if( state.dependency() )
 			newDependency->depend( state.dependency() );
@@ -248,10 +248,10 @@ void BranchState::updateDependency( Token::Argument& argument, State& state, Ali
 		if( state.dependency() )
 		{
 			newDependency->depend( state.dependency() );
-			newDependency->alias()->addRange( state.dependency()->token().line().number(), newDependency->token().line().number() );
+			newDependency->alias()->addRange( state.dependency()->token().lineNumber(), newDependency->token().lineNumber() );
 		}
 		else
-			newDependency->alias()->addRange( newDependency->token().line().number(), newDependency->token().line().number() );
+			newDependency->alias()->addRange( newDependency->token().lineNumber(), newDependency->token().lineNumber() );
 	}
 
 	state.setDependency( newDependency );

@@ -44,6 +44,7 @@ RegisterAllocator::RegisterAllocator()
 	}
 
 	m_dynamicThreshold = 16;
+	m_showRegisterInfo = false;
 	m_currState = OUTSIDE;
 }
 
@@ -278,7 +279,7 @@ bool RegisterAllocator::processBranchState( BranchState* state, std::list<Token>
 					{
 						if( !state->readFloat( (*i) ) )
 						{
-							Error::Display( Error( "Read-attempt from uninitialized element", token, *i ) );
+							std::cerr << "openvcl: error: Read-attempt from uninitialized float register" << std::endl;
 							return false;
 						}
 					}
@@ -293,7 +294,7 @@ bool RegisterAllocator::processBranchState( BranchState* state, std::list<Token>
 					{
 						if( !state->readInteger( (*i) ) )
 						{
-							Error::Display( Error( "Read-attempt from uninitialized element", token, *i ) );
+							std::cerr << "openvcl: error: Read-attempt from uninitialized integer register" << std::endl;
 							return false;
 						}
 					}
@@ -308,7 +309,7 @@ bool RegisterAllocator::processBranchState( BranchState* state, std::list<Token>
 					{
 						if( !state->readAccumulator( (*i).fields() ) )
 						{
-							Error::Display( Error( "Read-attempt from uninitialized element", token, *i ) );
+							std::cerr << "openvcl: error: Read-attempt from uninitialized accumulator" << std::endl;
 							return false;
 						}
 					}
@@ -323,7 +324,7 @@ bool RegisterAllocator::processBranchState( BranchState* state, std::list<Token>
 					{
 						if( !state->readQ() )
 						{
-							Error::Display( Error( "Read-attempt from uninitialized element", token, *i ) );
+							std::cerr << "openvcl: error: Read-attempt from uninitialized Q register" << std::endl;
 							return false;
 						}
 					}
@@ -338,7 +339,7 @@ bool RegisterAllocator::processBranchState( BranchState* state, std::list<Token>
 					{
 						if( !state->readP() )
 						{
-							Error::Display( Error( "Read-attempt from uninitialized element", token, *i ) );
+							std::cerr << "openvcl: error: Read-attempt from uninitialized P register" << std::endl;
 							return false;
 						}
 					}
@@ -353,7 +354,7 @@ bool RegisterAllocator::processBranchState( BranchState* state, std::list<Token>
 					{
 						if( !state->readR() )
 						{
-							Error::Display( Error( "Read-attempt from uninitialized element", token, *i ) );
+							std::cerr << "openvcl: error: Read-attempt from uninitialized R register" << std::endl;
 							return false;
 						}
 					}
@@ -368,7 +369,7 @@ bool RegisterAllocator::processBranchState( BranchState* state, std::list<Token>
 					{
 						if( !state->readI() )
 						{
-							Error::Display( Error( "Read-attempt from uninitialized element", token, *i ) );
+							std::cerr << "openvcl: error: Read-attempt from uninitialized I register" << std::endl;
 							return false;
 						}
 					}
@@ -500,6 +501,49 @@ bool RegisterAllocator::processAliases()
 {
 	// allocate registers that do not overlap usage
 
+	// Count total aliases by type
+	int totalFloatAliases = 0;
+	int totalIntAliases = 0;
+	int preallocatedFloats = 0;
+	int preallocatedInts = 0;
+
+	for( std::map<Alias*,Alias*>::iterator i = m_aliases.begin(); i != m_aliases.end(); ++i )
+	{
+		if( i->first->type() == Alias::FLOAT )
+		{
+			totalFloatAliases++;
+			if( i->first->allocatedRegister() )
+				preallocatedFloats++;
+		}
+		else
+		{
+			totalIntAliases++;
+			if( i->first->allocatedRegister() )
+				preallocatedInts++;
+		}
+	}
+
+	// Count available registers
+	int availableFloats = 0;
+	int availableInts = 0;
+	for( int i = 0; i < 32; i++ )
+		if( m_floats[i].available() )
+			availableFloats++;
+	for( int i = 0; i < 16; i++ )
+		if( m_integers[i].available() )
+			availableInts++;
+
+	if( m_showRegisterInfo )
+	{
+		std::cerr << "\n=== Register Allocation Debug ===" << std::endl;
+		std::cerr << "Float registers: " << availableFloats << " available, "
+		          << (totalFloatAliases - preallocatedFloats) << " needed (total aliases: "
+		          << totalFloatAliases << ", preallocated: " << preallocatedFloats << ")" << std::endl;
+		std::cerr << "Integer registers: " << availableInts << " available, "
+		          << (totalIntAliases - preallocatedInts) << " needed (total aliases: "
+		          << totalIntAliases << ", preallocated: " << preallocatedInts << ")" << std::endl;
+	}
+
 	for( std::map<Alias*,Alias*>::iterator i = m_aliases.begin(); i != m_aliases.end(); ++i )
 	{
 		Alias* dest = i->first;
@@ -544,7 +588,14 @@ bool RegisterAllocator::processAliases()
 		}
 
 		if( !dest->allocatedRegister() )
+		{
+			if( m_showRegisterInfo )
+			{
+				std::cerr << "Failed to allocate " << (dest->type() == Alias::FLOAT ? "FLOAT" : "INTEGER")
+				          << " register for alias" << std::endl;
+			}
 			return false;
+		}
 		//assert( dest->allocatedRegister() );
 	}
 

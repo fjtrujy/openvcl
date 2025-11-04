@@ -1,6 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-inline Token::Token( const Line& line ) : m_line(line)
+inline Token::Token( const Line& line ) : m_line(line), m_cachedLineNumber(line.number())
 {
 	m_flags = 0;
 	m_broadcast = 0;
@@ -10,7 +10,7 @@ inline Token::Token( const Line& line ) : m_line(line)
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-inline Token::Token( const Token& o ) : m_line(o.m_line)
+inline Token::Token( const Token& o ) : m_line(o.m_line), m_cachedLineNumber(o.m_cachedLineNumber)
 {
 	m_label = o.m_label;
 	m_name = o.m_name;
@@ -114,6 +114,13 @@ inline const Operand* Token::operand() const
 inline const Line& Token::line() const
 {
 	return m_line;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+inline unsigned int Token::lineNumber() const
+{
+	return m_cachedLineNumber;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

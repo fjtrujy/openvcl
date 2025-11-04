@@ -40,6 +40,7 @@ public:
 	bool unrollLoops() const;
 	bool generateMpg() const;
 	bool showUsage() const;
+	bool showRegisterInfo() const;
 
 	void setRunGasp( bool runGasp );
 	bool runGasp() const;
@@ -92,6 +93,7 @@ private:
 		CPP_NAME,
 		BRANCH_THRESHOLD,
 		SHOW_VERSION,
+		SHOW_REGISTER_INFO,
 
 		IGNORE
 	};
@@ -128,6 +130,7 @@ private:
 	bool m_generateMpg;
 	bool m_newSyntax;
 	bool m_showUsage;
+	bool m_showRegisterInfo;
 
 	unsigned int m_threshold;
 	unsigned int m_timeout;
