@@ -50,15 +50,6 @@ jobs:
           mingw-w64-i686-gcc mingw-w64-i686-make mingw-w64-i686-cmake
         update: true
 
-    - name: Compile masp
-      run: |
-        export PS2DEV=$PWD/ps2dev
-        export PATH="$PS2DEV/bin:$PATH"
-        cd contrib/masp
-        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_INTERNAL_LIBIBERTY=ON -DCMAKE_INSTALL_PREFIX="$PS2DEV"
-        cmake --build build -j $(getconf _NPROCESSORS_ONLN)
-        cmake --install build
-
     - name: Compile OpenVCL
       run: |
         export PS2DEV=$PWD/ps2dev

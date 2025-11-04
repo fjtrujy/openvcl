@@ -20,8 +20,9 @@ jobs:
 
     - name: Compile masp
       run: |
-        cd contrib/masp
-        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_INTERNAL_LIBIBERTY=ON -DCMAKE_INSTALL_PREFIX="$PS2DEV"
+        git clone https://github.com/fjtrujy/masp.git
+        cd masp
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PS2DEV"
         cmake --build build -j $(getconf _NPROCESSORS_ONLN)
         cmake --install build
 
