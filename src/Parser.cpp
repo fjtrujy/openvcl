@@ -256,9 +256,19 @@ void Parser::setupOperands()
 	m_operands.push_back( Operand( "ITOF15",				2, Operand::UPPER|Operand::DEST,			upper4,					Operand::FMAC, 1, 4		) );
 
 	// TODO: complete templates for these ops
-	m_operands.push_back( Operand( "CLIP",					2, Operand::UPPER|Operand::XYZ,				"vf:dest:write,vf:wcomp",					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "CLIPw",					2, Operand::UPPER|Operand::XYZ,				"vf:dest:write,vf:wcomp",					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "CLIPLw",				2, Operand::UPPER|Operand::XYZ,				"vf:dest:write,vf:wcomp",					Operand::FMAC, 1, 4		) );
+	// CLIP's first VF operand is hardware-semantically a SOURCE that
+	// gets clipped against +-VF.w of the second operand; only the CLIP
+	// register itself is written.  Marking the first arg ':write' as
+	// the other FMAC ops do (where the first VF IS the destination)
+	// makes the register allocator treat clipw as starting a new
+	// lifetime for that alias, breaking the data-flow chain from the
+	// preceding mul that produces what clipw is supposed to read.
+	// Use ':dest' (field-aware) without ':write' so the allocator
+	// keeps the alias consistent between mul-of-product and the clipw
+	// that consumes it.
+	m_operands.push_back( Operand( "CLIP",					2, Operand::UPPER|Operand::XYZ,				"vf:dest,vf:wcomp",					Operand::FMAC, 1, 4		) );
+	m_operands.push_back( Operand( "CLIPw",					2, Operand::UPPER|Operand::XYZ,				"vf:dest,vf:wcomp",					Operand::FMAC, 1, 4		) );
+	m_operands.push_back( Operand( "CLIPLw",				2, Operand::UPPER|Operand::XYZ,				"vf:dest,vf:wcomp",					Operand::FMAC, 1, 4		) );
 
 	// VU Lower Execution Path
 
