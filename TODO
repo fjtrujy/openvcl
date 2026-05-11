@@ -3,6 +3,27 @@
 
  * GASP preparsing code does not track the current filename.
 
+ * ps2gl GL_QUADS renderers do not render (filed 2026-05-11):
+   ps2gl's quad-specialised shaders (general_quad, general_pv_diff_quad,
+   general_nospec_quad) produce VSM output that renders nothing on PCSX2.
+   The triangle siblings (general, general_pv_diff, general_nospec) work.
+   Building ps2gl with -DPS2GL_USE_SCE_VSM=ON (bypasses openvcl, uses the
+   Sony reference VSMs) makes the same shaders render correctly, so the
+   fault is in openvcl's emitted code, not in ps2gl host-side code.
+   First lead: VI02 (the xtop output / GIF DMA base address) appears to
+   be reused as a loop scratch in the openvcl-emitted quad shaders, e.g.
+   in build-test/vu1/general_quad_vcl.vsm near lines 28-31:
+       iadd VI02, VI03, VI09
+       iadd VI05, VI02, VI09
+       iadd VI02, VI05, VI09
+   The triangle version uses VI05/VI06 instead.  Reproducible on the
+   baseline ps2gl-branch commit e407703 -- predates the recent
+   (bc41a56/303c528/41dff12/5c0227b/a2a7d9d) work.
+
+   Workaround: -DPS2GL_USE_SCE_VSM=ON.
+   Investigation continues; see test/integration if a small repro
+   shader can be extracted.
+
    ---------- Fixed entries kept for reference ----------
 
  * (FIXED) The 'range' modifier for .init_vf / .init_vi now works
