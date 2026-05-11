@@ -568,6 +568,8 @@ unsigned int Token::extractModifiers( const std::string& list )
 			modifiers |= (1<<ROTATE);
 		else if( name == "raw" )
 			modifiers |= (1<<RAW);
+		else if( name == "range" )
+			modifiers |= (1<<RANGE);
 
 		if( std::string::npos == next )
 			break;
@@ -591,6 +593,35 @@ bool Token::extractRegister( std::string name, Argument& argument, unsigned int 
 		case Argument::FLOAT_REGISTER:		prefix = "vf"; maxreg = 32; break;
 		case Argument::INTEGER_REGISTER:	prefix = "vi"; maxreg = 16; break;
 		default: return false;
+	}
+
+	// Register-range shorthand: when the operand template carries the
+	// 'range' modifier, accept "vfXX-vfYY" (or "viXX-viYY") and store the
+	// pair as a RANGE argument.  Consumed by Tokenizer for .init_vf etc.
+	// We require both halves to use the same prefix as the argument type,
+	// and the lower bound must come first.
+	if( !indirect && hasModifier( RANGE, modifiers ) )
+	{
+		std::string::size_type dash = name.find('-');
+		if( std::string::npos != dash )
+		{
+			std::string left  = name.substr(0, dash);
+			std::string right = name.substr(dash+1);
+
+			if( !ncasecompare(0, 2, left, prefix) && !ncasecompare(0, 2, right, prefix)
+			    && left.length() >= 3 && right.length() >= 3
+			    && isdigit(left[2]) && isdigit(right[2]) )
+			{
+				int lo = atoi(left.c_str()  + 2);
+				int hi = atoi(right.c_str() + 2);
+
+				if( lo >= maxreg || hi >= maxreg || lo > hi )
+					return false;
+
+				argument.setRange(lo, hi);
+				return true;
+			}
+		}
 	}
 
 	// if this is a indirect read, parse it properly

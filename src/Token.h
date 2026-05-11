@@ -115,6 +115,8 @@ public:
 		Content m_content;
 
 		int m_regNumber;
+		int m_lower;
+		int m_upper;
 		std::string m_alias;
 		std::string m_immediate;
 
@@ -148,7 +150,8 @@ public:
 		ZERO,
 		EVALUATE,
 		ROTATE,
-		RAW
+		RAW,
+		RANGE     // operand template accepts a register-range (e.g. vf01-vf04)
 	};
 
 	enum

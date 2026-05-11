@@ -439,6 +439,21 @@ bool Tokenizer::handleToken( Token& token )
 
 		for( std::list<Token::Argument>::iterator i = token.arguments().begin(); i != token.arguments().end(); i++ )
 		{
+			if( (*i).content() == Token::Argument::RANGE )
+			{
+				// Expand "vfXX-vfYY" into individual bits.
+				int lo = (*i).lower();
+				int hi = (*i).upper();
+				if( lo <= 0 )
+				{
+					Error::Display( Error( "Cannot insert constant register VF00 into register allocation", token ) );
+					return false;
+				}
+				for( int r = lo; r <= hi; ++r )
+					setAvailableFloats( availableFloats() | (1<<r) );
+				continue;
+			}
+
 			if( !(*i).regNumber() )
 			{
 				Error::Display( Error( "Cannot insert constant register VF00 into register allocation", token ) );
@@ -477,6 +492,20 @@ bool Tokenizer::handleToken( Token& token )
 
 		for( std::list<Token::Argument>::iterator i = token.arguments().begin(); i != token.arguments().end(); i++ )
 		{
+			if( (*i).content() == Token::Argument::RANGE )
+			{
+				int lo = (*i).lower();
+				int hi = (*i).upper();
+				if( lo <= 0 )
+				{
+					Error::Display( Error( "Cannot insert constant register VI00 into register allocation", token ) );
+					return false;
+				}
+				for( int r = lo; r <= hi; ++r )
+					setAvailableIntegers( availableIntegers() | (1<<r) );
+				continue;
+			}
+
 			if( !(*i).regNumber() )
 			{
 				Error::Display( Error( "Cannot insert constant register VI00 into register allocation", token ) );

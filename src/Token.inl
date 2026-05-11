@@ -133,6 +133,8 @@ inline Token::Argument::Argument( const std::string& text )
 	m_content = INVALID_CONTENT;
 
 	m_regNumber = 0;
+	m_lower = 0;
+	m_upper = 0;
 
 	m_flags = 0;
 	m_fields = 0;
@@ -150,6 +152,8 @@ inline Token::Argument::Argument( const Argument& a )
 	m_content = a.m_content;
 
 	m_regNumber = a.m_regNumber;
+	m_lower = a.m_lower;
+	m_upper = a.m_upper;
 	m_alias = a.m_alias;
 	m_immediate = a.m_immediate;
 
@@ -166,6 +170,8 @@ inline void Token::Argument::resetResult()
 	m_type = INVALID_TYPE;
 	m_content = INVALID_CONTENT;
 	m_regNumber = 0;
+	m_lower = 0;
+	m_upper = 0;
 	m_flags = 0;
 	m_fields = 0;
 	m_alias.clear();
@@ -249,6 +255,29 @@ inline void Token::Argument::setAlias( const std::string& alias )
 {
 	m_content = ALIAS;
 	m_alias = alias;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+inline void Token::Argument::setRange( int lower, int upper )
+{
+	m_content = RANGE;
+	m_lower = lower;
+	m_upper = upper;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+inline int Token::Argument::lower() const
+{
+	return m_lower;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+inline int Token::Argument::upper() const
+{
+	return m_upper;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -1,14 +1,17 @@
  * Output-parameters are only applied if the current code-block exits its
    branch at the 'proper' point.
 
- * Specifying .init_vf with a register-range will result in an
-   argument-error.  This will be solved when the tokenizer has been
-   extended to handle the 'range' modifier.
-   (pinned EXPECTED_FAIL in test/integration/test_init_vf_range.cpp)
-
  * GASP preparsing code does not track the current filename.
 
    ---------- Fixed entries kept for reference ----------
+
+ * (FIXED) The 'range' modifier for .init_vf / .init_vi now works
+   end-to-end: extractRegister parses "vfXX-vfYY" / "viXX-viYY" into
+   a Content::RANGE argument and the Tokenizer expands the range
+   into the same availableFloats / availableIntegers bits the
+   comma-list form sets.  Inverted ranges (lower > upper) are
+   rejected.  Regression-pinned by
+   test/integration/test_init_vf_range.cpp.
 
  * (FIXED) CLIP operand validation: the parser was already emitting
    "Invalid argument" diagnostics for malformed CLIP operands, but

@@ -1,35 +1,30 @@
-// Integration test: .init_vf with a register range
+// Regression test: .init_vf with a register range is accepted
 //
-// openvcl/TODO documents that .init_vf with a register range like
-// "vf01-vf04" currently errors out:
+// openvcl/TODO previously documented that .init_vf with "vf01-vf04"
+// errored out because the tokenizer didn't understand the 'range'
+// modifier.  The range modifier is now implemented end-to-end:
+// extractRegister parses "vfXX-vfYY", stores it as a Content::RANGE
+// argument, and the Tokenizer's .init_vf consumer expands the range
+// into the same availableFloats bits the comma-list form sets.
 //
-//     * Specifying .init_vf with a register-range will result in an
-//       argument-error.  This will be solved when the tokenizer has
-//       been extended to handle the 'range' modifier.
-//
-// Pinned as EXPECTED_FAIL.  An earlier draft of this test thought the
-// bug was already fixed -- it was actually masked by the silent-failure
-// bug that has since been patched (main.cpp now bubbles Error::HasErrors
-// up into the exit code).  With that mask removed the original TODO
-// reproduces cleanly, so the test goes back to known-broken.
+// This test pins the working behavior.  An "inverted" range
+// (lower > upper) is also expected to be rejected.
 
 #include "test_harness.h"
 #include "openvcl_runner.h"
 
 TEST_CASE("openvcl: .init_vf with a register range is accepted")
 {
-    EXPECTED_FAIL("openvcl TODO: .init_vf vf01-vf04 still errors out");
-
-    // Minimal VCL fragment exercising only the .init_vf directive with
-    // a range.  Leading tabs are required: openvcl's tokenizer rejects
-    // directives that start in column 0 with "Invalid characters".
+    // Note: code statements live in the body between --endenter and
+    // --exit, not inside --enter/--endenter (that block only accepts
+    // input-parameter directives like in_vf / in_vi).
     const std::string input =
         "\t.init_vf vf01-vf04\n"
         "\t.init_vi_all\n"
         "\t.name vsmInitVfRangeTest\n"
         "\t--enter\n"
-        "\tnop\n"
         "\t--endenter\n"
+        "\tnop\n"
         "\t--exit\n"
         "\t--endexit\n";
 
@@ -39,9 +34,31 @@ TEST_CASE("openvcl: .init_vf with a register range is accepted")
 
     ::test::RunResult r = ::test::run_openvcl(args, input);
 
-    // What we expect once the bug is fixed:
-    //   exit 0, no "argument-error" diagnostic in stderr.
     CHECK(r.exit_code == 0);
-    CHECK(r.stderr_data.find("argument-error") == std::string::npos);
-    CHECK(r.stderr_data.find("error")          == std::string::npos);
+    CHECK(r.stderr_data.find("Invalid argument") == std::string::npos);
+}
+
+TEST_CASE("openvcl: .init_vf rejects an inverted register range")
+{
+    // "vf05-vf02" is malformed -- lower bound exceeds upper.  The
+    // range parser must reject it cleanly rather than silently
+    // expand into an empty (or wraparound) set of register bits.
+    const std::string input =
+        "\t.init_vf vf05-vf02\n"
+        "\t.init_vi_all\n"
+        "\t.name vsmBadRange\n"
+        "\t--enter\n"
+        "\t--endenter\n"
+        "\tnop\n"
+        "\t--exit\n"
+        "\t--endexit\n";
+
+    std::vector<std::string> args;
+    args.push_back("-o");
+    args.push_back("-");
+
+    ::test::RunResult r = ::test::run_openvcl(args, input);
+
+    CHECK(r.exit_code != 0);
+    CHECK(r.stderr_data.find("Invalid argument") != std::string::npos);
 }
