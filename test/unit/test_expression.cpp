@@ -55,3 +55,29 @@ TEST_CASE("Expression: parentheses override precedence")
     CHECK_APPROX(eval("(1 + 2) * 3"),  9.0);
     CHECK_APPROX(eval("1 - (2 + 3)"), -4.0);
 }
+
+TEST_CASE("Expression: division is left-associative like subtraction")
+{
+    // Same operator-priority compare governs / as governs -, so this
+    // is an indirect regression check for bc41a56 on a different op.
+    CHECK_APPROX(eval("24 / 4 / 3"), 2.0);   // (24/4)/3 = 2,  NOT 24/(4/3) = 18
+    CHECK_APPROX(eval("100 / 5 * 2"), 40.0); // (100/5)*2 = 40, NOT 100/(5*2) = 10
+}
+
+TEST_CASE("Expression: mixed integer arithmetic produces integer-shaped results")
+{
+    // The constant-folder is double-based internally but the most common
+    // openvcl use case is integer offset math (e.g. for memory addresses).
+    // These cases verify integer arithmetic stays integer-valued.
+    CHECK_APPROX(eval("7 * 8"), 56.0);
+    CHECK_APPROX(eval("100 - 25 + 5"), 80.0);
+    CHECK_APPROX(eval("3 * 4 + 2 * 5"), 22.0);
+}
+
+TEST_CASE("Expression: zero and identity")
+{
+    CHECK_APPROX(eval("0 + 0"), 0.0);
+    CHECK_APPROX(eval("5 - 5"), 0.0);
+    CHECK_APPROX(eval("0 * 100"), 0.0);
+    CHECK_APPROX(eval("1 * 42"), 42.0);
+}
