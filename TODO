@@ -1,16 +1,21 @@
  * Output-parameters are only applied if the current code-block exits its
    branch at the 'proper' point.
 
- * GASP preparsing code does not track the current filename.
+ * Specifying .init_vf with a register-range will result in an
+   argument-error.  This will be solved when the tokenizer has been
+   extended to handle the 'range' modifier.
+   (pinned EXPECTED_FAIL in test/integration/test_init_vf_range.cpp)
 
- * The CLIP operands are now present but not properly validated.
-   (pinned as EXPECTED_FAIL in test/integration/test_clip_validation.cpp)
+ * GASP preparsing code does not track the current filename.
 
    ---------- Fixed entries kept for reference ----------
 
- * (FIXED) Specifying .init_vf with a register-range used to result in an
-   argument-error.  The tokenizer now accepts ranges; regression-pinned by
-   test/integration/test_init_vf_range.cpp.
+ * (FIXED) CLIP operand validation: the parser was already emitting
+   "Invalid argument" diagnostics for malformed CLIP operands, but
+   Error::Display did not bump any counter, so main() exited 0 even
+   when errors had been reported.  Error::HasErrors now tracks
+   non-warning errors and the main loop uses it to fail the build.
+   Regression-pinned by test/integration/test_clip_validation.cpp.
 
  * (FIXED) The register-allocator used to be strictly line-based and miss
    reuse of values across loop iterations (e.g. 'move test,test' with no

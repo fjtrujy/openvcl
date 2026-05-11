@@ -24,6 +24,12 @@ public:
 	static void SetFilename( const std::string& filename );
 	static void Display( const Error& error );
 
+	// True when at least one non-warning Error has been Display()'d since
+	// process start.  Used by main() to fail the build on any reported
+	// error, instead of silently producing partial / empty output.
+	static bool HasErrors();
+	static void ResetErrorCount();
+
 private:
 
 	enum
@@ -43,6 +49,7 @@ private:
 	bool m_warning;
 
 	static std::list<Error> ms_errors;
+	static unsigned int ms_errorCount;
 };
 
 }

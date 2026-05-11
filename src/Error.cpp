@@ -7,6 +7,7 @@ namespace vcl
 {
 
 std::list<Error> Error::ms_errors;
+unsigned int Error::ms_errorCount = 0;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -157,6 +158,21 @@ std::string Error::toString() const
 void Error::Display( const Error& e )
 {
 	std::cerr << e.toString() << std::endl;
+	// Track non-warning errors so main() can fail the run with a non-zero
+	// exit code.  Without this, openvcl prints diagnostics and still
+	// reports success, which lets broken VCL silently produce empty .vsm.
+	if( !e.m_warning )
+		++ms_errorCount;
+}
+
+bool Error::HasErrors()
+{
+	return ms_errorCount > 0;
+}
+
+void Error::ResetErrorCount()
+{
+	ms_errorCount = 0;
 }
 
 }
