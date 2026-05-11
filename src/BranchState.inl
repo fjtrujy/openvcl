@@ -2,6 +2,7 @@ inline BranchState::BranchState( RegisterAllocator& allocator ) : m_allocator(al
 {
 	m_accumulatorFields = 0;
 	m_registerFields = 0;
+	m_currentToken = NULL;
 
 	// initialize constant registers
 	writeFloat( 0, 0xf );
@@ -47,6 +48,11 @@ inline RegisterAllocator& BranchState::allocator() const
 inline void BranchState::setCurrent( std::list<Token>::iterator current )
 {
 	m_current = current;
+	if( current != std::list<Token>::iterator() )
+	{
+		// store a stable pointer to the current token to avoid iterator misuse elsewhere
+		m_currentToken = &(*m_current);
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

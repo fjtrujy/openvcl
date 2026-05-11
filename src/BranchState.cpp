@@ -201,7 +201,11 @@ void BranchState::updateDependency( Token::Argument& argument, State& state, Ali
 
 		newDependency = new Dependency;
 		newDependency->setAlias( newAlias );
-		newDependency->setToken( *current() );
+		// Use a stable pointer to the current token when available
+		if( m_currentToken )
+			newDependency->setToken( *m_currentToken );
+		else
+			newDependency->setToken( *current() );
 		newDependency->setState( this );			
 
 		argument.setDependency( newDependency );

@@ -132,11 +132,21 @@ bool RegisterAllocator::process( std::list<Token>& tokens )
 
 				if( "in_vf" == (*i).operand()->name() )
 				{
+					if( (*i).arguments().empty() )
+					{
+						Error::Display( Error( "Missing argument to in_vf", *i ) );
+						return false;
+					}
 					const Token::Argument& arg = *((*i).arguments().begin());
 					branchState->setFloatInput( arg.immediate(), arg.regNumber() );
 				}
 				else if( "in_vi" == (*i).operand()->name() )
 				{
+					if( (*i).arguments().empty() )
+					{
+						Error::Display( Error( "Missing argument to in_vi", *i ) );
+						return false;
+					}
 					const Token::Argument& arg = *((*i).arguments().begin());
 					branchState->setIntegerInput( arg.immediate(), arg.regNumber() );
 				}
@@ -160,6 +170,11 @@ bool RegisterAllocator::process( std::list<Token>& tokens )
 
 			case CODE:
 			{
+				if( !branchState )
+				{
+					Error::Display( Error( "Internal error: missing branch state before CODE block" ) );
+					return false;
+				}
 				// locate end of codeblock
 				for( ; next != tokens.end(); next++ )
 				{
@@ -199,6 +214,11 @@ bool RegisterAllocator::process( std::list<Token>& tokens )
 
 				if( "out_vf" == (*i).operand()->name() )
 				{
+					if( (*i).arguments().empty() )
+					{
+						Error::Display( Error( "Missing argument to out_vf", *i ) );
+						return false;
+					}
 					const Token::Argument& arg = *((*i).arguments().begin());
 
 					if( branchState )
@@ -206,6 +226,11 @@ bool RegisterAllocator::process( std::list<Token>& tokens )
 				}
 				else if( "out_vi" == (*i).operand()->name() )
 				{
+					if( (*i).arguments().empty() )
+					{
+						Error::Display( Error( "Missing argument to out_vi", *i ) );
+						return false;
+					}
 					const Token::Argument& arg = *((*i).arguments().begin());
 					if( branchState )
 						branchState->setIntegerOutput( arg.immediate(), arg.regNumber() );
@@ -225,6 +250,11 @@ bool RegisterAllocator::process( std::list<Token>& tokens )
 	std::list<BranchState*>::iterator j;
 	for( j = m_states.begin(); j != m_states.end(); j++ )
 	{
+		if( !(*j) )
+		{
+			Error::Display( Error( "Internal error: null branch state before processing" ) );
+			return false;
+		}
 		if( !processBranchState( *j, tokens.end() ) )
 			return false;
 	}

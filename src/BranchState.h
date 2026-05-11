@@ -173,6 +173,7 @@ private:
 
 	std::list<Token>::iterator m_current;
 	std::list<Token>::iterator m_exitPoint;
+	Token* m_currentToken;
 
 	std::map< const Token*, std::vector<const Token*> > m_branches;
 
