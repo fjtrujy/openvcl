@@ -50,6 +50,16 @@ namespace test
         return n;
     }
 
+    // When true, the runner treats the current test as a "known-broken" entry:
+    // failures inside the test do NOT bump the overall exit code, but a test
+    // that unexpectedly passes is flagged so the developer knows to remove the
+    // marker (the underlying bug was fixed).
+    inline bool& current_test_expects_failure()
+    {
+        static bool b = false;
+        return b;
+    }
+
     struct AutoRegister
     {
         AutoRegister(const char* name, void (*fn)())
@@ -95,6 +105,16 @@ namespace test
                     ::test::current_test_name(), __FILE__, __LINE__, #cond);               \
             return;                                                                        \
         }                                                                                  \
+    } while (0)
+
+// Mark the current test as "known-broken with reason".  Failures inside this
+// test don't fail the run; instead they're reported as expected.  If the test
+// somehow passes anyway, the runner flags it so we know to drop the marker.
+#define EXPECTED_FAIL(reason)                                                              \
+    do {                                                                                   \
+        ::test::current_test_expects_failure() = true;                                     \
+        fprintf(stderr, "  [known issue] %s: %s\n",                                        \
+                ::test::current_test_name(), reason);                                      \
     } while (0)
 
 #define CHECK_APPROX(a, b)                                                                 \

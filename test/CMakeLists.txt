@@ -49,11 +49,22 @@ set(OPENVCL_TEST_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test_main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_smoke.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_expression.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/integration/openvcl_runner.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_init_vf_range.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_clip_validation.cpp
 )
 
 add_executable(openvcl_unit_tests
     ${OPENVCL_TEST_SOURCES}
     ${OPENVCL_LIB_SOURCES}
+)
+
+# The integration tests fork ./openvcl as a child process and need to know
+# where the binary lives.  The Makefile build puts it at ${OPENVCL_ROOT}/openvcl,
+# so we point there.  The path is baked in at compile time as a string macro;
+# integration tests check that the file exists before running.
+target_compile_definitions(openvcl_unit_tests PRIVATE
+    OPENVCL_BIN="${OPENVCL_ROOT}/openvcl"
 )
 
 # Deliberately NOT adding ${OPENVCL_ROOT}/src to the include path: macOS's
