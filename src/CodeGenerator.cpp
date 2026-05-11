@@ -129,6 +129,39 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 		if( (token.operand()->flags()&Operand::FILTERED) )
 			continue;
 
+		// --- DUAL-PIPE PAIRING ---
+		// Adjacent-only first cut: peek at the immediately-next token in
+		// the list.  If we can pair it with the current token, emit one
+		// combined line and consume both.  Otherwise fall through to the
+		// existing single-token emission below.
+		//
+		// We keep the iterator advanced past the partner by toggling a
+		// flag on the outer scope so the next loop iteration knows to
+		// skip its own emission step.  Labels / preprocessor side-effects
+		// for the partner still run because they live before this
+		// emission point.
+		{
+			std::list<Token>::const_iterator p = k;
+			++p;
+			if( p != tokens.end() )
+			{
+				const Token& partner = *p;
+				if( isEmittableInstruction(partner)
+				    && partner.label().length() == 0
+				    && tokensCanPair(token, partner) )
+				{
+					std::string pairedLine;
+					if( token.operand()->isLowerExecutionPath() )
+						pairedLine = formatPairedLine(partner, token);
+					else
+						pairedLine = formatPairedLine(token, partner);
+					m_codeLines.push_back(pairedLine);
+					++k;
+					continue;
+				}
+			}
+		}
+
 		instruction = generateInstruction(token);
 
 		// emit original sourcecode as a comment
@@ -207,6 +240,264 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 void CodeGenerator::addNopLine()
 {
 	m_codeLines.push_back(std::string("                    nop                             nop"));
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Dual-pipe pairing helpers.
+//
+// VU1 issues two instructions per cycle: one upper-pipe (FMAC) and one
+// lower-pipe (LSU / IALU / BRU / FDIV / RANDU / EFU).  Sony's vcl fills both
+// slots per cycle for ~2x throughput; openvcl historically emits a single
+// instruction per cycle with NOP on the unused pipe.  This pass pairs the
+// current token with the immediately-following token when (and only when)
+// they sit on different pipes, have no data dependency in either direction,
+// neither is a hard-scheduled instruction (BRU/FDIV/EFU), neither carries
+// a label, and neither is marked PREORDERED.  This is the minimum-viable
+// pairing — it does not hoist instructions across non-adjacent positions.
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+bool CodeGenerator::isEmittableInstruction( const Token& t )
+{
+	// Mirrors the gating conditions in beginProcess() that decide whether
+	// a token reaches the instruction-emission code path.
+	if( !t.operand() )
+		return false;
+	if( t.flags() & Token::IGNORED )
+		return false;
+	if( !(t.flags() & Token::PROCESSED) && !(t.operand()->flags() & Operand::PREPROCESSOR) )
+		return false;
+	if( t.operand()->flags() & Operand::PREPROCESSOR )
+		return false;
+	if( t.operand()->flags() & Operand::FILTERED )
+		return false;
+	if( t.operand()->unit() == Operand::ENTER )
+		return false;
+	if( t.operand()->unit() == Operand::EXIT )
+		return false;
+	return true;
+}
+
+// Helper: identify the set of single-instance "implicit" resources
+// (ACC / Q / P / I / R) touched by a token, distinguishing reads and
+// writes.  These resources have NO Alias and aren't routed through the
+// register allocator, so the only way to spot conflicts is by inspecting
+// the operand template + flags.
+//
+// Returns two bitmasks, indexed by the bits below.
+namespace {
+	enum ResourceBit {
+		RES_ACC = 1 << 0,
+		RES_Q   = 1 << 1,
+		RES_P   = 1 << 2,
+		RES_I   = 1 << 3,
+		RES_R   = 1 << 4
+	};
+
+	void implicitResources( const Token& t, unsigned int& reads, unsigned int& writes )
+	{
+		reads = 0;
+		writes = 0;
+		if( !t.operand() )
+			return;
+
+		// Per-Argument single-instance resource touches.
+		const std::list<Token::Argument>& args = t.arguments();
+		for( std::list<Token::Argument>::const_iterator i = args.begin(); i != args.end(); ++i )
+		{
+			unsigned int bit = 0;
+			switch( (*i).type() )
+			{
+				case Token::Argument::ACCUMULATOR: bit = RES_ACC; break;
+				case Token::Argument::Q:           bit = RES_Q;   break;
+				case Token::Argument::P:           bit = RES_P;   break;
+				case Token::Argument::I:           bit = RES_I;   break;
+				case Token::Argument::R:           bit = RES_R;   break;
+				default: continue;
+			}
+			if( (*i).flags() & Token::Argument::WRITE )
+				writes |= bit;
+			else
+				reads |= bit;
+		}
+
+		// Operand-level implicit writes that aren't reflected by any
+		// Argument flag.  LOI's destination is the I register, signalled
+		// only by Operand::IWRITE.
+		if( t.operand()->flags() & Operand::IWRITE )
+			writes |= RES_I;
+	}
+}
+
+bool CodeGenerator::hasDataDependency( const Token& a, const Token& b )
+{
+	// Conservative pair-blocking dependency check.
+	//
+	// Two layers:
+	//
+	//   (a) Register-class args (FLOAT_REGISTER, INTEGER_REGISTER).
+	//       Conflict on PHYSICAL register (allocatedRegister()) — two
+	//       distinct Aliases can land on the same VF/VI when their
+	//       lifetimes don't overlap in the data-flow view, but pairing
+	//       them in one cycle WOULD overlap their writes in hardware.
+	//       Block RAW + WAW.  WAR is allowed: the allocator's
+	//       live-range analysis already guarantees the prior consumer
+	//       is done before the later producer fires, so reads-first /
+	//       writes-last within a cycle is safe for register-class args.
+	//
+	//   (b) Single-instance resources (ACC, Q, P, I, R).  These have
+	//       NO Alias and the allocator does not route them.  Track them
+	//       via implicitResources() which inspects Argument types and
+	//       Operand-level flags like IWRITE (the LOI destination).
+	//       Block ALL conflicts here — RAW, WAW, AND WAR — because
+	//       VU1 has no intra-cycle ordering guarantee for these single
+	//       hardware registers (a paired LOI's I-write happens during
+	//       the same cycle as the FMAC's I-read; we can't assume one
+	//       lands before the other).
+
+	// (b) Single-instance resources — cheaper and catches LOI/ACC/Q/P.
+	unsigned int aReads = 0, aWrites = 0, bReads = 0, bWrites = 0;
+	implicitResources( a, aReads, aWrites );
+	implicitResources( b, bReads, bWrites );
+	// Either side writing a resource the other side touches is a hazard.
+	if( aWrites & (bReads | bWrites) )
+		return true;
+	if( bWrites & (aReads | aWrites) )
+		return true;
+
+	// (a) Register-class args — physical-register comparison.
+	const std::list<Token::Argument>& aArgs = a.arguments();
+	const std::list<Token::Argument>& bArgs = b.arguments();
+
+	for( std::list<Token::Argument>::const_iterator ai = aArgs.begin(); ai != aArgs.end(); ++ai )
+	{
+		const bool aWrite = ((*ai).flags() & Token::Argument::WRITE) != 0;
+		if( !aWrite )
+			continue;
+
+		Token::Argument::Type aType = (*ai).type();
+		if( aType != Token::Argument::FLOAT_REGISTER
+		    && aType != Token::Argument::INTEGER_REGISTER )
+			continue;
+
+		Dependency* aDep = (*ai).dependency();
+		if( !aDep || !aDep->alias() )
+			continue;
+		const Register* aReg = aDep->alias()->allocatedRegister();
+
+		for( std::list<Token::Argument>::const_iterator bi = bArgs.begin(); bi != bArgs.end(); ++bi )
+		{
+			Token::Argument::Type bType = (*bi).type();
+			if( bType != aType )
+				continue;
+			Dependency* bDep = (*bi).dependency();
+			if( !bDep || !bDep->alias() )
+				continue;
+			const Register* bReg = bDep->alias()->allocatedRegister();
+
+			bool same = ( aReg && bReg )
+				? ( aReg == bReg )
+				: ( aDep->alias() == bDep->alias() );
+			if( !same )
+				continue;
+
+			// RAW (b reads what a writes) or WAW (b also writes).
+			return true;
+		}
+	}
+
+	return false;
+}
+
+// Names of VU1 "flag-reading" instructions: these read the MAC/CLIP/
+// status flag registers that every FMAC instruction implicitly
+// updates 4 cycles after issue.  Pairing an FMAC with the very next
+// flag-reader places the flag read in the same cycle as the flag
+// write, so the reader sees stale flags from before the FMAC.  See
+// the bfc_tri macro in ps2gl/vu1/clip_cull.i:
+//
+//     opmsub.xyz bfc_normal, delta_2, delta_1   ; updates MAC sign
+//     fmand      z_sign, z_sign_mask            ; reads opmsub's MAC
+//
+// Pairing those two breaks the back-face cull bit.  We block FMAC
+// pairing with any of these readers, regardless of which specific
+// flag (MAC/CLIP/status) each one targets — conservative and safe.
+static bool isFlagReader( const std::string& name )
+{
+	return name == "fmand" || name == "fmeq" || name == "fmor"
+	    || name == "fcand" || name == "fceq" || name == "fcor"
+	    || name == "fcget"
+	    || name == "fsand" || name == "fseq" || name == "fsor"
+	    // Uppercase variants emitted by some macro expansions.
+	    || name == "FMAND" || name == "FMEQ" || name == "FMOR"
+	    || name == "FCAND" || name == "FCEQ" || name == "FCOR"
+	    || name == "FCGET"
+	    || name == "FSAND" || name == "FSEQ" || name == "FSOR";
+}
+
+bool CodeGenerator::tokensCanPair( const Token& a, const Token& b )
+{
+	if( !isEmittableInstruction(a) || !isEmittableInstruction(b) )
+		return false;
+
+	// PREORDERED tokens (raw .vsm passthrough) must keep their
+	// emission position exactly as written.
+	if( (a.flags() & Token::PREORDERED) || (b.flags() & Token::PREORDERED) )
+		return false;
+
+	// Must straddle the upper/lower pipe split.
+	if( a.operand()->isLowerExecutionPath() == b.operand()->isLowerExecutionPath() )
+		return false;
+
+	// Skip instructions whose surrounding scheduling scaffolding (NOP
+	// brackets for BRU, waitq for FDIV, waitp for EFU) breaks if we
+	// reshape the cycle.  RANDU is allowed.
+	Operand::Unit ua = a.operand()->unit();
+	Operand::Unit ub = b.operand()->unit();
+	if( ua == Operand::BRU || ub == Operand::BRU )
+		return false;
+	if( ua == Operand::FDIV || ub == Operand::FDIV )
+		return false;
+	if( ua == Operand::EFU || ub == Operand::EFU )
+		return false;
+
+	// FMAC writes MAC/CLIP flags with 4-cycle latency; a flag-reader
+	// in the same cycle sees pre-FMAC flags, not the source-intended
+	// post-FMAC ones.  See isFlagReader() for the list and rationale.
+	bool aFMAC = (ua == Operand::FMAC);
+	bool bFMAC = (ub == Operand::FMAC);
+	if( aFMAC && isFlagReader(b.operand()->name()) )
+		return false;
+	if( bFMAC && isFlagReader(a.operand()->name()) )
+		return false;
+
+	// Data-flow conflict between the two.
+	if( hasDataDependency(a, b) )
+		return false;
+	if( hasDataDependency(b, a) )
+		return false;
+
+	return true;
+}
+
+std::string CodeGenerator::formatPairedLine( const Token& upper, const Token& lower )
+{
+	const int instructionLength = 32;
+	std::string upperInstr = generateInstruction(upper);
+	std::string lowerInstr = generateInstruction(lower);
+
+	std::string line;
+	for( int d = 0; d < 20; d++ )
+		line += " ";
+	line += upperInstr;
+
+	int pad = instructionLength - int(upperInstr.length());
+	if( pad <= 0 )
+		line += " ";
+	for( int d = 0; d < pad; d++ )
+		line += " ";
+
+	line += lowerInstr;
+	return line;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

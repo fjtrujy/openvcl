@@ -55,6 +55,7 @@ set(OPENVCL_TEST_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_clip_validation.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_loi_hex.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_parser_families.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_pairing.cpp
 )
 
 add_executable(openvcl_unit_tests

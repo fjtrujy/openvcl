@@ -21,6 +21,7 @@
 #include <sstream>
 #include <map>
 #include "Token.h"
+#include "Dependency.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Class
@@ -56,6 +57,12 @@ private:
 	std::string accumulatorArg( const Token::Argument& arg, const Token& token );
 
 	void addNopLine();
+
+	// Dual-pipe pairing helpers.  See CodeGenerator.cpp for the contract.
+	static bool isEmittableInstruction( const Token& t );
+	static bool tokensCanPair( const Token& a, const Token& b );
+	static bool hasDataDependency( const Token& a, const Token& b );
+	std::string formatPairedLine( const Token& upper, const Token& lower );
 
 	std::list<std::string> m_codeLines;
 
