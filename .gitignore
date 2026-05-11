@@ -8,3 +8,6 @@ t2-output
 *.elf
 *.vsm
 *.a
+
+# CMake out-of-source build for the test harness
+test/build/

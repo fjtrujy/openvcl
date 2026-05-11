@@ -1,0 +1,85 @@
+# openvcl unit tests
+#
+# Self-contained CMake build that lives alongside the existing Makefile build.
+# Builds a single test binary that links openvcl's source files (minus main.cpp)
+# against a small in-tree test harness (test/include/test_harness.h).
+#
+# Usage:
+#   cmake -B test/build -S test
+#   cmake --build test/build
+#   ctest --test-dir test/build --output-on-failure
+#
+# Or from inside test/build:
+#   make check          (builds + runs all tests with verbose failure output)
+
+cmake_minimum_required(VERSION 3.13)
+project(openvcl_tests CXX)
+
+# Tests can use C++11+; the library sources are written in plain C++98-ish
+# style and compile cleanly under C++11 too.
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+enable_testing()
+
+# Repo layout: test/CMakeLists.txt lives one level below the source root.
+set(OPENVCL_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
+
+# All openvcl translation units that should be linked into the test binary.
+# main.cpp is excluded because the test runner provides its own main().
+set(OPENVCL_LIB_SOURCES
+    ${OPENVCL_ROOT}/src/Alias.cpp
+    ${OPENVCL_ROOT}/src/BranchState.cpp
+    ${OPENVCL_ROOT}/src/CodeGenerator.cpp
+    ${OPENVCL_ROOT}/src/CommandLine.cpp
+    ${OPENVCL_ROOT}/src/Dependency.cpp
+    ${OPENVCL_ROOT}/src/Error.cpp
+    ${OPENVCL_ROOT}/src/Expression.cpp
+    ${OPENVCL_ROOT}/src/Math.cpp
+    ${OPENVCL_ROOT}/src/Parser.cpp
+    ${OPENVCL_ROOT}/src/RegisterAllocator.cpp
+    ${OPENVCL_ROOT}/src/Token.cpp
+    ${OPENVCL_ROOT}/src/Tokenizer.cpp
+    ${OPENVCL_ROOT}/src/stlhelp.cpp
+)
+
+# Test translation units.
+set(OPENVCL_TEST_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_main.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_smoke.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_expression.cpp
+)
+
+add_executable(openvcl_unit_tests
+    ${OPENVCL_TEST_SOURCES}
+    ${OPENVCL_LIB_SOURCES}
+)
+
+# Deliberately NOT adding ${OPENVCL_ROOT}/src to the include path: macOS's
+# default case-insensitive filesystem would let libc++'s <cmath> resolve
+# <math.h> to openvcl's src/Math.h, which trips a wall of "using_if_exists"
+# errors against ::isnan / ::ceil / ::nextafter and friends.  Source files
+# themselves don't need -Isrc because their own #include "Foo.h" directives
+# resolve via the source file's own directory.  Test files reach openvcl
+# headers via explicit relative paths like #include "../src/Expression.h".
+target_include_directories(openvcl_unit_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# The library code was written for an older C++ dialect; silence the warnings
+# that aren't worth chasing in a stable, vendored codebase.  The test files
+# themselves are still expected to be warning-clean under modern flags.
+target_compile_options(openvcl_unit_tests PRIVATE
+    -Wno-unused-but-set-variable
+    -Wno-deprecated-declarations
+)
+
+add_test(NAME openvcl_unit COMMAND openvcl_unit_tests)
+
+# Convenience target: build and run everything with verbose failure output.
+add_custom_target(check
+    COMMAND ${CMAKE_CTEST_COMMAND} -C $<CONFIG> --output-on-failure
+    DEPENDS openvcl_unit_tests
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
