@@ -60,18 +60,21 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 		}
 	}
 
+	// When generating named output, always add .vu and .align BEFORE globals and label
+	// This matches SCE vcl output format and ensures proper code alignment
 	if( m_name.length() > 0 )
 	{
-		m_codeLines.push_back(std::string("                    .global ") + m_name + std::string("_CodeStart") );
-		m_codeLines.push_back(std::string("                    .global ") + m_name + std::string("_CodeEnd") );
+		m_codeLines.push_back(std::string("		.vu"));
+		m_codeLines.push_back(std::string("		.align 4"));
+		m_codeLines.push_back(std::string("		.global	") + m_name + std::string("_CodeStart") );
+		m_codeLines.push_back(std::string("		.global	") + m_name + std::string("_CodeEnd") );
 		m_codeLines.push_back( std::string(m_name) + "_CodeStart:" );
 	}
-
-	// Ensure assembler mode and alignment are present for dvp-as even if input omitted .vu
-	if( !hasVuDirective )
+	else if( !hasVuDirective )
 	{
-		m_codeLines.push_back(std::string("                    .p2align 8"));
-		m_codeLines.push_back(std::string("                    .vu "));
+		// No name but source omitted .vu - add directives for dvp-as compatibility
+		m_codeLines.push_back(std::string("		.vu"));
+		m_codeLines.push_back(std::string("		.align 4"));
 	}
 
 	bool exitWritten = true;
@@ -106,7 +109,11 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 		if(token.operand()->flags()&Operand::PREPROCESSOR)
 		{
 			if(token.operand()->name() == ".vu")
-				m_codeLines.push_back(std::string("                    .p2align 8"));
+			{
+				// .vu and alignment are already handled at the start of beginProcess()
+				// when m_name is set, so skip adding redundant directives here
+				continue;
+			}
 			else if( token.operand()->name() == "--cont" )
 			{
 				m_codeLines.push_back(std::string("                    nop[E]                          nop"));
@@ -255,7 +262,23 @@ std::string CodeGenerator::registerArg(const Token::Argument& arg, const Token& 
 
 	if( arg.flags() & Token::Argument::INDIRECT )
 	{
-		argument += arg.immediate();
+		// Evaluate the immediate expression if EVALUATE flag is set
+		if( arg.flags() & Token::Argument::EVALUATE )
+		{
+			Expression e;
+			e.setCustomOperators( Math::mathOperators() );
+			if( e.process( arg.immediate() ) && e.solve() )
+			{
+				// VU memory offsets must be integers - truncate like C integer division
+				std::stringstream s;
+				s << static_cast<long>(e.result());
+				argument += s.str();
+			}
+			else
+				argument += arg.immediate();
+		}
+		else
+			argument += arg.immediate();
 		argument += "(";
 		if( arg.flags() & Token::Argument::PREDEC )
 			argument += "--";
@@ -311,21 +334,20 @@ std::string CodeGenerator::immediateArg(const Token::Argument& arg, const Token&
 		if( !e.solve() )
 			return arg.immediate();
 
-		// Prefer non-scientific formatting; if value is integral, emit as integer
-		double value = e.result();
-		double nearest = std::floor(value + 0.5);
 		std::stringstream s;
-		if( std::fabs(value - nearest) < 1e-9 )
+		if( arg.flags() & Token::Argument::RAW )
 		{
-			// integer
-			s << static_cast<long>(nearest);
+			// RAW flag (for LOI): output float as IEEE 754 hex representation
+			float f = static_cast<float>(e.result());
+			union { float f; unsigned int u; } conv;
+			conv.f = f;
+			s << "0x" << std::hex << std::setfill('0') << std::setw(8) << conv.u;
 		}
 		else
 		{
-			s.setf(std::ios::fixed);
-			s << std::setprecision(6) << value;
+			// Integer immediate: truncate like C integer division
+			s << static_cast<long>(e.result());
 		}
-
 		return s.str();
 	}
 	else return arg.immediate();

@@ -396,6 +396,8 @@ bool Token::processOperand( const Operand* operand, bool newSyntax, Token::Argum
 						(*i).setFlags( (*i).flags() | Argument::EVALUATE );
 					if( hasModifier( ROTATE, modifiers ) )
 						(*i).setFlags( (*i).flags() | Argument::ROTATE );
+					if( hasModifier( RAW, modifiers ) )
+						(*i).setFlags( (*i).flags() | Argument::RAW );
 
 					if( (parentheses > 0) && (!compareParentheses( curr_arg, parentheses ) || (parentheses > 1)) )
 						match = false;

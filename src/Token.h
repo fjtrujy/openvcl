@@ -70,7 +70,8 @@ public:
 			ADDRESS		= 0x00000080,
 			DEST			= 0x00000100,
 			EVALUATE	= 0x00000200,
-			ROTATE		= 0x00000400
+			ROTATE		= 0x00000400,
+			RAW			= 0x00000800	// Output float as IEEE 754 hex (for LOI)
 		};
 
 		Argument( const std::string& text );

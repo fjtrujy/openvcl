@@ -253,7 +253,9 @@ bool Expression::flushParenthesis()
 
 void Expression::pushOperator( Operator* op )
 {
-	while( !m_stack.empty() && (m_stack.top()->priority() > op->priority()) )
+	// Use >= for left-associative operators (standard arithmetic operators)
+	// This ensures left-to-right evaluation: "a - b + c" = "(a - b) + c", not "a - (b + c)"
+	while( !m_stack.empty() && (m_stack.top()->priority() >= op->priority()) )
 	{
 		m_tokens.push_back( Node( m_stack.top() ) );
 		m_stack.pop();

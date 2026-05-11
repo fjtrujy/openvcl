@@ -264,11 +264,11 @@ void Parser::setupOperands()
 
 	const char* lower0 = "vf:dest:write,vf:dest";
 	const char* lower1 = "vi:write,vi,vi";
-	const char* lower2 = "vi:write,vi,imm";
+	const char* lower2 = "vi:write,vi,imm:evaluate";
 	const char* lower3 = "vi,imm:branch";
 	const char* lower4 = "p:write,vf";
 	const char* lower5 = "p:write,vf:flag";
-	const char* lower6 = "vi:write,imm";
+	const char* lower6 = "vi:write,imm:evaluate";
 	const char* lower7 = "vi:write,vi";
 
 	m_operands.push_back( Operand( "DIV",						3, Operand::LOWER,										"q:write,vf:flag,vf:flag",			Operand::FDIV, 7, 7		) );
@@ -289,14 +289,14 @@ void Parser::setupOperands()
 	m_operands.push_back( Operand( "MTIR",					2, Operand::LOWER, 										"vi:write,vf:flag",							Operand::INVALID, 1, 1) );
 	m_operands.push_back( Operand( "MR32",					2, Operand::LOWER|Operand::DEST,			"vf:dest:write,vf:dest:rotate",	Operand::INVALID, 1, 4) );
 
-	m_operands.push_back( Operand( "LQ",						2, Operand::LOWER|Operand::DEST, 			"vf:dest:write,(vi):zero|imm(vi)",Operand::LSU, 1, 4		) );
+	m_operands.push_back( Operand( "LQ",						2, Operand::LOWER|Operand::DEST, 			"vf:dest:write,(vi):zero|imm(vi):evaluate",Operand::LSU, 1, 4		) );
 	m_operands.push_back( Operand( "LQD",						2, Operand::LOWER|Operand::DEST,			"vf:dest:write,(vi):predec",		Operand::LSU, 1, 4		) );
 	m_operands.push_back( Operand( "LQI",						2, Operand::LOWER|Operand::DEST,			"vf:dest:write,(vi):postinc",		Operand::LSU, 1, 4		) );
-	m_operands.push_back( Operand( "SQ",						2, Operand::LOWER|Operand::DEST, 			"vf:dest,(vi):zero|imm(vi)",		Operand::LSU, 1, 4		) );
+	m_operands.push_back( Operand( "SQ",						2, Operand::LOWER|Operand::DEST, 			"vf:dest,(vi):zero|imm(vi):evaluate",		Operand::LSU, 1, 4		) );
 	m_operands.push_back( Operand( "SQD",						2, Operand::LOWER|Operand::DEST,			"vf:dest,(vi):predec",					Operand::LSU, 1, 4		) );
 	m_operands.push_back( Operand( "SQI",						2, Operand::LOWER|Operand::DEST,			"vf:dest,(vi):postinc",					Operand::LSU, 1, 4		) );
-	m_operands.push_back( Operand( "ILW",						2, Operand::LOWER|Operand::DEST,			"vi:write,(vi):zero:dest|imm(vi):dest",Operand::LSU, 1, 4		) );
-	m_operands.push_back( Operand( "ISW",						2, Operand::LOWER|Operand::DEST,			"vi,(vi):zero:dest|imm(vi):dest",Operand::LSU, 1, 4		) );
+	m_operands.push_back( Operand( "ILW",						2, Operand::LOWER|Operand::DEST,			"vi:write,(vi):zero:dest|imm(vi):evaluate:dest",Operand::LSU, 1, 4		) );
+	m_operands.push_back( Operand( "ISW",						2, Operand::LOWER|Operand::DEST,			"vi,(vi):zero:dest|imm(vi):evaluate:dest",Operand::LSU, 1, 4		) );
 	m_operands.push_back( Operand( "ILWR",					2, Operand::LOWER|Operand::DEST, 			"vi:write,(vi):dest",						Operand::LSU, 1, 4		) );
 	m_operands.push_back( Operand( "ISWR",					2, Operand::LOWER|Operand::DEST, 			"vi,(vi):dest",									Operand::LSU, 1, 4		) );
 
@@ -310,14 +310,14 @@ void Parser::setupOperands()
 	m_operands.push_back( Operand( "FSAND",					2, Operand::LOWER,										lower6,													Operand::IALU, 1, 1		) );
 	m_operands.push_back( Operand( "FSEQ",					2, Operand::LOWER,										lower6,													Operand::IALU, 1, 1		) );
 	m_operands.push_back( Operand( "FSOR",					2, Operand::LOWER,										lower6,													Operand::IALU, 1, 1		) );
-	m_operands.push_back( Operand( "FSSET",					1, Operand::LOWER,										"imm",													Operand::IALU, 1, 4		) );
+	m_operands.push_back( Operand( "FSSET",					1, Operand::LOWER,										"imm:evaluate",													Operand::IALU, 1, 4		) );
 	m_operands.push_back( Operand( "FMAND",					2, Operand::LOWER,										lower7,													Operand::IALU, 1, 1		) );
 	m_operands.push_back( Operand( "FMEQ",					2, Operand::LOWER,										lower7,													Operand::IALU, 1, 1		) );
 	m_operands.push_back( Operand( "FMOR",					2, Operand::LOWER,										lower7,													Operand::IALU, 1, 1		) );
 	m_operands.push_back( Operand( "FCAND",					2, Operand::LOWER,										lower6,													Operand::IALU, 1, 1		) );
 	m_operands.push_back( Operand( "FCEQ",					2, Operand::LOWER,										lower6,													Operand::IALU, 1, 1		) );
 	m_operands.push_back( Operand( "FCOR",					2, Operand::LOWER,										lower6,													Operand::IALU, 1, 1		) );
-	m_operands.push_back( Operand( "FCSET",					1, Operand::LOWER,										"imm",													Operand::IALU, 1, 4		) );
+	m_operands.push_back( Operand( "FCSET",					1, Operand::LOWER,										"imm:evaluate",													Operand::IALU, 1, 4		) );
 	m_operands.push_back( Operand( "FCGET",					1, Operand::LOWER,										"vi:write",											Operand::IALU, 1, 1		) );
 
 	m_operands.push_back( Operand( "IBEQ",					3, Operand::LOWER|Operand::DYNAMIC,		"vi,vi,imm:branch",							Operand::BRU, 2, 2		) );
