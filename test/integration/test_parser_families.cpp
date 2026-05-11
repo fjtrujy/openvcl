@@ -11,13 +11,16 @@
 //
 // followed by negative tests for the same error-recovery paths.
 //
-// Why not just check exit_code == 0?  openvcl currently has a latent
-// issue where some semantic errors (notably "Read-attempt from
-// uninitialized float register") are printed to stderr but do NOT bump
-// Error's m_errorCount, so the process exits 0 anyway.  Checking the
-// stderr substring scopes these tests precisely to the Parser, which
-// is what we actually care about here.  See §2.3 of INTEGRATION_PLAN.md
-// for the propagation bug.
+// Why check stderr substrings rather than exit_code on positives?
+// Separation of concerns: these tests assert that the Parser accepts a
+// given operand shape, not that the RegisterAllocator is happy with
+// the program semantics.  An uninitialized-read in the body (e.g.
+// reading vf02 without writing it first) is a legitimate failure of
+// the program but not of the Parser; checking only the Parser's
+// diagnostics keeps the assertion scoped to the unit under test.
+//
+// The RegisterAllocator's own error propagation is exercised by the
+// dedicated regression test at the bottom of this file.
 
 #include "test_harness.h"
 #include "openvcl_runner.h"
@@ -182,4 +185,24 @@ TEST_CASE("Parser: register-family mismatch is rejected with non-zero exit")
                                    "vsmFamilyMismatch");
     CHECK(r.exit_code != 0);
     CHECK(r.stderr_data.find("Invalid argument") != std::string::npos);
+}
+
+// --- regression: RegisterAllocator uninit-read propagation ----------
+
+TEST_CASE("RegisterAllocator: uninit-read produces a non-zero exit")
+{
+    // Pre-fix, RegisterAllocator wrote "Read-attempt from uninitialized
+    // float register" directly to std::cerr without going through
+    // Error::Display, so m_errorCount stayed at zero and the process
+    // exited 0 — the same silent-failure mode that commit 5c0227b fixed
+    // for CLIP.  Routing the seven RA error paths through Error::Display
+    // (token, *i) makes them participate in exit-code propagation.
+    //
+    // This test reads vf03 without ever writing it; the diagnostic must
+    // appear on stderr AND the process must exit non-zero.
+    ::test::RunResult r = run_with("\tadd.xy vf01, vf02, vf03\n",
+                                   "vsmUninitRead");
+    CHECK(r.exit_code != 0);
+    CHECK(r.stderr_data.find("Read-attempt from uninitialized float register")
+          != std::string::npos);
 }

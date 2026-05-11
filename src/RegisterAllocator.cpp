@@ -309,7 +309,7 @@ bool RegisterAllocator::processBranchState( BranchState* state, std::list<Token>
 					{
 						if( !state->readFloat( (*i) ) )
 						{
-							std::cerr << "openvcl: error: Read-attempt from uninitialized float register" << std::endl;
+							Error::Display( Error( "Read-attempt from uninitialized float register", token, *i ) );
 							return false;
 						}
 					}
@@ -324,7 +324,7 @@ bool RegisterAllocator::processBranchState( BranchState* state, std::list<Token>
 					{
 						if( !state->readInteger( (*i) ) )
 						{
-							std::cerr << "openvcl: error: Read-attempt from uninitialized integer register" << std::endl;
+							Error::Display( Error( "Read-attempt from uninitialized integer register", token, *i ) );
 							return false;
 						}
 					}
@@ -339,7 +339,7 @@ bool RegisterAllocator::processBranchState( BranchState* state, std::list<Token>
 					{
 						if( !state->readAccumulator( (*i).fields() ) )
 						{
-							std::cerr << "openvcl: error: Read-attempt from uninitialized accumulator" << std::endl;
+							Error::Display( Error( "Read-attempt from uninitialized accumulator", token, *i ) );
 							return false;
 						}
 					}
@@ -354,7 +354,7 @@ bool RegisterAllocator::processBranchState( BranchState* state, std::list<Token>
 					{
 						if( !state->readQ() )
 						{
-							std::cerr << "openvcl: error: Read-attempt from uninitialized Q register" << std::endl;
+							Error::Display( Error( "Read-attempt from uninitialized Q register", token, *i ) );
 							return false;
 						}
 					}
@@ -369,7 +369,7 @@ bool RegisterAllocator::processBranchState( BranchState* state, std::list<Token>
 					{
 						if( !state->readP() )
 						{
-							std::cerr << "openvcl: error: Read-attempt from uninitialized P register" << std::endl;
+							Error::Display( Error( "Read-attempt from uninitialized P register", token, *i ) );
 							return false;
 						}
 					}
@@ -384,7 +384,7 @@ bool RegisterAllocator::processBranchState( BranchState* state, std::list<Token>
 					{
 						if( !state->readR() )
 						{
-							std::cerr << "openvcl: error: Read-attempt from uninitialized R register" << std::endl;
+							Error::Display( Error( "Read-attempt from uninitialized R register", token, *i ) );
 							return false;
 						}
 					}
@@ -399,7 +399,7 @@ bool RegisterAllocator::processBranchState( BranchState* state, std::list<Token>
 					{
 						if( !state->readI() )
 						{
-							std::cerr << "openvcl: error: Read-attempt from uninitialized I register" << std::endl;
+							Error::Display( Error( "Read-attempt from uninitialized I register", token, *i ) );
 							return false;
 						}
 					}
