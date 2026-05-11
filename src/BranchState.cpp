@@ -10,6 +10,8 @@
 
 #include "BranchState.h"
 #include "RegisterAllocator.h"
+#include "Dependency.h"
+#include "Alias.h"
 
 #include <assert.h>
 
@@ -303,6 +305,47 @@ void BranchState::pushTraces( Token* location, bool entryPoint )
 
 	for( i = m_integers.begin(); i != m_integers.end(); ++i )
 		i->second.pushTrace( location, entryPoint );
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void BranchState::extendLiveRanges( unsigned int loopStart, unsigned int loopEnd )
+{
+	// Extend aliases' ranges to cover the loop body for variables that are
+	// defined BEFORE the loop but used inside. This ensures loop-invariant
+	// variables don't get their registers reused for temporaries.
+	//
+	// We only extend if the alias has a range that STARTS before the loop
+	// and overlaps with the loop body. This excludes temporaries defined
+	// inside the loop, which don't need extension.
+
+	std::map< std::string, State >::iterator i;
+
+	for( i = m_floats.begin(); i != m_floats.end(); ++i )
+	{
+		if( i->second.dependency() && i->second.dependency()->alias() )
+		{
+			Alias* alias = i->second.dependency()->alias();
+			// Check if this alias has any range starting before the loop that overlaps with loop
+			if( alias->hasRangeStartingBefore( loopStart ) && alias->hasRangeOverlapping( loopStart, loopEnd ) )
+			{
+				alias->addRange( loopStart, loopEnd );
+			}
+		}
+	}
+
+	for( i = m_integers.begin(); i != m_integers.end(); ++i )
+	{
+		if( i->second.dependency() && i->second.dependency()->alias() )
+		{
+			Alias* alias = i->second.dependency()->alias();
+			// Check if this alias has any range starting before the loop that overlaps with loop
+			if( alias->hasRangeStartingBefore( loopStart ) && alias->hasRangeOverlapping( loopStart, loopEnd ) )
+			{
+				alias->addRange( loopStart, loopEnd );
+			}
+		}
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -423,8 +423,25 @@ bool RegisterAllocator::processBranchState( BranchState* state, std::list<Token>
 				if( !state->address( *branchDest, target, m_labels ) )
 					continue;
 
+				unsigned int targetLine = (*target).lineNumber();
+				unsigned int currentLine = (*curr).lineNumber();
+				bool isBackwardBranch = targetLine < currentLine;
+
 				if( state->isBranchTaken( &*target ) )
+				{
+					if( isBackwardBranch )
+					{
+						// Backward branch (loop back-edge) already processed - extend ranges again and stop
+						state->extendLiveRanges( targetLine, currentLine );
+					}
 					break;
+				}
+
+				// First time seeing this branch - extend ranges now if it's a backward branch
+				if( isBackwardBranch )
+				{
+					state->extendLiveRanges( targetLine, currentLine );
+				}
 
 				if( !updateDynamicTracker( &*state->current() ) )
 					break;
@@ -446,7 +463,14 @@ bool RegisterAllocator::processBranchState( BranchState* state, std::list<Token>
 					break;
 
 				if( state->isBranchTaken( &*target ) )
+				{
+					// Backward branch (loop back-edge) - extend live ranges to cover loop body
+					unsigned int targetLine = (*target).lineNumber();
+					unsigned int currentLine = (*curr).lineNumber();
+					if( targetLine < currentLine )
+						state->extendLiveRanges( targetLine, currentLine );
 					break;
+				}
 
 				state->storeBranch( &*target );
 
@@ -542,6 +566,19 @@ bool RegisterAllocator::processAliases()
 		std::cerr << "Integer registers: " << availableInts << " available, "
 		          << (totalIntAliases - preallocatedInts) << " needed (total aliases: "
 		          << totalIntAliases << ", preallocated: " << preallocatedInts << ")" << std::endl;
+
+		// Print all alias ranges for debugging
+		std::cerr << "\n=== Alias Ranges ===" << std::endl;
+		for( std::map<Alias*,Alias*>::iterator i = m_aliases.begin(); i != m_aliases.end(); ++i )
+		{
+			Alias* alias = i->first;
+			std::cerr << (alias->type() == Alias::FLOAT ? "FLOAT" : "INT") << ": ";
+			if( alias->allocatedRegister() )
+				std::cerr << "[prealloc: " << alias->allocatedRegister()->name() << "] ";
+			alias->printRanges( std::cerr );
+			std::cerr << std::endl;
+		}
+		std::cerr << "====================\n" << std::endl;
 	}
 
 	for( std::map<Alias*,Alias*>::iterator i = m_aliases.begin(); i != m_aliases.end(); ++i )

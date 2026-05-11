@@ -26,18 +26,24 @@ void Alias::addRange( unsigned int start, unsigned int stop )
 {
 	assert( start <= stop );
 
-	// find range intersections
+	// find range intersections or immediately adjacent ranges
+	// Adjacent ranges (where one ends exactly where another starts)
+	// should be merged to handle loop-carried dependencies
 
 	for( std::list<Range>::iterator i = m_ranges.begin(); i != m_ranges.end(); ++i )
 	{
 		Range r = *i;
 
-		if(
-				(((start >= r.m_start) && (start <= r.m_stop)) || ((stop >= r.m_start) && (stop <= r.m_stop))) ||
-				(((r.m_start >= start) && (r.m_start <= stop)) || ((r.m_stop >= start) && (r.m_stop <= stop)))
-			)
+		// Check for overlap
+		bool overlaps = (((start >= r.m_start) && (start <= r.m_stop)) || ((stop >= r.m_start) && (stop <= r.m_stop))) ||
+		                (((r.m_start >= start) && (r.m_start <= stop)) || ((r.m_stop >= start) && (r.m_stop <= stop)));
+
+		// Check for immediate adjacency (r ends where we start, or we end where r starts)
+		bool adjacent = (r.m_stop + 1 == start) || (stop + 1 == r.m_start);
+
+		if( overlaps || adjacent )
 		{
-			// range intersects, merge
+			// range intersects or is immediately adjacent, merge
 
 			m_ranges.erase(i);
 			addRange( min(start,r.m_start), max(stop, r.m_stop) );
@@ -46,7 +52,7 @@ void Alias::addRange( unsigned int start, unsigned int stop )
 		}
 	}
 
-	// no previous range intersected, insert into list
+	// no previous range intersected or was adjacent, insert into list
 
 	Range newRange;
 	newRange.m_start = start;
@@ -85,10 +91,11 @@ bool Alias::intersects( Alias* alias )
 		{
 			Range& r2 = *j;
 
-			if(
-					(((r1.m_start >= r2.m_start) && (r1.m_start <= r2.m_stop)) || ((r1.m_stop >= r2.m_start) && (r1.m_stop <= r2.m_stop))) ||
-					(((r2.m_start >= r1.m_start) && (r2.m_start <= r1.m_stop)) || ((r2.m_stop >= r1.m_start) && (r2.m_stop <= r1.m_stop)))
-				)
+			// Check for actual overlap
+			bool overlaps = (((r1.m_start >= r2.m_start) && (r1.m_start <= r2.m_stop)) || ((r1.m_stop >= r2.m_start) && (r1.m_stop <= r2.m_stop))) ||
+			                (((r2.m_start >= r1.m_start) && (r2.m_start <= r1.m_stop)) || ((r2.m_stop >= r1.m_start) && (r2.m_stop <= r1.m_stop)));
+
+			if( overlaps )
 			{
 				return true;
 			}
@@ -96,6 +103,54 @@ bool Alias::intersects( Alias* alias )
 	}
 
 	return false;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+bool Alias::hasRangeOverlapping( unsigned int start, unsigned int stop ) const
+{
+	// Check if any of this alias's ranges overlap with [start, stop]
+	for( std::list<Range>::const_iterator i = m_ranges.begin(); i != m_ranges.end(); ++i )
+	{
+		const Range& r = *i;
+		// Check if [r.m_start, r.m_stop] overlaps with [start, stop]
+		if(
+			(((start >= r.m_start) && (start <= r.m_stop)) || ((stop >= r.m_start) && (stop <= r.m_stop))) ||
+			(((r.m_start >= start) && (r.m_start <= stop)) || ((r.m_stop >= start) && (r.m_stop <= stop)))
+		)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+bool Alias::hasRangeStartingBefore( unsigned int line ) const
+{
+	// Check if any of this alias's ranges start before the given line
+	for( std::list<Range>::const_iterator i = m_ranges.begin(); i != m_ranges.end(); ++i )
+	{
+		if( i->m_start < line )
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void Alias::printRanges( std::ostream& os ) const
+{
+	os << "ranges: ";
+	for( std::list<Range>::const_iterator i = m_ranges.begin(); i != m_ranges.end(); ++i )
+	{
+		if( i != m_ranges.begin() )
+			os << ", ";
+		os << "[" << i->m_start << "-" << i->m_stop << "]";
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

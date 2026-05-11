@@ -153,6 +153,7 @@ public:
 	void storeBranch( const Token* target );
 	bool isBranchTaken( const Token* target ) const;
 	void pushTraces( Token* location, bool entryPoint );
+	void extendLiveRanges( unsigned int loopStart, unsigned int loopEnd );
 
 	void setFloatInput( const std::string& name, unsigned int regNumber );
 	void setIntegerInput( const std::string& name, unsigned int regNumber );

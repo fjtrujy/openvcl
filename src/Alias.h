@@ -14,6 +14,7 @@
 #include "Register.h"
 
 #include <list>
+#include <iostream>
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -49,6 +50,9 @@ public:
 	void addRange( unsigned int start, unsigned int stop );
 	void merge( Alias* alias );
 	bool intersects( Alias* alias );
+	bool hasRangeOverlapping( unsigned int start, unsigned int stop ) const;
+	bool hasRangeStartingBefore( unsigned int line ) const;
+	void printRanges( std::ostream& os ) const;
 
 private:	
 
