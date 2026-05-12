@@ -15,6 +15,7 @@
 
 #include <iostream>
 #include <iomanip>
+#include <vector>
 #include <stdlib.h>
 #include <assert.h>
 
@@ -613,39 +614,81 @@ bool RegisterAllocator::processAliases()
 		std::cerr << "====================\n" << std::endl;
 	}
 
-	// Pre-pass: allocate every chain ROOT (an alias with no
-	// sameNamePredecessor) before any non-root, so the successors can
-	// pick up the root's register via two-address coalescing.  std::map
-	// iteration is by pointer order, which doesn't correlate with chain
-	// position; without this pre-pass a successor may be visited (and
-	// permanently allocated to a different reg) before its root.
+	// Pre-pass: allocate every two-address chain ATOMICALLY (root +
+	// all its known successors) before any singleton aliases run the
+	// main loop.  Treating chain members one-at-a-time isn't enough,
+	// because an unrelated singleton alias whose live range fits in
+	// the same register can snipe it before the successor reaches the
+	// main loop — leaving the successor with no choice but a different
+	// register, which is exactly the bug we're trying to prevent (the
+	// `isubiu` dest then disagrees with its source, the loop counter
+	// never decrements, and xgkick never fires).
+	//
+	// For each unallocated root (no sameNamePredecessor), find every
+	// alias whose chain root is this root, then pick a register that
+	// no non-chain allocated alias intersects on ANY chain member's
+	// range.  Assign that register to all chain members at once.
 	for( std::map<Alias*,Alias*>::iterator i = m_aliases.begin(); i != m_aliases.end(); ++i )
 	{
-		Alias* dest = i->first;
-		if( dest->allocatedRegister() )
+		Alias* root = i->first;
+		if( root->allocatedRegister() )
 			continue;
-		if( dest->sameNamePredecessor() )
+		if( root->sameNamePredecessor() )
 			continue;
-		// Root alias — allocate it now via the normal scan.
-		unsigned int maxLimit = dest->type() == Alias::FLOAT ? 32 : 16;
+
+		// Collect chain members: walk every alias's predecessor chain
+		// (with a hard hop cap as a cycle defence) and gather the ones
+		// that terminate at `root`.  This is O(N²) but N is small.
+		std::vector<Alias*> chain;
+		chain.push_back( root );
+		for( std::map<Alias*,Alias*>::iterator k = m_aliases.begin(); k != m_aliases.end(); ++k )
+		{
+			Alias* other = k->first;
+			if( other == root ) continue;
+			if( other->type() != root->type() ) continue;
+			Alias* p = other;
+			for( int hop = 0; hop < 32 && p->sameNamePredecessor(); ++hop )
+				p = p->sameNamePredecessor();
+			if( p == root )
+				chain.push_back( other );
+		}
+
+		unsigned int maxLimit = root->type() == Alias::FLOAT ? 32 : 16;
 		for( unsigned int j = 0; j < maxLimit; ++j )
 		{
-			const Register* candidate = (dest->type() == Alias::FLOAT) ? &m_floats[j] : &m_integers[j];
+			const Register* candidate = (root->type() == Alias::FLOAT) ? &m_floats[j] : &m_integers[j];
 			if( !candidate->available() )
 				continue;
-			for( std::map<Alias*,Alias*>::iterator k = m_aliases.begin(); k != m_aliases.end(); ++k )
+
+			// `candidate` must not collide with any already-allocated
+			// non-chain alias on ANY chain member's live range.
+			bool conflict = false;
+			for( std::map<Alias*,Alias*>::iterator k = m_aliases.begin(); !conflict && k != m_aliases.end(); ++k )
 			{
 				Alias* src = k->first;
 				if( !src->allocatedRegister() ) continue;
-				if( src->type() != dest->type() ) continue;
+				if( src->type() != root->type() ) continue;
 				if( src->allocatedRegister() != candidate ) continue;
-				if( !dest->intersects( src ) ) continue;
-				candidate = NULL;
-				break;
+				// Chain members don't conflict with each other on the
+				// shared register — that's the whole point.
+				bool inChain = false;
+				for( unsigned int m = 0; m < chain.size(); ++m )
+					if( chain[m] == src ) { inChain = true; break; }
+				if( inChain ) continue;
+				for( unsigned int m = 0; m < chain.size(); ++m )
+				{
+					if( chain[m]->intersects( src ) )
+					{
+						conflict = true;
+						break;
+					}
+				}
 			}
-			if( candidate )
+
+			if( !conflict )
 			{
-				dest->setAllocatedRegister( candidate );
+				for( unsigned int m = 0; m < chain.size(); ++m )
+					chain[m]->setAllocatedRegister( candidate );
 				break;
 			}
 		}
