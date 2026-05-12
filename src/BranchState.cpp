@@ -126,6 +126,18 @@ void BranchState::writeInteger( Token::Argument& argument )
 	{
 		std::map< std::string, State >::iterator i = m_integers.find( argument.alias() );
 
+		// Capture the existing alias (if any) BEFORE updateDependency
+		// allocates a fresh one.  This is the prior value of the same
+		// source-level name, e.g. the `x` being read in `isubiu x, x, 1`.
+		// We hint the new alias to prefer that prior alias's register so
+		// the allocator collapses both onto one VI — without this hint,
+		// the dir-light counter decrement winds up in a different reg
+		// than the source, the loop never reaches zero, and xgkick is
+		// never reached.
+		Alias* previousAlias = NULL;
+		if( i != m_integers.end() && i->second.dependency() )
+			previousAlias = i->second.dependency()->alias();
+
 		if( i == m_integers.end() )
 		{
 			State newState;
@@ -140,6 +152,31 @@ void BranchState::writeInteger( Token::Argument& argument )
 		i->second.clearAddress();
 
 		updateDependency( argument, i->second, Alias::INTEGER, i->first, false );
+
+		// Propagate the same-name preference into the freshly-created
+		// write alias (updateDependency just installed its Dependency
+		// into the argument).
+		if( previousAlias && argument.dependency() && argument.dependency()->alias() )
+		{
+			Alias* newAlias = argument.dependency()->alias();
+			if( newAlias != previousAlias && newAlias->sameNamePredecessor() == NULL )
+			{
+				// Branch-state analysis re-walks loop bodies and may
+				// produce the same writes more than once, so a chain
+				// like a→b→c→a is possible.  Walk the would-be chain
+				// from `previousAlias` up to 16 hops and refuse to
+				// install the edge if it'd close a cycle back into
+				// newAlias.
+				bool wouldCycle = false;
+				Alias* p = previousAlias;
+				for( int hop = 0; hop < 16 && p; ++hop, p = p->sameNamePredecessor() )
+				{
+					if( p == newAlias ) { wouldCycle = true; break; }
+				}
+				if( !wouldCycle )
+					newAlias->setSameNamePredecessor( previousAlias );
+			}
+		}
 	}
 }
 

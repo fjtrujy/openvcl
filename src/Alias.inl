@@ -1,5 +1,15 @@
-inline Alias::Alias( Type type ) : m_type(type), m_allocatedRegister(NULL)
+inline Alias::Alias( Type type ) : m_type(type), m_allocatedRegister(NULL), m_sameNamePredecessor(NULL)
 {
+}
+
+inline void Alias::setSameNamePredecessor( Alias* predecessor )
+{
+	m_sameNamePredecessor = predecessor;
+}
+
+inline Alias* Alias::sameNamePredecessor() const
+{
+	return m_sameNamePredecessor;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -613,6 +613,44 @@ bool RegisterAllocator::processAliases()
 		std::cerr << "====================\n" << std::endl;
 	}
 
+	// Pre-pass: allocate every chain ROOT (an alias with no
+	// sameNamePredecessor) before any non-root, so the successors can
+	// pick up the root's register via two-address coalescing.  std::map
+	// iteration is by pointer order, which doesn't correlate with chain
+	// position; without this pre-pass a successor may be visited (and
+	// permanently allocated to a different reg) before its root.
+	for( std::map<Alias*,Alias*>::iterator i = m_aliases.begin(); i != m_aliases.end(); ++i )
+	{
+		Alias* dest = i->first;
+		if( dest->allocatedRegister() )
+			continue;
+		if( dest->sameNamePredecessor() )
+			continue;
+		// Root alias — allocate it now via the normal scan.
+		unsigned int maxLimit = dest->type() == Alias::FLOAT ? 32 : 16;
+		for( unsigned int j = 0; j < maxLimit; ++j )
+		{
+			const Register* candidate = (dest->type() == Alias::FLOAT) ? &m_floats[j] : &m_integers[j];
+			if( !candidate->available() )
+				continue;
+			for( std::map<Alias*,Alias*>::iterator k = m_aliases.begin(); k != m_aliases.end(); ++k )
+			{
+				Alias* src = k->first;
+				if( !src->allocatedRegister() ) continue;
+				if( src->type() != dest->type() ) continue;
+				if( src->allocatedRegister() != candidate ) continue;
+				if( !dest->intersects( src ) ) continue;
+				candidate = NULL;
+				break;
+			}
+			if( candidate )
+			{
+				dest->setAllocatedRegister( candidate );
+				break;
+			}
+		}
+	}
+
 	for( std::map<Alias*,Alias*>::iterator i = m_aliases.begin(); i != m_aliases.end(); ++i )
 	{
 		Alias* dest = i->first;
@@ -622,6 +660,55 @@ bool RegisterAllocator::processAliases()
 			continue;
 
 		unsigned int maxLimit = dest->type() == Alias::FLOAT ? 32 : 16;
+
+		// Two-address coalescing: if `dest` was created by a write that
+		// reuses an existing source-level alias name (e.g. the dest of
+		// `isubiu x, x, 1`), try the predecessor's register FIRST.  The
+		// predecessor may itself be unallocated yet; walk the chain to
+		// find the earliest allocated ancestor.  Falls through to the
+		// regular j=0..maxLimit scan if no predecessor / preferred reg
+		// is available or it conflicts.
+		const Register* preferred = NULL;
+		// Walk to the root, with a hard cap to defeat any residual cycle
+		// the branch-state analysis might have introduced via loop re-
+		// processing.  16 is well above any plausible chain depth in
+		// real shaders.
+		Alias* chainRoot = dest;
+		for( int hop = 0; hop < 16 && chainRoot->sameNamePredecessor(); ++hop )
+			chainRoot = chainRoot->sameNamePredecessor();
+		if( chainRoot != dest && chainRoot->allocatedRegister() )
+			preferred = chainRoot->allocatedRegister();
+		if( preferred )
+		{
+			// Run the normal conflict check against `preferred`.  If it
+			// holds, assign immediately and skip the j-loop.
+			bool conflict = false;
+			for( std::map<Alias*,Alias*>::iterator k = m_aliases.begin(); k != m_aliases.end(); ++k )
+			{
+				Alias* src = k->first;
+				if( !src->allocatedRegister() ) continue;
+				if( src->type() != dest->type() ) continue;
+				if( src->allocatedRegister() != preferred ) continue;
+				if( src == dest ) continue;
+				// Same-name predecessor on the chain doesn't count as a
+				// conflict: that's the whole point of coalescing.
+				bool isAncestor = false;
+				for( Alias* p = dest->sameNamePredecessor(); p; p = p->sameNamePredecessor() )
+				{
+					if( p == src ) { isAncestor = true; break; }
+				}
+				if( isAncestor ) continue;
+				if( !dest->intersects( src ) ) continue;
+				conflict = true;
+				break;
+			}
+			if( !conflict )
+			{
+				dest->setAllocatedRegister( preferred );
+				continue;
+			}
+		}
+
 		for( unsigned int j = 0; j < maxLimit; ++j )
 		{
 			const Register* candidate = (dest->type() == Alias::FLOAT) ? &m_floats[j] : &m_integers[j];
@@ -750,6 +837,20 @@ void RegisterAllocator::releaseAlias( Alias* alias )
 {
 	std::map<Alias*,Alias*>::iterator i = m_aliases.find( alias );
 	assert( i != m_aliases.end() );
+
+	// Any alias whose same-name predecessor chain points at `alias` is
+	// about to hold a dangling pointer; clear those edges so processAliases
+	// doesn't walk into freed memory.  (Without this guard openvcl segfaults
+	// when branch-state merges release one half of a previously-recorded
+	// two-address pair.)
+	for( std::map<Alias*,Alias*>::iterator k = m_aliases.begin(); k != m_aliases.end(); ++k )
+	{
+		Alias* other = k->first;
+		if( other == alias )
+			continue;
+		if( other->sameNamePredecessor() == alias )
+			other->setSameNamePredecessor( NULL );
+	}
 
 	m_aliases.erase( i );
 

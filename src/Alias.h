@@ -54,11 +54,23 @@ public:
 	bool hasRangeStartingBefore( unsigned int line ) const;
 	void printRanges( std::ostream& os ) const;
 
-private:	
+	// Two-address hint.  When the parser emits an instruction like
+	// `isubiu x, x, 1`, openvcl creates two Alias objects for `x` — the
+	// read picks up the existing alias, the write spawns a fresh one.
+	// Without coordination the allocator can put them on different VI
+	// regs, so the counter is decremented in a stale register, the
+	// loop never reaches zero, and xgkick is never fired.  We record
+	// the prior (read) alias on the new (write) alias so the allocator
+	// can prefer its allocated register first.
+	void setSameNamePredecessor( Alias* predecessor );
+	Alias* sameNamePredecessor() const;
+
+private:
 
 	Type m_type;
 
 	const Register* m_allocatedRegister;
+	Alias* m_sameNamePredecessor;
 	std::list<Range> m_ranges;
 
 };
