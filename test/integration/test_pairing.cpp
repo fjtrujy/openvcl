@@ -512,6 +512,20 @@ TEST_CASE("Scheduling: latency filler does not move store base update before tha
     CHECK(storeLine < addLine);
 }
 
+TEST_CASE("Scheduling: adjacent self iaddiu pointer bumps coalesce")
+{
+    const std::string body =
+        "\tiaddiu vi03, vi00, 0\n"
+        "\tiaddiu vi03, vi03, 3\n"
+        "\tiaddiu vi03, vi03, 3\n"
+        "\tiaddiu vi03, vi03, 3\n";
+    std::string vsm = runEmit(body, "vsmCoalesceSelfIaddiu");
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(lineIndex(vsm, "iaddiu VI03, VI03, 9") >= 0);
+    CHECK(lineIndex(vsm, "iaddiu VI03, VI03, 3") < 0);
+}
+
 TEST_CASE("Scheduling: overwriting an already-read register does not create a WAR stall")
 {
     // Source operands are latched when the older FMAC issues, so a later

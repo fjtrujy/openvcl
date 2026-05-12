@@ -48,6 +48,7 @@ namespace
 	bool isPlainMemoryLoad( const Token& token );
 	bool tokenReadsQ( const Token& token );
 	bool tokenReadsP( const Token& token );
+	void coalesceAdjacentSelfIntegerAdds( std::list<Token>& tokens );
 }
 
 CodeGenerator::CodeGenerator()
@@ -102,6 +103,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 	bool exitWritten = true;
 
 	std::list<Token> workTokens = tokens;
+	coalesceAdjacentSelfIntegerAdds(workTokens);
 
 	for( std::list<Token>::iterator k = workTokens.begin(); k != workTokens.end(); )
 	{
@@ -904,6 +906,102 @@ namespace {
 			return true;
 		}
 		return false;
+	}
+
+	bool isSelfIntegerImmediateAdd( const Token& token, std::string& reg, long& immediate )
+	{
+		if( !token.operand() )
+			return false;
+		if( token.label().length() != 0 )
+			return false;
+		if( token.flags() & (Token::PREORDERED | Token::E | Token::D | Token::T) )
+			return false;
+
+		const std::string name = lowerName(token);
+		if( name != "iaddiu" )
+			return false;
+
+		const std::list<Token::Argument>& args = token.arguments();
+		if( args.size() != 3 )
+			return false;
+
+		std::list<Token::Argument>::const_iterator dst = args.begin();
+		std::list<Token::Argument>::const_iterator src = dst;
+		++src;
+		std::list<Token::Argument>::const_iterator imm = src;
+		++imm;
+
+		if( (*dst).type() != Token::Argument::INTEGER_REGISTER
+		    || (*src).type() != Token::Argument::INTEGER_REGISTER
+		    || (*imm).type() != Token::Argument::IMMEDIATE )
+			return false;
+		if( !((*dst).flags() & Token::Argument::WRITE) )
+			return false;
+
+		std::string dstKey;
+		std::string srcKey;
+		if( !registerKey(*dst, dstKey) || !registerKey(*src, srcKey) )
+			return false;
+		if( dstKey != srcKey )
+			return false;
+
+		Expression e;
+		e.setCustomOperators( Math::mathOperators() );
+		if( !e.process( (*imm).immediate() ) || !e.solve() )
+			return false;
+
+		reg = dstKey;
+		immediate = static_cast<long>(e.result());
+		return true;
+	}
+
+	bool setIntegerImmediate( Token& token, long immediate )
+	{
+		std::list<Token::Argument>& args = token.arguments();
+		if( args.size() != 3 )
+			return false;
+		std::list<Token::Argument>::iterator i = args.begin();
+		++i;
+		++i;
+		std::stringstream s;
+		s << immediate;
+		(*i).setImmediate(s.str());
+		return true;
+	}
+
+	void coalesceAdjacentSelfIntegerAdds( std::list<Token>& tokens )
+	{
+		for( std::list<Token>::iterator i = tokens.begin(); i != tokens.end(); )
+		{
+			std::list<Token>::iterator next = i;
+			++next;
+			if( next == tokens.end() )
+				break;
+
+			std::string reg;
+			std::string nextReg;
+			long immediate = 0;
+			long nextImmediate = 0;
+			if( !isSelfIntegerImmediateAdd(*i, reg, immediate)
+			    || !isSelfIntegerImmediateAdd(*next, nextReg, nextImmediate)
+			    || reg != nextReg )
+			{
+				++i;
+				continue;
+			}
+
+			const long combined = immediate + nextImmediate;
+			if( combined < -32768 || combined > 32767 || combined == 0 )
+			{
+				++i;
+				continue;
+			}
+
+			if( setIntegerImmediate(*i, combined) )
+				tokens.erase(next);
+			else
+				++i;
+		}
 	}
 
 	bool plainMemoryAccessesAreDistinct( const Token& a, const Token& b )
