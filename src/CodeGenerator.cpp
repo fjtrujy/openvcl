@@ -55,6 +55,7 @@ namespace
 	void collectRegisterWriteKeys( const Token& token, std::list<std::string>& writes );
 	bool isMtir( const Token& token );
 	bool isFtoiConversion( const std::string& name );
+	bool isTerminalUnconditionalBranch( const Token& token );
 	bool isZeroMoveFromVf00( const Token& token );
 	bool tokenListReadsMac( const std::list<Token>& tokens );
 	void coalesceAdjacentIntegerAdds( std::list<Token>& tokens );
@@ -356,6 +357,8 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 		}
 
 		emitSingleToken(token);
+		if( isTerminalUnconditionalBranch(token) )
+			exitWritten = true;
 		++k;
 	}
 
@@ -1014,6 +1017,12 @@ namespace {
 	{
 		return name == "ftoi0" || name == "ftoi4"
 		    || name == "ftoi12" || name == "ftoi15";
+	}
+
+	bool isTerminalUnconditionalBranch( const Token& token )
+	{
+		const std::string name = lowerName(token);
+		return name == "b" || name == "jr";
 	}
 
 	bool isZeroMoveFromVf00( const Token& token )

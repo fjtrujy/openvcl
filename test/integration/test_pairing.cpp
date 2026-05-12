@@ -114,6 +114,18 @@ static int lineIndex( const std::string& vsm, const std::string& pattern )
     return -1;
 }
 
+static int countSubstrings( const std::string& text, const std::string& pattern )
+{
+    int count = 0;
+    std::string::size_type pos = 0;
+    while( (pos = text.find(pattern, pos)) != std::string::npos )
+    {
+        ++count;
+        pos += pattern.size();
+    }
+    return count;
+}
+
 TEST_CASE("Pairing: independent upper+lower ops pair into one cycle")
 {
     // mulax (upper) + lq.xyz (lower) - no shared register.  These should
@@ -239,6 +251,20 @@ TEST_CASE("Scheduling: branch emission reuses existing hazard nop before branch"
     REQUIRE(loadLine >= 0);
     REQUIRE(branchLine >= 0);
     CHECK(branchLine - loadLine == 5);
+}
+
+TEST_CASE("Scheduling: terminal unconditional branch omits unreachable auto-exit footer")
+{
+    const std::string body =
+        "loop_lid:\n"
+        "\tiaddiu vi01, vi00, 1\n"
+        "\t--cont\n"
+        "\tb loop_lid\n";
+    std::string vsm = runEmit(body, "vsmTerminalBranchNoAutoExit");
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(lineIndex(vsm, "b loop_lid") >= 0);
+    CHECK(countSubstrings(vsm, "nop[E]") == 1);
 }
 
 TEST_CASE("Pairing: independent upper op can pair with FDIV")
