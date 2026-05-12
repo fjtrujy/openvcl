@@ -125,6 +125,8 @@ TEST_CASE("VSM cost CLI: loop repeat weights static block cost")
     CHECK(contains(r.stdout_data, "entry_lid: cycles=5 repeat=4 weighted_cycles=20"));
     CHECK(contains(r.stdout_data, "top_weighted_blocks:"));
     CHECK(contains(r.stdout_data, "entry_lid: weighted_cycles=20 cycles=5 repeat=4"));
+    CHECK(contains(r.stdout_data, "top_weighted_estimated_blocks:"));
+    CHECK(contains(r.stdout_data, "entry_lid: weighted_estimated_cycles=20 estimated_cycles=5 repeat=4"));
     CHECK(contains(r.stdout_data, "weighted_nop_slots=20"));
     CHECK(contains(r.stdout_data, "top_weighted_idle_blocks:"));
     CHECK(contains(r.stdout_data, "entry_lid: weighted_nop_slots=20 nop_slots=5 repeat=4"));
@@ -181,6 +183,8 @@ TEST_CASE("VSM cost CLI: stdin wait program reports estimated stalls")
     CHECK(textMetric(r.stdout_data, "waitp_stall_cycles") == 10);
     CHECK(textMetric(r.stdout_data, "weighted_estimated_total_cycles") == 60);
     CHECK(textMetric(r.stdout_data, "weighted_wait_stall_cycles") == 48);
+    CHECK(contains(r.stdout_data, "top_weighted_estimated_blocks:"));
+    CHECK(contains(r.stdout_data, "wait_lid: weighted_estimated_cycles=60 estimated_cycles=20 repeat=3"));
     CHECK(contains(r.stdout_data, "top_weighted_wait_blocks:"));
     CHECK(contains(r.stdout_data, "wait_lid: weighted_wait_stall=48 wait_stall=16 repeat=3"));
 }

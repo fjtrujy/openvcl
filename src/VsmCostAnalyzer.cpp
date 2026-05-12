@@ -522,6 +522,15 @@ bool VsmCostAnalyzer::weightedIdleBlockGreater( const WeightedBlock& a, const We
 	return a.label < b.label;
 }
 
+bool VsmCostAnalyzer::weightedEstimatedBlockGreater( const WeightedBlock& a, const WeightedBlock& b )
+{
+	if( a.weightedEstimatedCycles != b.weightedEstimatedCycles )
+		return a.weightedEstimatedCycles > b.weightedEstimatedCycles;
+	if( a.weightedCycles != b.weightedCycles )
+		return a.weightedCycles > b.weightedCycles;
+	return a.label < b.label;
+}
+
 bool VsmCostAnalyzer::weightedWaitBlockGreater( const WeightedBlock& a, const WeightedBlock& b )
 {
 	if( a.weightedWaitStallCycles != b.weightedWaitStallCycles )
@@ -556,6 +565,13 @@ std::vector<VsmCostAnalyzer::WeightedBlock> VsmCostAnalyzer::weightedBlocksByCyc
 		weightedBlocks.push_back(block);
 	}
 	std::sort( weightedBlocks.begin(), weightedBlocks.end(), weightedBlockGreater );
+	return weightedBlocks;
+}
+
+std::vector<VsmCostAnalyzer::WeightedBlock> VsmCostAnalyzer::weightedBlocksByEstimatedCycles() const
+{
+	std::vector<WeightedBlock> weightedBlocks = weightedBlocksByCycles();
+	std::sort( weightedBlocks.begin(), weightedBlocks.end(), weightedEstimatedBlockGreater );
 	return weightedBlocks;
 }
 
@@ -703,6 +719,22 @@ bool VsmCostAnalyzer::writeText( std::ostream& stream ) const
 		       << " weighted_estimated_cycles=" << i->weightedEstimatedCycles
 		       << " wait_stall=" << i->waitStallCycles
 		       << " weighted_wait_stall=" << i->weightedWaitStallCycles
+		       << std::endl;
+	}
+
+	stream << "top_weighted_estimated_blocks:" << std::endl;
+	const std::vector<WeightedBlock> estimatedBlocks = weightedBlocksByEstimatedCycles();
+	topCount = 0;
+	for( std::vector<WeightedBlock>::const_iterator i = estimatedBlocks.begin(); i != estimatedBlocks.end() && topCount < 8; ++i, ++topCount )
+	{
+		stream << "  " << i->label
+		       << ": weighted_estimated_cycles=" << i->weightedEstimatedCycles
+		       << " estimated_cycles=" << i->estimatedCycles
+		       << " repeat=" << i->repeat
+		       << " weighted_cycles=" << i->weightedCycles
+		       << " cycles=" << i->cycles
+		       << " weighted_wait_stall=" << i->weightedWaitStallCycles
+		       << " wait_stall=" << i->waitStallCycles
 		       << std::endl;
 	}
 
@@ -871,6 +903,27 @@ bool VsmCostAnalyzer::writeJson( std::ostream& stream ) const
 		       << "\"weighted_estimated_cycles\": " << i->weightedEstimatedCycles << ", "
 		       << "\"wait_stall_cycles\": " << i->waitStallCycles << ", "
 		       << "\"weighted_wait_stall_cycles\": " << i->weightedWaitStallCycles
+		       << "}";
+	}
+
+	stream << std::endl << "  ]," << std::endl;
+	stream << "  \"top_weighted_estimated_blocks\": [" << std::endl;
+
+	const std::vector<WeightedBlock> estimatedBlocks = weightedBlocksByEstimatedCycles();
+	topCount = 0;
+	for( std::vector<WeightedBlock>::const_iterator i = estimatedBlocks.begin(); i != estimatedBlocks.end() && topCount < 8; ++i, ++topCount )
+	{
+		if( topCount != 0 )
+			stream << "," << std::endl;
+		stream << "    {"
+		       << "\"label\": \"" << jsonEscape( i->label ) << "\", "
+		       << "\"weighted_estimated_cycles\": " << i->weightedEstimatedCycles << ", "
+		       << "\"estimated_cycles\": " << i->estimatedCycles << ", "
+		       << "\"repeat\": " << i->repeat << ", "
+		       << "\"weighted_cycles\": " << i->weightedCycles << ", "
+		       << "\"cycles\": " << i->cycles << ", "
+		       << "\"weighted_wait_stall_cycles\": " << i->weightedWaitStallCycles << ", "
+		       << "\"wait_stall_cycles\": " << i->waitStallCycles
 		       << "}";
 	}
 

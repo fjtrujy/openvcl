@@ -133,6 +133,8 @@ TEST_CASE("VsmCostAnalyzer fixture: block repeats expose weighted cost")
     CHECK(contains(text.str(), "entry_lid: cycles=5 repeat=4 weighted_cycles=20"));
     CHECK(contains(text.str(), "top_weighted_blocks:"));
     CHECK(contains(text.str(), "entry_lid: weighted_cycles=20 cycles=5 repeat=4"));
+    CHECK(contains(text.str(), "top_weighted_estimated_blocks:"));
+    CHECK(contains(text.str(), "entry_lid: weighted_estimated_cycles=20 estimated_cycles=5 repeat=4"));
     CHECK(contains(text.str(), "weighted_nop_slots=20"));
     CHECK(contains(text.str(), "top_weighted_idle_blocks:"));
     CHECK(contains(text.str(), "entry_lid: weighted_nop_slots=20 nop_slots=5 repeat=4"));
@@ -145,6 +147,7 @@ TEST_CASE("VsmCostAnalyzer fixture: block repeats expose weighted cost")
     CHECK(contains(json.str(), "\"weighted_cycles\": 20"));
     CHECK(contains(json.str(), "\"weighted_nop_slots\": 20"));
     CHECK(contains(json.str(), "\"top_weighted_blocks\""));
+    CHECK(contains(json.str(), "\"top_weighted_estimated_blocks\""));
     CHECK(contains(json.str(), "\"top_weighted_idle_blocks\""));
 }
 
@@ -220,6 +223,8 @@ TEST_CASE("VsmCostAnalyzer inline: wait instructions add estimated stall cycles"
     CHECK(contains(text.str(), "wait_stall=16 waitq_stall=6 waitp_stall=10 estimated_cycles=20"));
     CHECK(contains(text.str(), "top_weighted_wait_blocks:"));
     CHECK(contains(text.str(), "wait_lid: weighted_wait_stall=48 wait_stall=16 repeat=3"));
+    CHECK(contains(text.str(), "top_weighted_estimated_blocks:"));
+    CHECK(contains(text.str(), "wait_lid: weighted_estimated_cycles=60 estimated_cycles=20 repeat=3"));
 
     std::ostringstream json;
     REQUIRE(analyzer.writeJson(json));
@@ -227,5 +232,6 @@ TEST_CASE("VsmCostAnalyzer inline: wait instructions add estimated stall cycles"
     CHECK(jsonMetric(json.str(), "wait_stall_cycles") == 16);
     CHECK(jsonMetric(json.str(), "weighted_estimated_total_cycles") == 60);
     CHECK(jsonMetric(json.str(), "weighted_wait_stall_cycles") == 48);
+    CHECK(contains(json.str(), "\"top_weighted_estimated_blocks\""));
     CHECK(contains(json.str(), "\"top_weighted_wait_blocks\""));
 }

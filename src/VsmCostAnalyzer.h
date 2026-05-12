@@ -99,9 +99,11 @@ private:
 	void recordCycle( const Slot& upper, const Slot& lower );
 	unsigned int blockRepeat( const Block& block ) const;
 	std::vector<WeightedBlock> weightedBlocksByCycles() const;
+	std::vector<WeightedBlock> weightedBlocksByEstimatedCycles() const;
 	std::vector<WeightedBlock> weightedBlocksByIdleSlots() const;
 	std::vector<WeightedBlock> weightedBlocksByWaitStalls() const;
 	static bool weightedBlockGreater( const WeightedBlock& a, const WeightedBlock& b );
+	static bool weightedEstimatedBlockGreater( const WeightedBlock& a, const WeightedBlock& b );
 	static bool weightedIdleBlockGreater( const WeightedBlock& a, const WeightedBlock& b );
 	static bool weightedWaitBlockGreater( const WeightedBlock& a, const WeightedBlock& b );
 
