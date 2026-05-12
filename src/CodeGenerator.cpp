@@ -41,6 +41,11 @@ namespace vcl
 static bool isMacReader( const std::string& name );
 static bool isClipReader( const std::string& name );
 static bool isClipw( const std::string& name );
+namespace
+{
+	bool tokenReadsQ( const Token& token );
+	bool tokenReadsP( const Token& token );
+}
 
 CodeGenerator::CodeGenerator()
 {
@@ -297,6 +302,18 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				}
 			}
 
+			if( !foundPartner && tokenReadsQ(token) && !token.operand()->isLowerExecutionPath() )
+			{
+				const int qGap = m_qReadyCycle - m_currentCycle;
+				const int needed = readHazardDelay(token, NULL);
+				if( qGap > 1 && qGap >= needed )
+				{
+					emitUpperWithWait(token, true);
+					++k;
+					continue;
+				}
+			}
+
 			padForReadHazards(token, partner);
 
 			if( foundPartner )
@@ -362,6 +379,32 @@ void CodeGenerator::emitWaitP()
 	const int nextCycle = m_currentCycle + 1;
 	m_codeLines.push_back(std::string("                    nop                             waitp"));
 	m_currentCycle = (m_pReadyCycle > nextCycle) ? m_pReadyCycle : nextCycle;
+}
+
+void CodeGenerator::emitUpperWithWait( const Token& token, bool waitQ )
+{
+	const int instructionLength = 32;
+	std::string instruction = generateInstruction(token);
+	std::string outputLine;
+	for(int d = 0; d < 20; d++)
+		outputLine += " ";
+	outputLine += instruction;
+	int pad = instructionLength - int(instruction.length());
+	if( pad <= 0 )
+		outputLine += " ";
+	for(int d = 0; d < pad; d++)
+		outputLine += " ";
+	outputLine += waitQ ? "waitq" : "waitp";
+
+	const int readyCycle = waitQ ? m_qReadyCycle : m_pReadyCycle;
+	const int issueCycle = (readyCycle > m_currentCycle) ? readyCycle : m_currentCycle;
+	m_codeLines.push_back(outputLine);
+	recordRegisterWrites(token, issueCycle);
+	if( token.operand()->unit() == Operand::FMAC )
+		m_lastFMACCycle = issueCycle;
+	if( isClipw(token.operand()->name()) )
+		m_lastClipwCycle = issueCycle;
+	m_currentCycle = issueCycle + 1;
 }
 
 void CodeGenerator::emitSingleToken( const Token& token )

@@ -91,6 +91,22 @@ namespace
             pos = nextStart;
         }
     }
+
+    bool linePairsSubstrings(const std::string& vsm, const std::string& a, const std::string& b)
+    {
+        std::string::size_type pos = 0;
+        while( pos < vsm.size() )
+        {
+            std::string::size_type end = vsm.find('\n', pos);
+            if( end == std::string::npos )
+                end = vsm.size();
+            std::string line = vsm.substr(pos, end - pos);
+            if( line.find(a) != std::string::npos && line.find(b) != std::string::npos )
+                return true;
+            pos = end + 1;
+        }
+        return false;
+    }
 }
 
 TEST_CASE("Latency: FMAC opmsub followed by fmand has at least 4 cycles between")
@@ -200,15 +216,14 @@ TEST_CASE("Latency: FDIV Q consumer uses deferred waitq after movable work")
 
     std::string::size_type div = vsm.find("div");
     std::string::size_type lq = vsm.find("lq.xyz");
-    std::string::size_type waitq = vsm.find("waitq");
     std::string::size_type mulq = vsm.find("mulq");
     REQUIRE(div != std::string::npos);
     REQUIRE(lq != std::string::npos);
-    REQUIRE(waitq != std::string::npos);
     REQUIRE(mulq != std::string::npos);
     CHECK(div < lq);
-    CHECK(lq < waitq);
-    CHECK(waitq < mulq);
+    CHECK(lq < mulq);
+    CHECK(vsm.find("waitq") != std::string::npos);
+    CHECK(linePairsSubstrings(vsm, "mulq", "waitq"));
 }
 
 TEST_CASE("CodeGen: full-width FMAC destination emits explicit xyzw mask")

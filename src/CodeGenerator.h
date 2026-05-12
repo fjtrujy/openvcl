@@ -59,6 +59,7 @@ private:
 	void addNopLine();
 	void emitWaitQ();
 	void emitWaitP();
+	void emitUpperWithWait( const Token& token, bool waitQ );
 	void emitSingleToken( const Token& token );
 	void emitPairedTokens( const Token& a, const Token& b );
 	int readHazardDelay( const Token& token, const Token* partner ) const;
