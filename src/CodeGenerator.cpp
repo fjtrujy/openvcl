@@ -51,6 +51,8 @@ namespace
 	bool tokenReadsQ( const Token& token );
 	bool tokenReadsP( const Token& token );
 	bool tokenReadsRegister( const Token& token, const std::string& key );
+	void collectRegisterReadKeys( const Token& token, std::list<std::string>& reads );
+	void collectRegisterWriteKeys( const Token& token, std::list<std::string>& writes );
 	bool isMtir( const Token& token );
 	bool isFtoiConversion( const std::string& name );
 	bool isZeroMoveFromVf00( const Token& token );
@@ -575,32 +577,6 @@ namespace
 		return true;
 	}
 
-	void collectRegisterReads( const Token& token, std::list<std::string>& reads )
-	{
-		const std::list<Token::Argument>& args = token.arguments();
-		for( std::list<Token::Argument>::const_iterator i = args.begin(); i != args.end(); ++i )
-		{
-			if( (*i).flags() & Token::Argument::WRITE )
-				continue;
-			std::string key;
-			if( registerKey(*i, key) )
-				reads.push_back(key);
-		}
-	}
-
-	void collectRegisterWrites( const Token& token, std::list<std::string>& writes )
-	{
-		const std::list<Token::Argument>& args = token.arguments();
-		for( std::list<Token::Argument>::const_iterator i = args.begin(); i != args.end(); ++i )
-		{
-			if( !((*i).flags() & Token::Argument::WRITE) )
-				continue;
-			std::string key;
-			if( registerKey(*i, key) )
-				writes.push_back(key);
-		}
-	}
-
 	bool tokenTouchesImplicitResource( const Token& token, Token::Argument::Type type, bool write )
 	{
 		const std::list<Token::Argument>& args = token.arguments();
@@ -633,7 +609,7 @@ namespace
 	bool tokenReadsRegister( const Token& token, const std::string& key )
 	{
 		std::list<std::string> reads;
-		collectRegisterReads(token, reads);
+		collectRegisterReadKeys(token, reads);
 		return containsKey(reads, key);
 	}
 
@@ -647,9 +623,9 @@ namespace
 int CodeGenerator::readHazardDelay( const Token& token, const Token* partner ) const
 {
 	std::list<std::string> reads;
-	collectRegisterReads(token, reads);
+	collectRegisterReadKeys(token, reads);
 	if( partner )
-		collectRegisterReads(*partner, reads);
+		collectRegisterReadKeys(*partner, reads);
 
 	bool readsQ = tokenReadsQ(token);
 	bool readsP = tokenReadsP(token);
@@ -759,7 +735,7 @@ void CodeGenerator::recordRegisterWrites( const Token& token, int issueCycle )
 
 	const int latency = token.operand()->latency();
 	std::list<std::string> writes;
-	collectRegisterWrites(token, writes);
+	collectRegisterWriteKeys(token, writes);
 	for( std::list<std::string>::const_iterator i = writes.begin(); i != writes.end(); ++i )
 	{
 		m_registerReadyCycle[*i] = issueCycle + latency + 1;
@@ -963,6 +939,57 @@ namespace {
 			}
 		}
 		return false;
+	}
+
+	void appendFieldKeys( const std::string& base, unsigned int fields, std::list<std::string>& keys )
+	{
+		static const char* names = "xyzw";
+		if( fields == 0 )
+			fields = Token::X | Token::Y | Token::Z | Token::W;
+		for( unsigned int i = 0; i < 4; ++i )
+		{
+			if( fields & (1 << i) )
+			{
+				std::string key = base;
+				key += ".";
+				key += names[i];
+				keys.push_back(key);
+			}
+		}
+	}
+
+	void collectRegisterReadKeys( const Token& token, std::list<std::string>& reads )
+	{
+		const std::list<Token::Argument>& args = token.arguments();
+		for( std::list<Token::Argument>::const_iterator i = args.begin(); i != args.end(); ++i )
+		{
+			if( (*i).flags() & Token::Argument::WRITE )
+				continue;
+			std::string key;
+			if( !registerKey(*i, key) )
+				continue;
+			if( (*i).type() == Token::Argument::FLOAT_REGISTER )
+				appendFieldKeys(key, readFieldMask(token, *i), reads);
+			else
+				reads.push_back(key);
+		}
+	}
+
+	void collectRegisterWriteKeys( const Token& token, std::list<std::string>& writes )
+	{
+		const std::list<Token::Argument>& args = token.arguments();
+		for( std::list<Token::Argument>::const_iterator i = args.begin(); i != args.end(); ++i )
+		{
+			if( !((*i).flags() & Token::Argument::WRITE) )
+				continue;
+			std::string key;
+			if( !registerKey(*i, key) )
+				continue;
+			if( (*i).type() == Token::Argument::FLOAT_REGISTER )
+				appendFieldKeys(key, writeFieldMask(token, *i), writes);
+			else
+				writes.push_back(key);
+		}
 	}
 
 	std::string lowerName( const Token& token )

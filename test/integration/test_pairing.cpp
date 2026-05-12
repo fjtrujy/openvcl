@@ -307,6 +307,23 @@ TEST_CASE("Scheduling: overlapping VF field write cannot move before a reader")
     CHECK(lineIndex(vsm, "mul.xyz") < lineIndex(vsm, "mfir.x"));
 }
 
+TEST_CASE("Pairing: disjoint VF field write does not stall an xyz reader")
+{
+    const std::string body =
+        "\tmove.xyzw vf01, vf00\n"
+        "\tiaddiu vi02, vi00, 1\n"
+        "\tiaddiu vi03, vi00, 2\n"
+        "\tiaddiu vi04, vi00, 3\n"
+        "\tiaddiu vi05, vi00, 4\n"
+        "\tiaddiu vi06, vi00, 5\n"
+        "field_write_lid:\n"
+        "\tmfir.w vf01, vi00\n"
+        "\tmul.xyz vf02, vf01, vf00\n";
+    std::string vsm = runEmit(body, "vsmFieldWriteDoesNotStallReader");
+    REQUIRE(vsm.length() > 0);
+    CHECK(linePairsSubstrings(vsm, "mul.xyz", "mfir.w"));
+}
+
 TEST_CASE("Scheduling: disjoint VF field write can cross an xyz reader")
 {
     const std::string body =
