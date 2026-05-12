@@ -76,6 +76,7 @@ add_executable(openvcl_unit_tests
 # integration tests check that the file exists before running.
 target_compile_definitions(openvcl_unit_tests PRIVATE
     OPENVCL_BIN="${OPENVCL_ROOT}/openvcl"
+    OPENVCL_TEST_VSM_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/vsm_cost"
 )
 
 # Deliberately NOT adding ${OPENVCL_ROOT}/src to the include path: macOS's

@@ -2,49 +2,71 @@
 
 #include "../../src/VsmCostAnalyzer.h"
 
+#include <cstdlib>
+#include <fstream>
 #include <sstream>
 #include <string>
 
+#ifndef OPENVCL_TEST_VSM_FIXTURES
+#error "OPENVCL_TEST_VSM_FIXTURES must point at test/fixtures/vsm_cost"
+#endif
+
 namespace
 {
-    const char* kSimpleScheduledVsm =
-        "\t\t.vu\n"
-        "\t\t.align 4\n"
-        "unit_lid:\n"
-        "                    nop                             lq VF01, 0(VI00)\n"
-        "                    add.xyz VF02, VF01, VF00        iaddiu VI01, VI00, 1\n"
-        "                    nop                             nop\n"
-        "                    nop                             waitq\n"
-        "                    nop[E]                          b unit_lid\n";
-
-    const char* kScePaddedVsm =
-        "sce_style_lid:\n"
-        "         NOP                                                        lq            VF01,62(VI00)                       \n"
-        "         mul.xyz       VF09,VF09,VF08                               iaddiu        VI04,VI05,0x00000005                \n";
+    std::string fixturePath(const std::string& name)
+    {
+        return std::string(OPENVCL_TEST_VSM_FIXTURES) + "/" + name;
+    }
 
     bool contains(const std::string& haystack, const std::string& needle)
     {
         return haystack.find(needle) != std::string::npos;
     }
 
-    std::string analyzeText(const char* source)
+    int textMetric(const std::string& report, const std::string& name)
     {
-        std::istringstream input(source);
+        std::string key = name + ": ";
+        std::string::size_type pos = report.find(key);
+        if( pos == std::string::npos )
+            return -1;
+        pos += key.size();
+        return std::atoi(report.c_str() + pos);
+    }
+
+    int jsonMetric(const std::string& report, const std::string& name)
+    {
+        std::string key = "\"" + name + "\": ";
+        std::string::size_type pos = report.find(key);
+        if( pos == std::string::npos )
+            return -1;
+        pos += key.size();
+        return std::atoi(report.c_str() + pos);
+    }
+
+    std::string analyzeTextFile(const std::string& name)
+    {
+        std::ifstream input(fixturePath(name).c_str());
+        if( !input.good() )
+            return std::string();
+
         std::ostringstream output;
         vcl::VsmCostAnalyzer analyzer;
-        if( !analyzer.analyze(input, "unit.vsm") )
+        if( !analyzer.analyze(input, name) )
             return std::string();
         if( !analyzer.writeText(output) )
             return std::string();
         return output.str();
     }
 
-    std::string analyzeJson(const char* source)
+    std::string analyzeJsonFile(const std::string& name)
     {
-        std::istringstream input(source);
+        std::ifstream input(fixturePath(name).c_str());
+        if( !input.good() )
+            return std::string();
+
         std::ostringstream output;
         vcl::VsmCostAnalyzer analyzer;
-        if( !analyzer.analyze(input, "unit.vsm") )
+        if( !analyzer.analyze(input, name) )
             return std::string();
         if( !analyzer.writeJson(output) )
             return std::string();
@@ -52,47 +74,82 @@ namespace
     }
 }
 
-TEST_CASE("VsmCostAnalyzer unit: counts scheduled issue slots")
+TEST_CASE("VsmCostAnalyzer fixture: simple scheduled VSM has precomputed issue cost")
 {
-    std::string report = analyzeText(kSimpleScheduledVsm);
-    CHECK(contains(report, "static_cycles: 5"));
-    CHECK(contains(report, "instructions: 5"));
-    CHECK(contains(report, "upper_instructions: 1"));
-    CHECK(contains(report, "lower_instructions: 4"));
-    CHECK(contains(report, "paired_cycles: 1"));
-    CHECK(contains(report, "single_lower_cycles: 3"));
-    CHECK(contains(report, "nop_only_cycles: 1"));
-    CHECK(contains(report, "nop_slots: 5"));
-    CHECK(contains(report, "branch_cycles: 1"));
-    CHECK(contains(report, "waitq_cycles: 1"));
-    CHECK(contains(report, "e_bit_cycles: 1"));
-    CHECK(contains(report, "operation_latency_cycles: 12"));
-    CHECK(contains(report, "long_latency_ops: 3"));
-    CHECK(contains(report, "long_latency_cycles: 7"));
-    CHECK(contains(report, "max_op_latency: 4"));
+    std::string report = analyzeTextFile("simple_scheduled.vsm");
+    REQUIRE(report.length() > 0);
+    CHECK(textMetric(report, "static_cycles") == 5);
+    CHECK(textMetric(report, "instruction_slots") == 10);
+    CHECK(textMetric(report, "instructions") == 5);
+    CHECK(textMetric(report, "upper_instructions") == 1);
+    CHECK(textMetric(report, "lower_instructions") == 4);
+    CHECK(textMetric(report, "paired_cycles") == 1);
+    CHECK(textMetric(report, "single_upper_cycles") == 0);
+    CHECK(textMetric(report, "single_lower_cycles") == 3);
+    CHECK(textMetric(report, "nop_only_cycles") == 1);
+    CHECK(textMetric(report, "nop_slots") == 5);
+    CHECK(textMetric(report, "branch_cycles") == 1);
+    CHECK(textMetric(report, "waitq_cycles") == 1);
+    CHECK(textMetric(report, "e_bit_cycles") == 1);
+    CHECK(textMetric(report, "operation_latency_cycles") == 12);
+    CHECK(textMetric(report, "long_latency_ops") == 3);
+    CHECK(textMetric(report, "long_latency_cycles") == 7);
+    CHECK(textMetric(report, "max_op_latency") == 4);
+    CHECK(contains(report, "entry_lid: cycles=5"));
 }
 
-TEST_CASE("VsmCostAnalyzer unit: emits JSON summary")
+TEST_CASE("VsmCostAnalyzer fixture: JSON exposes the same precomputed cost")
 {
-    std::string report = analyzeJson(kSimpleScheduledVsm);
-    CHECK(contains(report, "\"input\": \"unit.vsm\""));
-    CHECK(contains(report, "\"static_cycles\": 5"));
-    CHECK(contains(report, "\"instructions\": 5"));
-    CHECK(contains(report, "\"paired_cycles\": 1"));
-    CHECK(contains(report, "\"operation_latency_cycles\": 12"));
-    CHECK(contains(report, "\"long_latency_cycles\": 7"));
-    CHECK(contains(report, "\"label\": \"unit_lid\""));
+    std::string report = analyzeJsonFile("simple_scheduled.vsm");
+    REQUIRE(report.length() > 0);
+    CHECK(contains(report, "\"input\": \"simple_scheduled.vsm\""));
+    CHECK(jsonMetric(report, "static_cycles") == 5);
+    CHECK(jsonMetric(report, "instructions") == 5);
+    CHECK(jsonMetric(report, "paired_cycles") == 1);
+    CHECK(jsonMetric(report, "operation_latency_cycles") == 12);
+    CHECK(jsonMetric(report, "long_latency_cycles") == 7);
+    CHECK(contains(report, "\"label\": \"entry_lid\""));
 }
 
-TEST_CASE("VsmCostAnalyzer unit: parses SCE padded columns")
+TEST_CASE("VsmCostAnalyzer fixture: SCE padded columns have precomputed cost")
 {
-    std::string report = analyzeText(kScePaddedVsm);
-    CHECK(contains(report, "static_cycles: 2"));
-    CHECK(contains(report, "instructions: 3"));
-    CHECK(contains(report, "upper_instructions: 1"));
-    CHECK(contains(report, "lower_instructions: 2"));
-    CHECK(contains(report, "paired_cycles: 1"));
-    CHECK(contains(report, "operation_latency_cycles: 9"));
-    CHECK(contains(report, "long_latency_ops: 2"));
+    std::string report = analyzeTextFile("sce_padded_columns.vsm");
+    REQUIRE(report.length() > 0);
+    CHECK(textMetric(report, "static_cycles") == 2);
+    CHECK(textMetric(report, "instruction_slots") == 4);
+    CHECK(textMetric(report, "instructions") == 3);
+    CHECK(textMetric(report, "upper_instructions") == 1);
+    CHECK(textMetric(report, "lower_instructions") == 2);
+    CHECK(textMetric(report, "paired_cycles") == 1);
+    CHECK(textMetric(report, "single_lower_cycles") == 1);
+    CHECK(textMetric(report, "nop_only_cycles") == 0);
+    CHECK(textMetric(report, "nop_slots") == 1);
+    CHECK(textMetric(report, "operation_latency_cycles") == 9);
+    CHECK(textMetric(report, "long_latency_ops") == 2);
+    CHECK(textMetric(report, "long_latency_cycles") == 6);
+    CHECK(textMetric(report, "max_op_latency") == 4);
     CHECK(contains(report, "sce_style_lid: cycles=2"));
+}
+
+TEST_CASE("VsmCostAnalyzer fixture: long-latency operations are weighted differently")
+{
+    std::string report = analyzeTextFile("long_latency_weighted.vsm");
+    REQUIRE(report.length() > 0);
+    CHECK(textMetric(report, "static_cycles") == 4);
+    CHECK(textMetric(report, "instruction_slots") == 8);
+    CHECK(textMetric(report, "instructions") == 7);
+    CHECK(textMetric(report, "upper_instructions") == 3);
+    CHECK(textMetric(report, "lower_instructions") == 4);
+    CHECK(textMetric(report, "paired_cycles") == 3);
+    CHECK(textMetric(report, "single_lower_cycles") == 1);
+    CHECK(textMetric(report, "nop_slots") == 1);
+    CHECK(textMetric(report, "waitq_cycles") == 1);
+    CHECK(textMetric(report, "waitp_cycles") == 1);
+    CHECK(textMetric(report, "fdiv_ops") == 1);
+    CHECK(textMetric(report, "efu_ops") == 1);
+    CHECK(textMetric(report, "operation_latency_cycles") == 50);
+    CHECK(textMetric(report, "long_latency_ops") == 5);
+    CHECK(textMetric(report, "long_latency_cycles") == 43);
+    CHECK(textMetric(report, "max_op_latency") == 29);
+    CHECK(contains(report, "weighted_lid: cycles=4"));
 }

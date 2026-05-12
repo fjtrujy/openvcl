@@ -7,6 +7,9 @@ t2-output
 *.o
 *.elf
 *.vsm
+!test/fixtures/
+!test/fixtures/vsm_cost/
+!test/fixtures/vsm_cost/*.vsm
 *.a
 
 # CMake out-of-source build for the test harness
