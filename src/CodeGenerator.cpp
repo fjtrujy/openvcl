@@ -398,7 +398,6 @@ void CodeGenerator::emitSingleToken( const Token& token )
 		int issueCycle = m_currentCycle;
 		m_codeLines.push_back(outputLine);
 		m_currentCycle++;
-		recordRegisterReads(token, issueCycle);
 		recordRegisterWrites(token, issueCycle);
 	}
 
@@ -434,8 +433,6 @@ void CodeGenerator::emitPairedTokens( const Token& a, const Token& b )
 
 	// Either side of the pair could be the FMAC / clipw we need to remember
 	// for downstream flag-reader cooldowns.
-	recordRegisterReads(a, m_currentCycle);
-	recordRegisterReads(b, m_currentCycle);
 	recordRegisterWrites(a, m_currentCycle);
 	recordRegisterWrites(b, m_currentCycle);
 	if( a.operand()->unit() == Operand::FMAC || b.operand()->unit() == Operand::FMAC )
@@ -503,14 +500,9 @@ namespace
 int CodeGenerator::readHazardDelay( const Token& token, const Token* partner ) const
 {
 	std::list<std::string> reads;
-	std::list<std::string> writes;
 	collectRegisterReads(token, reads);
-	collectRegisterWrites(token, writes);
 	if( partner )
-	{
 		collectRegisterReads(*partner, reads);
-		collectRegisterWrites(*partner, writes);
-	}
 
 	int needed = 0;
 	for( std::list<std::string>::const_iterator i = reads.begin(); i != reads.end(); ++i )
@@ -519,15 +511,6 @@ int CodeGenerator::readHazardDelay( const Token& token, const Token* partner ) c
 		if( ready == m_registerReadyCycle.end() )
 			continue;
 		const int gap = ready->second - m_currentCycle;
-		if( gap > needed )
-			needed = gap;
-	}
-	for( std::list<std::string>::const_iterator i = writes.begin(); i != writes.end(); ++i )
-	{
-		std::map<std::string, int>::const_iterator safe = m_registerWriteSafeCycle.find(*i);
-		if( safe == m_registerWriteSafeCycle.end() )
-			continue;
-		const int gap = safe->second - m_currentCycle;
 		if( gap > needed )
 			needed = gap;
 	}
@@ -570,17 +553,6 @@ void CodeGenerator::padForReadHazards( const Token& token, const Token* partner 
 		m_currentCycle++;
 		needed--;
 	}
-}
-
-void CodeGenerator::recordRegisterReads( const Token& token, int issueCycle )
-{
-	if( !token.operand() || token.operand()->latency() <= 1 )
-		return;
-
-	std::list<std::string> reads;
-	collectRegisterReads(token, reads);
-	for( std::list<std::string>::const_iterator i = reads.begin(); i != reads.end(); ++i )
-		m_registerWriteSafeCycle[*i] = issueCycle + token.operand()->latency() + 1;
 }
 
 void CodeGenerator::recordRegisterWrites( const Token& token, int issueCycle )

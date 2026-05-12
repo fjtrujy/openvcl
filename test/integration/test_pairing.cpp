@@ -217,6 +217,32 @@ TEST_CASE("Scheduling: latency-gap filler can pair with another ready op")
     CHECK(pairLine < mtirLine);
 }
 
+TEST_CASE("Scheduling: overwriting an already-read register does not create a WAR stall")
+{
+    // Source operands are latched when the older FMAC issues, so a later
+    // instruction may overwrite VF02 without waiting for all older reads of
+    // VF02 to retire.  The true hazard is RAW from an older write to a later
+    // read, which is covered by the latency tests.
+    const std::string body =
+        "\tmove.xyzw vf01, vf00\n"
+        "\tmove.xyzw vf02, vf00\n"
+        "\tmove.xyzw vf03, vf00\n"
+        "\tmove.xyzw vf04, vf00\n"
+        "\tmove.xyzw vf05, vf00\n"
+        "\tmulax acc, vf01, vf02x\n"
+        "\tmadday acc, vf03, vf02y\n"
+        "\tmaddaz acc, vf04, vf02z\n"
+        "\tmaddw vf02, vf05, vf00w\n";
+    std::string vsm = runEmit(body, "vsmScheduleNoRegisterWarStall");
+    REQUIRE(vsm.length() > 0);
+
+    int lastRead = lineIndex(vsm, "maddaz");
+    int overwrite = lineIndex(vsm, "maddw");
+    REQUIRE(lastRead >= 0);
+    REQUIRE(overwrite >= 0);
+    CHECK(overwrite == lastRead + 1);
+}
+
 TEST_CASE("Pairing: LOI is not paired with the next FMAC that reads I")
 {
     // loi writes I.  An immediately-following FMAC that reads I must

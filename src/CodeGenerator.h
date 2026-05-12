@@ -61,7 +61,6 @@ private:
 	void emitPairedTokens( const Token& a, const Token& b );
 	int readHazardDelay( const Token& token, const Token* partner ) const;
 	void padForReadHazards( const Token& token, const Token* partner );
-	void recordRegisterReads( const Token& token, int issueCycle );
 	void recordRegisterWrites( const Token& token, int issueCycle );
 
 	// Dual-pipe pairing helpers.  See CodeGenerator.cpp for the contract.
@@ -92,7 +91,6 @@ private:
 	int m_lastFMACCycle;
 	int m_lastClipwCycle;
 	std::map<std::string, int> m_registerReadyCycle;
-	std::map<std::string, int> m_registerWriteSafeCycle;
 };
 
 #include "CodeGenerator.inl"
