@@ -1,4 +1,4 @@
-inline Alias::Alias( Type type ) : m_type(type), m_allocatedRegister(NULL), m_sameNamePredecessor(NULL)
+inline Alias::Alias( Type type ) : m_type(type), m_id(s_nextId++), m_allocatedRegister(NULL), m_sameNamePredecessor(NULL)
 {
 }
 
@@ -24,6 +24,13 @@ inline void Alias::setAllocatedRegister( const Register* allocated )
 inline const Register* Alias::allocatedRegister() const
 {
 	return m_allocatedRegister;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+inline unsigned int Alias::id() const
+{
+	return m_id;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -49,6 +49,7 @@ set(OPENVCL_LIB_SOURCES
 set(OPENVCL_TEST_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test_main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_smoke.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_alias.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_expression.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_tokenizer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_vsm_cost_analyzer.cpp

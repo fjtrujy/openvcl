@@ -62,6 +62,16 @@ protected:
 
 private:
 
+	struct AliasOrder
+	{
+		bool operator()( const Alias* a, const Alias* b ) const
+		{
+			return a->id() < b->id();
+		}
+	};
+
+	typedef std::map<Alias*, Alias*, AliasOrder> AliasMap;
+
 	enum State
 	{
 		OUTSIDE,
@@ -112,7 +122,7 @@ private:
 	unsigned int m_dynamicThreshold;
 	bool m_showRegisterInfo;
 
-	std::map<Alias*,Alias*> m_aliases;
+	AliasMap m_aliases;
 };
 
 #include "RegisterAllocator.inl"

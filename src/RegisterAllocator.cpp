@@ -566,7 +566,7 @@ bool RegisterAllocator::processAliases()
 	int preallocatedFloats = 0;
 	int preallocatedInts = 0;
 
-	for( std::map<Alias*,Alias*>::iterator i = m_aliases.begin(); i != m_aliases.end(); ++i )
+	for( AliasMap::iterator i = m_aliases.begin(); i != m_aliases.end(); ++i )
 	{
 		if( i->first->type() == Alias::FLOAT )
 		{
@@ -604,7 +604,7 @@ bool RegisterAllocator::processAliases()
 
 		// Print all alias ranges for debugging
 		std::cerr << "\n=== Alias Ranges ===" << std::endl;
-		for( std::map<Alias*,Alias*>::iterator i = m_aliases.begin(); i != m_aliases.end(); ++i )
+		for( AliasMap::iterator i = m_aliases.begin(); i != m_aliases.end(); ++i )
 		{
 			Alias* alias = i->first;
 			std::cerr << (alias->type() == Alias::FLOAT ? "FLOAT" : "INT") << ": ";
@@ -630,7 +630,7 @@ bool RegisterAllocator::processAliases()
 	// alias whose chain root is this root, then pick a register that
 	// no non-chain allocated alias intersects on ANY chain member's
 	// range.  Assign that register to all chain members at once.
-	for( std::map<Alias*,Alias*>::iterator i = m_aliases.begin(); i != m_aliases.end(); ++i )
+	for( AliasMap::iterator i = m_aliases.begin(); i != m_aliases.end(); ++i )
 	{
 		Alias* root = i->first;
 		if( root->allocatedRegister() )
@@ -643,7 +643,7 @@ bool RegisterAllocator::processAliases()
 		// that terminate at `root`.  This is O(N²) but N is small.
 		std::vector<Alias*> chain;
 		chain.push_back( root );
-		for( std::map<Alias*,Alias*>::iterator k = m_aliases.begin(); k != m_aliases.end(); ++k )
+		for( AliasMap::iterator k = m_aliases.begin(); k != m_aliases.end(); ++k )
 		{
 			Alias* other = k->first;
 			if( other == root ) continue;
@@ -665,7 +665,7 @@ bool RegisterAllocator::processAliases()
 			// `candidate` must not collide with any already-allocated
 			// non-chain alias on ANY chain member's live range.
 			bool conflict = false;
-			for( std::map<Alias*,Alias*>::iterator k = m_aliases.begin(); !conflict && k != m_aliases.end(); ++k )
+			for( AliasMap::iterator k = m_aliases.begin(); !conflict && k != m_aliases.end(); ++k )
 			{
 				Alias* src = k->first;
 				if( !src->allocatedRegister() ) continue;
@@ -696,7 +696,7 @@ bool RegisterAllocator::processAliases()
 		}
 	}
 
-	for( std::map<Alias*,Alias*>::iterator i = m_aliases.begin(); i != m_aliases.end(); ++i )
+	for( AliasMap::iterator i = m_aliases.begin(); i != m_aliases.end(); ++i )
 	{
 		Alias* dest = i->first;
 
@@ -728,7 +728,7 @@ bool RegisterAllocator::processAliases()
 			// Run the normal conflict check against `preferred`.  If it
 			// holds, assign immediately and skip the j-loop.
 			bool conflict = false;
-			for( std::map<Alias*,Alias*>::iterator k = m_aliases.begin(); k != m_aliases.end(); ++k )
+			for( AliasMap::iterator k = m_aliases.begin(); k != m_aliases.end(); ++k )
 			{
 				Alias* src = k->first;
 				if( !src->allocatedRegister() ) continue;
@@ -761,7 +761,7 @@ bool RegisterAllocator::processAliases()
 			if( !candidate->available() )
 				continue;
 
-			for( std::map<Alias*,Alias*>::iterator k = m_aliases.begin(); k != m_aliases.end(); ++k )
+			for( AliasMap::iterator k = m_aliases.begin(); k != m_aliases.end(); ++k )
 			{
 				Alias* src = k->first;
 
@@ -957,7 +957,7 @@ Alias* RegisterAllocator::obtainAlias( Alias::Type type )
 
 void RegisterAllocator::releaseAlias( Alias* alias )
 {
-	std::map<Alias*,Alias*>::iterator i = m_aliases.find( alias );
+	AliasMap::iterator i = m_aliases.find( alias );
 	assert( i != m_aliases.end() );
 
 	// Any alias whose same-name predecessor chain points at `alias` is
@@ -965,7 +965,7 @@ void RegisterAllocator::releaseAlias( Alias* alias )
 	// doesn't walk into freed memory.  (Without this guard openvcl segfaults
 	// when branch-state merges release one half of a previously-recorded
 	// two-address pair.)
-	for( std::map<Alias*,Alias*>::iterator k = m_aliases.begin(); k != m_aliases.end(); ++k )
+	for( AliasMap::iterator k = m_aliases.begin(); k != m_aliases.end(); ++k )
 	{
 		Alias* other = k->first;
 		if( other == alias )

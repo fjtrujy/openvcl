@@ -45,6 +45,7 @@ public:
 	void setAllocatedRegister( const Register* allocated );
 	const Register* allocatedRegister() const;
 
+	unsigned int id() const;
 	Type type() const;
 
 	void addRange( unsigned int start, unsigned int stop );
@@ -69,9 +70,12 @@ private:
 
 	Type m_type;
 
+	unsigned int m_id;
 	const Register* m_allocatedRegister;
 	Alias* m_sameNamePredecessor;
 	std::list<Range> m_ranges;
+
+	static unsigned int s_nextId;
 
 };
 

@@ -139,6 +139,33 @@ TEST_CASE("Pairing: independent upper+lower ops pair into one cycle")
     CHECK(linePairsSubstrings(vsm, "mulax", "lq.xyz"));
 }
 
+TEST_CASE("Register allocation: emitted VSM is stable across repeated runs")
+{
+    const std::string body =
+        "\tmove.xyzw vf01, vf00\n"
+        "\tmove.xyzw vf02, vf00\n"
+        "\tmove.xyzw vf03, vf00\n"
+        "\tmove.xyzw vf04, vf00\n"
+        "\tmove.xyzw vf05, vf00\n"
+        "\tmove.xyzw vf06, vf00\n"
+        "\tmove.xyzw vf07, vf00\n"
+        "\tmove.xyzw vf08, vf00\n"
+        "\tmul.xyz vf09, vf01, vf02\n"
+        "\tadd.xyz vf10, vf03, vf04\n"
+        "\tsub.xyz vf11, vf05, vf06\n"
+        "\tmax.xyz vf12, vf07, vf08\n"
+        "\tadd.xyz vf13, vf09, vf10\n"
+        "\tmul.xyz vf14, vf11, vf12\n"
+        "\tadd.xyz vf15, vf13, vf14\n"
+        "\tsq.xyz vf15, 0(vi00)\n";
+
+    std::string first = runEmit(body, "vsmStableAllocationA");
+    std::string second = runEmit(body, "vsmStableAllocationA");
+    REQUIRE(first.length() > 0);
+    REQUIRE(second.length() > 0);
+    CHECK(first == second);
+}
+
 TEST_CASE("Pairing: independent upper op can pair with adjacent plain store")
 {
     // Pairing an adjacent store does not reorder memory; it only fills the
