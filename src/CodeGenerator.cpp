@@ -166,6 +166,8 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				}
 			}
 
+			padForRegisterReadHazards(token, partner);
+
 			// VU1 FMAC pipeline is 4 cycles deep.  If THIS cycle would
 			// read MAC/CLIP and the relevant FMAC ran less than 4 cycles
 			// ago, pad with NOPs until the flag is settled.  We check
@@ -213,6 +215,10 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				m_codeLines.push_back(pairedLine);
 				// Either side of the pair could be the FMAC / clipw we
 				// need to remember for the cooldown.
+				recordRegisterReads(token, m_currentCycle);
+				recordRegisterReads(*partner, m_currentCycle);
+				recordRegisterWrites(token, m_currentCycle);
+				recordRegisterWrites(*partner, m_currentCycle);
 				if( token.operand()->unit() == Operand::FMAC || partner->operand()->unit() == Operand::FMAC )
 					m_lastFMACCycle = m_currentCycle;
 				if( isClipw(token.operand()->name()) || isClipw(partner->operand()->name()) )
@@ -274,8 +280,11 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 		}
 		else
 		{
+			int issueCycle = m_currentCycle;
 			m_codeLines.push_back(outputLine);
 			m_currentCycle++;
+			recordRegisterReads(token, issueCycle);
+			recordRegisterWrites(token, issueCycle);
 		}
 
 		// Remember this cycle as the most recent FMAC / clipw so
@@ -335,6 +344,126 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 void CodeGenerator::addNopLine()
 {
 	m_codeLines.push_back(std::string("                    nop                             nop"));
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+	bool registerKey( const Token::Argument& arg, std::string& key )
+	{
+		if( arg.type() != Token::Argument::FLOAT_REGISTER
+		    && arg.type() != Token::Argument::INTEGER_REGISTER )
+			return false;
+
+		if( arg.content() == Token::Argument::ALIAS )
+		{
+			Dependency* dependency = arg.dependency();
+			if( dependency && dependency->alias()
+			    && dependency->alias()->allocatedRegister() )
+			{
+				key = dependency->alias()->allocatedRegister()->name();
+				return true;
+			}
+		}
+
+		std::stringstream s;
+		s << ((arg.type() == Token::Argument::FLOAT_REGISTER) ? "VF" : "VI")
+		  << std::setw(2) << std::setfill('0') << arg.regNumber();
+		key = s.str();
+		return true;
+	}
+
+	void collectRegisterReads( const Token& token, std::list<std::string>& reads )
+	{
+		const std::list<Token::Argument>& args = token.arguments();
+		for( std::list<Token::Argument>::const_iterator i = args.begin(); i != args.end(); ++i )
+		{
+			if( (*i).flags() & Token::Argument::WRITE )
+				continue;
+			std::string key;
+			if( registerKey(*i, key) )
+				reads.push_back(key);
+		}
+	}
+
+	void collectRegisterWrites( const Token& token, std::list<std::string>& writes )
+	{
+		const std::list<Token::Argument>& args = token.arguments();
+		for( std::list<Token::Argument>::const_iterator i = args.begin(); i != args.end(); ++i )
+		{
+			if( !((*i).flags() & Token::Argument::WRITE) )
+				continue;
+			std::string key;
+			if( registerKey(*i, key) )
+				writes.push_back(key);
+		}
+	}
+}
+
+void CodeGenerator::padForRegisterReadHazards( const Token& token, const Token* partner )
+{
+	std::list<std::string> reads;
+	std::list<std::string> writes;
+	collectRegisterReads(token, reads);
+	collectRegisterWrites(token, writes);
+	if( partner )
+	{
+		collectRegisterReads(*partner, reads);
+		collectRegisterWrites(*partner, writes);
+	}
+
+	while( true )
+	{
+		int needed = 0;
+		for( std::list<std::string>::const_iterator i = reads.begin(); i != reads.end(); ++i )
+		{
+			std::map<std::string, int>::const_iterator ready = m_registerReadyCycle.find(*i);
+			if( ready == m_registerReadyCycle.end() )
+				continue;
+			const int gap = ready->second - m_currentCycle;
+			if( gap > needed )
+				needed = gap;
+		}
+		for( std::list<std::string>::const_iterator i = writes.begin(); i != writes.end(); ++i )
+		{
+			std::map<std::string, int>::const_iterator safe = m_registerWriteSafeCycle.find(*i);
+			if( safe == m_registerWriteSafeCycle.end() )
+				continue;
+			const int gap = safe->second - m_currentCycle;
+			if( gap > needed )
+				needed = gap;
+		}
+
+		if( needed <= 0 )
+			break;
+
+		addNopLine();
+		m_currentCycle++;
+	}
+}
+
+void CodeGenerator::recordRegisterReads( const Token& token, int issueCycle )
+{
+	if( !token.operand() || token.operand()->latency() <= 1 )
+		return;
+
+	std::list<std::string> reads;
+	collectRegisterReads(token, reads);
+	for( std::list<std::string>::const_iterator i = reads.begin(); i != reads.end(); ++i )
+		m_registerWriteSafeCycle[*i] = issueCycle + token.operand()->latency() + 1;
+}
+
+void CodeGenerator::recordRegisterWrites( const Token& token, int issueCycle )
+{
+	if( !token.operand() || token.operand()->latency() <= 1 )
+		return;
+
+	const int latency = token.operand()->latency();
+	std::list<std::string> writes;
+	collectRegisterWrites(token, writes);
+	for( std::list<std::string>::const_iterator i = writes.begin(); i != writes.end(); ++i )
+		m_registerReadyCycle[*i] = issueCycle + latency + 1;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -474,25 +603,20 @@ bool CodeGenerator::hasDataDependency( const Token& a, const Token& b )
 		    && aType != Token::Argument::INTEGER_REGISTER )
 			continue;
 
-		Dependency* aDep = (*ai).dependency();
-		if( !aDep || !aDep->alias() )
+		std::string aKey;
+		if( !registerKey(*ai, aKey) )
 			continue;
-		const Register* aReg = aDep->alias()->allocatedRegister();
 
 		for( std::list<Token::Argument>::const_iterator bi = bArgs.begin(); bi != bArgs.end(); ++bi )
 		{
 			Token::Argument::Type bType = (*bi).type();
 			if( bType != aType )
 				continue;
-			Dependency* bDep = (*bi).dependency();
-			if( !bDep || !bDep->alias() )
+			std::string bKey;
+			if( !registerKey(*bi, bKey) )
 				continue;
-			const Register* bReg = bDep->alias()->allocatedRegister();
 
-			bool same = ( aReg && bReg )
-				? ( aReg == bReg )
-				: ( aDep->alias() == bDep->alias() );
-			if( !same )
+			if( aKey != bKey )
 				continue;
 
 			// RAW (b reads what a writes) or WAW (b also writes).
@@ -857,6 +981,12 @@ std::string CodeGenerator::generateOperand(const Token& token)
 	}
 
 	unsigned int fields = token.fields();
+	if( !fields
+	    && token.operand()->unit() == Operand::FMAC
+	    && (token.operand()->flags() & Operand::DEST) )
+	{
+		fields = Token::X | Token::Y | Token::Z | Token::W;
+	}
 
 	//generate fileds
 	if(fields)

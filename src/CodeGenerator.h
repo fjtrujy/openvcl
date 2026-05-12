@@ -57,6 +57,9 @@ private:
 	std::string accumulatorArg( const Token::Argument& arg, const Token& token );
 
 	void addNopLine();
+	void padForRegisterReadHazards( const Token& token, const Token* partner );
+	void recordRegisterReads( const Token& token, int issueCycle );
+	void recordRegisterWrites( const Token& token, int issueCycle );
 
 	// Dual-pipe pairing helpers.  See CodeGenerator.cpp for the contract.
 	static bool isEmittableInstruction( const Token& t );
@@ -83,6 +86,8 @@ private:
 	int m_currentCycle;
 	int m_lastFMACCycle;
 	int m_lastClipwCycle;
+	std::map<std::string, int> m_registerReadyCycle;
+	std::map<std::string, int> m_registerWriteSafeCycle;
 };
 
 #include "CodeGenerator.inl"

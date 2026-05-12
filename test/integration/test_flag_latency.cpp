@@ -150,3 +150,49 @@ TEST_CASE("Latency: plain mul followed by fmand has at least 4 cycles between")
     REQUIRE(d > 0);
     CHECK(d >= 4);
 }
+
+TEST_CASE("Latency: lq followed by vf consumer has at least 5 cycles between")
+{
+    // ps2gl's general renderer loads texture STQ with lq and immediately
+    // consumes it with mulq.  Without a load-use delay, mulq sees the old VF
+    // contents and emits corrupt perspective texture coordinates.
+    const std::string body =
+        "\tdiv q, vf00w, vf00w\n"
+        "\tlq.xyz vf01, 0(vi00)\n"
+        "\tmulq.xyz vf02, vf01, q\n";
+
+    std::string vsm = runEmit(body, "vsmLatencyLqMulq");
+    REQUIRE(vsm.length() > 0);
+    int d = cycleDistance(vsm, "lq.xyz", "mulq");
+    REQUIRE(d > 0);
+    CHECK(d >= 5);
+}
+
+TEST_CASE("Latency: FMAC vf write followed by lower vf consumer has at least 5 cycles between")
+{
+    // ps2gl's perspective path writes xformed_vert.w with an FMAC and then
+    // divides by that W on the lower pipe.  The lower consumer must not read
+    // the pre-FMAC VF contents.
+    const std::string body =
+        "\tmove.xyzw vf01, vf00\n"
+        "\tmove.xyzw vf02, vf00\n"
+        "\tadd.w vf03, vf01, vf02\n"
+        "\tdiv q, vf00w, vf03w\n";
+
+    std::string vsm = runEmit(body, "vsmLatencyFmacDiv");
+    REQUIRE(vsm.length() > 0);
+    int d = cycleDistance(vsm, "add.w", "div");
+    REQUIRE(d > 0);
+    CHECK(d >= 5);
+}
+
+TEST_CASE("CodeGen: full-width FMAC destination emits explicit xyzw mask")
+{
+    const std::string body =
+        "\tmove.xyzw vf02, vf00\n"
+        "\tmaddw.xyzw vf01, vf02, vf00w\n";
+
+    std::string vsm = runEmit(body, "vsmFullFmacMask");
+    REQUIRE(vsm.length() > 0);
+    CHECK(vsm.find("maddw.xyzw") != std::string::npos);
+}

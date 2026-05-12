@@ -15,6 +15,7 @@
 
 #include <iostream>
 #include <iomanip>
+#include <set>
 #include <vector>
 #include <stdlib.h>
 #include <assert.h>
@@ -261,6 +262,7 @@ bool RegisterAllocator::process( std::list<Token>& tokens )
 	}
 
 	collectLiteralRegisterUsage( tokens );
+	extendContinuationLiveRanges( tokens );
 
 	if( m_aliases.size() > 0 )
 	{
@@ -799,6 +801,83 @@ bool RegisterAllocator::processAliases()
 	}
 
 	return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+	void extendContinuationBlockLiveRanges( std::list<Token>::iterator blockStart, std::list<Token>::iterator blockEnd )
+	{
+		for( std::list<Token>::iterator cont = blockStart; cont != blockEnd; ++cont )
+		{
+			if( !cont->operand() || cont->operand()->name() != "--cont" )
+				continue;
+
+			const unsigned int contLine = cont->lineNumber();
+			unsigned int blockEndLine = contLine;
+			std::set<Alias*> writtenBeforeCont;
+			std::set<Alias*> liveAcrossCont;
+
+			for( std::list<Token>::iterator t = blockStart; t != blockEnd; ++t )
+			{
+				if( t->lineNumber() > blockEndLine )
+					blockEndLine = t->lineNumber();
+
+				for( std::list<Token::Argument>::const_iterator a = t->arguments().begin(); a != t->arguments().end(); ++a )
+				{
+					if( a->content() != Token::Argument::ALIAS || !a->dependency() || !a->dependency()->alias() )
+						continue;
+
+					Alias* alias = a->dependency()->alias();
+					if( t->lineNumber() < contLine && (a->flags() & Token::Argument::WRITE) )
+						writtenBeforeCont.insert( alias );
+					else if( t->lineNumber() > contLine
+					         && !(a->flags() & Token::Argument::WRITE)
+					         && writtenBeforeCont.find( alias ) != writtenBeforeCont.end() )
+						liveAcrossCont.insert( alias );
+				}
+			}
+
+			for( std::set<Alias*>::iterator a = liveAcrossCont.begin(); a != liveAcrossCont.end(); ++a )
+				(*a)->addRange( contLine, blockEndLine );
+		}
+	}
+}
+
+void RegisterAllocator::extendContinuationLiveRanges( std::list<Token>& tokens )
+{
+	std::list<Token>::iterator blockStart = tokens.end();
+	for( std::list<Token>::iterator i = tokens.begin(); i != tokens.end(); ++i )
+	{
+		if( !i->operand() )
+			continue;
+
+		if( i->operand()->name() == "--endenter" )
+		{
+			blockStart = i;
+			++blockStart;
+			continue;
+		}
+
+		const bool startsNewBlock = (i->operand()->unit() == Operand::ENTER);
+		const bool startsExitBlock = (i->operand()->unit() == Operand::EXIT);
+		if( blockStart == tokens.end() || (!startsNewBlock && !startsExitBlock) )
+			continue;
+
+		std::list<Token>::iterator blockEnd = i;
+		extendContinuationBlockLiveRanges( blockStart, blockEnd );
+
+		blockStart = tokens.end();
+		if( startsNewBlock )
+		{
+			blockStart = i;
+			++blockStart;
+		}
+	}
+
+	if( blockStart != tokens.end() )
+		extendContinuationBlockLiveRanges( blockStart, tokens.end() );
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

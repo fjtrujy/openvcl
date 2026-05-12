@@ -88,6 +88,7 @@ private:
 	// happens to share VI01.  Synthesized as preallocated aliases inserted
 	// into m_aliases so the existing interference check picks them up.
 	void collectLiteralRegisterUsage( std::list<Token>& tokens );
+	void extendContinuationLiveRanges( std::list<Token>& tokens );
 
 	bool updateDynamicTracker( const Token* src );
 
