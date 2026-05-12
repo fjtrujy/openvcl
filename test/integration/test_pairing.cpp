@@ -179,6 +179,23 @@ TEST_CASE("Pairing: xgkick does not pull a following upper op before it")
     CHECK(!linePairsSubstrings(vsm, "add.xyz", "xgkick"));
 }
 
+TEST_CASE("Scheduling: branch emission reuses existing hazard nop before branch")
+{
+    const std::string body =
+        "\tilw.x vi01, 0(vi00)\n"
+        "\tibeq vi01, vi00, done_lid\n"
+        "\tiaddiu vi02, vi00, 1\n"
+        "done_lid:\n";
+    std::string vsm = runEmit(body, "vsmBranchReuseHazardNop");
+    REQUIRE(vsm.length() > 0);
+
+    int loadLine = lineIndex(vsm, "ilw.x");
+    int branchLine = lineIndex(vsm, "ibeq");
+    REQUIRE(loadLine >= 0);
+    REQUIRE(branchLine >= 0);
+    CHECK(branchLine - loadLine == 5);
+}
+
 TEST_CASE("Pairing: independent upper op can pair with FDIV")
 {
     // FDIV writes Q on the lower pipe.  With deferred waitq handling, an

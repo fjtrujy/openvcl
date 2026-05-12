@@ -465,8 +465,11 @@ void CodeGenerator::emitSingleToken( const Token& token )
 
 	if( token.operand()->unit() == Operand::BRU )
 	{
-		addNopLine();
-		m_currentCycle++;
+		if( m_codeLines.empty() || m_codeLines.back() != std::string("                    nop                             nop") )
+		{
+			addNopLine();
+			m_currentCycle++;
+		}
 		m_codeLines.push_back(outputLine);
 		m_currentCycle++;
 		addNopLine();
