@@ -66,6 +66,15 @@ namespace
         args.push_back(fixturePath(fixture));
         return ::test::run_openvcl(args, "");
     }
+
+    ::test::RunResult runCostLoopStdin(const std::string& source, const std::string& loop)
+    {
+        std::vector<std::string> args;
+        args.push_back("--cost");
+        args.push_back("--cost-loop");
+        args.push_back(loop);
+        return ::test::run_openvcl(args, source);
+    }
 }
 
 TEST_CASE("VSM cost CLI: fixture file reports precomputed scheduled cost")
@@ -151,4 +160,27 @@ TEST_CASE("VSM cost CLI: fixture proves long-latency operations affect weighted 
     CHECK(textMetric(r.stdout_data, "long_latency_cycles") == 43);
     CHECK(textMetric(r.stdout_data, "max_op_latency") == 29);
     CHECK(contains(r.stdout_data, "weighted_lid: cycles=4"));
+}
+
+TEST_CASE("VSM cost CLI: stdin wait program reports estimated stalls")
+{
+    const std::string source =
+        "\t.vu\n"
+        "wait_lid:\n"
+        "                    nop                             div q, VF01w, VF02w\n"
+        "                    nop                             waitq\n"
+        "                    nop                             esadd p, VF03\n"
+        "                    nop                             waitp\n";
+
+    ::test::RunResult r = runCostLoopStdin(source, "wait_lid=3");
+    REQUIRE(r.exit_code == 0);
+    CHECK(textMetric(r.stdout_data, "static_cycles") == 4);
+    CHECK(textMetric(r.stdout_data, "estimated_total_cycles") == 20);
+    CHECK(textMetric(r.stdout_data, "wait_stall_cycles") == 16);
+    CHECK(textMetric(r.stdout_data, "waitq_stall_cycles") == 6);
+    CHECK(textMetric(r.stdout_data, "waitp_stall_cycles") == 10);
+    CHECK(textMetric(r.stdout_data, "weighted_estimated_total_cycles") == 60);
+    CHECK(textMetric(r.stdout_data, "weighted_wait_stall_cycles") == 48);
+    CHECK(contains(r.stdout_data, "top_weighted_wait_blocks:"));
+    CHECK(contains(r.stdout_data, "wait_lid: weighted_wait_stall=48 wait_stall=16 repeat=3"));
 }

@@ -190,3 +190,42 @@ TEST_CASE("VsmCostAnalyzer fixture: long-latency operations are weighted differe
     CHECK(textMetric(report, "max_op_latency") == 29);
     CHECK(contains(report, "weighted_lid: cycles=4"));
 }
+
+TEST_CASE("VsmCostAnalyzer inline: wait instructions add estimated stall cycles")
+{
+    const std::string source =
+        "\t.vu\n"
+        "wait_lid:\n"
+        "                    nop                             div q, VF01w, VF02w\n"
+        "                    nop                             waitq\n"
+        "                    nop                             esadd p, VF03\n"
+        "                    nop                             waitp\n";
+
+    std::istringstream input(source);
+    vcl::VsmCostAnalyzer analyzer;
+    REQUIRE(analyzer.analyze(input, "inline_waits.vsm"));
+    analyzer.setBlockRepeat("wait_lid", 3);
+
+    std::ostringstream text;
+    REQUIRE(analyzer.writeText(text));
+    CHECK(textMetric(text.str(), "static_cycles") == 4);
+    CHECK(textMetric(text.str(), "estimated_total_cycles") == 20);
+    CHECK(textMetric(text.str(), "wait_stall_cycles") == 16);
+    CHECK(textMetric(text.str(), "waitq_stall_cycles") == 6);
+    CHECK(textMetric(text.str(), "waitp_stall_cycles") == 10);
+    CHECK(textMetric(text.str(), "weighted_static_cycles") == 12);
+    CHECK(textMetric(text.str(), "weighted_estimated_total_cycles") == 60);
+    CHECK(textMetric(text.str(), "weighted_wait_stall_cycles") == 48);
+    CHECK(contains(text.str(), "wait_lid: cycles=4 repeat=3 weighted_cycles=12"));
+    CHECK(contains(text.str(), "wait_stall=16 waitq_stall=6 waitp_stall=10 estimated_cycles=20"));
+    CHECK(contains(text.str(), "top_weighted_wait_blocks:"));
+    CHECK(contains(text.str(), "wait_lid: weighted_wait_stall=48 wait_stall=16 repeat=3"));
+
+    std::ostringstream json;
+    REQUIRE(analyzer.writeJson(json));
+    CHECK(jsonMetric(json.str(), "estimated_total_cycles") == 20);
+    CHECK(jsonMetric(json.str(), "wait_stall_cycles") == 16);
+    CHECK(jsonMetric(json.str(), "weighted_estimated_total_cycles") == 60);
+    CHECK(jsonMetric(json.str(), "weighted_wait_stall_cycles") == 48);
+    CHECK(contains(json.str(), "\"top_weighted_wait_blocks\""));
+}

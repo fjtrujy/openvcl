@@ -68,6 +68,8 @@ private:
 		unsigned int singleLowerCycles;
 		unsigned int nopOnlyCycles;
 		unsigned int nopSlots;
+		unsigned int waitqStallCycles;
+		unsigned int waitpStallCycles;
 		unsigned int operationLatencyCycles;
 		unsigned int longLatencyOps;
 		unsigned int longLatencyCycles;
@@ -84,6 +86,10 @@ private:
 		unsigned int nopSlots;
 		unsigned int weightedNopSlots;
 		unsigned int weightedNopOnlyCycles;
+		unsigned int estimatedCycles;
+		unsigned int weightedEstimatedCycles;
+		unsigned int waitStallCycles;
+		unsigned int weightedWaitStallCycles;
 	};
 
 	void reset();
@@ -94,8 +100,10 @@ private:
 	unsigned int blockRepeat( const Block& block ) const;
 	std::vector<WeightedBlock> weightedBlocksByCycles() const;
 	std::vector<WeightedBlock> weightedBlocksByIdleSlots() const;
+	std::vector<WeightedBlock> weightedBlocksByWaitStalls() const;
 	static bool weightedBlockGreater( const WeightedBlock& a, const WeightedBlock& b );
 	static bool weightedIdleBlockGreater( const WeightedBlock& a, const WeightedBlock& b );
+	static bool weightedWaitBlockGreater( const WeightedBlock& a, const WeightedBlock& b );
 
 	static std::string stripComment( const std::string& line );
 	static std::string trim( const std::string& text );
@@ -126,6 +134,8 @@ private:
 	unsigned int m_branchCycles;
 	unsigned int m_waitqCycles;
 	unsigned int m_waitpCycles;
+	unsigned int m_waitqStallCycles;
+	unsigned int m_waitpStallCycles;
 	unsigned int m_fdivOps;
 	unsigned int m_efuOps;
 	unsigned int m_eBitCycles;
@@ -138,6 +148,9 @@ private:
 	unsigned int m_longLatencyOps;
 	unsigned int m_longLatencyCycles;
 	unsigned int m_maxOpLatency;
+	unsigned int m_estimatedCycles;
+	unsigned int m_qReadyCycle;
+	unsigned int m_pReadyCycle;
 };
 
 }

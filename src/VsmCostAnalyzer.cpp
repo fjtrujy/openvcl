@@ -170,6 +170,8 @@ VsmCostAnalyzer::Block::Block( const std::string& blockLabel )
 	singleLowerCycles = 0;
 	nopOnlyCycles = 0;
 	nopSlots = 0;
+	waitqStallCycles = 0;
+	waitpStallCycles = 0;
 	operationLatencyCycles = 0;
 	longLatencyOps = 0;
 	longLatencyCycles = 0;
@@ -199,6 +201,8 @@ void VsmCostAnalyzer::reset()
 	m_branchCycles = 0;
 	m_waitqCycles = 0;
 	m_waitpCycles = 0;
+	m_waitqStallCycles = 0;
+	m_waitpStallCycles = 0;
 	m_fdivOps = 0;
 	m_efuOps = 0;
 	m_eBitCycles = 0;
@@ -211,6 +215,9 @@ void VsmCostAnalyzer::reset()
 	m_longLatencyOps = 0;
 	m_longLatencyCycles = 0;
 	m_maxOpLatency = 0;
+	m_estimatedCycles = 0;
+	m_qReadyCycle = 0;
+	m_pReadyCycle = 0;
 }
 
 void VsmCostAnalyzer::setBlockRepeat( const std::string& label, unsigned int repeat )
@@ -352,8 +359,26 @@ void VsmCostAnalyzer::recordCycle( const Slot& upper, const Slot& lowerSlot )
 {
 	const bool upperActive = upper.present && !upper.nop;
 	const bool lowerActive = lowerSlot.present && !lowerSlot.nop;
+	const unsigned int issueCycle = m_estimatedCycles;
+	unsigned int waitqStall = 0;
+	unsigned int waitpStall = 0;
+
+	if( lowerSlot.unit == UNIT_WAITQ || upper.unit == UNIT_WAITQ )
+	{
+		const unsigned int resumeCycle = upperActive ? issueCycle : (issueCycle + 1);
+		if( m_qReadyCycle > resumeCycle )
+			waitqStall = m_qReadyCycle - resumeCycle;
+	}
+	if( lowerSlot.unit == UNIT_WAITP || upper.unit == UNIT_WAITP )
+	{
+		const unsigned int resumeCycle = upperActive ? issueCycle : (issueCycle + 1);
+		if( m_pReadyCycle > resumeCycle )
+			waitpStall = m_pReadyCycle - resumeCycle;
+	}
+	const unsigned int waitStall = std::max( waitqStall, waitpStall );
 
 	++m_staticCycles;
+	m_estimatedCycles += 1 + waitStall;
 	m_nopSlots += upperActive ? 0 : 1;
 	m_nopSlots += lowerActive ? 0 : 1;
 
@@ -384,10 +409,20 @@ void VsmCostAnalyzer::recordCycle( const Slot& upper, const Slot& lowerSlot )
 		++m_waitqCycles;
 	if( lowerSlot.unit == UNIT_WAITP || upper.unit == UNIT_WAITP )
 		++m_waitpCycles;
+	m_waitqStallCycles += waitqStall;
+	m_waitpStallCycles += waitpStall;
 	if( lowerSlot.unit == UNIT_FDIV || upper.unit == UNIT_FDIV )
 		++m_fdivOps;
 	if( lowerSlot.unit == UNIT_EFU || upper.unit == UNIT_EFU )
 		++m_efuOps;
+	if( lowerSlot.unit == UNIT_FDIV )
+		m_qReadyCycle = issueCycle + lowerSlot.latency + 1;
+	if( upper.unit == UNIT_FDIV )
+		m_qReadyCycle = issueCycle + upper.latency + 1;
+	if( lowerSlot.unit == UNIT_EFU )
+		m_pReadyCycle = issueCycle + lowerSlot.latency + 1;
+	if( upper.unit == UNIT_EFU )
+		m_pReadyCycle = issueCycle + upper.latency + 1;
 
 	if( upperActive && upper.unit == UNIT_UNKNOWN )
 		++m_unknownInstructions;
@@ -428,6 +463,8 @@ void VsmCostAnalyzer::recordCycle( const Slot& upper, const Slot& lowerSlot )
 	++block.cycles;
 	block.nopSlots += upperActive ? 0 : 1;
 	block.nopSlots += lowerActive ? 0 : 1;
+	block.waitqStallCycles += waitqStall;
+	block.waitpStallCycles += waitpStall;
 	if( upperActive )
 		++block.upperInstructions;
 	if( lowerActive )
@@ -485,6 +522,15 @@ bool VsmCostAnalyzer::weightedIdleBlockGreater( const WeightedBlock& a, const We
 	return a.label < b.label;
 }
 
+bool VsmCostAnalyzer::weightedWaitBlockGreater( const WeightedBlock& a, const WeightedBlock& b )
+{
+	if( a.weightedWaitStallCycles != b.weightedWaitStallCycles )
+		return a.weightedWaitStallCycles > b.weightedWaitStallCycles;
+	if( a.weightedEstimatedCycles != b.weightedEstimatedCycles )
+		return a.weightedEstimatedCycles > b.weightedEstimatedCycles;
+	return a.label < b.label;
+}
+
 std::vector<VsmCostAnalyzer::WeightedBlock> VsmCostAnalyzer::weightedBlocksByCycles() const
 {
 	std::vector<WeightedBlock> weightedBlocks;
@@ -503,6 +549,10 @@ std::vector<VsmCostAnalyzer::WeightedBlock> VsmCostAnalyzer::weightedBlocksByCyc
 		block.nopSlots = i->nopSlots;
 		block.weightedNopSlots = i->nopSlots * repeat;
 		block.weightedNopOnlyCycles = i->nopOnlyCycles * repeat;
+		block.waitStallCycles = i->waitqStallCycles + i->waitpStallCycles;
+		block.weightedWaitStallCycles = block.waitStallCycles * repeat;
+		block.estimatedCycles = i->cycles + block.waitStallCycles;
+		block.weightedEstimatedCycles = block.estimatedCycles * repeat;
 		weightedBlocks.push_back(block);
 	}
 	std::sort( weightedBlocks.begin(), weightedBlocks.end(), weightedBlockGreater );
@@ -513,6 +563,13 @@ std::vector<VsmCostAnalyzer::WeightedBlock> VsmCostAnalyzer::weightedBlocksByIdl
 {
 	std::vector<WeightedBlock> weightedBlocks = weightedBlocksByCycles();
 	std::sort( weightedBlocks.begin(), weightedBlocks.end(), weightedIdleBlockGreater );
+	return weightedBlocks;
+}
+
+std::vector<VsmCostAnalyzer::WeightedBlock> VsmCostAnalyzer::weightedBlocksByWaitStalls() const
+{
+	std::vector<WeightedBlock> weightedBlocks = weightedBlocksByCycles();
+	std::sort( weightedBlocks.begin(), weightedBlocks.end(), weightedWaitBlockGreater );
 	return weightedBlocks;
 }
 
@@ -527,6 +584,9 @@ bool VsmCostAnalyzer::writeText( std::ostream& stream ) const
 	unsigned int weightedPairedCycles = 0;
 	unsigned int weightedNopOnlyCycles = 0;
 	unsigned int weightedOperationLatencyCycles = 0;
+	unsigned int weightedWaitStallCycles = 0;
+	unsigned int weightedWaitqStallCycles = 0;
+	unsigned int weightedWaitpStallCycles = 0;
 
 	for( std::vector<Block>::const_iterator i = m_blocks.begin(); i != m_blocks.end(); ++i )
 	{
@@ -538,12 +598,23 @@ bool VsmCostAnalyzer::writeText( std::ostream& stream ) const
 		weightedPairedCycles += i->pairedCycles * repeat;
 		weightedNopOnlyCycles += i->nopOnlyCycles * repeat;
 		weightedOperationLatencyCycles += i->operationLatencyCycles * repeat;
+		weightedWaitqStallCycles += i->waitqStallCycles * repeat;
+		weightedWaitpStallCycles += i->waitpStallCycles * repeat;
 	}
+	weightedWaitStallCycles = weightedWaitqStallCycles + weightedWaitpStallCycles;
 
 	stream << "VSM cost report" << std::endl;
 	stream << "input: " << m_inputName << std::endl;
 	stream << "static_cycles: " << m_staticCycles << std::endl;
+	stream << "estimated_total_cycles: " << m_estimatedCycles << std::endl;
+	stream << "wait_stall_cycles: " << (m_waitqStallCycles + m_waitpStallCycles) << std::endl;
+	stream << "waitq_stall_cycles: " << m_waitqStallCycles << std::endl;
+	stream << "waitp_stall_cycles: " << m_waitpStallCycles << std::endl;
 	stream << "weighted_static_cycles: " << weightedStaticCycles << std::endl;
+	stream << "weighted_estimated_total_cycles: " << (weightedStaticCycles + weightedWaitStallCycles) << std::endl;
+	stream << "weighted_wait_stall_cycles: " << weightedWaitStallCycles << std::endl;
+	stream << "weighted_waitq_stall_cycles: " << weightedWaitqStallCycles << std::endl;
+	stream << "weighted_waitp_stall_cycles: " << weightedWaitpStallCycles << std::endl;
 	stream << "weighted_instruction_slots: " << (weightedStaticCycles * 2) << std::endl;
 	stream << "weighted_instructions: " << weightedInstructions << std::endl;
 	stream << "weighted_paired_cycles: " << weightedPairedCycles << std::endl;
@@ -604,6 +675,10 @@ bool VsmCostAnalyzer::writeText( std::ostream& stream ) const
 		       << " single_lower=" << i->singleLowerCycles
 		       << " nop_only=" << i->nopOnlyCycles
 		       << " nop_slots=" << i->nopSlots
+		       << " wait_stall=" << (i->waitqStallCycles + i->waitpStallCycles)
+		       << " waitq_stall=" << i->waitqStallCycles
+		       << " waitp_stall=" << i->waitpStallCycles
+		       << " estimated_cycles=" << (i->cycles + i->waitqStallCycles + i->waitpStallCycles)
 		       << " op_latency=" << i->operationLatencyCycles
 		       << " long_ops=" << i->longLatencyOps
 		       << " long_cycles=" << i->longLatencyCycles
@@ -624,6 +699,10 @@ bool VsmCostAnalyzer::writeText( std::ostream& stream ) const
 		       << " weighted_nop_only=" << i->weightedNopOnlyCycles
 		       << " nop_slots=" << i->nopSlots
 		       << " weighted_nop_slots=" << i->weightedNopSlots
+		       << " estimated_cycles=" << i->estimatedCycles
+		       << " weighted_estimated_cycles=" << i->weightedEstimatedCycles
+		       << " wait_stall=" << i->waitStallCycles
+		       << " weighted_wait_stall=" << i->weightedWaitStallCycles
 		       << std::endl;
 	}
 
@@ -643,6 +722,24 @@ bool VsmCostAnalyzer::writeText( std::ostream& stream ) const
 		       << std::endl;
 	}
 
+	stream << "top_weighted_wait_blocks:" << std::endl;
+	const std::vector<WeightedBlock> waitBlocks = weightedBlocksByWaitStalls();
+	topCount = 0;
+	for( std::vector<WeightedBlock>::const_iterator i = waitBlocks.begin(); i != waitBlocks.end() && topCount < 8; ++i, ++topCount )
+	{
+		if( i->weightedWaitStallCycles == 0 )
+			break;
+		stream << "  " << i->label
+		       << ": weighted_wait_stall=" << i->weightedWaitStallCycles
+		       << " wait_stall=" << i->waitStallCycles
+		       << " repeat=" << i->repeat
+		       << " weighted_estimated_cycles=" << i->weightedEstimatedCycles
+		       << " estimated_cycles=" << i->estimatedCycles
+		       << " weighted_cycles=" << i->weightedCycles
+		       << " cycles=" << i->cycles
+		       << std::endl;
+	}
+
 	return true;
 }
 
@@ -657,6 +754,8 @@ bool VsmCostAnalyzer::writeJson( std::ostream& stream ) const
 	unsigned int weightedPairedCycles = 0;
 	unsigned int weightedNopOnlyCycles = 0;
 	unsigned int weightedOperationLatencyCycles = 0;
+	unsigned int weightedWaitqStallCycles = 0;
+	unsigned int weightedWaitpStallCycles = 0;
 
 	for( std::vector<Block>::const_iterator i = m_blocks.begin(); i != m_blocks.end(); ++i )
 	{
@@ -668,12 +767,23 @@ bool VsmCostAnalyzer::writeJson( std::ostream& stream ) const
 		weightedPairedCycles += i->pairedCycles * repeat;
 		weightedNopOnlyCycles += i->nopOnlyCycles * repeat;
 		weightedOperationLatencyCycles += i->operationLatencyCycles * repeat;
+		weightedWaitqStallCycles += i->waitqStallCycles * repeat;
+		weightedWaitpStallCycles += i->waitpStallCycles * repeat;
 	}
+	const unsigned int weightedWaitStallCycles = weightedWaitqStallCycles + weightedWaitpStallCycles;
 
 	stream << "{" << std::endl;
 	stream << "  \"input\": \"" << jsonEscape( m_inputName ) << "\"," << std::endl;
 	stream << "  \"static_cycles\": " << m_staticCycles << "," << std::endl;
+	stream << "  \"estimated_total_cycles\": " << m_estimatedCycles << "," << std::endl;
+	stream << "  \"wait_stall_cycles\": " << (m_waitqStallCycles + m_waitpStallCycles) << "," << std::endl;
+	stream << "  \"waitq_stall_cycles\": " << m_waitqStallCycles << "," << std::endl;
+	stream << "  \"waitp_stall_cycles\": " << m_waitpStallCycles << "," << std::endl;
 	stream << "  \"weighted_static_cycles\": " << weightedStaticCycles << "," << std::endl;
+	stream << "  \"weighted_estimated_total_cycles\": " << (weightedStaticCycles + weightedWaitStallCycles) << "," << std::endl;
+	stream << "  \"weighted_wait_stall_cycles\": " << weightedWaitStallCycles << "," << std::endl;
+	stream << "  \"weighted_waitq_stall_cycles\": " << weightedWaitqStallCycles << "," << std::endl;
+	stream << "  \"weighted_waitp_stall_cycles\": " << weightedWaitpStallCycles << "," << std::endl;
 	stream << "  \"weighted_instruction_slots\": " << (weightedStaticCycles * 2) << "," << std::endl;
 	stream << "  \"weighted_instructions\": " << weightedInstructions << "," << std::endl;
 	stream << "  \"weighted_paired_cycles\": " << weightedPairedCycles << "," << std::endl;
@@ -728,6 +838,10 @@ bool VsmCostAnalyzer::writeJson( std::ostream& stream ) const
 		       << "\"single_lower_cycles\": " << i->singleLowerCycles << ", "
 		       << "\"nop_only_cycles\": " << i->nopOnlyCycles << ", "
 		       << "\"nop_slots\": " << i->nopSlots << ", "
+		       << "\"wait_stall_cycles\": " << (i->waitqStallCycles + i->waitpStallCycles) << ", "
+		       << "\"waitq_stall_cycles\": " << i->waitqStallCycles << ", "
+		       << "\"waitp_stall_cycles\": " << i->waitpStallCycles << ", "
+		       << "\"estimated_cycles\": " << (i->cycles + i->waitqStallCycles + i->waitpStallCycles) << ", "
 		       << "\"operation_latency_cycles\": " << i->operationLatencyCycles << ", "
 		       << "\"long_latency_ops\": " << i->longLatencyOps << ", "
 		       << "\"long_latency_cycles\": " << i->longLatencyCycles
@@ -752,7 +866,11 @@ bool VsmCostAnalyzer::writeJson( std::ostream& stream ) const
 		       << "\"nop_only_cycles\": " << i->nopOnlyCycles << ", "
 		       << "\"weighted_nop_only_cycles\": " << i->weightedNopOnlyCycles << ", "
 		       << "\"nop_slots\": " << i->nopSlots << ", "
-		       << "\"weighted_nop_slots\": " << i->weightedNopSlots
+		       << "\"weighted_nop_slots\": " << i->weightedNopSlots << ", "
+		       << "\"estimated_cycles\": " << i->estimatedCycles << ", "
+		       << "\"weighted_estimated_cycles\": " << i->weightedEstimatedCycles << ", "
+		       << "\"wait_stall_cycles\": " << i->waitStallCycles << ", "
+		       << "\"weighted_wait_stall_cycles\": " << i->weightedWaitStallCycles
 		       << "}";
 	}
 
@@ -775,6 +893,30 @@ bool VsmCostAnalyzer::writeJson( std::ostream& stream ) const
 		       << "\"weighted_nop_only_cycles\": " << i->weightedNopOnlyCycles << ", "
 		       << "\"nop_only_cycles\": " << i->nopOnlyCycles
 		       << "}";
+	}
+
+	stream << std::endl << "  ]," << std::endl;
+	stream << "  \"top_weighted_wait_blocks\": [" << std::endl;
+
+	const std::vector<WeightedBlock> waitBlocks = weightedBlocksByWaitStalls();
+	topCount = 0;
+	for( std::vector<WeightedBlock>::const_iterator i = waitBlocks.begin(); i != waitBlocks.end() && topCount < 8; ++i )
+	{
+		if( i->weightedWaitStallCycles == 0 )
+			break;
+		if( topCount != 0 )
+			stream << "," << std::endl;
+		stream << "    {"
+		       << "\"label\": \"" << jsonEscape( i->label ) << "\", "
+		       << "\"weighted_wait_stall_cycles\": " << i->weightedWaitStallCycles << ", "
+		       << "\"wait_stall_cycles\": " << i->waitStallCycles << ", "
+		       << "\"repeat\": " << i->repeat << ", "
+		       << "\"weighted_estimated_cycles\": " << i->weightedEstimatedCycles << ", "
+		       << "\"estimated_cycles\": " << i->estimatedCycles << ", "
+		       << "\"weighted_cycles\": " << i->weightedCycles << ", "
+		       << "\"cycles\": " << i->cycles
+		       << "}";
+		++topCount;
 	}
 
 	stream << std::endl << "  ]" << std::endl;
