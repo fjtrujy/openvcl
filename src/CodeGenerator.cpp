@@ -901,6 +901,19 @@ namespace {
 		return fields;
 	}
 
+	unsigned int readFieldMask( const Token& token, const Token::Argument& arg )
+	{
+		if( arg.type() != Token::Argument::FLOAT_REGISTER )
+			return Token::X | Token::Y | Token::Z | Token::W;
+
+		unsigned int fields = arg.fields();
+		if( fields == 0 )
+			fields = token.fields();
+		if( fields == 0 )
+			fields = Token::X | Token::Y | Token::Z | Token::W;
+		return fields;
+	}
+
 	bool disjointFloatWrites( const Token& a, const Token::Argument& aArg,
 	                          const Token& b, const Token::Argument& bArg )
 	{
@@ -912,6 +925,19 @@ namespace {
 			return false;
 
 		return (writeFieldMask(a, aArg) & writeFieldMask(b, bArg)) == 0;
+	}
+
+	bool disjointFloatWriteAndRead( const Token& writer, const Token::Argument& writeArg,
+	                                const Token& reader, const Token::Argument& readArg )
+	{
+		if( writeArg.type() != Token::Argument::FLOAT_REGISTER
+		    || readArg.type() != Token::Argument::FLOAT_REGISTER )
+			return false;
+		if( !(writeArg.flags() & Token::Argument::WRITE)
+		    || (readArg.flags() & Token::Argument::WRITE) )
+			return false;
+
+		return (writeFieldMask(writer, writeArg) & readFieldMask(reader, readArg)) == 0;
 	}
 
 	std::string lowerName( const Token& token )
@@ -1289,6 +1315,8 @@ bool CodeGenerator::hasDataDependency( const Token& a, const Token& b )
 
 			const bool bWrite = ((*bi).flags() & Token::Argument::WRITE) != 0;
 			if( bWrite && disjointFloatWrites(a, *ai, b, *bi) )
+				continue;
+			if( !bWrite && disjointFloatWriteAndRead(a, *ai, b, *bi) )
 				continue;
 
 			// RAW (b reads what a writes) or overlapping WAW.

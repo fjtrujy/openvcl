@@ -285,6 +285,28 @@ TEST_CASE("Pairing: overlapping VF field writes stay unpaired")
     CHECK(!linePairsSubstrings(vsm, "ftoi4.xyz", "mfir.x"));
 }
 
+TEST_CASE("Pairing: disjoint VF field write and read can pair")
+{
+    const std::string body =
+        "\tmove.xyzw vf01, vf00\n"
+        "\tmul.xyz vf02, vf01, vf00\n"
+        "\tmfir.w vf01, vi00\n";
+    std::string vsm = runEmit(body, "vsmPairDisjointVfWriteRead");
+    REQUIRE(vsm.length() > 0);
+    CHECK(linePairsSubstrings(vsm, "mul.xyz", "mfir.w"));
+}
+
+TEST_CASE("Pairing: overlapping VF field write and read stay unpaired")
+{
+    const std::string body =
+        "\tmove.xyzw vf01, vf00\n"
+        "\tmul.xyz vf02, vf01, vf00\n"
+        "\tmfir.x vf01, vi00\n";
+    std::string vsm = runEmit(body, "vsmNoPairOverlappingVfWriteRead");
+    REQUIRE(vsm.length() > 0);
+    CHECK(!linePairsSubstrings(vsm, "mul.xyz", "mfir.x"));
+}
+
 TEST_CASE("Pairing: independent non-adjacent lower op can fill current upper slot")
 {
     // The iaddiu is separated from mulax by another upper-pipe op.  It can
