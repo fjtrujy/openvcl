@@ -217,6 +217,28 @@ TEST_CASE("Pairing: independent non-adjacent lower op can fill current upper slo
     CHECK(linePairsSubstrings(vsm, "mulax", "iaddiu"));
 }
 
+TEST_CASE("Pairing: distant independent lower op can fill current upper slot")
+{
+    // ps2gl setup blocks often have many same-pipe FMACs before the next
+    // independent lower op.  The bounded lookahead should be wide enough to
+    // find that lower op while dependency checks still decide what can cross.
+    const std::string body =
+        "\tmulax acc, vf00, vf00x\n"
+        "\tmadday acc, vf00, vf00y\n"
+        "\tmaddaz acc, vf00, vf00z\n"
+        "\tmaddw vf01, vf00, vf00w\n"
+        "\tmulax acc, vf00, vf00x\n"
+        "\tmadday acc, vf00, vf00y\n"
+        "\tmaddaz acc, vf00, vf00z\n"
+        "\tmaddw vf02, vf00, vf00w\n"
+        "\tmulax acc, vf00, vf00x\n"
+        "\tmadday acc, vf00, vf00y\n"
+        "\tiaddiu vi01, vi00, 1\n";
+    std::string vsm = runEmit(body, "vsmPairLookaheadDistantIndependent");
+    REQUIRE(vsm.length() > 0);
+    CHECK(linePairsSubstrings(vsm, "mulax", "iaddiu VI01"));
+}
+
 TEST_CASE("Pairing: non-adjacent candidate is not moved across a register conflict")
 {
     // The later lq writes VF01.  The intervening madday reads VF01, so the
@@ -291,6 +313,34 @@ TEST_CASE("Scheduling: latency-gap filler can pair with another ready op")
     REQUIRE(pairLine >= 0);
     REQUIRE(mtirLine >= 0);
     CHECK(pairLine < mtirLine);
+}
+
+TEST_CASE("Scheduling: distant ready op fills current register-latency wait")
+{
+    // The first several candidates also read the pending load result, so they
+    // are not ready.  A later independent integer op should still be found and
+    // moved into the gap instead of burning a pure NOP.
+    const std::string body =
+        "\tlq.xyz vf09, 0(vi00)\n"
+        "\tmtir vi01, vf09x\n"
+        "\tadd.xyz vf10, vf09, vf00\n"
+        "\tadd.xyz vf11, vf09, vf00\n"
+        "\tadd.xyz vf12, vf09, vf00\n"
+        "\tadd.xyz vf13, vf09, vf00\n"
+        "\tadd.xyz vf14, vf09, vf00\n"
+        "\tadd.xyz vf15, vf09, vf00\n"
+        "\tadd.xyz vf16, vf09, vf00\n"
+        "\tadd.xyz vf17, vf09, vf00\n"
+        "\tadd.xyz vf18, vf09, vf00\n"
+        "\tiaddiu vi02, vi00, 1\n";
+    std::string vsm = runEmit(body, "vsmScheduleDistantLatencyFiller");
+    REQUIRE(vsm.length() > 0);
+
+    int fillerLine = lineIndex(vsm, "iaddiu VI02");
+    int mtirLine = lineIndex(vsm, "mtir");
+    REQUIRE(fillerLine >= 0);
+    REQUIRE(mtirLine >= 0);
+    CHECK(fillerLine < mtirLine);
 }
 
 TEST_CASE("Scheduling: latency filler may load from a different base before a plain store")

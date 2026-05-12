@@ -170,7 +170,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 
 		if( token.label().length() == 0 && readHazardDelay(token, NULL) > 0 )
 		{
-			enum { FillerLookaheadLimit = 8 };
+			enum { FillerLookaheadLimit = 48 };
 			std::list<Token>::iterator filler = workTokens.end();
 			std::list<Token>::iterator p = k;
 			++p;
@@ -259,7 +259,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 		// every crossed instruction has no register/resource conflict and
 		// no memory/control side effect that would make reordering risky.
 		{
-			enum { PairLookaheadLimit = 8 };
+			enum { PairLookaheadLimit = 48 };
 			std::list<Token>::iterator p = k;
 			++p;
 			bool foundPartner = false;
