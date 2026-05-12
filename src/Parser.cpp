@@ -514,6 +514,10 @@ bool Parser::analyzeVsmCost()
 			return false;
 	}
 
+	const std::vector< std::pair<std::string, unsigned int> >& costLoops = m_cmdLine.costLoops();
+	for( std::vector< std::pair<std::string, unsigned int> >::const_iterator i = costLoops.begin(); i != costLoops.end(); ++i )
+		analyzer.setBlockRepeat( i->first, i->second );
+
 	if( m_cmdLine.output().length() > 0 )
 	{
 		std::ofstream output( m_cmdLine.output().c_str() );

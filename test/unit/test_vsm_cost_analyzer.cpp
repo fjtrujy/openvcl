@@ -111,6 +111,33 @@ TEST_CASE("VsmCostAnalyzer fixture: JSON exposes the same precomputed cost")
     CHECK(contains(report, "\"label\": \"entry_lid\""));
 }
 
+TEST_CASE("VsmCostAnalyzer fixture: block repeats expose weighted cost")
+{
+    std::ifstream input(fixturePath("simple_scheduled.vsm").c_str());
+    REQUIRE(input.good());
+
+    vcl::VsmCostAnalyzer analyzer;
+    REQUIRE(analyzer.analyze(input, "simple_scheduled.vsm"));
+    analyzer.setBlockRepeat("entry_lid", 4);
+
+    std::ostringstream text;
+    REQUIRE(analyzer.writeText(text));
+    CHECK(textMetric(text.str(), "static_cycles") == 5);
+    CHECK(textMetric(text.str(), "weighted_static_cycles") == 20);
+    CHECK(textMetric(text.str(), "weighted_instruction_slots") == 40);
+    CHECK(textMetric(text.str(), "weighted_instructions") == 20);
+    CHECK(textMetric(text.str(), "weighted_paired_cycles") == 4);
+    CHECK(textMetric(text.str(), "weighted_nop_only_cycles") == 4);
+    CHECK(contains(text.str(), "entry_lid: cycles=5 repeat=4 weighted_cycles=20"));
+
+    std::ostringstream json;
+    REQUIRE(analyzer.writeJson(json));
+    CHECK(jsonMetric(json.str(), "weighted_static_cycles") == 20);
+    CHECK(jsonMetric(json.str(), "weighted_instructions") == 20);
+    CHECK(contains(json.str(), "\"repeat\": 4"));
+    CHECK(contains(json.str(), "\"weighted_cycles\": 20"));
+}
+
 TEST_CASE("VsmCostAnalyzer fixture: SCE padded columns have precomputed cost")
 {
     std::string report = analyzeTextFile("sce_padded_columns.vsm");

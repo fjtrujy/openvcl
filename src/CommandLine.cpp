@@ -12,6 +12,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <utility>
 
 namespace vcl
 {
@@ -73,6 +74,7 @@ CommandLine::CommandLine()
 	m_options.push_back(Option('\0',"show-reg-alloc",SHOW_REGISTER_INFO,false));
 	m_options.push_back(Option('\0',"cost",ANALYZE_VSM_COST,false));
 	m_options.push_back(Option('\0',"cost-json",ANALYZE_VSM_COST_JSON,false));
+	m_options.push_back(Option('\0',"cost-loop",ANALYZE_VSM_COST_LOOP,true));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -171,6 +173,21 @@ bool CommandLine::parse( int argc, char* argv[] )
 				case SHOW_REGISTER_INFO: m_showRegisterInfo = true; break;
 				case ANALYZE_VSM_COST: m_analyzeVsmCost = true; break;
 				case ANALYZE_VSM_COST_JSON: m_analyzeVsmCost = true; m_analyzeVsmCostJson = true; break;
+				case ANALYZE_VSM_COST_LOOP:
+				{
+					std::string::size_type separator = argument.find('=');
+					if( separator == std::string::npos || separator == 0 || separator == argument.size() - 1 )
+						return false;
+					std::string label = argument.substr(0, separator);
+					const char* countText = argument.c_str() + separator + 1;
+					char* end = NULL;
+					unsigned long repeat = strtoul(countText, &end, 10);
+					if( !countText[0] || (end && *end) || repeat == 0 )
+						return false;
+					m_analyzeVsmCost = true;
+					m_costLoops.push_back(std::make_pair(label, static_cast<unsigned int>(repeat)));
+					break;
+				}
 
 				case IGNORE: break;
 				break;
@@ -224,6 +241,7 @@ void CommandLine::showUsage( std::ostream& stream )
 	stream << "  --show-reg-alloc   Show register allocation information during compilation." << std::endl;
 	stream << "  --cost             Analyze scheduled .vsm cost instead of compiling VCL." << std::endl;
 	stream << "  --cost-json        Analyze scheduled .vsm cost and emit JSON." << std::endl;
+	stream << "  --cost-loop L=N    Weight block/label L by N iterations in cost reports." << std::endl;
 
 	stream << std::endl << "  If no input or output file are specified, standard I/O will be used instead." << std::endl;
 

@@ -16,6 +16,7 @@
 #include <string>
 #include <list>
 #include <istream>
+#include <utility>
 #include <vector>
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -43,6 +44,7 @@ public:
 	bool showRegisterInfo() const;
 	bool analyzeVsmCost() const;
 	bool analyzeVsmCostJson() const;
+	const std::vector< std::pair<std::string, unsigned int> >& costLoops() const;
 
 	void setRunGasp( bool runGasp );
 	bool runGasp() const;
@@ -98,6 +100,7 @@ private:
 		SHOW_REGISTER_INFO,
 		ANALYZE_VSM_COST,
 		ANALYZE_VSM_COST_JSON,
+		ANALYZE_VSM_COST_LOOP,
 
 		IGNORE
 	};
@@ -137,6 +140,7 @@ private:
 	bool m_showRegisterInfo;
 	bool m_analyzeVsmCost;
 	bool m_analyzeVsmCostJson;
+	std::vector< std::pair<std::string, unsigned int> > m_costLoops;
 
 	unsigned int m_threshold;
 	unsigned int m_timeout;

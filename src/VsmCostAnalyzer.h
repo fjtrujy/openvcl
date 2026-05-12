@@ -8,6 +8,7 @@
  */
 
 #include <iosfwd>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -20,6 +21,7 @@ public:
 	VsmCostAnalyzer();
 
 	bool analyze( std::istream& stream, const std::string& inputName );
+	void setBlockRepeat( const std::string& label, unsigned int repeat );
 
 	bool writeText( std::ostream& stream ) const;
 	bool writeJson( std::ostream& stream ) const;
@@ -75,6 +77,7 @@ private:
 	bool analyzeLine( const std::string& line, unsigned int lineNumber );
 	bool parseCycle( const std::string& line, Slot& upper, Slot& lower ) const;
 	void recordCycle( const Slot& upper, const Slot& lower );
+	unsigned int blockRepeat( const Block& block ) const;
 
 	static std::string stripComment( const std::string& line );
 	static std::string trim( const std::string& text );
@@ -91,6 +94,7 @@ private:
 
 	std::string m_inputName;
 	std::vector<Block> m_blocks;
+	std::map<std::string, unsigned int> m_blockRepeats;
 	unsigned int m_currentBlock;
 
 	unsigned int m_staticCycles;

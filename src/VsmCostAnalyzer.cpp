@@ -183,6 +183,7 @@ void VsmCostAnalyzer::reset()
 {
 	m_inputName.clear();
 	m_blocks.clear();
+	m_blockRepeats.clear();
 	m_blocks.push_back( Block( "<entry>" ) );
 	m_currentBlock = 0;
 
@@ -209,6 +210,13 @@ void VsmCostAnalyzer::reset()
 	m_longLatencyOps = 0;
 	m_longLatencyCycles = 0;
 	m_maxOpLatency = 0;
+}
+
+void VsmCostAnalyzer::setBlockRepeat( const std::string& label, unsigned int repeat )
+{
+	if( label.empty() || repeat == 0 )
+		return;
+	m_blockRepeats[label] = repeat;
 }
 
 bool VsmCostAnalyzer::analyze( std::istream& stream, const std::string& inputName )
@@ -450,16 +458,47 @@ void VsmCostAnalyzer::recordCycle( const Slot& upper, const Slot& lowerSlot )
 	}
 }
 
+unsigned int VsmCostAnalyzer::blockRepeat( const Block& block ) const
+{
+	std::map<std::string, unsigned int>::const_iterator i = m_blockRepeats.find( block.label );
+	if( i == m_blockRepeats.end() )
+		return 1;
+	return i->second ? i->second : 1;
+}
+
 bool VsmCostAnalyzer::writeText( std::ostream& stream ) const
 {
 	const unsigned int instructions = m_upperInstructions + m_lowerInstructions;
 	const unsigned int slots = m_staticCycles * 2;
 	const unsigned int slotPressureMin = std::max( m_upperInstructions, m_lowerInstructions );
 	const unsigned int excessCycles = ( m_staticCycles > slotPressureMin ) ? ( m_staticCycles - slotPressureMin ) : 0;
+	unsigned int weightedStaticCycles = 0;
+	unsigned int weightedInstructions = 0;
+	unsigned int weightedPairedCycles = 0;
+	unsigned int weightedNopOnlyCycles = 0;
+	unsigned int weightedOperationLatencyCycles = 0;
+
+	for( std::vector<Block>::const_iterator i = m_blocks.begin(); i != m_blocks.end(); ++i )
+	{
+		if( i->cycles == 0 )
+			continue;
+		const unsigned int repeat = blockRepeat(*i);
+		weightedStaticCycles += i->cycles * repeat;
+		weightedInstructions += (i->upperInstructions + i->lowerInstructions) * repeat;
+		weightedPairedCycles += i->pairedCycles * repeat;
+		weightedNopOnlyCycles += i->nopOnlyCycles * repeat;
+		weightedOperationLatencyCycles += i->operationLatencyCycles * repeat;
+	}
 
 	stream << "VSM cost report" << std::endl;
 	stream << "input: " << m_inputName << std::endl;
 	stream << "static_cycles: " << m_staticCycles << std::endl;
+	stream << "weighted_static_cycles: " << weightedStaticCycles << std::endl;
+	stream << "weighted_instruction_slots: " << (weightedStaticCycles * 2) << std::endl;
+	stream << "weighted_instructions: " << weightedInstructions << std::endl;
+	stream << "weighted_paired_cycles: " << weightedPairedCycles << std::endl;
+	stream << "weighted_nop_only_cycles: " << weightedNopOnlyCycles << std::endl;
+	stream << "weighted_operation_latency_cycles: " << weightedOperationLatencyCycles << std::endl;
 	stream << "instruction_slots: " << slots << std::endl;
 	stream << "instructions: " << instructions << std::endl;
 	stream << "upper_instructions: " << m_upperInstructions << std::endl;
@@ -503,8 +542,11 @@ bool VsmCostAnalyzer::writeText( std::ostream& stream ) const
 	{
 		if( i->cycles == 0 )
 			continue;
+		const unsigned int repeat = blockRepeat(*i);
 		stream << "  " << i->label
 		       << ": cycles=" << i->cycles
+		       << " repeat=" << repeat
+		       << " weighted_cycles=" << (i->cycles * repeat)
 		       << " upper=" << i->upperInstructions
 		       << " lower=" << i->lowerInstructions
 		       << " paired=" << i->pairedCycles
@@ -526,10 +568,33 @@ bool VsmCostAnalyzer::writeJson( std::ostream& stream ) const
 	const unsigned int slots = m_staticCycles * 2;
 	const unsigned int slotPressureMin = std::max( m_upperInstructions, m_lowerInstructions );
 	const unsigned int excessCycles = ( m_staticCycles > slotPressureMin ) ? ( m_staticCycles - slotPressureMin ) : 0;
+	unsigned int weightedStaticCycles = 0;
+	unsigned int weightedInstructions = 0;
+	unsigned int weightedPairedCycles = 0;
+	unsigned int weightedNopOnlyCycles = 0;
+	unsigned int weightedOperationLatencyCycles = 0;
+
+	for( std::vector<Block>::const_iterator i = m_blocks.begin(); i != m_blocks.end(); ++i )
+	{
+		if( i->cycles == 0 )
+			continue;
+		const unsigned int repeat = blockRepeat(*i);
+		weightedStaticCycles += i->cycles * repeat;
+		weightedInstructions += (i->upperInstructions + i->lowerInstructions) * repeat;
+		weightedPairedCycles += i->pairedCycles * repeat;
+		weightedNopOnlyCycles += i->nopOnlyCycles * repeat;
+		weightedOperationLatencyCycles += i->operationLatencyCycles * repeat;
+	}
 
 	stream << "{" << std::endl;
 	stream << "  \"input\": \"" << jsonEscape( m_inputName ) << "\"," << std::endl;
 	stream << "  \"static_cycles\": " << m_staticCycles << "," << std::endl;
+	stream << "  \"weighted_static_cycles\": " << weightedStaticCycles << "," << std::endl;
+	stream << "  \"weighted_instruction_slots\": " << (weightedStaticCycles * 2) << "," << std::endl;
+	stream << "  \"weighted_instructions\": " << weightedInstructions << "," << std::endl;
+	stream << "  \"weighted_paired_cycles\": " << weightedPairedCycles << "," << std::endl;
+	stream << "  \"weighted_nop_only_cycles\": " << weightedNopOnlyCycles << "," << std::endl;
+	stream << "  \"weighted_operation_latency_cycles\": " << weightedOperationLatencyCycles << "," << std::endl;
 	stream << "  \"instruction_slots\": " << slots << "," << std::endl;
 	stream << "  \"instructions\": " << instructions << "," << std::endl;
 	stream << "  \"upper_instructions\": " << m_upperInstructions << "," << std::endl;
@@ -566,9 +631,12 @@ bool VsmCostAnalyzer::writeJson( std::ostream& stream ) const
 		if( !first )
 			stream << "," << std::endl;
 		first = false;
+		const unsigned int repeat = blockRepeat(*i);
 		stream << "    {"
 		       << "\"label\": \"" << jsonEscape( i->label ) << "\", "
 		       << "\"cycles\": " << i->cycles << ", "
+		       << "\"repeat\": " << repeat << ", "
+		       << "\"weighted_cycles\": " << (i->cycles * repeat) << ", "
 		       << "\"upper_instructions\": " << i->upperInstructions << ", "
 		       << "\"lower_instructions\": " << i->lowerInstructions << ", "
 		       << "\"paired_cycles\": " << i->pairedCycles << ", "

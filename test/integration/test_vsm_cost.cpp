@@ -56,6 +56,16 @@ namespace
         args.push_back(fixturePath(fixture));
         return ::test::run_openvcl(args, "");
     }
+
+    ::test::RunResult runCostLoop(const std::string& fixture, const std::string& loop)
+    {
+        std::vector<std::string> args;
+        args.push_back("--cost");
+        args.push_back("--cost-loop");
+        args.push_back(loop);
+        args.push_back(fixturePath(fixture));
+        return ::test::run_openvcl(args, "");
+    }
 }
 
 TEST_CASE("VSM cost CLI: fixture file reports precomputed scheduled cost")
@@ -91,6 +101,17 @@ TEST_CASE("VSM cost CLI: JSON fixture report is suitable for comparisons")
     CHECK(jsonMetric(r.stdout_data, "operation_latency_cycles") == 12);
     CHECK(jsonMetric(r.stdout_data, "long_latency_cycles") == 7);
     CHECK(contains(r.stdout_data, "\"label\": \"entry_lid\""));
+}
+
+TEST_CASE("VSM cost CLI: loop repeat weights static block cost")
+{
+    ::test::RunResult r = runCostLoop("simple_scheduled.vsm", "entry_lid=4");
+    REQUIRE(r.exit_code == 0);
+    CHECK(textMetric(r.stdout_data, "static_cycles") == 5);
+    CHECK(textMetric(r.stdout_data, "weighted_static_cycles") == 20);
+    CHECK(textMetric(r.stdout_data, "weighted_instructions") == 20);
+    CHECK(textMetric(r.stdout_data, "weighted_paired_cycles") == 4);
+    CHECK(contains(r.stdout_data, "entry_lid: cycles=5 repeat=4 weighted_cycles=20"));
 }
 
 TEST_CASE("VSM cost CLI: fixture accepts SCE-style padded VSM output")
