@@ -308,7 +308,24 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 	}
 
 	if( m_name.length() > 0 )
+	{
+		// Pad to 16-byte (qword) alignment before _CodeEnd.  Each emitted
+		// VU instruction is 8 bytes; without this Sony-emulating `.align 4`
+		// the _CodeEnd symbol can land at an 8-mod-16 offset (e.g. 0x9B8).
+		// ps2gl's renderer-load path computes the MPG size from
+		// _CodeEnd - _CodeStart and feeds `MicrocodePacketSize / 8`
+		// instructions through VIF MPG in chunks of up to 256.  When the
+		// total is odd, the final chunk's qword count (sendSize64 / 2)
+		// truncates by one instruction and the VIF NUM field
+		// (sendSize64 & 0xff) disagrees with the actual bytes in the Ref
+		// transfer — VIF then pulls bytes from the *next* command into
+		// the VU instruction stream, corrupting whatever follows.
+		// Symptom in ps2gl/box.elf: general_quad's xgkick never reached
+		// or its GIF chain malformed, cube invisible.  Sony's vcl emits
+		// `.align 4` for exactly this reason.
+		m_codeLines.push_back(std::string("		.align 4"));
 		m_codeLines.push_back( std::string(m_name) + "_CodeEnd:" );
+	}
 
 	return true;
 }

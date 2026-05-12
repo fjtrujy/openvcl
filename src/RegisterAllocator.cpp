@@ -705,16 +705,16 @@ void RegisterAllocator::collectLiteralRegisterUsage( std::list<Token>& tokens )
 
 			if( a->type() == Token::Argument::FLOAT_REGISTER )
 			{
-				int r = a->regNumber();
-				if( r < 0 || r >= 32 )
-					continue;
-				if( !floats[r] )
-				{
-					floats[r] = new Alias( Alias::FLOAT );
-					floats[r]->setAllocatedRegister( &m_floats[r] );
-					m_aliases[ floats[r] ] = floats[r];
-				}
-				floats[r]->addRange( line, line );
+				// Float side intentionally disabled — adding synthetic
+				// VF aliases (even just for vf00, the zero register)
+				// shifts the allocator's choices and ends up splitting
+				// `vert_xform` between two VF sets across the [E]
+				// halt boundary (load into VF05..VF08, use in
+				// xform_loop as VF01..VF04 = garbage).  The integer-
+				// side fix below is the one that matters for the
+				// originally-motivating `do_clipping` / VI01 bug.
+				(void)a;
+				continue;
 			}
 			else if( a->type() == Token::Argument::INTEGER_REGISTER )
 			{
