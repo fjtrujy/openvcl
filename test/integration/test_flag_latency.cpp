@@ -153,17 +153,16 @@ TEST_CASE("Latency: plain mul followed by fmand has at least 4 cycles between")
 
 TEST_CASE("Latency: lq followed by vf consumer has at least 5 cycles between")
 {
-    // ps2gl's general renderer loads texture STQ with lq and immediately
-    // consumes it with mulq.  Without a load-use delay, mulq sees the old VF
+    // ps2gl's general renderer loads texture STQ with lq and then consumes the
+    // loaded VF.  Without a load-use delay, the consumer sees the old VF
     // contents and emits corrupt perspective texture coordinates.
     const std::string body =
-        "\tdiv q, vf00w, vf00w\n"
         "\tlq.xyz vf01, 0(vi00)\n"
-        "\tmulq.xyz vf02, vf01, q\n";
+        "\tmul.xyz vf02, vf01, vf00\n";
 
-    std::string vsm = runEmit(body, "vsmLatencyLqMulq");
+    std::string vsm = runEmit(body, "vsmLatencyLqMul");
     REQUIRE(vsm.length() > 0);
-    int d = cycleDistance(vsm, "lq.xyz", "mulq");
+    int d = cycleDistance(vsm, "lq.xyz", "mul.xyz");
     REQUIRE(d > 0);
     CHECK(d >= 5);
 }
@@ -184,6 +183,32 @@ TEST_CASE("Latency: FMAC vf write followed by lower vf consumer has at least 5 c
     int d = cycleDistance(vsm, "add.w", "div");
     REQUIRE(d > 0);
     CHECK(d >= 5);
+}
+
+TEST_CASE("Latency: FDIV Q consumer uses deferred waitq after movable work")
+{
+    // The scheduler tracks Q as a long-latency resource.  It should not burn
+    // an unconditional waitq immediately after every DIV when independent work
+    // can be issued before the Q consumer.
+    const std::string body =
+        "\tdiv q, vf00w, vf00w\n"
+        "\tmulq.xyz vf01, vf00, q\n"
+        "\tlq.xyz vf02, 0(vi00)\n";
+
+    std::string vsm = runEmit(body, "vsmLatencyDivMulqDeferredWaitq");
+    REQUIRE(vsm.length() > 0);
+
+    std::string::size_type div = vsm.find("div");
+    std::string::size_type lq = vsm.find("lq.xyz");
+    std::string::size_type waitq = vsm.find("waitq");
+    std::string::size_type mulq = vsm.find("mulq");
+    REQUIRE(div != std::string::npos);
+    REQUIRE(lq != std::string::npos);
+    REQUIRE(waitq != std::string::npos);
+    REQUIRE(mulq != std::string::npos);
+    CHECK(div < lq);
+    CHECK(lq < waitq);
+    CHECK(waitq < mulq);
 }
 
 TEST_CASE("CodeGen: full-width FMAC destination emits explicit xyzw mask")

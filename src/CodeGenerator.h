@@ -57,6 +57,8 @@ private:
 	std::string accumulatorArg( const Token::Argument& arg, const Token& token );
 
 	void addNopLine();
+	void emitWaitQ();
+	void emitWaitP();
 	void emitSingleToken( const Token& token );
 	void emitPairedTokens( const Token& a, const Token& b );
 	int readHazardDelay( const Token& token, const Token* partner ) const;
@@ -90,6 +92,8 @@ private:
 	int m_currentCycle;
 	int m_lastFMACCycle;
 	int m_lastClipwCycle;
+	int m_qReadyCycle;
+	int m_pReadyCycle;
 	std::map<std::string, int> m_registerReadyCycle;
 };
 

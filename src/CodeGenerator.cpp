@@ -49,6 +49,8 @@ CodeGenerator::CodeGenerator()
 	// in the program doesn't trip the cooldown.
 	m_lastFMACCycle   = -10;
 	m_lastClipwCycle  = -10;
+	m_qReadyCycle     = -10;
+	m_pReadyCycle     = -10;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -341,6 +343,20 @@ void CodeGenerator::addNopLine()
 	m_codeLines.push_back(std::string("                    nop                             nop"));
 }
 
+void CodeGenerator::emitWaitQ()
+{
+	const int nextCycle = m_currentCycle + 1;
+	m_codeLines.push_back(std::string("                    nop                             waitq"));
+	m_currentCycle = (m_qReadyCycle > nextCycle) ? m_qReadyCycle : nextCycle;
+}
+
+void CodeGenerator::emitWaitP()
+{
+	const int nextCycle = m_currentCycle + 1;
+	m_codeLines.push_back(std::string("                    nop                             waitp"));
+	m_currentCycle = (m_pReadyCycle > nextCycle) ? m_pReadyCycle : nextCycle;
+}
+
 void CodeGenerator::emitSingleToken( const Token& token )
 {
 	std::string instruction = generateInstruction(token);
@@ -408,18 +424,6 @@ void CodeGenerator::emitSingleToken( const Token& token )
 	if( isClipw(token.operand()->name()) )
 		m_lastClipwCycle = m_currentCycle - 1;
 
-	//check if fdiv pipeline
-	if(token.operand()->unit() == Operand::FDIV)
-	{
-		m_codeLines.push_back(std::string("                    nop                             waitq"));
-		m_currentCycle++;
-	}
-	//check if efu pipeline
-	if(token.operand()->unit() == Operand::EFU)
-	{
-		m_codeLines.push_back(std::string("                    nop                             waitp"));
-		m_currentCycle++;
-	}
 }
 
 void CodeGenerator::emitPairedTokens( const Token& a, const Token& b )
@@ -495,6 +499,40 @@ namespace
 				writes.push_back(key);
 		}
 	}
+
+	bool tokenTouchesImplicitResource( const Token& token, Token::Argument::Type type, bool write )
+	{
+		const std::list<Token::Argument>& args = token.arguments();
+		for( std::list<Token::Argument>::const_iterator i = args.begin(); i != args.end(); ++i )
+		{
+			if( (*i).type() != type )
+				continue;
+			const bool isWrite = ((*i).flags() & Token::Argument::WRITE) != 0;
+			if( isWrite == write )
+				return true;
+		}
+		return false;
+	}
+
+	bool tokenReadsQ( const Token& token )
+	{
+		return tokenTouchesImplicitResource(token, Token::Argument::Q, false);
+	}
+
+	bool tokenWritesQ( const Token& token )
+	{
+		return tokenTouchesImplicitResource(token, Token::Argument::Q, true);
+	}
+
+	bool tokenReadsP( const Token& token )
+	{
+		return tokenTouchesImplicitResource(token, Token::Argument::P, false);
+	}
+
+	bool tokenWritesP( const Token& token )
+	{
+		return tokenTouchesImplicitResource(token, Token::Argument::P, true);
+	}
 }
 
 int CodeGenerator::readHazardDelay( const Token& token, const Token* partner ) const
@@ -504,6 +542,14 @@ int CodeGenerator::readHazardDelay( const Token& token, const Token* partner ) c
 	if( partner )
 		collectRegisterReads(*partner, reads);
 
+	bool readsQ = tokenReadsQ(token);
+	bool readsP = tokenReadsP(token);
+	if( partner )
+	{
+		readsQ = readsQ || tokenReadsQ(*partner);
+		readsP = readsP || tokenReadsP(*partner);
+	}
+
 	int needed = 0;
 	for( std::list<std::string>::const_iterator i = reads.begin(); i != reads.end(); ++i )
 	{
@@ -511,6 +557,18 @@ int CodeGenerator::readHazardDelay( const Token& token, const Token* partner ) c
 		if( ready == m_registerReadyCycle.end() )
 			continue;
 		const int gap = ready->second - m_currentCycle;
+		if( gap > needed )
+			needed = gap;
+	}
+	if( readsQ )
+	{
+		const int gap = m_qReadyCycle - m_currentCycle;
+		if( gap > needed )
+			needed = gap;
+	}
+	if( readsP )
+	{
+		const int gap = m_pReadyCycle - m_currentCycle;
 		if( gap > needed )
 			needed = gap;
 	}
@@ -546,12 +604,35 @@ int CodeGenerator::readHazardDelay( const Token& token, const Token* partner ) c
 
 void CodeGenerator::padForReadHazards( const Token& token, const Token* partner )
 {
-	int needed = readHazardDelay(token, partner);
-	while( needed > 0 )
+	bool readsQ = tokenReadsQ(token);
+	bool readsP = tokenReadsP(token);
+	if( partner )
 	{
+		readsQ = readsQ || tokenReadsQ(*partner);
+		readsP = readsP || tokenReadsP(*partner);
+	}
+
+	while( true )
+	{
+		int needed = readHazardDelay(token, partner);
+		if( needed <= 0 )
+			break;
+
+		const int qGap = readsQ ? (m_qReadyCycle - m_currentCycle) : 0;
+		const int pGap = readsP ? (m_pReadyCycle - m_currentCycle) : 0;
+		if( qGap > 1 && qGap >= pGap )
+		{
+			emitWaitQ();
+			continue;
+		}
+		if( pGap > 1 )
+		{
+			emitWaitP();
+			continue;
+		}
+
 		addNopLine();
 		m_currentCycle++;
-		needed--;
 	}
 }
 
@@ -565,6 +646,10 @@ void CodeGenerator::recordRegisterWrites( const Token& token, int issueCycle )
 	collectRegisterWrites(token, writes);
 	for( std::list<std::string>::const_iterator i = writes.begin(); i != writes.end(); ++i )
 		m_registerReadyCycle[*i] = issueCycle + latency + 1;
+	if( tokenWritesQ(token) )
+		m_qReadyCycle = issueCycle + latency + 1;
+	if( tokenWritesP(token) )
+		m_pReadyCycle = issueCycle + latency + 1;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -907,9 +992,8 @@ bool CodeGenerator::tokensCanPair( const Token& a, const Token& b )
 	if( a.operand()->isLowerExecutionPath() == b.operand()->isLowerExecutionPath() )
 		return false;
 
-	// Skip instructions whose surrounding scheduling scaffolding (NOP
-	// brackets for BRU, waitq for FDIV, waitp for EFU) breaks if we
-	// reshape the cycle.  RANDU is allowed.
+	// Keep instructions with dynamic control flow or implicit Q/P pipeline
+	// effects out of the simple pairing pass for now.  RANDU is allowed.
 	Operand::Unit ua = a.operand()->unit();
 	Operand::Unit ub = b.operand()->unit();
 	if( ua == Operand::BRU || ub == Operand::BRU )
