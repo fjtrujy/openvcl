@@ -53,6 +53,7 @@ namespace
 	bool tokenReadsRegister( const Token& token, const std::string& key );
 	void collectRegisterReadKeys( const Token& token, std::list<std::string>& reads );
 	void collectRegisterWriteKeys( const Token& token, std::list<std::string>& writes );
+	bool hasImplicitPairDependency( const Token& earlier, const Token& later );
 	bool isMtir( const Token& token );
 	bool isFtoiConversion( const std::string& name );
 	bool isTerminalUnconditionalBranch( const Token& token );
@@ -845,6 +846,37 @@ namespace {
 			reads |= RES_CLIP;
 	}
 
+	bool canPairLaterIWriteWithEarlierIRead( const Token& earlier, const Token& later )
+	{
+		if( !earlier.operand() || !later.operand() )
+			return false;
+		if( earlier.operand()->unit() != Operand::FMAC )
+			return false;
+		return lowerName(later) == "loi";
+	}
+
+	bool hasImplicitPairDependency( const Token& earlier, const Token& later )
+	{
+		unsigned int earlierReads = 0;
+		unsigned int earlierWrites = 0;
+		unsigned int laterReads = 0;
+		unsigned int laterWrites = 0;
+		implicitResources( earlier, earlierReads, earlierWrites );
+		implicitResources( later, laterReads, laterWrites );
+
+		if( earlierWrites & (laterReads | laterWrites) )
+			return true;
+
+		if( laterWrites & earlierWrites )
+			return true;
+
+		unsigned int laterWriteToEarlierRead = laterWrites & earlierReads;
+		if( canPairLaterIWriteWithEarlierIRead(earlier, later) )
+			laterWriteToEarlierRead &= ~RES_I;
+
+		return laterWriteToEarlierRead != 0;
+	}
+
 	bool containsKey( const std::list<std::string>& keys, const std::string& key )
 	{
 		for( std::list<std::string>::const_iterator i = keys.begin(); i != keys.end(); ++i )
@@ -1309,39 +1341,14 @@ namespace {
 
 bool CodeGenerator::hasDataDependency( const Token& a, const Token& b )
 {
-	// Conservative pair-blocking dependency check.
-	//
-	// Two layers:
-	//
-	//   (a) Register-class args (FLOAT_REGISTER, INTEGER_REGISTER).
-	//       Conflict on PHYSICAL register (allocatedRegister()) — two
-	//       distinct Aliases can land on the same VF/VI when their
-	//       lifetimes don't overlap in the data-flow view, but pairing
-	//       them in one cycle WOULD overlap their writes in hardware.
-	//       Block RAW + WAW.  WAR is allowed: the allocator's
-	//       live-range analysis already guarantees the prior consumer
-	//       is done before the later producer fires, so reads-first /
-	//       writes-last within a cycle is safe for register-class args.
-	//
-	//   (b) Single-instance resources (ACC, Q, P, I, R).  These have
-	//       NO Alias and the allocator does not route them.  Track them
-	//       via implicitResources() which inspects Argument types and
-	//       Operand-level flags like IWRITE (the LOI destination).
-	//       Block ALL conflicts here — RAW, WAW, AND WAR — because
-	//       VU1 has no intra-cycle ordering guarantee for these single
-	//       hardware registers (a paired LOI's I-write happens during
-	//       the same cycle as the FMAC's I-read; we can't assume one
-	//       lands before the other).
-
-	// (b) Single-instance resources — cheaper and catches LOI/ACC/Q/P.
-	unsigned int aReads = 0, aWrites = 0, bReads = 0, bWrites = 0;
-	implicitResources( a, aReads, aWrites );
-	implicitResources( b, bReads, bWrites );
-	// Either side writing a resource the other side touches is a hazard.
-	if( aWrites & (bReads | bWrites) )
-		return true;
-	if( bWrites & (aReads | aWrites) )
-		return true;
+	// Conservative pair-blocking dependency check for register-class args
+	// (FLOAT_REGISTER, INTEGER_REGISTER).  Conflict on PHYSICAL register
+	// (allocatedRegister()) because two distinct Aliases can land on the
+	// same VF/VI when their lifetimes don't overlap in the data-flow view,
+	// but pairing them in one cycle WOULD overlap their writes in hardware.
+	// Single-instance resources (ACC, Q, P, I, R, flags) are handled by
+	// hasImplicitPairDependency(), which can model VU's special same-cycle
+	// `FMAC reads old I` + `loi writes next I` behavior.
 
 	// (a) Register-class args — physical-register comparison.
 	const std::list<Token::Argument>& aArgs = a.arguments();
@@ -1485,6 +1492,9 @@ bool CodeGenerator::tokensCanPair( const Token& a, const Token& b ) const
 	if( isClipw(a.operand()->name()) && isClipReader(b.operand()->name()) )
 		return false;
 	if( isClipw(b.operand()->name()) && isClipReader(a.operand()->name()) )
+		return false;
+
+	if( hasImplicitPairDependency(a, b) )
 		return false;
 
 	// Data-flow conflict between the two.
