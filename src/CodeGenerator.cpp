@@ -265,7 +265,14 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 					break;
 				if( !isEmittableInstruction(*p) )
 					break;
-				if( !tokenRangeCanBeCrossed(*k, *p) )
+				const bool adjacentCandidate = (lookahead == 0);
+				const bool adjacentQpProducerPair =
+				    adjacentCandidate
+				    && (token.operand()->unit() == Operand::FDIV
+				        || token.operand()->unit() == Operand::EFU
+				        || (*p).operand()->unit() == Operand::FDIV
+				        || (*p).operand()->unit() == Operand::EFU);
+				if( !adjacentQpProducerPair && !tokenRangeCanBeCrossed(*k, *p) )
 					break;
 				if( tokensCanPair(token, *p) )
 				{
@@ -992,15 +999,16 @@ bool CodeGenerator::tokensCanPair( const Token& a, const Token& b )
 	if( a.operand()->isLowerExecutionPath() == b.operand()->isLowerExecutionPath() )
 		return false;
 
-	// Keep instructions with dynamic control flow or implicit Q/P pipeline
-	// effects out of the simple pairing pass for now.  RANDU is allowed.
+	// Keep dynamic control flow and explicit Q/P wait barriers out of the
+	// simple pairing pass.  FDIV/EFU producers can pair with independent
+	// upper-pipe work because their Q/P latency is tracked separately.
 	Operand::Unit ua = a.operand()->unit();
 	Operand::Unit ub = b.operand()->unit();
 	if( ua == Operand::BRU || ub == Operand::BRU )
 		return false;
-	if( ua == Operand::FDIV || ub == Operand::FDIV )
-		return false;
-	if( ua == Operand::EFU || ub == Operand::EFU )
+	const std::string aName = lowerName(a);
+	const std::string bName = lowerName(b);
+	if( aName == "waitq" || aName == "waitp" || bName == "waitq" || bName == "waitp" )
 		return false;
 
 	// FMAC writes MAC/CLIP flags with 4-cycle latency; a flag-reader

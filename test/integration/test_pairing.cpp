@@ -127,6 +127,30 @@ TEST_CASE("Pairing: independent upper+lower ops pair into one cycle")
     CHECK(linePairsSubstrings(vsm, "mulax", "lq.xyz"));
 }
 
+TEST_CASE("Pairing: independent upper op can pair with FDIV")
+{
+    // FDIV writes Q on the lower pipe.  With deferred waitq handling, an
+    // unrelated upper-pipe op can issue in the same cycle safely.
+    const std::string body =
+        "\tadd.xyz vf01, vf00, vf00\n"
+        "\tdiv q, vf00w, vf00w\n";
+    std::string vsm = runEmit(body, "vsmPairFdiv");
+    REQUIRE(vsm.length() > 0);
+    CHECK(linePairsSubstrings(vsm, "add.xyz", "div"));
+}
+
+TEST_CASE("Pairing: independent upper op can pair with EFU")
+{
+    // EFU writes P on the lower pipe.  The dependency checker keeps P hazards
+    // apart, but independent upper work should still fill the paired slot.
+    const std::string body =
+        "\tadd.xyz vf01, vf00, vf00\n"
+        "\teleng p, vf00\n";
+    std::string vsm = runEmit(body, "vsmPairEfu");
+    REQUIRE(vsm.length() > 0);
+    CHECK(linePairsSubstrings(vsm, "add.xyz", "eleng"));
+}
+
 TEST_CASE("Pairing: independent non-adjacent lower op can fill current upper slot")
 {
     // The iaddiu is separated from mulax by another upper-pipe op.  It can
