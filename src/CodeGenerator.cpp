@@ -298,7 +298,9 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				    && tokenIsUpperExecutionPath(token)
 				    && isXgkick(*p);
 				if( !adjacentQpProducerPair && !adjacentPlainStorePair && !adjacentXgkickPair
-				    && !tokenRangeCanBeCrossed(*k, *p) && !isPlainMemoryStore(*p) )
+				    && !tokenRangeCanBeCrossed(*k, *p)
+				    && !isPlainMemoryStore(*p)
+				    && !tokenCanMoveBefore(*p, token) )
 					break;
 				if( tokensCanPair(token, *p) )
 				{

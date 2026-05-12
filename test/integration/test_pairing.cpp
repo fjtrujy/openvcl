@@ -139,6 +139,17 @@ TEST_CASE("Pairing: independent upper op can pair with adjacent plain store")
     CHECK(linePairsSubstrings(vsm, "add.xyz", "sq.xyz"));
 }
 
+TEST_CASE("Pairing: later independent upper op can pair with plain store")
+{
+    const std::string body =
+        "\tsq.xyz vf00, 0(vi00)\n"
+        "\tiaddiu vi02, vi00, 1\n"
+        "\tadd.xyz vf02, vf00, vf00\n";
+    std::string vsm = runEmit(body, "vsmPairLaterUpperWithStore");
+    REQUIRE(vsm.length() > 0);
+    CHECK(linePairsSubstrings(vsm, "add.xyz", "sq.xyz"));
+}
+
 TEST_CASE("Pairing: store reading the upper result is not paired")
 {
     const std::string body =
