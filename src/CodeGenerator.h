@@ -57,13 +57,17 @@ private:
 	std::string accumulatorArg( const Token::Argument& arg, const Token& token );
 
 	void addNopLine();
-	void padForRegisterReadHazards( const Token& token, const Token* partner );
+	void emitSingleToken( const Token& token );
+	int readHazardDelay( const Token& token, const Token* partner ) const;
+	void padForReadHazards( const Token& token, const Token* partner );
 	void recordRegisterReads( const Token& token, int issueCycle );
 	void recordRegisterWrites( const Token& token, int issueCycle );
 
 	// Dual-pipe pairing helpers.  See CodeGenerator.cpp for the contract.
 	static bool isEmittableInstruction( const Token& t );
 	static bool tokensCanPair( const Token& a, const Token& b );
+	static bool tokenCanMoveBefore( const Token& moved, const Token& crossed );
+	static bool tokenRangeCanBeCrossed( const Token& first, const Token& last );
 	static bool hasDataDependency( const Token& a, const Token& b );
 	std::string formatPairedLine( const Token& upper, const Token& lower );
 

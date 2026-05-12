@@ -91,18 +91,21 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 
 	bool exitWritten = true;
 
-	for( std::list<Token>::const_iterator k = tokens.begin(); k != tokens.end(); ++k )
+	std::list<Token> workTokens = tokens;
+
+	for( std::list<Token>::iterator k = workTokens.begin(); k != workTokens.end(); )
 	{
 		Token token = *k;
-		std::string instruction;
-		std::string outputLine = "";
 
 		//handle label
 		if(token.label().length()>0)
 			m_codeLines.push_back(token.label() + ":");
 
 		if(!token.operand())
+		{
+			++k;
 			continue;
+		}
 
 		if( ((token.operand()->unit() == Operand::EXIT) || (token.operand()->unit() == Operand::ENTER)) && !exitWritten )
 		{
@@ -112,10 +115,16 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 		}
 
 		if(token.flags()&Token::IGNORED)
+		{
+			++k;
 			continue;
+		}
 
 		if(!(token.flags()&Token::PROCESSED) && !(token.operand()->flags()&Operand::PREPROCESSOR) )
+		{
+			++k;
 			continue;
+		}
 
 		//handle alignment
 		if(token.operand()->flags()&Operand::PREPROCESSOR)
@@ -124,6 +133,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			{
 				// .vu and alignment are already handled at the start of beginProcess()
 				// when m_name is set, so skip adding redundant directives here
+				++k;
 				continue;
 			}
 			else if( token.operand()->name() == "--cont" )
@@ -131,81 +141,115 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				m_codeLines.push_back(std::string("                    nop[E]                          nop"));
 				m_codeLines.push_back(std::string("                    nop                             nop"));
 				exitWritten = true;
+				++k;
 				continue;
 			}
 			else if( token.operand()->name() == "--barrier" )
+			{
+				++k;
 				continue;
+			}
 		}
 		else exitWritten = false;
 
 		if( (token.operand()->flags()&Operand::FILTERED) )
+		{
+			++k;
 			continue;
+		}
+
+		if( token.label().length() == 0 && readHazardDelay(token, NULL) > 0 )
+		{
+			enum { FillerLookaheadLimit = 8 };
+			std::list<Token>::iterator filler = workTokens.end();
+			std::list<Token>::iterator p = k;
+			++p;
+			unsigned int lookahead = 0;
+			for( ; p != workTokens.end() && lookahead < FillerLookaheadLimit; ++p, ++lookahead )
+			{
+				if( (*p).label().length() != 0 )
+					break;
+				if( !isEmittableInstruction(*p) )
+					break;
+				if( !tokenRangeCanBeCrossed(*k, *p) )
+					break;
+
+				bool canCross = true;
+				std::list<Token>::iterator c = k;
+				for( ; c != p; ++c )
+				{
+					if( !tokenCanMoveBefore(*p, *c) )
+					{
+						canCross = false;
+						break;
+					}
+				}
+				if( canCross && readHazardDelay(*p, NULL) <= 0 )
+				{
+					filler = p;
+					break;
+				}
+			}
+
+			if( filler != workTokens.end() )
+			{
+				emitSingleToken(*filler);
+				workTokens.erase(filler);
+				continue;
+			}
+		}
 
 		// --- DUAL-PIPE PAIRING ---
-		// Adjacent-only first cut: peek at the immediately-next token in
-		// the list.  If we can pair it with the current token, emit one
-		// combined line and consume both.  Otherwise fall through to the
-		// existing single-token emission below.
-		//
-		// We keep the iterator advanced past the partner by toggling a
-		// flag on the outer scope so the next loop iteration knows to
-		// skip its own emission step.  Labels / preprocessor side-effects
-		// for the partner still run because they live before this
-		// emission point.
+		// Look ahead within the current straight-line instruction run for
+		// an opposite-pipe partner.  The first implementation only paired
+		// adjacent instructions, which left many upper/lower opportunities
+		// unused once latency padding had made source order sparse.  This
+		// pass may pull a later partner into the current cycle, but only if
+		// every crossed instruction has no register/resource conflict and
+		// no memory/control side effect that would make reordering risky.
 		{
-			std::list<Token>::const_iterator p = k;
+			enum { PairLookaheadLimit = 8 };
+			std::list<Token>::iterator p = k;
 			++p;
+			bool foundPartner = false;
 			const Token* partner = NULL;
-			if( p != tokens.end() )
+			std::list<Token>::iterator partnerIt = workTokens.end();
+			const int tokenDelay = readHazardDelay(token, NULL);
+			unsigned int lookahead = 0;
+			for( ; p != workTokens.end() && lookahead < PairLookaheadLimit; ++p, ++lookahead )
 			{
-				if( isEmittableInstruction(*p)
-				    && (*p).label().length() == 0
-				    && tokensCanPair(token, *p) )
+				if( (*p).label().length() != 0 )
+					break;
+				if( !isEmittableInstruction(*p) )
+					break;
+				if( !tokenRangeCanBeCrossed(*k, *p) )
+					break;
+				if( tokensCanPair(token, *p) )
 				{
-					partner = &*p;
-				}
-			}
-
-			padForRegisterReadHazards(token, partner);
-
-			// VU1 FMAC pipeline is 4 cycles deep.  If THIS cycle would
-			// read MAC/CLIP and the relevant FMAC ran less than 4 cycles
-			// ago, pad with NOPs until the flag is settled.  We check
-			// both halves of the (possibly-paired) cycle because the
-			// flag-reader may be on either pipe.
-			{
-				const std::string& aName = token.operand()->name();
-				bool readsMac  = isMacReader(aName);
-				bool readsClip = isClipReader(aName);
-				if( partner && partner->operand() )
-				{
-					const std::string& bName = partner->operand()->name();
-					readsMac  = readsMac  || isMacReader(bName);
-					readsClip = readsClip || isClipReader(bName);
-				}
-				if( readsMac )
-				{
-					int gap = m_currentCycle - m_lastFMACCycle;
-					while( gap < 4 )
+					bool canCross = true;
+					std::list<Token>::iterator c = k;
+					++c;
+					for( ; c != p; ++c )
 					{
-						addNopLine();
-						m_currentCycle++;
-						gap = m_currentCycle - m_lastFMACCycle;
+						if( !tokenCanMoveBefore(*p, *c) )
+						{
+							canCross = false;
+							break;
+						}
 					}
-				}
-				if( readsClip )
-				{
-					int gap = m_currentCycle - m_lastClipwCycle;
-					while( gap < 4 )
+					if( canCross && readHazardDelay(token, &*p) <= tokenDelay )
 					{
-						addNopLine();
-						m_currentCycle++;
-						gap = m_currentCycle - m_lastClipwCycle;
+						foundPartner = true;
+						partner = &*p;
+						partnerIt = p;
+						break;
 					}
 				}
 			}
 
-			if( partner )
+			padForReadHazards(token, partner);
+
+			if( foundPartner )
 			{
 				std::string pairedLine;
 				if( token.operand()->isLowerExecutionPath() )
@@ -224,88 +268,14 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				if( isClipw(token.operand()->name()) || isClipw(partner->operand()->name()) )
 					m_lastClipwCycle = m_currentCycle;
 				m_currentCycle++;
+				workTokens.erase(partnerIt);
 				++k;
 				continue;
 			}
 		}
 
-		instruction = generateInstruction(token);
-
-		// emit original sourcecode as a comment
-		if( emitSource() )
-		{
-			std::stringstream s;
-			s << " ; Line " << token.line().number() << ": " << token.line().content();
-			m_codeLines.push_back( s.str() );
-		}
-
-		int instructionLength = 32;
-
-		for(int d = 0; d < 20; d++)
-			outputLine += " ";
-
-		if(token.operand()->isLowerExecutionPath())
-		{
-			outputLine += "nop";
-
-			for(int d = 0; d < instructionLength-3; d++)
-				outputLine += " ";
-	
-			outputLine += instruction;
-		}
-		else
-		{
-			outputLine += instruction;
-
-			if( !token.operand()->isPreprocessor() )
-			{
-				if( (instructionLength-int(instruction.length())) <= 0 )
-					outputLine += " ";
-
-				for(int d = 0; d < instructionLength-int(instruction.length()); d++)
-					outputLine += " ";
-
-				outputLine += "nop";
-			}
-		}
-
-		if( token.operand()->unit() == Operand::BRU )
-		{
-			addNopLine();
-			m_currentCycle++;
-			m_codeLines.push_back(outputLine);
-			m_currentCycle++;
-			addNopLine();
-			m_currentCycle++;
-		}
-		else
-		{
-			int issueCycle = m_currentCycle;
-			m_codeLines.push_back(outputLine);
-			m_currentCycle++;
-			recordRegisterReads(token, issueCycle);
-			recordRegisterWrites(token, issueCycle);
-		}
-
-		// Remember this cycle as the most recent FMAC / clipw so
-		// downstream flag-readers can pad to the 4-cycle pipeline.
-		if( token.operand()->unit() == Operand::FMAC )
-			m_lastFMACCycle = m_currentCycle - 1;
-		if( isClipw(token.operand()->name()) )
-			m_lastClipwCycle = m_currentCycle - 1;
-
-		//check if fdiv pipeline
-		if(token.operand()->unit() == Operand::FDIV)
-		{
-			m_codeLines.push_back(std::string("                    nop                             waitq"));
-			m_currentCycle++;
-		}
-		//check if efu pipeline
-		if(token.operand()->unit() == Operand::EFU)
-		{
-			m_codeLines.push_back(std::string("                    nop                             waitp"));
-			m_currentCycle++;
-		}
+		emitSingleToken(token);
+		++k;
 	}
 
 	if( !exitWritten )
@@ -344,6 +314,88 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 void CodeGenerator::addNopLine()
 {
 	m_codeLines.push_back(std::string("                    nop                             nop"));
+}
+
+void CodeGenerator::emitSingleToken( const Token& token )
+{
+	std::string instruction = generateInstruction(token);
+	std::string outputLine = "";
+
+	// emit original sourcecode as a comment
+	if( emitSource() )
+	{
+		std::stringstream s;
+		s << " ; Line " << token.line().number() << ": " << token.line().content();
+		m_codeLines.push_back( s.str() );
+	}
+
+	int instructionLength = 32;
+
+	for(int d = 0; d < 20; d++)
+		outputLine += " ";
+
+	if(token.operand()->isLowerExecutionPath())
+	{
+		outputLine += "nop";
+
+		for(int d = 0; d < instructionLength-3; d++)
+			outputLine += " ";
+
+		outputLine += instruction;
+	}
+	else
+	{
+		outputLine += instruction;
+
+		if( !token.operand()->isPreprocessor() )
+		{
+			if( (instructionLength-int(instruction.length())) <= 0 )
+				outputLine += " ";
+
+			for(int d = 0; d < instructionLength-int(instruction.length()); d++)
+				outputLine += " ";
+
+			outputLine += "nop";
+		}
+	}
+
+	if( token.operand()->unit() == Operand::BRU )
+	{
+		addNopLine();
+		m_currentCycle++;
+		m_codeLines.push_back(outputLine);
+		m_currentCycle++;
+		addNopLine();
+		m_currentCycle++;
+	}
+	else
+	{
+		int issueCycle = m_currentCycle;
+		m_codeLines.push_back(outputLine);
+		m_currentCycle++;
+		recordRegisterReads(token, issueCycle);
+		recordRegisterWrites(token, issueCycle);
+	}
+
+	// Remember this cycle as the most recent FMAC / clipw so
+	// downstream flag-readers can pad to the 4-cycle pipeline.
+	if( token.operand()->unit() == Operand::FMAC )
+		m_lastFMACCycle = m_currentCycle - 1;
+	if( isClipw(token.operand()->name()) )
+		m_lastClipwCycle = m_currentCycle - 1;
+
+	//check if fdiv pipeline
+	if(token.operand()->unit() == Operand::FDIV)
+	{
+		m_codeLines.push_back(std::string("                    nop                             waitq"));
+		m_currentCycle++;
+	}
+	//check if efu pipeline
+	if(token.operand()->unit() == Operand::EFU)
+	{
+		m_codeLines.push_back(std::string("                    nop                             waitp"));
+		m_currentCycle++;
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -401,7 +453,7 @@ namespace
 	}
 }
 
-void CodeGenerator::padForRegisterReadHazards( const Token& token, const Token* partner )
+int CodeGenerator::readHazardDelay( const Token& token, const Token* partner ) const
 {
 	std::list<std::string> reads;
 	std::list<std::string> writes;
@@ -413,33 +465,63 @@ void CodeGenerator::padForRegisterReadHazards( const Token& token, const Token* 
 		collectRegisterWrites(*partner, writes);
 	}
 
-	while( true )
+	int needed = 0;
+	for( std::list<std::string>::const_iterator i = reads.begin(); i != reads.end(); ++i )
 	{
-		int needed = 0;
-		for( std::list<std::string>::const_iterator i = reads.begin(); i != reads.end(); ++i )
-		{
-			std::map<std::string, int>::const_iterator ready = m_registerReadyCycle.find(*i);
-			if( ready == m_registerReadyCycle.end() )
-				continue;
-			const int gap = ready->second - m_currentCycle;
-			if( gap > needed )
-				needed = gap;
-		}
-		for( std::list<std::string>::const_iterator i = writes.begin(); i != writes.end(); ++i )
-		{
-			std::map<std::string, int>::const_iterator safe = m_registerWriteSafeCycle.find(*i);
-			if( safe == m_registerWriteSafeCycle.end() )
-				continue;
-			const int gap = safe->second - m_currentCycle;
-			if( gap > needed )
-				needed = gap;
-		}
+		std::map<std::string, int>::const_iterator ready = m_registerReadyCycle.find(*i);
+		if( ready == m_registerReadyCycle.end() )
+			continue;
+		const int gap = ready->second - m_currentCycle;
+		if( gap > needed )
+			needed = gap;
+	}
+	for( std::list<std::string>::const_iterator i = writes.begin(); i != writes.end(); ++i )
+	{
+		std::map<std::string, int>::const_iterator safe = m_registerWriteSafeCycle.find(*i);
+		if( safe == m_registerWriteSafeCycle.end() )
+			continue;
+		const int gap = safe->second - m_currentCycle;
+		if( gap > needed )
+			needed = gap;
+	}
 
-		if( needed <= 0 )
-			break;
+	const int flagCycle = m_currentCycle + needed;
+	bool readsMac = isMacReader(token.operand()->name());
+	bool readsClip = isClipReader(token.operand()->name());
+	if( partner && partner->operand() )
+	{
+		const std::string& name = partner->operand()->name();
+		readsMac = readsMac || isMacReader(name);
+		readsClip = readsClip || isClipReader(name);
+	}
 
+	int flagDelay = 0;
+	if( readsMac )
+	{
+		const int gap = flagCycle - m_lastFMACCycle;
+		if( 4 - gap > flagDelay )
+			flagDelay = 4 - gap;
+	}
+	if( readsClip )
+	{
+		const int gap = flagCycle - m_lastClipwCycle;
+		if( 4 - gap > flagDelay )
+			flagDelay = 4 - gap;
+	}
+	if( flagDelay > 0 )
+		needed += flagDelay;
+
+	return needed;
+}
+
+void CodeGenerator::padForReadHazards( const Token& token, const Token* partner )
+{
+	int needed = readHazardDelay(token, partner);
+	while( needed > 0 )
+	{
 		addNopLine();
 		m_currentCycle++;
+		needed--;
 	}
 }
 
@@ -472,12 +554,10 @@ void CodeGenerator::recordRegisterWrites( const Token& token, int issueCycle )
 // VU1 issues two instructions per cycle: one upper-pipe (FMAC) and one
 // lower-pipe (LSU / IALU / BRU / FDIV / RANDU / EFU).  Sony's vcl fills both
 // slots per cycle for ~2x throughput; openvcl historically emits a single
-// instruction per cycle with NOP on the unused pipe.  This pass pairs the
-// current token with the immediately-following token when (and only when)
-// they sit on different pipes, have no data dependency in either direction,
-// neither is a hard-scheduled instruction (BRU/FDIV/EFU), neither carries
-// a label, and neither is marked PREORDERED.  This is the minimum-viable
-// pairing — it does not hoist instructions across non-adjacent positions.
+// instruction per cycle with NOP on the unused pipe.  The scheduler now does
+// a small, conservative straight-line lookahead to fill latency gaps and pair
+// independent upper/lower instructions without crossing labels, control flow,
+// memory side effects, or register/resource dependencies.
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool CodeGenerator::isEmittableInstruction( const Token& t )
@@ -502,10 +582,10 @@ bool CodeGenerator::isEmittableInstruction( const Token& t )
 }
 
 // Helper: identify the set of single-instance "implicit" resources
-// (ACC / Q / P / I / R) touched by a token, distinguishing reads and
-// writes.  These resources have NO Alias and aren't routed through the
-// register allocator, so the only way to spot conflicts is by inspecting
-// the operand template + flags.
+// (ACC / Q / P / I / R / MAC flags / CLIP flags) touched by a token,
+// distinguishing reads and writes.  These resources have NO Alias and aren't
+// routed through the register allocator, so the only way to spot conflicts is
+// by inspecting the operand template, flags, and mnemonic.
 //
 // Returns two bitmasks, indexed by the bits below.
 namespace {
@@ -514,7 +594,9 @@ namespace {
 		RES_Q   = 1 << 1,
 		RES_P   = 1 << 2,
 		RES_I   = 1 << 3,
-		RES_R   = 1 << 4
+		RES_R   = 1 << 4,
+		RES_MAC = 1 << 5,
+		RES_CLIP = 1 << 6
 	};
 
 	void implicitResources( const Token& t, unsigned int& reads, unsigned int& writes )
@@ -549,8 +631,84 @@ namespace {
 		// only by Operand::IWRITE.
 		if( t.operand()->flags() & Operand::IWRITE )
 			writes |= RES_I;
+
+		const std::string& name = t.operand()->name();
+		if( t.operand()->unit() == Operand::FMAC )
+			writes |= RES_MAC;
+		if( isClipw(name) )
+			writes |= RES_CLIP;
+		if( isMacReader(name) )
+			reads |= RES_MAC;
+		if( isClipReader(name) )
+			reads |= RES_CLIP;
 	}
-}
+
+	bool containsKey( const std::list<std::string>& keys, const std::string& key )
+	{
+		for( std::list<std::string>::const_iterator i = keys.begin(); i != keys.end(); ++i )
+		{
+			if( *i == key )
+				return true;
+		}
+		return false;
+	}
+
+	bool writesTouchReadsOrWrites( const std::list<std::string>& writes,
+	                               const std::list<std::string>& reads,
+	                               const std::list<std::string>& otherWrites )
+	{
+		for( std::list<std::string>::const_iterator i = writes.begin(); i != writes.end(); ++i )
+		{
+			if( containsKey(reads, *i) || containsKey(otherWrites, *i) )
+				return true;
+		}
+		return false;
+	}
+
+	std::string lowerName( const Token& token )
+	{
+		std::string name;
+		if( token.operand() )
+			name = token.operand()->name();
+		for( std::string::iterator i = name.begin(); i != name.end(); ++i )
+		{
+			if( *i >= 'A' && *i <= 'Z' )
+				*i = char(*i - 'A' + 'a');
+		}
+		return name;
+	}
+
+	bool hasPreDecOrPostIncArgument( const Token& token )
+	{
+		const std::list<Token::Argument>& args = token.arguments();
+		for( std::list<Token::Argument>::const_iterator i = args.begin(); i != args.end(); ++i )
+		{
+			if( (*i).flags() & (Token::Argument::PREDEC | Token::Argument::POSTINC) )
+				return true;
+		}
+		return false;
+	}
+
+	bool hasMemoryOrControlSideEffect( const Token& token )
+	{
+		if( !token.operand() )
+			return true;
+		if( token.flags() & Token::PREORDERED )
+			return true;
+
+		Operand::Unit unit = token.operand()->unit();
+		if( unit == Operand::BRU || unit == Operand::FDIV || unit == Operand::EFU )
+			return true;
+
+		if( hasPreDecOrPostIncArgument(token) )
+			return true;
+
+		std::string name = lowerName(token);
+		return name == "sq" || name == "sqd" || name == "sqi"
+		    || name == "isw" || name == "iswr"
+		    || name == "xgkick";
+	}
+	}
 
 bool CodeGenerator::hasDataDependency( const Token& a, const Token& b )
 {
@@ -625,6 +783,42 @@ bool CodeGenerator::hasDataDependency( const Token& a, const Token& b )
 	}
 
 	return false;
+}
+
+bool CodeGenerator::tokenCanMoveBefore( const Token& moved, const Token& crossed )
+{
+	if( hasMemoryOrControlSideEffect(moved) || hasMemoryOrControlSideEffect(crossed) )
+		return false;
+
+	unsigned int movedReadsImplicit = 0, movedWritesImplicit = 0;
+	unsigned int crossedReadsImplicit = 0, crossedWritesImplicit = 0;
+	implicitResources(moved, movedReadsImplicit, movedWritesImplicit);
+	implicitResources(crossed, crossedReadsImplicit, crossedWritesImplicit);
+	if( movedWritesImplicit & (crossedReadsImplicit | crossedWritesImplicit) )
+		return false;
+	if( crossedWritesImplicit & (movedReadsImplicit | movedWritesImplicit) )
+		return false;
+
+	std::list<std::string> movedReads;
+	std::list<std::string> movedWrites;
+	std::list<std::string> crossedReads;
+	std::list<std::string> crossedWrites;
+	collectRegisterReads(moved, movedReads);
+	collectRegisterWrites(moved, movedWrites);
+	collectRegisterReads(crossed, crossedReads);
+	collectRegisterWrites(crossed, crossedWrites);
+
+	if( writesTouchReadsOrWrites(movedWrites, crossedReads, crossedWrites) )
+		return false;
+	if( writesTouchReadsOrWrites(crossedWrites, movedReads, movedWrites) )
+		return false;
+
+	return true;
+}
+
+bool CodeGenerator::tokenRangeCanBeCrossed( const Token& first, const Token& last )
+{
+	return !hasMemoryOrControlSideEffect(first) && !hasMemoryOrControlSideEffect(last);
 }
 
 // Names of VU1 "flag-reading" instructions: these read the MAC/CLIP/

@@ -97,25 +97,101 @@ static bool linePairsSubstrings( const std::string& vsm, const std::string& a, c
     return false;
 }
 
+static int lineIndex( const std::string& vsm, const std::string& pattern )
+{
+    std::string::size_type pos = 0;
+    int lineNo = 0;
+    while( pos < vsm.size() )
+    {
+        std::string::size_type end = vsm.find('\n', pos);
+        if( end == std::string::npos ) end = vsm.size();
+        std::string line = vsm.substr(pos, end - pos);
+        if( line.find(pattern) != std::string::npos )
+            return lineNo;
+        pos = end + 1;
+        lineNo++;
+    }
+    return -1;
+}
+
 TEST_CASE("Pairing: independent upper+lower ops pair into one cycle")
 {
     // mulax (upper) + lq.xyz (lower) - no shared register.  These should
     // pair into a single emitted line because they have no data flow
     // between them and sit on different pipes.
     const std::string body =
+        "\tmulax acc, vf00, vf00x\n"
+        "\tlq.xyz vf09, 0(vi00)\n";
+    std::string vsm = runEmit(body, "vsmPairIndependent");
+    REQUIRE(vsm.length() > 0);
+    CHECK(linePairsSubstrings(vsm, "mulax", "lq.xyz"));
+}
+
+TEST_CASE("Pairing: independent non-adjacent lower op can fill current upper slot")
+{
+    // The iaddiu is separated from mulax by another upper-pipe op.  It can
+    // safely move upward and pair with mulax because it has no dependency on
+    // the crossed FMAC.
+    const std::string body =
+        "\tmulax acc, vf00, vf00x\n"
+        "\tmadday acc, vf00, vf00y\n"
+        "\tiaddiu vi01, vi00, 1\n";
+    std::string vsm = runEmit(body, "vsmPairLookaheadIndependent");
+    REQUIRE(vsm.length() > 0);
+    CHECK(linePairsSubstrings(vsm, "mulax", "iaddiu"));
+}
+
+TEST_CASE("Pairing: non-adjacent candidate is not moved across a register conflict")
+{
+    // The later lq writes VF01.  The intervening madday reads VF01, so the
+    // scheduler must not hoist lq above madday just to pair it with mulax.
+    const std::string body =
+        "\tmove.xyzw vf01, vf00\n"
+        "\tmove.xyzw vf02, vf00\n"
+        "\tmove.xyzw vf03, vf00\n"
+        "\tmove.xyzw vf04, vf00\n"
+        "\tmulax acc, vf03, vf04x\n"
+        "\tmadday acc, vf01, vf02y\n"
+        "\tlq.xyz vf01, 0(vi00)\n";
+    std::string vsm = runEmit(body, "vsmPairLookaheadConflict");
+    REQUIRE(vsm.length() > 0);
+    CHECK(!linePairsSubstrings(vsm, "mulax", "lq.xyz"));
+}
+
+TEST_CASE("Pairing: non-adjacent candidate is not moved before it is latency-ready")
+{
+    // The mtir reads VF09 produced by the earlier lq.  The intervening FMAC
+    // can usefully cover part of that latency, so hoisting mtir upward would
+    // create extra NOP padding even though there is no direct dependency with
+    // madday.
+    const std::string body =
+        "\tlq.xyz vf09, 0(vi00)\n"
+        "\tmulax acc, vf00, vf00x\n"
+        "\tmadday acc, vf00, vf00y\n"
+        "\tmtir vi01, vf09x\n";
+    std::string vsm = runEmit(body, "vsmPairLookaheadLatencyReady");
+    REQUIRE(vsm.length() > 0);
+    CHECK(!linePairsSubstrings(vsm, "madday", "mtir"));
+}
+
+TEST_CASE("Scheduling: independent later op fills current register-latency wait")
+{
+    // mulax must wait for the two moves.  The later lq is independent and
+    // ready, so the scheduler can issue it during that wait instead of
+    // burning a pure NOP cycle.
+    const std::string body =
         "\tmove.xyzw vf01, vf00\n"
         "\tmove.xyzw vf02, vf00\n"
         "\tmulax acc, vf01, vf02x\n"
         "\tlq.xyz vf09, 0(vi00)\n";
-    std::string vsm = runEmit(body, "vsmPairIndependent");
+    std::string vsm = runEmit(body, "vsmScheduleLatencyFiller");
     REQUIRE(vsm.length() > 0);
-    // Either mulax pairs directly with lq.xyz, OR an earlier move
-    // pairs with mulax leaving lq.xyz alone — either outcome means
-    // pairing fired at least once on this snippet.
-    bool anyPair =
-        linePairsSubstrings(vsm, "mulax", "lq.xyz")
-     || linePairsSubstrings(vsm, "move", "mulax");
-    CHECK(anyPair);
+
+    int lqLine = lineIndex(vsm, "lq.xyz");
+    int mulLine = lineIndex(vsm, "mulax");
+    REQUIRE(lqLine >= 0);
+    REQUIRE(mulLine >= 0);
+    CHECK(lqLine < mulLine);
 }
 
 TEST_CASE("Pairing: LOI is not paired with the next FMAC that reads I")
