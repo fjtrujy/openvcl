@@ -187,7 +187,9 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 					break;
 				if( !isEmittableInstruction(*p) )
 					break;
-				if( !tokenRangeCanBeCrossed(*k, *p) && !isPlainMemoryStore(*p) )
+				if( !tokenRangeCanBeCrossed(*k, *p)
+				    && !isPlainMemoryStore(*p)
+				    && !tokenCanMoveBefore(*p, *k) )
 					break;
 
 				bool canCross = true;
@@ -219,7 +221,9 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 						break;
 					if( !isEmittableInstruction(*p) )
 						break;
-					if( !tokenRangeCanBeCrossed(*k, *p) && !isPlainMemoryStore(*p) )
+					if( !tokenRangeCanBeCrossed(*k, *p)
+					    && !isPlainMemoryStore(*p)
+					    && !tokenCanMoveBefore(*p, *k) )
 						break;
 					if( !tokensCanPair(*filler, *p) )
 						continue;

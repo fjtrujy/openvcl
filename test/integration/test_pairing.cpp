@@ -497,6 +497,23 @@ TEST_CASE("Scheduling: latency filler may move independent integer compute befor
     CHECK(addLine < mtirLine);
 }
 
+TEST_CASE("Scheduling: latency filler may move integer compute before a waiting plain store")
+{
+    const std::string body =
+        "\tiaddiu vi04, vi00, 4\n"
+        "\tmfir.x vf01, vi00\n"
+        "\tsq.x vf01, 0(vi04)\n"
+        "\tiaddiu vi02, vi00, 1\n";
+    std::string vsm = runEmit(body, "vsmScheduleComputeBeforeWaitingStore");
+    REQUIRE(vsm.length() > 0);
+
+    int addLine = lineIndex(vsm, "iaddiu VI02");
+    int storeLine = lineIndex(vsm, "sq.x");
+    REQUIRE(addLine >= 0);
+    REQUIRE(storeLine >= 0);
+    CHECK(addLine < storeLine);
+}
+
 TEST_CASE("Scheduling: latency filler may move a distinct-address store before a plain load")
 {
     const std::string body =
