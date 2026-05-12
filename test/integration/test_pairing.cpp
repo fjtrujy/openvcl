@@ -512,7 +512,7 @@ TEST_CASE("Scheduling: latency filler does not move store base update before tha
     CHECK(storeLine < addLine);
 }
 
-TEST_CASE("Scheduling: adjacent self iaddiu pointer bumps coalesce")
+TEST_CASE("Scheduling: adjacent iaddiu pointer bump chain coalesces")
 {
     const std::string body =
         "\tiaddiu vi03, vi00, 0\n"
@@ -522,7 +522,19 @@ TEST_CASE("Scheduling: adjacent self iaddiu pointer bumps coalesce")
     std::string vsm = runEmit(body, "vsmCoalesceSelfIaddiu");
     REQUIRE(vsm.length() > 0);
 
-    CHECK(lineIndex(vsm, "iaddiu VI03, VI03, 9") >= 0);
+    CHECK(lineIndex(vsm, "iaddiu VI03, VI00, 9") >= 0);
+    CHECK(lineIndex(vsm, "iaddiu VI03, VI03, 3") < 0);
+}
+
+TEST_CASE("Scheduling: adjacent iaddiu followed by self bump coalesces")
+{
+    const std::string body =
+        "\tiaddiu vi03, vi00, 5\n"
+        "\tiaddiu vi03, vi03, 3\n";
+    std::string vsm = runEmit(body, "vsmCoalesceIaddiuChain");
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(lineIndex(vsm, "iaddiu VI03, VI00, 8") >= 0);
     CHECK(lineIndex(vsm, "iaddiu VI03, VI03, 3") < 0);
 }
 

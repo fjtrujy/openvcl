@@ -48,7 +48,7 @@ namespace
 	bool isPlainMemoryLoad( const Token& token );
 	bool tokenReadsQ( const Token& token );
 	bool tokenReadsP( const Token& token );
-	void coalesceAdjacentSelfIntegerAdds( std::list<Token>& tokens );
+	void coalesceAdjacentIntegerAdds( std::list<Token>& tokens );
 }
 
 CodeGenerator::CodeGenerator()
@@ -103,7 +103,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 	bool exitWritten = true;
 
 	std::list<Token> workTokens = tokens;
-	coalesceAdjacentSelfIntegerAdds(workTokens);
+	coalesceAdjacentIntegerAdds(workTokens);
 
 	for( std::list<Token>::iterator k = workTokens.begin(); k != workTokens.end(); )
 	{
@@ -908,11 +908,9 @@ namespace {
 		return false;
 	}
 
-	bool isSelfIntegerImmediateAdd( const Token& token, std::string& reg, long& immediate )
+	bool isIntegerImmediateAdd( const Token& token, std::string& dstReg, std::string& srcReg, long& immediate )
 	{
 		if( !token.operand() )
-			return false;
-		if( token.label().length() != 0 )
 			return false;
 		if( token.flags() & (Token::PREORDERED | Token::E | Token::D | Token::T) )
 			return false;
@@ -938,11 +936,7 @@ namespace {
 		if( !((*dst).flags() & Token::Argument::WRITE) )
 			return false;
 
-		std::string dstKey;
-		std::string srcKey;
-		if( !registerKey(*dst, dstKey) || !registerKey(*src, srcKey) )
-			return false;
-		if( dstKey != srcKey )
+		if( !registerKey(*dst, dstReg) || !registerKey(*src, srcReg) )
 			return false;
 
 		Expression e;
@@ -950,9 +944,19 @@ namespace {
 		if( !e.process( (*imm).immediate() ) || !e.solve() )
 			return false;
 
-		reg = dstKey;
 		immediate = static_cast<long>(e.result());
 		return true;
+	}
+
+	bool isSelfIntegerImmediateAdd( const Token& token, std::string& reg, long& immediate )
+	{
+		if( token.label().length() != 0 )
+			return false;
+
+		std::string srcReg;
+		if( !isIntegerImmediateAdd(token, reg, srcReg, immediate) )
+			return false;
+		return reg == srcReg;
 	}
 
 	bool setIntegerImmediate( Token& token, long immediate )
@@ -969,7 +973,7 @@ namespace {
 		return true;
 	}
 
-	void coalesceAdjacentSelfIntegerAdds( std::list<Token>& tokens )
+	void coalesceAdjacentIntegerAdds( std::list<Token>& tokens )
 	{
 		for( std::list<Token>::iterator i = tokens.begin(); i != tokens.end(); )
 		{
@@ -978,13 +982,14 @@ namespace {
 			if( next == tokens.end() )
 				break;
 
-			std::string reg;
+			std::string dstReg;
+			std::string srcReg;
 			std::string nextReg;
 			long immediate = 0;
 			long nextImmediate = 0;
-			if( !isSelfIntegerImmediateAdd(*i, reg, immediate)
+			if( !isIntegerImmediateAdd(*i, dstReg, srcReg, immediate)
 			    || !isSelfIntegerImmediateAdd(*next, nextReg, nextImmediate)
-			    || reg != nextReg )
+			    || dstReg != nextReg )
 			{
 				++i;
 				continue;
