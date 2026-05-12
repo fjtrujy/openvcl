@@ -1000,32 +1000,6 @@ bool CodeGenerator::tokenRangeCanBeCrossed( const Token& first, const Token& las
 	return !hasMemoryOrControlSideEffect(first) && !hasMemoryOrControlSideEffect(last);
 }
 
-// Names of VU1 "flag-reading" instructions: these read the MAC/CLIP/
-// status flag registers that every FMAC instruction implicitly
-// updates 4 cycles after issue.  Pairing an FMAC with the very next
-// flag-reader places the flag read in the same cycle as the flag
-// write, so the reader sees stale flags from before the FMAC.  See
-// the bfc_tri macro in ps2gl/vu1/clip_cull.i:
-//
-//     opmsub.xyz bfc_normal, delta_2, delta_1   ; updates MAC sign
-//     fmand      z_sign, z_sign_mask            ; reads opmsub's MAC
-//
-// Pairing those two breaks the back-face cull bit.  We block FMAC
-// pairing with any of these readers, regardless of which specific
-// flag (MAC/CLIP/status) each one targets — conservative and safe.
-static bool isFlagReader( const std::string& name )
-{
-	return name == "fmand" || name == "fmeq" || name == "fmor"
-	    || name == "fcand" || name == "fceq" || name == "fcor"
-	    || name == "fcget"
-	    || name == "fsand" || name == "fseq" || name == "fsor"
-	    // Uppercase variants emitted by some macro expansions.
-	    || name == "FMAND" || name == "FMEQ" || name == "FMOR"
-	    || name == "FCAND" || name == "FCEQ" || name == "FCOR"
-	    || name == "FCGET"
-	    || name == "FSAND" || name == "FSEQ" || name == "FSOR";
-}
-
 // Reads the MAC flag register, updated by every FMAC with 4-cycle latency.
 static bool isMacReader( const std::string& name )
 {
@@ -1079,14 +1053,19 @@ bool CodeGenerator::tokensCanPair( const Token& a, const Token& b )
 	if( aName == "waitq" || aName == "waitp" || bName == "waitq" || bName == "waitp" )
 		return false;
 
-	// FMAC writes MAC/CLIP flags with 4-cycle latency; a flag-reader
-	// in the same cycle sees pre-FMAC flags, not the source-intended
-	// post-FMAC ones.  See isFlagReader() for the list and rationale.
+	// FMAC writes MAC with 4-cycle latency; clipw additionally writes
+	// CLIP.  Keep same-flag readers out of the pair.  A non-clip FMAC
+	// can still pair with a CLIP reader such as fcand once the previous
+	// clipw result is latency-ready.
 	bool aFMAC = (ua == Operand::FMAC);
 	bool bFMAC = (ub == Operand::FMAC);
-	if( aFMAC && isFlagReader(b.operand()->name()) )
+	if( aFMAC && isMacReader(b.operand()->name()) )
 		return false;
-	if( bFMAC && isFlagReader(a.operand()->name()) )
+	if( bFMAC && isMacReader(a.operand()->name()) )
+		return false;
+	if( isClipw(a.operand()->name()) && isClipReader(b.operand()->name()) )
+		return false;
+	if( isClipw(b.operand()->name()) && isClipReader(a.operand()->name()) )
 		return false;
 
 	// Data-flow conflict between the two.

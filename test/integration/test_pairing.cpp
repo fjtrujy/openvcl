@@ -378,6 +378,25 @@ TEST_CASE("Pairing: FMAC clipw is not paired with fcand reading CLIP")
     CHECK(!linePairsSubstrings(vsm, "clipw", "fcand"));
 }
 
+TEST_CASE("Pairing: non-clip FMAC can pair with latency-ready fcand")
+{
+    // fcand reads the CLIP flags, not MAC.  Once the earlier clipw result
+    // is ready, an unrelated FMAC that only writes MAC can occupy the upper
+    // pipe in the same cycle.
+    const std::string body =
+        "\tmove.xyzw vf01, vf00\n"
+        "\tmove.xyzw vf02, vf00\n"
+        "\tmove.xyzw vf03, vf00\n"
+        "\tclipw.xyz vf01, vf00w\n"
+        "\tsub.xyz vf04, vf01, vf02\n"
+        "\tsub.xyz vf05, vf03, vf02\n"
+        "\tmulw.xyz vf10, vf04, vf00w\n"
+        "\tfcand vi01, 0xffffff\n";
+    std::string vsm = runEmit(body, "vsmPairFmacFcand");
+    REQUIRE(vsm.length() > 0);
+    CHECK(linePairsSubstrings(vsm, "mulw", "fcand"));
+}
+
 TEST_CASE("Pairing: FMAC mulq reading Q is not paired with FDIV writing Q")
 {
     // FDIV is excluded from pairing wholesale (Unit==FDIV check) but
