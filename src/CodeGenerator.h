@@ -65,10 +65,14 @@ private:
 	int readHazardDelay( const Token& token, const Token* partner ) const;
 	void padForReadHazards( const Token& token, const Token* partner );
 	void recordRegisterWrites( const Token& token, int issueCycle );
+	bool emitsAsUpperZeroMove( const Token& token ) const;
+	bool tokenIsLowerExecutionPath( const Token& token ) const;
+	bool tokenIsUpperExecutionPath( const Token& token ) const;
+	std::string generateUpperZeroMoveInstruction( const Token& token );
 
 	// Dual-pipe pairing helpers.  See CodeGenerator.cpp for the contract.
 	static bool isEmittableInstruction( const Token& t );
-	static bool tokensCanPair( const Token& a, const Token& b );
+	bool tokensCanPair( const Token& a, const Token& b ) const;
 	static bool tokenCanMoveBefore( const Token& moved, const Token& crossed );
 	static bool tokenRangeCanBeCrossed( const Token& first, const Token& last );
 	static bool hasDataDependency( const Token& a, const Token& b );
@@ -77,6 +81,7 @@ private:
 	std::list<std::string> m_codeLines;
 
 	bool m_emitSource;
+	bool m_enableUpperZeroMoves;
 	std::string m_name;
 
 	// VU1 has a 4-cycle FMAC pipeline.  An FMAC writes the MAC / CLIP /

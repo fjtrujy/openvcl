@@ -48,12 +48,15 @@ namespace
 	bool isPlainMemoryLoad( const Token& token );
 	bool tokenReadsQ( const Token& token );
 	bool tokenReadsP( const Token& token );
+	bool isZeroMoveFromVf00( const Token& token );
+	bool tokenListReadsMac( const std::list<Token>& tokens );
 	void coalesceAdjacentIntegerAdds( std::list<Token>& tokens );
 }
 
 CodeGenerator::CodeGenerator()
 {
 	m_currentCycle    = 0;
+	m_enableUpperZeroMoves = false;
 	// Sentinels < 0 by more than FMAC latency so the first flag-reader
 	// in the program doesn't trip the cooldown.
 	m_lastFMACCycle   = -10;
@@ -104,6 +107,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 
 	std::list<Token> workTokens = tokens;
 	coalesceAdjacentIntegerAdds(workTokens);
+	m_enableUpperZeroMoves = !tokenListReadsMac(workTokens);
 
 	for( std::list<Token>::iterator k = workTokens.begin(); k != workTokens.end(); )
 	{
@@ -287,7 +291,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				    && (isPlainMemoryStore(token) || isPlainMemoryStore(*p));
 				const bool adjacentXgkickPair =
 				    adjacentCandidate
-				    && !token.operand()->isLowerExecutionPath()
+				    && tokenIsUpperExecutionPath(token)
 				    && isXgkick(*p);
 				if( !adjacentQpProducerPair && !adjacentPlainStorePair && !adjacentXgkickPair
 				    && !tokenRangeCanBeCrossed(*k, *p) && !isPlainMemoryStore(*p) )
@@ -315,7 +319,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				}
 			}
 
-			if( !foundPartner && tokenReadsQ(token) && !token.operand()->isLowerExecutionPath() )
+			if( !foundPartner && tokenReadsQ(token) && tokenIsUpperExecutionPath(token) )
 			{
 				const int qGap = m_qReadyCycle - m_currentCycle;
 				const int needed = readHazardDelay(token, NULL);
@@ -438,7 +442,7 @@ void CodeGenerator::emitSingleToken( const Token& token )
 	for(int d = 0; d < 20; d++)
 		outputLine += " ";
 
-	if(token.operand()->isLowerExecutionPath())
+	if(tokenIsLowerExecutionPath(token))
 	{
 		outputLine += "nop";
 
@@ -485,7 +489,7 @@ void CodeGenerator::emitSingleToken( const Token& token )
 
 	// Remember this cycle as the most recent FMAC / clipw so
 	// downstream flag-readers can pad to the 4-cycle pipeline.
-	if( token.operand()->unit() == Operand::FMAC )
+	if( token.operand()->unit() == Operand::FMAC || emitsAsUpperZeroMove(token) )
 		m_lastFMACCycle = m_currentCycle - 1;
 	if( isClipw(token.operand()->name()) )
 		m_lastClipwCycle = m_currentCycle - 1;
@@ -495,7 +499,7 @@ void CodeGenerator::emitSingleToken( const Token& token )
 void CodeGenerator::emitPairedTokens( const Token& a, const Token& b )
 {
 	std::string pairedLine;
-	if( a.operand()->isLowerExecutionPath() )
+	if( tokenIsLowerExecutionPath(a) )
 		pairedLine = formatPairedLine(b, a);
 	else
 		pairedLine = formatPairedLine(a, b);
@@ -505,11 +509,31 @@ void CodeGenerator::emitPairedTokens( const Token& a, const Token& b )
 	// for downstream flag-reader cooldowns.
 	recordRegisterWrites(a, m_currentCycle);
 	recordRegisterWrites(b, m_currentCycle);
-	if( a.operand()->unit() == Operand::FMAC || b.operand()->unit() == Operand::FMAC )
+	if( a.operand()->unit() == Operand::FMAC || b.operand()->unit() == Operand::FMAC
+	    || emitsAsUpperZeroMove(a) || emitsAsUpperZeroMove(b) )
 		m_lastFMACCycle = m_currentCycle;
 	if( isClipw(a.operand()->name()) || isClipw(b.operand()->name()) )
 		m_lastClipwCycle = m_currentCycle;
 	m_currentCycle++;
+}
+
+bool CodeGenerator::emitsAsUpperZeroMove( const Token& token ) const
+{
+	return m_enableUpperZeroMoves && isZeroMoveFromVf00(token);
+}
+
+bool CodeGenerator::tokenIsLowerExecutionPath( const Token& token ) const
+{
+	if( emitsAsUpperZeroMove(token) )
+		return false;
+	return token.operand() && token.operand()->isLowerExecutionPath();
+}
+
+bool CodeGenerator::tokenIsUpperExecutionPath( const Token& token ) const
+{
+	if( emitsAsUpperZeroMove(token) )
+		return true;
+	return token.operand() && token.operand()->isUpperExecutionPath();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -847,6 +871,43 @@ namespace {
 				*i = char(*i - 'A' + 'a');
 		}
 		return name;
+	}
+
+	bool isZeroMoveFromVf00( const Token& token )
+	{
+		if( !token.operand() )
+			return false;
+		if( token.flags() & (Token::PREORDERED | Token::E | Token::D | Token::T) )
+			return false;
+		if( lowerName(token) != "move" )
+			return false;
+
+		unsigned int fields = token.fields();
+		if( fields == 0 || (fields & Token::W) )
+			return false;
+
+		const std::list<Token::Argument>& args = token.arguments();
+		if( args.size() != 2 )
+			return false;
+
+		std::list<Token::Argument>::const_iterator src = args.begin();
+		++src;
+		return src->type() == Token::Argument::FLOAT_REGISTER
+		    && src->content() == Token::Argument::REGISTER
+		    && src->regNumber() == 0
+		    && !(src->flags() & (Token::Argument::INDIRECT
+		                       | Token::Argument::PREDEC
+		                       | Token::Argument::POSTINC));
+	}
+
+	bool tokenListReadsMac( const std::list<Token>& tokens )
+	{
+		for( std::list<Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i )
+		{
+			if( i->operand() && isMacReader(i->operand()->name()) )
+				return true;
+		}
+		return false;
 	}
 
 	bool hasPreDecOrPostIncArgument( const Token& token )
@@ -1238,7 +1299,7 @@ static bool isClipw( const std::string& name )
 	    || ( name.compare(0, 5, "CLIP" ) == 0 && (name[4] == 'w' || name[4] == 'W') );
 }
 
-bool CodeGenerator::tokensCanPair( const Token& a, const Token& b )
+bool CodeGenerator::tokensCanPair( const Token& a, const Token& b ) const
 {
 	if( !isEmittableInstruction(a) || !isEmittableInstruction(b) )
 		return false;
@@ -1249,7 +1310,7 @@ bool CodeGenerator::tokensCanPair( const Token& a, const Token& b )
 		return false;
 
 	// Must straddle the upper/lower pipe split.
-	if( a.operand()->isLowerExecutionPath() == b.operand()->isLowerExecutionPath() )
+	if( tokenIsLowerExecutionPath(a) == tokenIsLowerExecutionPath(b) )
 		return false;
 
 	// Keep dynamic control flow and explicit Q/P wait barriers out of the
@@ -1268,8 +1329,8 @@ bool CodeGenerator::tokensCanPair( const Token& a, const Token& b )
 	// CLIP.  Keep same-flag readers out of the pair.  A non-clip FMAC
 	// can still pair with a CLIP reader such as fcand once the previous
 	// clipw result is latency-ready.
-	bool aFMAC = (ua == Operand::FMAC);
-	bool bFMAC = (ub == Operand::FMAC);
+	bool aFMAC = (ua == Operand::FMAC) || emitsAsUpperZeroMove(a);
+	bool bFMAC = (ub == Operand::FMAC) || emitsAsUpperZeroMove(b);
 	if( aFMAC && isMacReader(b.operand()->name()) )
 		return false;
 	if( bFMAC && isMacReader(a.operand()->name()) )
@@ -1315,6 +1376,9 @@ std::string CodeGenerator::generateInstruction(const Token& token)
 {
 	std::string codeLine;
 
+	if( emitsAsUpperZeroMove(token) )
+		return generateUpperZeroMoveInstruction(token);
+
 	codeLine = generateOperand(token);
 	codeLine += " ";
 
@@ -1349,6 +1413,31 @@ std::string CodeGenerator::generateInstruction(const Token& token)
 		codeLine += currentArg;
 	}
 
+	return codeLine;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+std::string CodeGenerator::generateUpperZeroMoveInstruction( const Token& token )
+{
+	static const char* fieldnames = "xyzw";
+	std::string codeLine = "max.";
+	for(unsigned int t = 0; t < 4; t++ )
+	{
+		if(token.fields() & (1<<t))
+			codeLine += fieldnames[t];
+	}
+	codeLine += " ";
+
+	std::list<Token::Argument>::const_iterator dst = token.arguments().begin();
+	std::list<Token::Argument>::const_iterator src = dst;
+	++src;
+
+	codeLine += registerArg(*dst, token);
+	codeLine += ", ";
+	codeLine += registerArg(*src, token);
+	codeLine += ", ";
+	codeLine += registerArg(*src, token);
 	return codeLine;
 }
 

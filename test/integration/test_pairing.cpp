@@ -179,6 +179,29 @@ TEST_CASE("Pairing: xgkick does not pull a following upper op before it")
     CHECK(!linePairsSubstrings(vsm, "add.xyz", "xgkick"));
 }
 
+TEST_CASE("Pairing: vf00 xyz move can emit as upper zero op when MAC is dead")
+{
+    const std::string body =
+        "\tmove.xyz vf01, vf00\n"
+        "\tlq.xyz vf02, 0(vi00)\n";
+    std::string vsm = runEmit(body, "vsmPairUpperZeroMove");
+    REQUIRE(vsm.length() > 0);
+    CHECK(linePairsSubstrings(vsm, "max.xyz", "lq.xyz"));
+    CHECK(find_line(vsm, "move.xyz").empty());
+}
+
+TEST_CASE("Pairing: vf00 move stays lower when MAC flags are read")
+{
+    const std::string body =
+        "\tmove.xyz vf01, vf00\n"
+        "\tlq.xyz vf02, 0(vi00)\n"
+        "\tfmand vi01, vi00\n";
+    std::string vsm = runEmit(body, "vsmKeepMoveWhenMacRead");
+    REQUIRE(vsm.length() > 0);
+    CHECK(!linePairsSubstrings(vsm, "max.xyz", "lq.xyz"));
+    CHECK(!find_line(vsm, "move.xyz").empty());
+}
+
 TEST_CASE("Scheduling: branch emission reuses existing hazard nop before branch")
 {
     const std::string body =
