@@ -391,6 +391,28 @@ TEST_CASE("Scheduling: latency filler does not move a load before a same-base st
     CHECK(sqLine < lqLine);
 }
 
+TEST_CASE("Scheduling: latency filler may move a load before a different-offset same-base store")
+{
+    const std::string body =
+        "\tmove.xyzw vf01, vf00\n"
+        "\tmove.xyzw vf02, vf00\n"
+        "\tmove.xyzw vf03, vf00\n"
+        "\tmove.xyzw vf10, vf00\n"
+        "\tiaddiu vi03, vi00, 0\n"
+        "\tdiv q, vf01w, vf02w\n"
+        "\tmulq.xyz vf03, vf03, q\n"
+        "\tsq.xyz vf10, 0(vi03)\n"
+        "\tlq.xyz vf20, 2(vi03)\n";
+    std::string vsm = runEmit(body, "vsmScheduleLoadAcrossDifferentOffsetStore");
+    REQUIRE(vsm.length() > 0);
+
+    int lqLine = lineIndex(vsm, "lq.xyz VF20");
+    int mulqLine = lineIndex(vsm, "mulq");
+    REQUIRE(lqLine >= 0);
+    REQUIRE(mulqLine >= 0);
+    CHECK(lqLine < mulqLine);
+}
+
 TEST_CASE("Scheduling: latency filler may move independent integer compute before a plain store")
 {
     // The iaddiu is pure integer work and does not feed the store, so it can

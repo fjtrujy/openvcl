@@ -886,6 +886,26 @@ namespace {
 		return false;
 	}
 
+	bool memoryOffset( const Token& token, long& offset )
+	{
+		const std::list<Token::Argument>& args = token.arguments();
+		for( std::list<Token::Argument>::const_iterator i = args.begin(); i != args.end(); ++i )
+		{
+			if( !((*i).flags() & Token::Argument::INDIRECT) )
+				continue;
+			if( (*i).type() != Token::Argument::INTEGER_REGISTER )
+				continue;
+
+			Expression e;
+			e.setCustomOperators( Math::mathOperators() );
+			if( !e.process( (*i).immediate() ) || !e.solve() )
+				return false;
+			offset = static_cast<long>(e.result());
+			return true;
+		}
+		return false;
+	}
+
 	bool plainLoadCanMoveBeforePlainStore( const Token& moved, const Token& crossed )
 	{
 		if( !isPlainMemoryLoad(moved) || !isPlainMemoryStore(crossed) )
@@ -896,7 +916,15 @@ namespace {
 		if( !memoryBaseRegisterKey(moved, movedBase) || !memoryBaseRegisterKey(crossed, crossedBase) )
 			return false;
 
-		return movedBase != crossedBase;
+		if( movedBase != crossedBase )
+			return true;
+
+		long movedOffset = 0;
+		long crossedOffset = 0;
+		if( !memoryOffset(moved, movedOffset) || !memoryOffset(crossed, crossedOffset) )
+			return false;
+
+		return movedOffset != crossedOffset;
 	}
 
 	bool isXgkick( const Token& token )
