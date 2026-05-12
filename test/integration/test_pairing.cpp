@@ -285,26 +285,52 @@ TEST_CASE("Pairing: overlapping VF field writes stay unpaired")
     CHECK(!linePairsSubstrings(vsm, "ftoi4.xyz", "mfir.x"));
 }
 
-TEST_CASE("Pairing: disjoint VF field write and read can pair")
+TEST_CASE("Scheduling: disjoint VF field write can move before an xyz reader")
 {
     const std::string body =
         "\tmove.xyzw vf01, vf00\n"
         "\tmul.xyz vf02, vf01, vf00\n"
         "\tmfir.w vf01, vi00\n";
-    std::string vsm = runEmit(body, "vsmPairDisjointVfWriteRead");
+    std::string vsm = runEmit(body, "vsmMoveDisjointVfWriteRead");
     REQUIRE(vsm.length() > 0);
-    CHECK(linePairsSubstrings(vsm, "mul.xyz", "mfir.w"));
+    CHECK(lineIndex(vsm, "mfir.w") < lineIndex(vsm, "mul.xyz"));
 }
 
-TEST_CASE("Pairing: overlapping VF field write and read stay unpaired")
+TEST_CASE("Scheduling: overlapping VF field write cannot move before a reader")
 {
     const std::string body =
         "\tmove.xyzw vf01, vf00\n"
         "\tmul.xyz vf02, vf01, vf00\n"
         "\tmfir.x vf01, vi00\n";
-    std::string vsm = runEmit(body, "vsmNoPairOverlappingVfWriteRead");
+    std::string vsm = runEmit(body, "vsmNoMoveOverlappingVfWriteRead");
     REQUIRE(vsm.length() > 0);
-    CHECK(!linePairsSubstrings(vsm, "mul.xyz", "mfir.x"));
+    CHECK(lineIndex(vsm, "mul.xyz") < lineIndex(vsm, "mfir.x"));
+}
+
+TEST_CASE("Scheduling: disjoint VF field write can cross an xyz reader")
+{
+    const std::string body =
+        "\tmove.xyzw vf01, vf00\n"
+        "\tmove.xyzw vf09, vf00\n"
+        "\tadd.xyz vf02, vf09, vf00\n"
+        "\tmul.xyz vf03, vf01, vf00\n"
+        "\tmfir.w vf01, vi00\n";
+    std::string vsm = runEmit(body, "vsmMoveFieldWriteCrossesReader");
+    REQUIRE(vsm.length() > 0);
+    CHECK(lineIndex(vsm, "mfir.w") < lineIndex(vsm, "add.xyz"));
+}
+
+TEST_CASE("Scheduling: overlapping VF field write cannot cross a reader")
+{
+    const std::string body =
+        "\tmove.xyzw vf01, vf00\n"
+        "\tmove.xyzw vf09, vf00\n"
+        "\tadd.xyz vf02, vf09, vf00\n"
+        "\tmul.xyz vf03, vf01, vf00\n"
+        "\tmfir.x vf01, vi00\n";
+    std::string vsm = runEmit(body, "vsmNoMoveFieldWriteCrossesReader");
+    REQUIRE(vsm.length() > 0);
+    CHECK(lineIndex(vsm, "mul.xyz") < lineIndex(vsm, "mfir.x"));
 }
 
 TEST_CASE("Pairing: independent non-adjacent lower op can fill current upper slot")

@@ -876,18 +876,6 @@ namespace {
 		return false;
 	}
 
-	bool writesTouchReadsOrWrites( const std::list<std::string>& writes,
-	                               const std::list<std::string>& reads,
-	                               const std::list<std::string>& otherWrites )
-	{
-		for( std::list<std::string>::const_iterator i = writes.begin(); i != writes.end(); ++i )
-		{
-			if( containsKey(reads, *i) || containsKey(otherWrites, *i) )
-				return true;
-		}
-		return false;
-	}
-
 	unsigned int writeFieldMask( const Token& token, const Token::Argument& arg )
 	{
 		if( arg.type() != Token::Argument::FLOAT_REGISTER )
@@ -938,6 +926,43 @@ namespace {
 			return false;
 
 		return (writeFieldMask(writer, writeArg) & readFieldMask(reader, readArg)) == 0;
+	}
+
+	bool writeConflictsWithArgument( const Token& writer, const Token::Argument& writeArg,
+	                                 const Token& other, const Token::Argument& otherArg )
+	{
+		if( !(writeArg.flags() & Token::Argument::WRITE) )
+			return false;
+		if( otherArg.type() != Token::Argument::FLOAT_REGISTER
+		    && otherArg.type() != Token::Argument::INTEGER_REGISTER )
+			return false;
+
+		std::string writeKey;
+		std::string otherKey;
+		if( !registerKey(writeArg, writeKey) || !registerKey(otherArg, otherKey) )
+			return false;
+		if( writeKey != otherKey )
+			return false;
+
+		if( otherArg.flags() & Token::Argument::WRITE )
+			return !disjointFloatWrites(writer, writeArg, other, otherArg);
+		return !disjointFloatWriteAndRead(writer, writeArg, other, otherArg);
+	}
+
+	bool tokensHaveRegisterOrderingConflict( const Token& a, const Token& b )
+	{
+		const std::list<Token::Argument>& aArgs = a.arguments();
+		const std::list<Token::Argument>& bArgs = b.arguments();
+		for( std::list<Token::Argument>::const_iterator ai = aArgs.begin(); ai != aArgs.end(); ++ai )
+		{
+			for( std::list<Token::Argument>::const_iterator bi = bArgs.begin(); bi != bArgs.end(); ++bi )
+			{
+				if( writeConflictsWithArgument(a, *ai, b, *bi)
+				    || writeConflictsWithArgument(b, *bi, a, *ai) )
+					return true;
+			}
+		}
+		return false;
 	}
 
 	std::string lowerName( const Token& token )
@@ -1347,18 +1372,7 @@ bool CodeGenerator::tokenCanMoveBefore( const Token& moved, const Token& crossed
 	if( crossedWritesImplicit & (movedReadsImplicit | movedWritesImplicit) )
 		return false;
 
-	std::list<std::string> movedReads;
-	std::list<std::string> movedWrites;
-	std::list<std::string> crossedReads;
-	std::list<std::string> crossedWrites;
-	collectRegisterReads(moved, movedReads);
-	collectRegisterWrites(moved, movedWrites);
-	collectRegisterReads(crossed, crossedReads);
-	collectRegisterWrites(crossed, crossedWrites);
-
-	if( writesTouchReadsOrWrites(movedWrites, crossedReads, crossedWrites) )
-		return false;
-	if( writesTouchReadsOrWrites(crossedWrites, movedReads, movedWrites) )
+	if( tokensHaveRegisterOrderingConflict(moved, crossed) )
 		return false;
 
 	return true;
