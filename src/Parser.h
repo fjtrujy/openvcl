@@ -40,6 +40,7 @@ public:
 		SHOW_VERSION,
 
 		READ_INPUT,
+		ANALYZE_VSM_COST,
 		PREPROCESS,
 		TOKENIZE,
 		ALLOCATE_REGISTERS,
@@ -80,6 +81,7 @@ private:
 
 	bool showVersion();
 	bool showUsage();
+	bool analyzeVsmCost();
 	bool readInput();
 	bool preProcess();
 	bool tokenize();

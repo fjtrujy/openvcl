@@ -10,6 +10,7 @@
 
 #include "Parser.h"
 #include "Error.h"
+#include "VsmCostAnalyzer.h"
 
 #include <iostream>
 #include <fstream>
@@ -65,6 +66,8 @@ bool Parser::create( int argc, char* argv[] )
 		setState( SHOW_VERSION );
 	else if( m_cmdLine.showUsage() )
 		setState( SHOW_USAGE );
+	else if( m_cmdLine.analyzeVsmCost() )
+		setState( ANALYZE_VSM_COST );
 	else
 		setState( READ_INPUT );
 
@@ -92,6 +95,7 @@ bool Parser::run()
 	{
 		case SHOW_VERSION: return showVersion();
 		case SHOW_USAGE: return showUsage();
+		case ANALYZE_VSM_COST: return analyzeVsmCost();
 		case READ_INPUT: return readInput();
 		case PREPROCESS: return preProcess();
 		case TOKENIZE: return tokenize();
@@ -484,6 +488,56 @@ bool Parser::readInput()
 		m_files[ "" ] = File("stdin");
 		return readInputStream( std::cin );
 	}
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+bool Parser::analyzeVsmCost()
+{
+	VsmCostAnalyzer analyzer;
+
+	if( m_cmdLine.input().length() > 0 )
+	{
+		std::ifstream input( m_cmdLine.input().c_str() );
+		if( !input.good() )
+		{
+			Error::Display( Error( "Could not open input" ) );
+			return false;
+		}
+
+		if( !analyzer.analyze( input, m_cmdLine.input() ) )
+			return false;
+	}
+	else
+	{
+		if( !analyzer.analyze( std::cin, "stdin" ) )
+			return false;
+	}
+
+	if( m_cmdLine.output().length() > 0 )
+	{
+		std::ofstream output( m_cmdLine.output().c_str() );
+		if( !output.good() )
+		{
+			Error::Display( Error( "Could not open output file" ) );
+			return false;
+		}
+
+		if( m_cmdLine.analyzeVsmCostJson() )
+			analyzer.writeJson( output );
+		else
+			analyzer.writeText( output );
+	}
+	else
+	{
+		if( m_cmdLine.analyzeVsmCostJson() )
+			analyzer.writeJson( std::cout );
+		else
+			analyzer.writeText( std::cout );
+	}
+
+	setState( EXIT );
+	return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

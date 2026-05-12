@@ -41,6 +41,7 @@ set(OPENVCL_LIB_SOURCES
     ${OPENVCL_ROOT}/src/RegisterAllocator.cpp
     ${OPENVCL_ROOT}/src/Token.cpp
     ${OPENVCL_ROOT}/src/Tokenizer.cpp
+    ${OPENVCL_ROOT}/src/VsmCostAnalyzer.cpp
     ${OPENVCL_ROOT}/src/stlhelp.cpp
 )
 
@@ -50,6 +51,7 @@ set(OPENVCL_TEST_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_smoke.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_expression.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_tokenizer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_vsm_cost_analyzer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/integration/openvcl_runner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_init_vf_range.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_clip_validation.cpp
@@ -60,6 +62,7 @@ set(OPENVCL_TEST_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_flag_latency.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_continuation_lifetime.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_two_address_coalescing.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_vsm_cost.cpp
 )
 
 add_executable(openvcl_unit_tests

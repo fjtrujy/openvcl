@@ -37,6 +37,8 @@ CommandLine::CommandLine()
 	m_timeout	= 4;
 	m_showVersion = false;
 	m_showRegisterInfo = false;
+	m_analyzeVsmCost = false;
+	m_analyzeVsmCostJson = false;
 
 	m_gasp = "gasp";
 	m_cpp = "cpp";
@@ -69,6 +71,8 @@ CommandLine::CommandLine()
 	m_options.push_back(Option('\0',"bthres",BRANCH_THRESHOLD,true));
 	m_options.push_back(Option('\0',"version",SHOW_VERSION,false));
 	m_options.push_back(Option('\0',"show-reg-alloc",SHOW_REGISTER_INFO,false));
+	m_options.push_back(Option('\0',"cost",ANALYZE_VSM_COST,false));
+	m_options.push_back(Option('\0',"cost-json",ANALYZE_VSM_COST_JSON,false));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -165,6 +169,8 @@ bool CommandLine::parse( int argc, char* argv[] )
 				case BRANCH_THRESHOLD: m_threshold = strtoul(argument.c_str(),NULL,10); break;
 				case SHOW_VERSION: m_showVersion = true; break;
 				case SHOW_REGISTER_INFO: m_showRegisterInfo = true; break;
+				case ANALYZE_VSM_COST: m_analyzeVsmCost = true; break;
+				case ANALYZE_VSM_COST_JSON: m_analyzeVsmCost = true; m_analyzeVsmCostJson = true; break;
 
 				case IGNORE: break;
 				break;
@@ -216,6 +222,8 @@ void CommandLine::showUsage( std::ostream& stream )
 	stream << "  --bthres <val>     Number of times a dynamic branch can be visited. (Default: 16)" << std::endl;
 	stream << "  --version          Show program version." << std::endl;
 	stream << "  --show-reg-alloc   Show register allocation information during compilation." << std::endl;
+	stream << "  --cost             Analyze scheduled .vsm cost instead of compiling VCL." << std::endl;
+	stream << "  --cost-json        Analyze scheduled .vsm cost and emit JSON." << std::endl;
 
 	stream << std::endl << "  If no input or output file are specified, standard I/O will be used instead." << std::endl;
 

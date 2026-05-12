@@ -41,6 +41,8 @@ public:
 	bool generateMpg() const;
 	bool showUsage() const;
 	bool showRegisterInfo() const;
+	bool analyzeVsmCost() const;
+	bool analyzeVsmCostJson() const;
 
 	void setRunGasp( bool runGasp );
 	bool runGasp() const;
@@ -94,6 +96,8 @@ private:
 		BRANCH_THRESHOLD,
 		SHOW_VERSION,
 		SHOW_REGISTER_INFO,
+		ANALYZE_VSM_COST,
+		ANALYZE_VSM_COST_JSON,
 
 		IGNORE
 	};
@@ -131,6 +135,8 @@ private:
 	bool m_newSyntax;
 	bool m_showUsage;
 	bool m_showRegisterInfo;
+	bool m_analyzeVsmCost;
+	bool m_analyzeVsmCostJson;
 
 	unsigned int m_threshold;
 	unsigned int m_timeout;
