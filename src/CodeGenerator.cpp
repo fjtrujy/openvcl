@@ -906,14 +906,11 @@ namespace {
 		return false;
 	}
 
-	bool plainLoadCanMoveBeforePlainStore( const Token& moved, const Token& crossed )
+	bool plainMemoryAccessesAreDistinct( const Token& a, const Token& b )
 	{
-		if( !isPlainMemoryLoad(moved) || !isPlainMemoryStore(crossed) )
-			return false;
-
 		std::string movedBase;
 		std::string crossedBase;
-		if( !memoryBaseRegisterKey(moved, movedBase) || !memoryBaseRegisterKey(crossed, crossedBase) )
+		if( !memoryBaseRegisterKey(a, movedBase) || !memoryBaseRegisterKey(b, crossedBase) )
 			return false;
 
 		if( movedBase != crossedBase )
@@ -921,10 +918,37 @@ namespace {
 
 		long movedOffset = 0;
 		long crossedOffset = 0;
-		if( !memoryOffset(moved, movedOffset) || !memoryOffset(crossed, crossedOffset) )
+		if( !memoryOffset(a, movedOffset) || !memoryOffset(b, crossedOffset) )
 			return false;
 
 		return movedOffset != crossedOffset;
+	}
+
+	bool plainLoadCanMoveBeforePlainStore( const Token& moved, const Token& crossed )
+	{
+		if( !isPlainMemoryLoad(moved) || !isPlainMemoryStore(crossed) )
+			return false;
+
+		return plainMemoryAccessesAreDistinct(moved, crossed);
+	}
+
+	bool plainStoreCanMoveBeforePlainMemory( const Token& moved, const Token& crossed )
+	{
+		if( !isPlainMemoryStore(moved) )
+			return false;
+		if( !isPlainMemoryStore(crossed) && !isPlainMemoryLoad(crossed) )
+			return false;
+
+		return plainMemoryAccessesAreDistinct(moved, crossed);
+	}
+
+	bool hasMemoryOrControlSideEffect( const Token& token );
+
+	bool plainStoreCanMoveBeforeComputation( const Token& moved, const Token& crossed )
+	{
+		if( !isPlainMemoryStore(moved) )
+			return false;
+		return !hasMemoryOrControlSideEffect(crossed);
 	}
 
 	bool isXgkick( const Token& token )
@@ -1044,6 +1068,8 @@ bool CodeGenerator::tokenCanMoveBefore( const Token& moved, const Token& crossed
 	if( hasMemoryOrControlSideEffect(moved) || hasMemoryOrControlSideEffect(crossed) )
 	{
 		if( !plainLoadCanMoveBeforePlainStore(moved, crossed)
+		    && !plainStoreCanMoveBeforePlainMemory(moved, crossed)
+		    && !plainStoreCanMoveBeforeComputation(moved, crossed)
 		    && !computationCanMoveBeforePlainStore(moved, crossed) )
 			return false;
 	}

@@ -457,6 +457,42 @@ TEST_CASE("Scheduling: latency filler may move independent integer compute befor
     CHECK(addLine < mtirLine);
 }
 
+TEST_CASE("Scheduling: latency filler may move a distinct-address store before a plain load")
+{
+    const std::string body =
+        "\tlq vf09, 0(vi00)\n"
+        "\tmtir vi01, vf09x\n"
+        "\tlq.xyz vf20, 0(vi01)\n"
+        "\tsq.xyz vf00, 8(vi00)\n";
+    std::string vsm = runEmit(body, "vsmScheduleStoreAcrossLoad");
+    REQUIRE(vsm.length() > 0);
+
+    int storeLine = lineIndex(vsm, "sq.xyz");
+    int mtirLine = lineIndex(vsm, "mtir");
+    REQUIRE(storeLine >= 0);
+    REQUIRE(mtirLine >= 0);
+    CHECK(storeLine < mtirLine);
+}
+
+TEST_CASE("Scheduling: latency filler does not move a store before a same-address store")
+{
+    const std::string body =
+        "\tmove.xyzw vf10, vf00\n"
+        "\tiaddiu vi04, vi00, 4\n"
+        "\tlq vf09, 0(vi00)\n"
+        "\tmtir vi01, vf09x\n"
+        "\tsq vf09, 0(vi04)\n"
+        "\tsq vf10, 0(vi04)\n";
+    std::string vsm = runEmit(body, "vsmScheduleNoStoreAcrossSameAddressStore");
+    REQUIRE(vsm.length() > 0);
+
+    int firstStore = lineIndex(vsm, "sq VF09");
+    int secondStore = lineIndex(vsm, "sq VF10");
+    REQUIRE(firstStore >= 0);
+    REQUIRE(secondStore >= 0);
+    CHECK(firstStore < secondStore);
+}
+
 TEST_CASE("Scheduling: latency filler does not move store base update before that store")
 {
     const std::string body =
