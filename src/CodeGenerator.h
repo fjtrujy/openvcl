@@ -58,6 +58,7 @@ private:
 
 	void addNopLine();
 	void emitSingleToken( const Token& token );
+	void emitPairedTokens( const Token& a, const Token& b );
 	int readHazardDelay( const Token& token, const Token* partner ) const;
 	void padForReadHazards( const Token& token, const Token* partner );
 	void recordRegisterReads( const Token& token, int issueCycle );

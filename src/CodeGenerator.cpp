@@ -193,7 +193,48 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 
 			if( filler != workTokens.end() )
 			{
-				emitSingleToken(*filler);
+				std::list<Token>::iterator fillerPartner = workTokens.end();
+				p = filler;
+				++p;
+				lookahead = 0;
+				for( ; p != workTokens.end() && lookahead < FillerLookaheadLimit; ++p, ++lookahead )
+				{
+					if( (*p).label().length() != 0 )
+						break;
+					if( !isEmittableInstruction(*p) )
+						break;
+					if( !tokenRangeCanBeCrossed(*k, *p) )
+						break;
+					if( !tokensCanPair(*filler, *p) )
+						continue;
+
+					bool canCross = true;
+					std::list<Token>::iterator c = k;
+					for( ; c != p; ++c )
+					{
+						if( c == filler )
+							continue;
+						if( !tokenCanMoveBefore(*p, *c) )
+						{
+							canCross = false;
+							break;
+						}
+					}
+					if( canCross && readHazardDelay(*filler, &*p) <= 0 )
+					{
+						fillerPartner = p;
+						break;
+					}
+				}
+
+				if( fillerPartner != workTokens.end() )
+				{
+					emitPairedTokens(*filler, *fillerPartner);
+					workTokens.erase(fillerPartner);
+				}
+				else
+					emitSingleToken(*filler);
+
 				workTokens.erase(filler);
 				continue;
 			}
@@ -251,23 +292,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 
 			if( foundPartner )
 			{
-				std::string pairedLine;
-				if( token.operand()->isLowerExecutionPath() )
-					pairedLine = formatPairedLine(*partner, token);
-				else
-					pairedLine = formatPairedLine(token, *partner);
-				m_codeLines.push_back(pairedLine);
-				// Either side of the pair could be the FMAC / clipw we
-				// need to remember for the cooldown.
-				recordRegisterReads(token, m_currentCycle);
-				recordRegisterReads(*partner, m_currentCycle);
-				recordRegisterWrites(token, m_currentCycle);
-				recordRegisterWrites(*partner, m_currentCycle);
-				if( token.operand()->unit() == Operand::FMAC || partner->operand()->unit() == Operand::FMAC )
-					m_lastFMACCycle = m_currentCycle;
-				if( isClipw(token.operand()->name()) || isClipw(partner->operand()->name()) )
-					m_lastClipwCycle = m_currentCycle;
-				m_currentCycle++;
+				emitPairedTokens(token, *partner);
 				workTokens.erase(partnerIt);
 				++k;
 				continue;
@@ -396,6 +421,28 @@ void CodeGenerator::emitSingleToken( const Token& token )
 		m_codeLines.push_back(std::string("                    nop                             waitp"));
 		m_currentCycle++;
 	}
+}
+
+void CodeGenerator::emitPairedTokens( const Token& a, const Token& b )
+{
+	std::string pairedLine;
+	if( a.operand()->isLowerExecutionPath() )
+		pairedLine = formatPairedLine(b, a);
+	else
+		pairedLine = formatPairedLine(a, b);
+	m_codeLines.push_back(pairedLine);
+
+	// Either side of the pair could be the FMAC / clipw we need to remember
+	// for downstream flag-reader cooldowns.
+	recordRegisterReads(a, m_currentCycle);
+	recordRegisterReads(b, m_currentCycle);
+	recordRegisterWrites(a, m_currentCycle);
+	recordRegisterWrites(b, m_currentCycle);
+	if( a.operand()->unit() == Operand::FMAC || b.operand()->unit() == Operand::FMAC )
+		m_lastFMACCycle = m_currentCycle;
+	if( isClipw(a.operand()->name()) || isClipw(b.operand()->name()) )
+		m_lastClipwCycle = m_currentCycle;
+	m_currentCycle++;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

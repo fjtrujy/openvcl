@@ -194,6 +194,29 @@ TEST_CASE("Scheduling: independent later op fills current register-latency wait"
     CHECK(lqLine < mulLine);
 }
 
+TEST_CASE("Scheduling: latency-gap filler can pair with another ready op")
+{
+    // mtir must wait for VF09 from the lqi.  The lqi's post-increment keeps it
+    // from pairing with the later FMAC directly; both later instructions are
+    // ready and independent of mtir, so they should occupy a single paired
+    // cycle in the otherwise empty latency gap.
+    const std::string body =
+        "\tlqi.xyz vf09, (vi00++)\n"
+        "\tmtir vi01, vf09x\n"
+        "\tmulax acc, vf00, vf00x\n"
+        "\tiaddiu vi02, vi00, 1\n";
+    std::string vsm = runEmit(body, "vsmSchedulePairedLatencyFiller");
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(linePairsSubstrings(vsm, "mulax", "iaddiu"));
+
+    int pairLine = lineIndex(vsm, "mulax");
+    int mtirLine = lineIndex(vsm, "mtir");
+    REQUIRE(pairLine >= 0);
+    REQUIRE(mtirLine >= 0);
+    CHECK(pairLine < mtirLine);
+}
+
 TEST_CASE("Pairing: LOI is not paired with the next FMAC that reads I")
 {
     // loi writes I.  An immediately-following FMAC that reads I must
