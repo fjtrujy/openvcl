@@ -259,12 +259,14 @@ bool RegisterAllocator::process( std::list<Token>& tokens )
 			return false;
 	}
 
+	collectLiteralRegisterUsage( tokens );
+
 	if( m_aliases.size() > 0 )
 	{
 		if( !processAliases() )
 		{
 			Error::Display( Error( "Register allocation ran out of registers" ) );
-			return false; 
+			return false;
 		}
 	}
 
@@ -667,6 +669,68 @@ bool RegisterAllocator::processAliases()
 	}
 
 	return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void RegisterAllocator::collectLiteralRegisterUsage( std::list<Token>& tokens )
+{
+	// One synthetic alias per (type, register) pair, with one range per
+	// usage line.  Inserted into m_aliases pre-allocated to its physical
+	// register so the existing conflict check in processAliases naturally
+	// keeps user aliases off it.
+	Alias* floats[32];
+	Alias* integers[16];
+	for( unsigned int i = 0; i < 32; i++ ) floats[i]   = NULL;
+	for( unsigned int i = 0; i < 16; i++ ) integers[i] = NULL;
+
+	for( std::list<Token>::iterator it = tokens.begin(); it != tokens.end(); ++it )
+	{
+		if( !it->operand() )
+			continue;
+		// Preprocessor directives (--enter, in_vf, .name, etc.) don't emit
+		// hardware ops — their register references shouldn't pin physical
+		// registers across the whole program.
+		if( it->operand()->flags() & Operand::PREPROCESSOR )
+			continue;
+		if( it->flags() & Token::IGNORED )
+			continue;
+
+		const unsigned int line = it->lineNumber();
+
+		for( std::list<Token::Argument>::const_iterator a = it->arguments().begin(); a != it->arguments().end(); ++a )
+		{
+			if( a->content() != Token::Argument::REGISTER )
+				continue;
+
+			if( a->type() == Token::Argument::FLOAT_REGISTER )
+			{
+				int r = a->regNumber();
+				if( r < 0 || r >= 32 )
+					continue;
+				if( !floats[r] )
+				{
+					floats[r] = new Alias( Alias::FLOAT );
+					floats[r]->setAllocatedRegister( &m_floats[r] );
+					m_aliases[ floats[r] ] = floats[r];
+				}
+				floats[r]->addRange( line, line );
+			}
+			else if( a->type() == Token::Argument::INTEGER_REGISTER )
+			{
+				int r = a->regNumber();
+				if( r < 0 || r >= 16 )
+					continue;
+				if( !integers[r] )
+				{
+					integers[r] = new Alias( Alias::INTEGER );
+					integers[r]->setAllocatedRegister( &m_integers[r] );
+					m_aliases[ integers[r] ] = integers[r];
+				}
+				integers[r]->addRange( line, line );
+			}
+		}
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

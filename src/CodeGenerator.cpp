@@ -35,8 +35,20 @@ namespace vcl
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// Forward declarations for the cycle-cooldown helpers used in
+// beginProcess() — their bodies live with the other emit-time helpers
+// further down in this file.
+static bool isMacReader( const std::string& name );
+static bool isClipReader( const std::string& name );
+static bool isClipw( const std::string& name );
+
 CodeGenerator::CodeGenerator()
 {
+	m_currentCycle    = 0;
+	// Sentinels < 0 by more than FMAC latency so the first flag-reader
+	// in the program doesn't trip the cooldown.
+	m_lastFMACCycle   = -10;
+	m_lastClipwCycle  = -10;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -143,22 +155,71 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 		{
 			std::list<Token>::const_iterator p = k;
 			++p;
+			const Token* partner = NULL;
 			if( p != tokens.end() )
 			{
-				const Token& partner = *p;
-				if( isEmittableInstruction(partner)
-				    && partner.label().length() == 0
-				    && tokensCanPair(token, partner) )
+				if( isEmittableInstruction(*p)
+				    && (*p).label().length() == 0
+				    && tokensCanPair(token, *p) )
 				{
-					std::string pairedLine;
-					if( token.operand()->isLowerExecutionPath() )
-						pairedLine = formatPairedLine(partner, token);
-					else
-						pairedLine = formatPairedLine(token, partner);
-					m_codeLines.push_back(pairedLine);
-					++k;
-					continue;
+					partner = &*p;
 				}
+			}
+
+			// VU1 FMAC pipeline is 4 cycles deep.  If THIS cycle would
+			// read MAC/CLIP and the relevant FMAC ran less than 4 cycles
+			// ago, pad with NOPs until the flag is settled.  We check
+			// both halves of the (possibly-paired) cycle because the
+			// flag-reader may be on either pipe.
+			{
+				const std::string& aName = token.operand()->name();
+				bool readsMac  = isMacReader(aName);
+				bool readsClip = isClipReader(aName);
+				if( partner && partner->operand() )
+				{
+					const std::string& bName = partner->operand()->name();
+					readsMac  = readsMac  || isMacReader(bName);
+					readsClip = readsClip || isClipReader(bName);
+				}
+				if( readsMac )
+				{
+					int gap = m_currentCycle - m_lastFMACCycle;
+					while( gap < 4 )
+					{
+						addNopLine();
+						m_currentCycle++;
+						gap = m_currentCycle - m_lastFMACCycle;
+					}
+				}
+				if( readsClip )
+				{
+					int gap = m_currentCycle - m_lastClipwCycle;
+					while( gap < 4 )
+					{
+						addNopLine();
+						m_currentCycle++;
+						gap = m_currentCycle - m_lastClipwCycle;
+					}
+				}
+			}
+
+			if( partner )
+			{
+				std::string pairedLine;
+				if( token.operand()->isLowerExecutionPath() )
+					pairedLine = formatPairedLine(*partner, token);
+				else
+					pairedLine = formatPairedLine(token, *partner);
+				m_codeLines.push_back(pairedLine);
+				// Either side of the pair could be the FMAC / clipw we
+				// need to remember for the cooldown.
+				if( token.operand()->unit() == Operand::FMAC || partner->operand()->unit() == Operand::FMAC )
+					m_lastFMACCycle = m_currentCycle;
+				if( isClipw(token.operand()->name()) || isClipw(partner->operand()->name()) )
+					m_lastClipwCycle = m_currentCycle;
+				m_currentCycle++;
+				++k;
+				continue;
 			}
 		}
 
@@ -205,20 +266,37 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 		if( token.operand()->unit() == Operand::BRU )
 		{
 			addNopLine();
+			m_currentCycle++;
 			m_codeLines.push_back(outputLine);
+			m_currentCycle++;
 			addNopLine();
+			m_currentCycle++;
 		}
 		else
 		{
 			m_codeLines.push_back(outputLine);
+			m_currentCycle++;
 		}
+
+		// Remember this cycle as the most recent FMAC / clipw so
+		// downstream flag-readers can pad to the 4-cycle pipeline.
+		if( token.operand()->unit() == Operand::FMAC )
+			m_lastFMACCycle = m_currentCycle - 1;
+		if( isClipw(token.operand()->name()) )
+			m_lastClipwCycle = m_currentCycle - 1;
 
 		//check if fdiv pipeline
 		if(token.operand()->unit() == Operand::FDIV)
+		{
 			m_codeLines.push_back(std::string("                    nop                             waitq"));
+			m_currentCycle++;
+		}
 		//check if efu pipeline
 		if(token.operand()->unit() == Operand::EFU)
+		{
 			m_codeLines.push_back(std::string("                    nop                             waitp"));
+			m_currentCycle++;
+		}
 	}
 
 	if( !exitWritten )
@@ -432,6 +510,33 @@ static bool isFlagReader( const std::string& name )
 	    || name == "FCAND" || name == "FCEQ" || name == "FCOR"
 	    || name == "FCGET"
 	    || name == "FSAND" || name == "FSEQ" || name == "FSOR";
+}
+
+// Reads the MAC flag register, updated by every FMAC with 4-cycle latency.
+static bool isMacReader( const std::string& name )
+{
+	return name == "fmand" || name == "fmeq" || name == "fmor"
+	    || name == "fsand" || name == "fseq" || name == "fsor"
+	    || name == "FMAND" || name == "FMEQ" || name == "FMOR"
+	    || name == "FSAND" || name == "FSEQ" || name == "FSOR";
+}
+
+// Reads the CLIP flag register, updated by clipw only.
+static bool isClipReader( const std::string& name )
+{
+	return name == "fcand" || name == "fceq" || name == "fcor" || name == "fcget"
+	    || name == "FCAND" || name == "FCEQ" || name == "FCOR" || name == "FCGET";
+}
+
+// `clipw` (with any field suffix) is the only FMAC that writes the CLIP
+// register.  Match the family by prefix so clipw.xyz / CLIPw / etc. all hit.
+static bool isClipw( const std::string& name )
+{
+	if( name.size() < 5 )
+		return false;
+	return ( name.compare(0, 5, "clipw") == 0 )
+	    || ( name.compare(0, 5, "CLIPw") == 0 )
+	    || ( name.compare(0, 5, "CLIP" ) == 0 && (name[4] == 'w' || name[4] == 'W') );
 }
 
 bool CodeGenerator::tokensCanPair( const Token& a, const Token& b )

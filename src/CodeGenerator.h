@@ -68,6 +68,21 @@ private:
 
 	bool m_emitSource;
 	std::string m_name;
+
+	// VU1 has a 4-cycle FMAC pipeline.  An FMAC writes the MAC / CLIP /
+	// STATUS flag registers 4 cycles after issue, so any flag-reader
+	// (fmand / fcand / fsand / fcget …) issued sooner sees the previous
+	// flag value.  We track the line index (= cycle index — every emitted
+	// hardware line is one VU cycle) of the last FMAC emit and the last
+	// clipw emit, and insert NOPs before a flag-reader if the relevant
+	// FMAC was too recent.
+	//
+	// Initialized to a sentinel comfortably more than 4 cycles before
+	// m_currentCycle starts at 0, so the first flag-reader doesn't get
+	// spurious NOPs jammed in front of it.
+	int m_currentCycle;
+	int m_lastFMACCycle;
+	int m_lastClipwCycle;
 };
 
 #include "CodeGenerator.inl"

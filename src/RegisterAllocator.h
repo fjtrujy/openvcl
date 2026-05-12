@@ -80,6 +80,15 @@ private:
 
 	bool processAliases();
 
+	// Walks all emittable tokens and records, for each physical register,
+	// the line numbers where it appears as a *literal* (non-alias) operand.
+	// Used to keep the allocator from assigning an alias to a physical
+	// register that is hardcoded by some instruction in the alias's live
+	// range — e.g. `fcand vi01, ...` clobbering an unrelated alias that
+	// happens to share VI01.  Synthesized as preallocated aliases inserted
+	// into m_aliases so the existing interference check picks them up.
+	void collectLiteralRegisterUsage( std::list<Token>& tokens );
+
 	bool updateDynamicTracker( const Token* src );
 
 	bool setupLocks( std::map< std::string, unsigned int >& inputs, std::map< unsigned int, std::vector<std::string> >& locks, std::map< std::string, Register*>& regs, std::map<std::string, BranchState::State>& aliases, Register* rarray, unsigned int max );
