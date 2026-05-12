@@ -265,6 +265,26 @@ TEST_CASE("Pairing: independent upper op can pair with EFU")
     CHECK(linePairsSubstrings(vsm, "add.xyz", "eleng"));
 }
 
+TEST_CASE("Pairing: disjoint VF field writes can pair")
+{
+    const std::string body =
+        "\tftoi4.xyz vf01, vf00\n"
+        "\tmfir.w vf01, vi00\n";
+    std::string vsm = runEmit(body, "vsmPairDisjointVfWrites");
+    REQUIRE(vsm.length() > 0);
+    CHECK(linePairsSubstrings(vsm, "ftoi4.xyz", "mfir.w"));
+}
+
+TEST_CASE("Pairing: overlapping VF field writes stay unpaired")
+{
+    const std::string body =
+        "\tftoi4.xyz vf01, vf00\n"
+        "\tmfir.x vf01, vi00\n";
+    std::string vsm = runEmit(body, "vsmNoPairOverlappingVfWrites");
+    REQUIRE(vsm.length() > 0);
+    CHECK(!linePairsSubstrings(vsm, "ftoi4.xyz", "mfir.x"));
+}
+
 TEST_CASE("Pairing: independent non-adjacent lower op can fill current upper slot")
 {
     // The iaddiu is separated from mulax by another upper-pipe op.  It can
