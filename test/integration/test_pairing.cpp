@@ -127,6 +127,38 @@ TEST_CASE("Pairing: independent upper+lower ops pair into one cycle")
     CHECK(linePairsSubstrings(vsm, "mulax", "lq.xyz"));
 }
 
+TEST_CASE("Pairing: independent upper op can pair with adjacent plain store")
+{
+    // Pairing an adjacent store does not reorder memory; it only fills the
+    // upper slot of the same issue cycle.
+    const std::string body =
+        "\tadd.xyz vf02, vf00, vf00\n"
+        "\tsq.xyz vf00, 0(vi00)\n";
+    std::string vsm = runEmit(body, "vsmPairPlainStore");
+    REQUIRE(vsm.length() > 0);
+    CHECK(linePairsSubstrings(vsm, "add.xyz", "sq.xyz"));
+}
+
+TEST_CASE("Pairing: store reading the upper result is not paired")
+{
+    const std::string body =
+        "\tadd.xyz vf01, vf00, vf00\n"
+        "\tsq.xyz vf01, 0(vi00)\n";
+    std::string vsm = runEmit(body, "vsmNoPairStoreReadsUpper");
+    REQUIRE(vsm.length() > 0);
+    CHECK(!linePairsSubstrings(vsm, "add.xyz", "sq.xyz"));
+}
+
+TEST_CASE("Pairing: post-increment store remains unpaired")
+{
+    const std::string body =
+        "\tadd.xyz vf02, vf00, vf00\n"
+        "\tsqi.xyz vf00, (vi00++)\n";
+    std::string vsm = runEmit(body, "vsmNoPairPostIncStore");
+    REQUIRE(vsm.length() > 0);
+    CHECK(!linePairsSubstrings(vsm, "add.xyz", "sqi.xyz"));
+}
+
 TEST_CASE("Pairing: independent upper op can pair with FDIV")
 {
     // FDIV writes Q on the lower pipe.  With deferred waitq handling, an

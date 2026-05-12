@@ -43,6 +43,7 @@ static bool isClipReader( const std::string& name );
 static bool isClipw( const std::string& name );
 namespace
 {
+	bool isPlainMemoryStore( const Token& token );
 	bool tokenReadsQ( const Token& token );
 	bool tokenReadsP( const Token& token );
 }
@@ -277,7 +278,10 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				        || token.operand()->unit() == Operand::EFU
 				        || (*p).operand()->unit() == Operand::FDIV
 				        || (*p).operand()->unit() == Operand::EFU);
-				if( !adjacentQpProducerPair && !tokenRangeCanBeCrossed(*k, *p) )
+				const bool adjacentPlainStorePair =
+				    adjacentCandidate
+				    && (isPlainMemoryStore(token) || isPlainMemoryStore(*p));
+				if( !adjacentQpProducerPair && !adjacentPlainStorePair && !tokenRangeCanBeCrossed(*k, *p) )
 					break;
 				if( tokensCanPair(token, *p) )
 				{
@@ -841,6 +845,15 @@ namespace {
 				return true;
 		}
 		return false;
+	}
+
+	bool isPlainMemoryStore( const Token& token )
+	{
+		if( !token.operand() || hasPreDecOrPostIncArgument(token) )
+			return false;
+		const std::string name = lowerName(token);
+		return name == "sq" || name == "sqd" || name == "sqi"
+		    || name == "isw" || name == "iswr";
 	}
 
 	bool hasMemoryOrControlSideEffect( const Token& token )
