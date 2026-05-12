@@ -159,6 +159,26 @@ TEST_CASE("Pairing: post-increment store remains unpaired")
     CHECK(!linePairsSubstrings(vsm, "add.xyz", "sqi.xyz"));
 }
 
+TEST_CASE("Pairing: independent upper op can pair with following xgkick")
+{
+    const std::string body =
+        "\tadd.xyz vf02, vf00, vf00\n"
+        "\txgkick vi00\n";
+    std::string vsm = runEmit(body, "vsmPairXgkick");
+    REQUIRE(vsm.length() > 0);
+    CHECK(linePairsSubstrings(vsm, "add.xyz", "xgkick"));
+}
+
+TEST_CASE("Pairing: xgkick does not pull a following upper op before it")
+{
+    const std::string body =
+        "\txgkick vi00\n"
+        "\tadd.xyz vf02, vf00, vf00\n";
+    std::string vsm = runEmit(body, "vsmNoPairAfterXgkick");
+    REQUIRE(vsm.length() > 0);
+    CHECK(!linePairsSubstrings(vsm, "add.xyz", "xgkick"));
+}
+
 TEST_CASE("Pairing: independent upper op can pair with FDIV")
 {
     // FDIV writes Q on the lower pipe.  With deferred waitq handling, an

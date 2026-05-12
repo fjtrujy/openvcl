@@ -43,6 +43,7 @@ static bool isClipReader( const std::string& name );
 static bool isClipw( const std::string& name );
 namespace
 {
+	bool isXgkick( const Token& token );
 	bool isPlainMemoryStore( const Token& token );
 	bool tokenReadsQ( const Token& token );
 	bool tokenReadsP( const Token& token );
@@ -281,7 +282,11 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				const bool adjacentPlainStorePair =
 				    adjacentCandidate
 				    && (isPlainMemoryStore(token) || isPlainMemoryStore(*p));
-				if( !adjacentQpProducerPair && !adjacentPlainStorePair && !tokenRangeCanBeCrossed(*k, *p) )
+				const bool adjacentXgkickPair =
+				    adjacentCandidate
+				    && !token.operand()->isLowerExecutionPath()
+				    && isXgkick(*p);
+				if( !adjacentQpProducerPair && !adjacentPlainStorePair && !adjacentXgkickPair && !tokenRangeCanBeCrossed(*k, *p) )
 					break;
 				if( tokensCanPair(token, *p) )
 				{
@@ -854,6 +859,13 @@ namespace {
 		const std::string name = lowerName(token);
 		return name == "sq" || name == "sqd" || name == "sqi"
 		    || name == "isw" || name == "iswr";
+	}
+
+	bool isXgkick( const Token& token )
+	{
+		if( !token.operand() )
+			return false;
+		return lowerName(token) == "xgkick";
 	}
 
 	bool hasMemoryOrControlSideEffect( const Token& token )
