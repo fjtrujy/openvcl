@@ -45,6 +45,7 @@ namespace
 {
 	bool isXgkick( const Token& token );
 	bool isPlainMemoryStore( const Token& token );
+	bool isPlainMemoryLoad( const Token& token );
 	bool tokenReadsQ( const Token& token );
 	bool tokenReadsP( const Token& token );
 }
@@ -180,7 +181,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 					break;
 				if( !isEmittableInstruction(*p) )
 					break;
-				if( !tokenRangeCanBeCrossed(*k, *p) )
+				if( !tokenRangeCanBeCrossed(*k, *p) && !isPlainMemoryStore(*p) )
 					break;
 
 				bool canCross = true;
@@ -212,7 +213,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 						break;
 					if( !isEmittableInstruction(*p) )
 						break;
-					if( !tokenRangeCanBeCrossed(*k, *p) )
+					if( !tokenRangeCanBeCrossed(*k, *p) && !isPlainMemoryStore(*p) )
 						break;
 					if( !tokensCanPair(*filler, *p) )
 						continue;
@@ -286,7 +287,8 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				    adjacentCandidate
 				    && !token.operand()->isLowerExecutionPath()
 				    && isXgkick(*p);
-				if( !adjacentQpProducerPair && !adjacentPlainStorePair && !adjacentXgkickPair && !tokenRangeCanBeCrossed(*k, *p) )
+				if( !adjacentQpProducerPair && !adjacentPlainStorePair && !adjacentXgkickPair
+				    && !tokenRangeCanBeCrossed(*k, *p) && !isPlainMemoryStore(*p) )
 					break;
 				if( tokensCanPair(token, *p) )
 				{
@@ -861,6 +863,41 @@ namespace {
 		    || name == "isw" || name == "iswr";
 	}
 
+	bool isPlainMemoryLoad( const Token& token )
+	{
+		if( !token.operand() || hasPreDecOrPostIncArgument(token) )
+			return false;
+		const std::string name = lowerName(token);
+		return name == "lq" || name == "ilw" || name == "ilwr";
+	}
+
+	bool memoryBaseRegisterKey( const Token& token, std::string& key )
+	{
+		const std::list<Token::Argument>& args = token.arguments();
+		for( std::list<Token::Argument>::const_iterator i = args.begin(); i != args.end(); ++i )
+		{
+			if( !((*i).flags() & Token::Argument::INDIRECT) )
+				continue;
+			if( (*i).type() != Token::Argument::INTEGER_REGISTER )
+				continue;
+			return registerKey(*i, key);
+		}
+		return false;
+	}
+
+	bool plainLoadCanMoveBeforePlainStore( const Token& moved, const Token& crossed )
+	{
+		if( !isPlainMemoryLoad(moved) || !isPlainMemoryStore(crossed) )
+			return false;
+
+		std::string movedBase;
+		std::string crossedBase;
+		if( !memoryBaseRegisterKey(moved, movedBase) || !memoryBaseRegisterKey(crossed, crossedBase) )
+			return false;
+
+		return movedBase != crossedBase;
+	}
+
 	bool isXgkick( const Token& token )
 	{
 		if( !token.operand() )
@@ -967,7 +1004,10 @@ bool CodeGenerator::hasDataDependency( const Token& a, const Token& b )
 bool CodeGenerator::tokenCanMoveBefore( const Token& moved, const Token& crossed )
 {
 	if( hasMemoryOrControlSideEffect(moved) || hasMemoryOrControlSideEffect(crossed) )
-		return false;
+	{
+		if( !plainLoadCanMoveBeforePlainStore(moved, crossed) )
+			return false;
+	}
 
 	unsigned int movedReadsImplicit = 0, movedWritesImplicit = 0;
 	unsigned int crossedReadsImplicit = 0, crossedWritesImplicit = 0;

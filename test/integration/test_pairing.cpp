@@ -293,6 +293,54 @@ TEST_CASE("Scheduling: latency-gap filler can pair with another ready op")
     CHECK(pairLine < mtirLine);
 }
 
+TEST_CASE("Scheduling: latency filler may load from a different base before a plain store")
+{
+    // The Q consumer must wait for DIV.  A later input load using VI03 can
+    // cover that wait even though a plain output store using VI04 sits before
+    // it in source order.
+    const std::string body =
+        "\tmove.xyzw vf01, vf00\n"
+        "\tmove.xyzw vf02, vf00\n"
+        "\tmove.xyzw vf03, vf00\n"
+        "\tmove.xyzw vf10, vf00\n"
+        "\tiaddiu vi03, vi00, 0\n"
+        "\tiaddiu vi04, vi00, 4\n"
+        "\tdiv q, vf01w, vf02w\n"
+        "\tmulq.xyz vf03, vf03, q\n"
+        "\tsq.xyz vf10, 0(vi04)\n"
+        "\tlq.xyz vf20, 0(vi03)\n";
+    std::string vsm = runEmit(body, "vsmScheduleLoadAcrossStore");
+    REQUIRE(vsm.length() > 0);
+
+    int lqLine = lineIndex(vsm, "lq.xyz VF20");
+    int mulqLine = lineIndex(vsm, "mulq");
+    REQUIRE(lqLine >= 0);
+    REQUIRE(mulqLine >= 0);
+    CHECK(lqLine < mulqLine);
+}
+
+TEST_CASE("Scheduling: latency filler does not move a load before a same-base store")
+{
+    const std::string body =
+        "\tmove.xyzw vf01, vf00\n"
+        "\tmove.xyzw vf02, vf00\n"
+        "\tmove.xyzw vf03, vf00\n"
+        "\tmove.xyzw vf10, vf00\n"
+        "\tiaddiu vi03, vi00, 0\n"
+        "\tdiv q, vf01w, vf02w\n"
+        "\tmulq.xyz vf03, vf03, q\n"
+        "\tsq.xyz vf10, 0(vi03)\n"
+        "\tlq.xyz vf20, 0(vi03)\n";
+    std::string vsm = runEmit(body, "vsmScheduleNoLoadAcrossSameBaseStore");
+    REQUIRE(vsm.length() > 0);
+
+    int sqLine = lineIndex(vsm, "sq.xyz");
+    int lqLine = lineIndex(vsm, "lq.xyz VF20");
+    REQUIRE(sqLine >= 0);
+    REQUIRE(lqLine >= 0);
+    CHECK(sqLine < lqLine);
+}
+
 TEST_CASE("Scheduling: overwriting an already-read register does not create a WAR stall")
 {
     // Source operands are latched when the older FMAC issues, so a later
