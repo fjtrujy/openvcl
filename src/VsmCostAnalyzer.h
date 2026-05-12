@@ -47,6 +47,7 @@ private:
 		bool eBit;
 		bool dBit;
 		bool tBit;
+		unsigned int latency;
 		std::string text;
 		std::string mnemonic;
 		Unit unit;
@@ -64,6 +65,9 @@ private:
 		unsigned int singleUpperCycles;
 		unsigned int singleLowerCycles;
 		unsigned int nopOnlyCycles;
+		unsigned int operationLatencyCycles;
+		unsigned int longLatencyOps;
+		unsigned int longLatencyCycles;
 	};
 
 	void reset();
@@ -78,6 +82,7 @@ private:
 	static std::string lower( const std::string& text );
 	static std::string normalizeMnemonic( const std::string& word );
 	static Unit classifyMnemonic( const std::string& mnemonic );
+	static unsigned int instructionLatency( const std::string& mnemonic );
 	static bool isKnownMnemonic( const std::string& mnemonic );
 	static bool startsInstructionToken( const std::string& line, std::string::size_type pos );
 	static bool isDirective( const std::string& line );
@@ -107,6 +112,10 @@ private:
 	unsigned int m_unknownInstructions;
 	unsigned int m_slotMismatches;
 	unsigned int m_ignoredLines;
+	unsigned int m_operationLatencyCycles;
+	unsigned int m_longLatencyOps;
+	unsigned int m_longLatencyCycles;
+	unsigned int m_maxOpLatency;
 };
 
 }

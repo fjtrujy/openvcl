@@ -48,6 +48,10 @@ TEST_CASE("VSM cost: human report counts scheduled cycles and slots")
     CHECK(contains(r.stdout_data, "branch_cycles: 1"));
     CHECK(contains(r.stdout_data, "waitq_cycles: 1"));
     CHECK(contains(r.stdout_data, "e_bit_cycles: 1"));
+    CHECK(contains(r.stdout_data, "operation_latency_cycles: 12"));
+    CHECK(contains(r.stdout_data, "long_latency_ops: 3"));
+    CHECK(contains(r.stdout_data, "long_latency_cycles: 7"));
+    CHECK(contains(r.stdout_data, "max_op_latency: 4"));
     CHECK(contains(r.stdout_data, "entry_lid: cycles=5"));
 }
 
@@ -61,6 +65,8 @@ TEST_CASE("VSM cost: JSON report is suitable for comparisons")
     CHECK(contains(r.stdout_data, "\"static_cycles\": 5"));
     CHECK(contains(r.stdout_data, "\"instructions\": 5"));
     CHECK(contains(r.stdout_data, "\"paired_cycles\": 1"));
+    CHECK(contains(r.stdout_data, "\"operation_latency_cycles\": 12"));
+    CHECK(contains(r.stdout_data, "\"long_latency_cycles\": 7"));
     CHECK(contains(r.stdout_data, "\"label\": \"entry_lid\""));
 }
 
@@ -76,5 +82,7 @@ TEST_CASE("VSM cost: accepts SCE-style padded VSM output")
     CHECK(contains(r.stdout_data, "upper_instructions: 1"));
     CHECK(contains(r.stdout_data, "lower_instructions: 2"));
     CHECK(contains(r.stdout_data, "paired_cycles: 1"));
+    CHECK(contains(r.stdout_data, "operation_latency_cycles: 9"));
+    CHECK(contains(r.stdout_data, "long_latency_ops: 2"));
     CHECK(contains(r.stdout_data, "sce_style_lid: cycles=2"));
 }

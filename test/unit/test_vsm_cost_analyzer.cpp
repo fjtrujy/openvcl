@@ -66,6 +66,10 @@ TEST_CASE("VsmCostAnalyzer unit: counts scheduled issue slots")
     CHECK(contains(report, "branch_cycles: 1"));
     CHECK(contains(report, "waitq_cycles: 1"));
     CHECK(contains(report, "e_bit_cycles: 1"));
+    CHECK(contains(report, "operation_latency_cycles: 12"));
+    CHECK(contains(report, "long_latency_ops: 3"));
+    CHECK(contains(report, "long_latency_cycles: 7"));
+    CHECK(contains(report, "max_op_latency: 4"));
 }
 
 TEST_CASE("VsmCostAnalyzer unit: emits JSON summary")
@@ -75,6 +79,8 @@ TEST_CASE("VsmCostAnalyzer unit: emits JSON summary")
     CHECK(contains(report, "\"static_cycles\": 5"));
     CHECK(contains(report, "\"instructions\": 5"));
     CHECK(contains(report, "\"paired_cycles\": 1"));
+    CHECK(contains(report, "\"operation_latency_cycles\": 12"));
+    CHECK(contains(report, "\"long_latency_cycles\": 7"));
     CHECK(contains(report, "\"label\": \"unit_lid\""));
 }
 
@@ -86,5 +92,7 @@ TEST_CASE("VsmCostAnalyzer unit: parses SCE padded columns")
     CHECK(contains(report, "upper_instructions: 1"));
     CHECK(contains(report, "lower_instructions: 2"));
     CHECK(contains(report, "paired_cycles: 1"));
+    CHECK(contains(report, "operation_latency_cycles: 9"));
+    CHECK(contains(report, "long_latency_ops: 2"));
     CHECK(contains(report, "sce_style_lid: cycles=2"));
 }

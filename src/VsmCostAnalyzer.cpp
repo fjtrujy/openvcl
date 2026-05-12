@@ -155,6 +155,7 @@ VsmCostAnalyzer::Slot::Slot()
 	eBit = false;
 	dBit = false;
 	tBit = false;
+	latency = 0;
 	unit = UNIT_UNKNOWN;
 }
 
@@ -168,6 +169,9 @@ VsmCostAnalyzer::Block::Block( const std::string& blockLabel )
 	singleUpperCycles = 0;
 	singleLowerCycles = 0;
 	nopOnlyCycles = 0;
+	operationLatencyCycles = 0;
+	longLatencyOps = 0;
+	longLatencyCycles = 0;
 }
 
 VsmCostAnalyzer::VsmCostAnalyzer()
@@ -201,6 +205,10 @@ void VsmCostAnalyzer::reset()
 	m_unknownInstructions = 0;
 	m_slotMismatches = 0;
 	m_ignoredLines = 0;
+	m_operationLatencyCycles = 0;
+	m_longLatencyOps = 0;
+	m_longLatencyCycles = 0;
+	m_maxOpLatency = 0;
 }
 
 bool VsmCostAnalyzer::analyze( std::istream& stream, const std::string& inputName )
@@ -286,6 +294,7 @@ bool VsmCostAnalyzer::parseCycle( const std::string& line, Slot& upper, Slot& lo
 		slot.text = slotText;
 		slot.mnemonic = normalizeMnemonic( firstWord( slotText ) );
 		slot.unit = classifyMnemonic( slot.mnemonic );
+		slot.latency = instructionLatency( slot.mnemonic );
 		slot.nop = slot.unit == UNIT_NOP;
 		std::string word = lower( firstWord( slotText ) );
 		slot.eBit = word.find( "[e" ) != std::string::npos;
@@ -304,12 +313,14 @@ bool VsmCostAnalyzer::parseCycle( const std::string& line, Slot& upper, Slot& lo
 	upper.text = trim( body.substr( positions[0], positions[1] - positions[0] ) );
 	upper.mnemonic = normalizeMnemonic( firstWord( upper.text ) );
 	upper.unit = classifyMnemonic( upper.mnemonic );
+	upper.latency = instructionLatency( upper.mnemonic );
 	upper.nop = upper.unit == UNIT_NOP;
 
 	lowerSlot.present = true;
 	lowerSlot.text = trim( body.substr( positions[1] ) );
 	lowerSlot.mnemonic = normalizeMnemonic( firstWord( lowerSlot.text ) );
 	lowerSlot.unit = classifyMnemonic( lowerSlot.mnemonic );
+	lowerSlot.latency = instructionLatency( lowerSlot.mnemonic );
 	lowerSlot.nop = lowerSlot.unit == UNIT_NOP;
 
 	{
@@ -381,6 +392,29 @@ void VsmCostAnalyzer::recordCycle( const Slot& upper, const Slot& lowerSlot )
 	if( lowerActive && lowerSlot.unit == UNIT_UPPER )
 		++m_slotMismatches;
 
+	if( upperActive )
+	{
+		m_operationLatencyCycles += upper.latency;
+		if( upper.latency > m_maxOpLatency )
+			m_maxOpLatency = upper.latency;
+		if( upper.latency > 1 )
+		{
+			++m_longLatencyOps;
+			m_longLatencyCycles += upper.latency - 1;
+		}
+	}
+	if( lowerActive )
+	{
+		m_operationLatencyCycles += lowerSlot.latency;
+		if( lowerSlot.latency > m_maxOpLatency )
+			m_maxOpLatency = lowerSlot.latency;
+		if( lowerSlot.latency > 1 )
+		{
+			++m_longLatencyOps;
+			m_longLatencyCycles += lowerSlot.latency - 1;
+		}
+	}
+
 	Block& block = m_blocks[m_currentBlock];
 	++block.cycles;
 	if( upperActive )
@@ -395,6 +429,25 @@ void VsmCostAnalyzer::recordCycle( const Slot& upper, const Slot& lowerSlot )
 		++block.singleLowerCycles;
 	else
 		++block.nopOnlyCycles;
+
+	if( upperActive )
+	{
+		block.operationLatencyCycles += upper.latency;
+		if( upper.latency > 1 )
+		{
+			++block.longLatencyOps;
+			block.longLatencyCycles += upper.latency - 1;
+		}
+	}
+	if( lowerActive )
+	{
+		block.operationLatencyCycles += lowerSlot.latency;
+		if( lowerSlot.latency > 1 )
+		{
+			++block.longLatencyOps;
+			block.longLatencyCycles += lowerSlot.latency - 1;
+		}
+	}
 }
 
 bool VsmCostAnalyzer::writeText( std::ostream& stream ) const
@@ -429,6 +482,10 @@ bool VsmCostAnalyzer::writeText( std::ostream& stream ) const
 
 	stream << "slot_pressure_min_cycles: " << slotPressureMin << std::endl;
 	stream << "excess_cycles_over_slot_pressure: " << excessCycles << std::endl;
+	stream << "operation_latency_cycles: " << m_operationLatencyCycles << std::endl;
+	stream << "long_latency_ops: " << m_longLatencyOps << std::endl;
+	stream << "long_latency_cycles: " << m_longLatencyCycles << std::endl;
+	stream << "max_op_latency: " << m_maxOpLatency << std::endl;
 	stream << "branch_cycles: " << m_branchCycles << std::endl;
 	stream << "waitq_cycles: " << m_waitqCycles << std::endl;
 	stream << "waitp_cycles: " << m_waitpCycles << std::endl;
@@ -454,6 +511,9 @@ bool VsmCostAnalyzer::writeText( std::ostream& stream ) const
 		       << " single_upper=" << i->singleUpperCycles
 		       << " single_lower=" << i->singleLowerCycles
 		       << " nop_only=" << i->nopOnlyCycles
+		       << " op_latency=" << i->operationLatencyCycles
+		       << " long_ops=" << i->longLatencyOps
+		       << " long_cycles=" << i->longLatencyCycles
 		       << std::endl;
 	}
 
@@ -481,6 +541,10 @@ bool VsmCostAnalyzer::writeJson( std::ostream& stream ) const
 	stream << "  \"nop_slots\": " << m_nopSlots << "," << std::endl;
 	stream << "  \"slot_pressure_min_cycles\": " << slotPressureMin << "," << std::endl;
 	stream << "  \"excess_cycles_over_slot_pressure\": " << excessCycles << "," << std::endl;
+	stream << "  \"operation_latency_cycles\": " << m_operationLatencyCycles << "," << std::endl;
+	stream << "  \"long_latency_ops\": " << m_longLatencyOps << "," << std::endl;
+	stream << "  \"long_latency_cycles\": " << m_longLatencyCycles << "," << std::endl;
+	stream << "  \"max_op_latency\": " << m_maxOpLatency << "," << std::endl;
 	stream << "  \"branch_cycles\": " << m_branchCycles << "," << std::endl;
 	stream << "  \"waitq_cycles\": " << m_waitqCycles << "," << std::endl;
 	stream << "  \"waitp_cycles\": " << m_waitpCycles << "," << std::endl;
@@ -510,7 +574,10 @@ bool VsmCostAnalyzer::writeJson( std::ostream& stream ) const
 		       << "\"paired_cycles\": " << i->pairedCycles << ", "
 		       << "\"single_upper_cycles\": " << i->singleUpperCycles << ", "
 		       << "\"single_lower_cycles\": " << i->singleLowerCycles << ", "
-		       << "\"nop_only_cycles\": " << i->nopOnlyCycles
+		       << "\"nop_only_cycles\": " << i->nopOnlyCycles << ", "
+		       << "\"operation_latency_cycles\": " << i->operationLatencyCycles << ", "
+		       << "\"long_latency_ops\": " << i->longLatencyOps << ", "
+		       << "\"long_latency_cycles\": " << i->longLatencyCycles
 		       << "}";
 	}
 
@@ -613,6 +680,60 @@ VsmCostAnalyzer::Unit VsmCostAnalyzer::classifyMnemonic( const std::string& mnem
 	if( setContains( lowerOps(), mnemonic ) )
 		return UNIT_LOWER;
 	return UNIT_UNKNOWN;
+}
+
+unsigned int VsmCostAnalyzer::instructionLatency( const std::string& mnemonic )
+{
+	if( mnemonic == "nop" )
+		return 0;
+
+	// Upper FMAC pipeline results, including MAC/CLIP flags, settle after
+	// four cycles on VU1.  This latency table intentionally mirrors the
+	// Operand metadata used by OpenVCL's compiler path, but works directly
+	// from already-scheduled VSM text.
+	if( setContains( upperOps(), mnemonic ) )
+		return 4;
+
+	if( mnemonic == "div" || mnemonic == "sqrt" )
+		return 7;
+	if( mnemonic == "rsqrt" )
+		return 13;
+	if( mnemonic == "waitq" || mnemonic == "waitp" )
+		return 1;
+
+	if( setContains( branchOps(), mnemonic ) )
+		return 2;
+
+	if( mnemonic == "mfp" )
+		return 4;
+	if( mnemonic == "esadd" )
+		return 11;
+	if( mnemonic == "ersadd" || mnemonic == "eleng" || mnemonic == "ersqrt" )
+		return 18;
+	if( mnemonic == "erleng" )
+		return 24;
+	if( mnemonic == "eatanxy" || mnemonic == "eatanxz" || mnemonic == "eatan" )
+		return 54;
+	if( mnemonic == "esum" || mnemonic == "ercpr" )
+		return 12;
+	if( mnemonic == "esin" )
+		return 29;
+	if( mnemonic == "eexp" )
+		return 44;
+
+	if( mnemonic == "lq" || mnemonic == "lqd" || mnemonic == "lqi"
+	    || mnemonic == "sq" || mnemonic == "sqd" || mnemonic == "sqi"
+	    || mnemonic == "ilw" || mnemonic == "isw"
+	    || mnemonic == "ilwr" || mnemonic == "iswr"
+	    || mnemonic == "move" || mnemonic == "mfir" || mnemonic == "mr32"
+	    || mnemonic == "rget" || mnemonic == "rnext"
+	    || mnemonic == "fsset" || mnemonic == "fcset" )
+		return 4;
+
+	if( isKnownMnemonic( mnemonic ) )
+		return 1;
+
+	return 0;
 }
 
 bool VsmCostAnalyzer::isKnownMnemonic( const std::string& mnemonic )
