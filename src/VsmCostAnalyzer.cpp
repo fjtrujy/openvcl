@@ -169,6 +169,7 @@ VsmCostAnalyzer::Block::Block( const std::string& blockLabel )
 	singleUpperCycles = 0;
 	singleLowerCycles = 0;
 	nopOnlyCycles = 0;
+	nopSlots = 0;
 	operationLatencyCycles = 0;
 	longLatencyOps = 0;
 	longLatencyCycles = 0;
@@ -425,6 +426,8 @@ void VsmCostAnalyzer::recordCycle( const Slot& upper, const Slot& lowerSlot )
 
 	Block& block = m_blocks[m_currentBlock];
 	++block.cycles;
+	block.nopSlots += upperActive ? 0 : 1;
+	block.nopSlots += lowerActive ? 0 : 1;
 	if( upperActive )
 		++block.upperInstructions;
 	if( lowerActive )
@@ -473,6 +476,15 @@ bool VsmCostAnalyzer::weightedBlockGreater( const WeightedBlock& a, const Weight
 	return a.label < b.label;
 }
 
+bool VsmCostAnalyzer::weightedIdleBlockGreater( const WeightedBlock& a, const WeightedBlock& b )
+{
+	if( a.weightedNopSlots != b.weightedNopSlots )
+		return a.weightedNopSlots > b.weightedNopSlots;
+	if( a.weightedCycles != b.weightedCycles )
+		return a.weightedCycles > b.weightedCycles;
+	return a.label < b.label;
+}
+
 std::vector<VsmCostAnalyzer::WeightedBlock> VsmCostAnalyzer::weightedBlocksByCycles() const
 {
 	std::vector<WeightedBlock> weightedBlocks;
@@ -488,9 +500,19 @@ std::vector<VsmCostAnalyzer::WeightedBlock> VsmCostAnalyzer::weightedBlocksByCyc
 		block.weightedCycles = i->cycles * repeat;
 		block.pairedCycles = i->pairedCycles;
 		block.nopOnlyCycles = i->nopOnlyCycles;
+		block.nopSlots = i->nopSlots;
+		block.weightedNopSlots = i->nopSlots * repeat;
+		block.weightedNopOnlyCycles = i->nopOnlyCycles * repeat;
 		weightedBlocks.push_back(block);
 	}
 	std::sort( weightedBlocks.begin(), weightedBlocks.end(), weightedBlockGreater );
+	return weightedBlocks;
+}
+
+std::vector<VsmCostAnalyzer::WeightedBlock> VsmCostAnalyzer::weightedBlocksByIdleSlots() const
+{
+	std::vector<WeightedBlock> weightedBlocks = weightedBlocksByCycles();
+	std::sort( weightedBlocks.begin(), weightedBlocks.end(), weightedIdleBlockGreater );
 	return weightedBlocks;
 }
 
@@ -581,6 +603,7 @@ bool VsmCostAnalyzer::writeText( std::ostream& stream ) const
 		       << " single_upper=" << i->singleUpperCycles
 		       << " single_lower=" << i->singleLowerCycles
 		       << " nop_only=" << i->nopOnlyCycles
+		       << " nop_slots=" << i->nopSlots
 		       << " op_latency=" << i->operationLatencyCycles
 		       << " long_ops=" << i->longLatencyOps
 		       << " long_cycles=" << i->longLatencyCycles
@@ -597,6 +620,25 @@ bool VsmCostAnalyzer::writeText( std::ostream& stream ) const
 		       << " cycles=" << i->cycles
 		       << " repeat=" << i->repeat
 		       << " paired=" << i->pairedCycles
+		       << " nop_only=" << i->nopOnlyCycles
+		       << " weighted_nop_only=" << i->weightedNopOnlyCycles
+		       << " nop_slots=" << i->nopSlots
+		       << " weighted_nop_slots=" << i->weightedNopSlots
+		       << std::endl;
+	}
+
+	stream << "top_weighted_idle_blocks:" << std::endl;
+	const std::vector<WeightedBlock> idleBlocks = weightedBlocksByIdleSlots();
+	topCount = 0;
+	for( std::vector<WeightedBlock>::const_iterator i = idleBlocks.begin(); i != idleBlocks.end() && topCount < 8; ++i, ++topCount )
+	{
+		stream << "  " << i->label
+		       << ": weighted_nop_slots=" << i->weightedNopSlots
+		       << " nop_slots=" << i->nopSlots
+		       << " repeat=" << i->repeat
+		       << " weighted_cycles=" << i->weightedCycles
+		       << " cycles=" << i->cycles
+		       << " weighted_nop_only=" << i->weightedNopOnlyCycles
 		       << " nop_only=" << i->nopOnlyCycles
 		       << std::endl;
 	}
@@ -685,6 +727,7 @@ bool VsmCostAnalyzer::writeJson( std::ostream& stream ) const
 		       << "\"single_upper_cycles\": " << i->singleUpperCycles << ", "
 		       << "\"single_lower_cycles\": " << i->singleLowerCycles << ", "
 		       << "\"nop_only_cycles\": " << i->nopOnlyCycles << ", "
+		       << "\"nop_slots\": " << i->nopSlots << ", "
 		       << "\"operation_latency_cycles\": " << i->operationLatencyCycles << ", "
 		       << "\"long_latency_ops\": " << i->longLatencyOps << ", "
 		       << "\"long_latency_cycles\": " << i->longLatencyCycles
@@ -706,6 +749,30 @@ bool VsmCostAnalyzer::writeJson( std::ostream& stream ) const
 		       << "\"cycles\": " << i->cycles << ", "
 		       << "\"repeat\": " << i->repeat << ", "
 		       << "\"paired_cycles\": " << i->pairedCycles << ", "
+		       << "\"nop_only_cycles\": " << i->nopOnlyCycles << ", "
+		       << "\"weighted_nop_only_cycles\": " << i->weightedNopOnlyCycles << ", "
+		       << "\"nop_slots\": " << i->nopSlots << ", "
+		       << "\"weighted_nop_slots\": " << i->weightedNopSlots
+		       << "}";
+	}
+
+	stream << std::endl << "  ]," << std::endl;
+	stream << "  \"top_weighted_idle_blocks\": [" << std::endl;
+
+	const std::vector<WeightedBlock> idleBlocks = weightedBlocksByIdleSlots();
+	topCount = 0;
+	for( std::vector<WeightedBlock>::const_iterator i = idleBlocks.begin(); i != idleBlocks.end() && topCount < 8; ++i, ++topCount )
+	{
+		if( topCount != 0 )
+			stream << "," << std::endl;
+		stream << "    {"
+		       << "\"label\": \"" << jsonEscape( i->label ) << "\", "
+		       << "\"weighted_nop_slots\": " << i->weightedNopSlots << ", "
+		       << "\"nop_slots\": " << i->nopSlots << ", "
+		       << "\"repeat\": " << i->repeat << ", "
+		       << "\"weighted_cycles\": " << i->weightedCycles << ", "
+		       << "\"cycles\": " << i->cycles << ", "
+		       << "\"weighted_nop_only_cycles\": " << i->weightedNopOnlyCycles << ", "
 		       << "\"nop_only_cycles\": " << i->nopOnlyCycles
 		       << "}";
 	}

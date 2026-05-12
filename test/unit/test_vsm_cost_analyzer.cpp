@@ -96,6 +96,7 @@ TEST_CASE("VsmCostAnalyzer fixture: simple scheduled VSM has precomputed issue c
     CHECK(textMetric(report, "long_latency_cycles") == 7);
     CHECK(textMetric(report, "max_op_latency") == 4);
     CHECK(contains(report, "entry_lid: cycles=5"));
+    CHECK(contains(report, "nop_slots=5"));
 }
 
 TEST_CASE("VsmCostAnalyzer fixture: JSON exposes the same precomputed cost")
@@ -109,6 +110,7 @@ TEST_CASE("VsmCostAnalyzer fixture: JSON exposes the same precomputed cost")
     CHECK(jsonMetric(report, "operation_latency_cycles") == 12);
     CHECK(jsonMetric(report, "long_latency_cycles") == 7);
     CHECK(contains(report, "\"label\": \"entry_lid\""));
+    CHECK(contains(report, "\"nop_slots\": 5"));
 }
 
 TEST_CASE("VsmCostAnalyzer fixture: block repeats expose weighted cost")
@@ -131,6 +133,9 @@ TEST_CASE("VsmCostAnalyzer fixture: block repeats expose weighted cost")
     CHECK(contains(text.str(), "entry_lid: cycles=5 repeat=4 weighted_cycles=20"));
     CHECK(contains(text.str(), "top_weighted_blocks:"));
     CHECK(contains(text.str(), "entry_lid: weighted_cycles=20 cycles=5 repeat=4"));
+    CHECK(contains(text.str(), "weighted_nop_slots=20"));
+    CHECK(contains(text.str(), "top_weighted_idle_blocks:"));
+    CHECK(contains(text.str(), "entry_lid: weighted_nop_slots=20 nop_slots=5 repeat=4"));
 
     std::ostringstream json;
     REQUIRE(analyzer.writeJson(json));
@@ -138,7 +143,9 @@ TEST_CASE("VsmCostAnalyzer fixture: block repeats expose weighted cost")
     CHECK(jsonMetric(json.str(), "weighted_instructions") == 20);
     CHECK(contains(json.str(), "\"repeat\": 4"));
     CHECK(contains(json.str(), "\"weighted_cycles\": 20"));
+    CHECK(contains(json.str(), "\"weighted_nop_slots\": 20"));
     CHECK(contains(json.str(), "\"top_weighted_blocks\""));
+    CHECK(contains(json.str(), "\"top_weighted_idle_blocks\""));
 }
 
 TEST_CASE("VsmCostAnalyzer fixture: SCE padded columns have precomputed cost")

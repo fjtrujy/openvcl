@@ -67,6 +67,7 @@ private:
 		unsigned int singleUpperCycles;
 		unsigned int singleLowerCycles;
 		unsigned int nopOnlyCycles;
+		unsigned int nopSlots;
 		unsigned int operationLatencyCycles;
 		unsigned int longLatencyOps;
 		unsigned int longLatencyCycles;
@@ -80,6 +81,9 @@ private:
 		unsigned int weightedCycles;
 		unsigned int pairedCycles;
 		unsigned int nopOnlyCycles;
+		unsigned int nopSlots;
+		unsigned int weightedNopSlots;
+		unsigned int weightedNopOnlyCycles;
 	};
 
 	void reset();
@@ -89,7 +93,9 @@ private:
 	void recordCycle( const Slot& upper, const Slot& lower );
 	unsigned int blockRepeat( const Block& block ) const;
 	std::vector<WeightedBlock> weightedBlocksByCycles() const;
+	std::vector<WeightedBlock> weightedBlocksByIdleSlots() const;
 	static bool weightedBlockGreater( const WeightedBlock& a, const WeightedBlock& b );
+	static bool weightedIdleBlockGreater( const WeightedBlock& a, const WeightedBlock& b );
 
 	static std::string stripComment( const std::string& line );
 	static std::string trim( const std::string& text );

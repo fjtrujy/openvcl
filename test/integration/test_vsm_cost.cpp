@@ -89,6 +89,7 @@ TEST_CASE("VSM cost CLI: fixture file reports precomputed scheduled cost")
     CHECK(textMetric(r.stdout_data, "long_latency_cycles") == 7);
     CHECK(textMetric(r.stdout_data, "max_op_latency") == 4);
     CHECK(contains(r.stdout_data, "entry_lid: cycles=5"));
+    CHECK(contains(r.stdout_data, "nop_slots=5"));
 }
 
 TEST_CASE("VSM cost CLI: JSON fixture report is suitable for comparisons")
@@ -101,6 +102,7 @@ TEST_CASE("VSM cost CLI: JSON fixture report is suitable for comparisons")
     CHECK(jsonMetric(r.stdout_data, "operation_latency_cycles") == 12);
     CHECK(jsonMetric(r.stdout_data, "long_latency_cycles") == 7);
     CHECK(contains(r.stdout_data, "\"label\": \"entry_lid\""));
+    CHECK(contains(r.stdout_data, "\"nop_slots\": 5"));
 }
 
 TEST_CASE("VSM cost CLI: loop repeat weights static block cost")
@@ -114,6 +116,9 @@ TEST_CASE("VSM cost CLI: loop repeat weights static block cost")
     CHECK(contains(r.stdout_data, "entry_lid: cycles=5 repeat=4 weighted_cycles=20"));
     CHECK(contains(r.stdout_data, "top_weighted_blocks:"));
     CHECK(contains(r.stdout_data, "entry_lid: weighted_cycles=20 cycles=5 repeat=4"));
+    CHECK(contains(r.stdout_data, "weighted_nop_slots=20"));
+    CHECK(contains(r.stdout_data, "top_weighted_idle_blocks:"));
+    CHECK(contains(r.stdout_data, "entry_lid: weighted_nop_slots=20 nop_slots=5 repeat=4"));
 }
 
 TEST_CASE("VSM cost CLI: fixture accepts SCE-style padded VSM output")
