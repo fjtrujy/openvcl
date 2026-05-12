@@ -594,6 +594,7 @@ namespace
 	{
 		return tokenTouchesImplicitResource(token, Token::Argument::P, true);
 	}
+
 }
 
 int CodeGenerator::readHazardDelay( const Token& token, const Token* partner ) const
@@ -924,6 +925,15 @@ namespace {
 		    || name == "isw" || name == "iswr"
 		    || name == "xgkick";
 	}
+
+	bool computationCanMoveBeforePlainStore( const Token& moved, const Token& crossed )
+	{
+		if( !isPlainMemoryStore(crossed) )
+			return false;
+		if( isPlainMemoryLoad(moved) )
+			return false;
+		return !hasMemoryOrControlSideEffect(moved);
+	}
 	}
 
 bool CodeGenerator::hasDataDependency( const Token& a, const Token& b )
@@ -1005,7 +1015,8 @@ bool CodeGenerator::tokenCanMoveBefore( const Token& moved, const Token& crossed
 {
 	if( hasMemoryOrControlSideEffect(moved) || hasMemoryOrControlSideEffect(crossed) )
 	{
-		if( !plainLoadCanMoveBeforePlainStore(moved, crossed) )
+		if( !plainLoadCanMoveBeforePlainStore(moved, crossed)
+		    && !computationCanMoveBeforePlainStore(moved, crossed) )
 			return false;
 	}
 

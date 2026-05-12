@@ -341,6 +341,46 @@ TEST_CASE("Scheduling: latency filler does not move a load before a same-base st
     CHECK(sqLine < lqLine);
 }
 
+TEST_CASE("Scheduling: latency filler may move independent integer compute before a plain store")
+{
+    // The iaddiu is pure integer work and does not feed the store, so it can
+    // move above that store to cover the lq->mtir latency.
+    const std::string body =
+        "\tmove.xyzw vf10, vf00\n"
+        "\tiaddiu vi04, vi00, 4\n"
+        "\tlq.xyz vf09, 0(vi00)\n"
+        "\tmtir vi01, vf09x\n"
+        "\tsq.xyz vf10, 0(vi04)\n"
+        "\tiaddiu vi02, vi00, 1\n";
+    std::string vsm = runEmit(body, "vsmScheduleComputeAcrossStore");
+    REQUIRE(vsm.length() > 0);
+
+    int addLine = lineIndex(vsm, "iaddiu VI02");
+    int mtirLine = lineIndex(vsm, "mtir");
+    REQUIRE(addLine >= 0);
+    REQUIRE(mtirLine >= 0);
+    CHECK(addLine < mtirLine);
+}
+
+TEST_CASE("Scheduling: latency filler does not move store base update before that store")
+{
+    const std::string body =
+        "\tmove.xyzw vf10, vf00\n"
+        "\tiaddiu vi04, vi00, 4\n"
+        "\tlq.xyz vf09, 0(vi00)\n"
+        "\tmtir vi01, vf09x\n"
+        "\tsq.xyz vf10, 0(vi04)\n"
+        "\tiaddiu vi04, vi04, 1\n";
+    std::string vsm = runEmit(body, "vsmScheduleNoStoreProducerAcrossStore");
+    REQUIRE(vsm.length() > 0);
+
+    int storeLine = lineIndex(vsm, "sq.xyz");
+    int addLine = lineIndex(vsm, "iaddiu VI04, VI04");
+    REQUIRE(storeLine >= 0);
+    REQUIRE(addLine >= 0);
+    CHECK(storeLine < addLine);
+}
+
 TEST_CASE("Scheduling: overwriting an already-read register does not create a WAR stall")
 {
     // Source operands are latched when the older FMAC issues, so a later
