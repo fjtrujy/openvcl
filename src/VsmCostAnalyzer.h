@@ -72,12 +72,24 @@ private:
 		unsigned int longLatencyCycles;
 	};
 
+	struct WeightedBlock
+	{
+		std::string label;
+		unsigned int cycles;
+		unsigned int repeat;
+		unsigned int weightedCycles;
+		unsigned int pairedCycles;
+		unsigned int nopOnlyCycles;
+	};
+
 	void reset();
 	void startBlock( const std::string& label );
 	bool analyzeLine( const std::string& line, unsigned int lineNumber );
 	bool parseCycle( const std::string& line, Slot& upper, Slot& lower ) const;
 	void recordCycle( const Slot& upper, const Slot& lower );
 	unsigned int blockRepeat( const Block& block ) const;
+	std::vector<WeightedBlock> weightedBlocksByCycles() const;
+	static bool weightedBlockGreater( const WeightedBlock& a, const WeightedBlock& b );
 
 	static std::string stripComment( const std::string& line );
 	static std::string trim( const std::string& text );

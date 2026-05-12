@@ -112,6 +112,8 @@ TEST_CASE("VSM cost CLI: loop repeat weights static block cost")
     CHECK(textMetric(r.stdout_data, "weighted_instructions") == 20);
     CHECK(textMetric(r.stdout_data, "weighted_paired_cycles") == 4);
     CHECK(contains(r.stdout_data, "entry_lid: cycles=5 repeat=4 weighted_cycles=20"));
+    CHECK(contains(r.stdout_data, "top_weighted_blocks:"));
+    CHECK(contains(r.stdout_data, "entry_lid: weighted_cycles=20 cycles=5 repeat=4"));
 }
 
 TEST_CASE("VSM cost CLI: fixture accepts SCE-style padded VSM output")

@@ -466,6 +466,34 @@ unsigned int VsmCostAnalyzer::blockRepeat( const Block& block ) const
 	return i->second ? i->second : 1;
 }
 
+bool VsmCostAnalyzer::weightedBlockGreater( const WeightedBlock& a, const WeightedBlock& b )
+{
+	if( a.weightedCycles != b.weightedCycles )
+		return a.weightedCycles > b.weightedCycles;
+	return a.label < b.label;
+}
+
+std::vector<VsmCostAnalyzer::WeightedBlock> VsmCostAnalyzer::weightedBlocksByCycles() const
+{
+	std::vector<WeightedBlock> weightedBlocks;
+	for( std::vector<Block>::const_iterator i = m_blocks.begin(); i != m_blocks.end(); ++i )
+	{
+		if( i->cycles == 0 )
+			continue;
+		const unsigned int repeat = blockRepeat(*i);
+		WeightedBlock block;
+		block.label = i->label;
+		block.cycles = i->cycles;
+		block.repeat = repeat;
+		block.weightedCycles = i->cycles * repeat;
+		block.pairedCycles = i->pairedCycles;
+		block.nopOnlyCycles = i->nopOnlyCycles;
+		weightedBlocks.push_back(block);
+	}
+	std::sort( weightedBlocks.begin(), weightedBlocks.end(), weightedBlockGreater );
+	return weightedBlocks;
+}
+
 bool VsmCostAnalyzer::writeText( std::ostream& stream ) const
 {
 	const unsigned int instructions = m_upperInstructions + m_lowerInstructions;
@@ -559,6 +587,20 @@ bool VsmCostAnalyzer::writeText( std::ostream& stream ) const
 		       << std::endl;
 	}
 
+	stream << "top_weighted_blocks:" << std::endl;
+	const std::vector<WeightedBlock> weightedBlocks = weightedBlocksByCycles();
+	unsigned int topCount = 0;
+	for( std::vector<WeightedBlock>::const_iterator i = weightedBlocks.begin(); i != weightedBlocks.end() && topCount < 8; ++i, ++topCount )
+	{
+		stream << "  " << i->label
+		       << ": weighted_cycles=" << i->weightedCycles
+		       << " cycles=" << i->cycles
+		       << " repeat=" << i->repeat
+		       << " paired=" << i->pairedCycles
+		       << " nop_only=" << i->nopOnlyCycles
+		       << std::endl;
+	}
+
 	return true;
 }
 
@@ -646,6 +688,25 @@ bool VsmCostAnalyzer::writeJson( std::ostream& stream ) const
 		       << "\"operation_latency_cycles\": " << i->operationLatencyCycles << ", "
 		       << "\"long_latency_ops\": " << i->longLatencyOps << ", "
 		       << "\"long_latency_cycles\": " << i->longLatencyCycles
+		       << "}";
+	}
+
+	stream << std::endl << "  ]," << std::endl;
+	stream << "  \"top_weighted_blocks\": [" << std::endl;
+
+	const std::vector<WeightedBlock> weightedBlocks = weightedBlocksByCycles();
+	unsigned int topCount = 0;
+	for( std::vector<WeightedBlock>::const_iterator i = weightedBlocks.begin(); i != weightedBlocks.end() && topCount < 8; ++i, ++topCount )
+	{
+		if( topCount != 0 )
+			stream << "," << std::endl;
+		stream << "    {"
+		       << "\"label\": \"" << jsonEscape( i->label ) << "\", "
+		       << "\"weighted_cycles\": " << i->weightedCycles << ", "
+		       << "\"cycles\": " << i->cycles << ", "
+		       << "\"repeat\": " << i->repeat << ", "
+		       << "\"paired_cycles\": " << i->pairedCycles << ", "
+		       << "\"nop_only_cycles\": " << i->nopOnlyCycles
 		       << "}";
 	}
 

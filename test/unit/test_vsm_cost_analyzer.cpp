@@ -129,6 +129,8 @@ TEST_CASE("VsmCostAnalyzer fixture: block repeats expose weighted cost")
     CHECK(textMetric(text.str(), "weighted_paired_cycles") == 4);
     CHECK(textMetric(text.str(), "weighted_nop_only_cycles") == 4);
     CHECK(contains(text.str(), "entry_lid: cycles=5 repeat=4 weighted_cycles=20"));
+    CHECK(contains(text.str(), "top_weighted_blocks:"));
+    CHECK(contains(text.str(), "entry_lid: weighted_cycles=20 cycles=5 repeat=4"));
 
     std::ostringstream json;
     REQUIRE(analyzer.writeJson(json));
@@ -136,6 +138,7 @@ TEST_CASE("VsmCostAnalyzer fixture: block repeats expose weighted cost")
     CHECK(jsonMetric(json.str(), "weighted_instructions") == 20);
     CHECK(contains(json.str(), "\"repeat\": 4"));
     CHECK(contains(json.str(), "\"weighted_cycles\": 20"));
+    CHECK(contains(json.str(), "\"top_weighted_blocks\""));
 }
 
 TEST_CASE("VsmCostAnalyzer fixture: SCE padded columns have precomputed cost")
