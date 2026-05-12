@@ -942,7 +942,7 @@ namespace {
 			return true;
 
 		Operand::Unit unit = token.operand()->unit();
-		if( unit == Operand::BRU || unit == Operand::FDIV || unit == Operand::EFU )
+		if( unit == Operand::BRU )
 			return true;
 
 		if( hasPreDecOrPostIncArgument(token) )

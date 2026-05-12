@@ -315,6 +315,29 @@ TEST_CASE("Scheduling: latency-gap filler can pair with another ready op")
     CHECK(pairLine < mtirLine);
 }
 
+TEST_CASE("Scheduling: independent FDIV producer can fill a register-latency gap")
+{
+    // FDIV writes Q, but Q is tracked as an implicit dependency.  When the
+    // producer is independent of the waiting FMAC, it can cover the load
+    // latency instead of acting as a hard scheduling barrier.
+    const std::string body =
+        "\tlq vf09, 0(vi00)\n"
+        "\tmulax acc, vf09, vf00x\n"
+        "\tdiv q, vf00w, vf00w\n"
+        "\tmulq.xyz vf03, vf00, q\n";
+    std::string vsm = runEmit(body, "vsmScheduleFdivLatencyFiller");
+    REQUIRE(vsm.length() > 0);
+
+    int divLine = lineIndex(vsm, "div");
+    int mulLine = lineIndex(vsm, "mulax");
+    int mulqLine = lineIndex(vsm, "mulq");
+    REQUIRE(divLine >= 0);
+    REQUIRE(mulLine >= 0);
+    REQUIRE(mulqLine >= 0);
+    CHECK(divLine < mulLine);
+    CHECK(divLine < mulqLine);
+}
+
 TEST_CASE("Scheduling: distant ready op fills current register-latency wait")
 {
     // The first several candidates also read the pending load result, so they
