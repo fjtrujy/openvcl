@@ -101,6 +101,7 @@ private:
 	int m_qReadyCycle;
 	int m_pReadyCycle;
 	std::map<std::string, int> m_registerReadyCycle;
+	std::map<std::string, std::string> m_registerProducerMnemonic;
 };
 
 #include "CodeGenerator.inl"

@@ -201,6 +201,35 @@ TEST_CASE("Latency: FMAC vf write followed by lower vf consumer has at least 5 c
     CHECK(d >= 5);
 }
 
+TEST_CASE("Latency: ftoi result can feed mtir on the next cycle")
+{
+    // Sony's scheduled ps2gl VSM emits the strip-boundary `ftoi* -> mtir`
+    // sequence with only one cycle between producer and MTIR.  Keep that as
+    // a narrow bypass instead of weakening normal FMAC/VF latency.
+    const std::string body =
+        "\tftoi0 vf01, vf00\n"
+        "\tmtir vi01, vf01x\n";
+
+    std::string vsm = runEmit(body, "vsmLatencyFtoiMtirBypass");
+    REQUIRE(vsm.length() > 0);
+    int d = cycleDistance(vsm, "ftoi0", "mtir");
+    REQUIRE(d > 0);
+    CHECK(d == 1);
+}
+
+TEST_CASE("Latency: ftoi result still waits for non-mtir vf consumers")
+{
+    const std::string body =
+        "\tftoi0 vf01, vf00\n"
+        "\tdiv q, vf00w, vf01w\n";
+
+    std::string vsm = runEmit(body, "vsmLatencyFtoiDiv");
+    REQUIRE(vsm.length() > 0);
+    int d = cycleDistance(vsm, "ftoi0", "div");
+    REQUIRE(d > 0);
+    CHECK(d >= 5);
+}
+
 TEST_CASE("Latency: FDIV Q consumer uses deferred waitq after movable work")
 {
     // The scheduler tracks Q as a long-latency resource.  It should not burn

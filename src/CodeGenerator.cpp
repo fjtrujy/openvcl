@@ -43,11 +43,16 @@ static bool isClipReader( const std::string& name );
 static bool isClipw( const std::string& name );
 namespace
 {
+	bool containsKey( const std::list<std::string>& keys, const std::string& key );
+	std::string lowerName( const Token& token );
 	bool isXgkick( const Token& token );
 	bool isPlainMemoryStore( const Token& token );
 	bool isPlainMemoryLoad( const Token& token );
 	bool tokenReadsQ( const Token& token );
 	bool tokenReadsP( const Token& token );
+	bool tokenReadsRegister( const Token& token, const std::string& key );
+	bool isMtir( const Token& token );
+	bool isFtoiConversion( const std::string& name );
 	bool isZeroMoveFromVf00( const Token& token );
 	bool tokenListReadsMac( const std::list<Token>& tokens );
 	void coalesceAdjacentIntegerAdds( std::list<Token>& tokens );
@@ -625,6 +630,13 @@ namespace
 		return tokenTouchesImplicitResource(token, Token::Argument::P, false);
 	}
 
+	bool tokenReadsRegister( const Token& token, const std::string& key )
+	{
+		std::list<std::string> reads;
+		collectRegisterReads(token, reads);
+		return containsKey(reads, key);
+	}
+
 	bool tokenWritesP( const Token& token )
 	{
 		return tokenTouchesImplicitResource(token, Token::Argument::P, true);
@@ -653,7 +665,14 @@ int CodeGenerator::readHazardDelay( const Token& token, const Token* partner ) c
 		std::map<std::string, int>::const_iterator ready = m_registerReadyCycle.find(*i);
 		if( ready == m_registerReadyCycle.end() )
 			continue;
-		const int gap = ready->second - m_currentCycle;
+		int readyCycle = ready->second;
+		std::map<std::string, std::string>::const_iterator producer = m_registerProducerMnemonic.find(*i);
+		if( producer != m_registerProducerMnemonic.end()
+		    && isFtoiConversion(producer->second)
+		    && ( (isMtir(token) && tokenReadsRegister(token, *i))
+		         || (partner && isMtir(*partner) && tokenReadsRegister(*partner, *i)) ) )
+			readyCycle -= 4;
+		const int gap = readyCycle - m_currentCycle;
 		if( gap > needed )
 			needed = gap;
 	}
@@ -742,7 +761,10 @@ void CodeGenerator::recordRegisterWrites( const Token& token, int issueCycle )
 	std::list<std::string> writes;
 	collectRegisterWrites(token, writes);
 	for( std::list<std::string>::const_iterator i = writes.begin(); i != writes.end(); ++i )
+	{
 		m_registerReadyCycle[*i] = issueCycle + latency + 1;
+		m_registerProducerMnemonic[*i] = lowerName(token);
+	}
 	if( tokenWritesQ(token) )
 		m_qReadyCycle = issueCycle + latency + 1;
 	if( tokenWritesP(token) )
@@ -877,6 +899,17 @@ namespace {
 				*i = char(*i - 'A' + 'a');
 		}
 		return name;
+	}
+
+	bool isMtir( const Token& token )
+	{
+		return lowerName(token) == "mtir";
+	}
+
+	bool isFtoiConversion( const std::string& name )
+	{
+		return name == "ftoi0" || name == "ftoi4"
+		    || name == "ftoi12" || name == "ftoi15";
 	}
 
 	bool isZeroMoveFromVf00( const Token& token )
