@@ -301,6 +301,18 @@ TEST_CASE("Pairing: distant independent lower op can fill current upper slot")
     CHECK(linePairsSubstrings(vsm, "mulax", "iaddiu VI01"));
 }
 
+TEST_CASE("Pairing: lookahead spans beyond 48 same-pipe candidates")
+{
+    std::string body = "\tmulax acc, vf00, vf00x\n";
+    for( int i = 0; i < 60; ++i )
+        body += "\tmadday acc, vf00, vf00y\n";
+    body += "\tiaddiu vi01, vi00, 1\n";
+
+    std::string vsm = runEmit(body, "vsmPairLookaheadBeyond48");
+    REQUIRE(vsm.length() > 0);
+    CHECK(linePairsSubstrings(vsm, "mulax", "iaddiu VI01"));
+}
+
 TEST_CASE("Pairing: non-adjacent candidate is not moved across a register conflict")
 {
     // The later lq writes VF01.  The intervening madday reads VF01, so the
@@ -419,6 +431,25 @@ TEST_CASE("Scheduling: distant ready op fills current register-latency wait")
         "\tadd.xyz vf18, vf09, vf00\n"
         "\tiaddiu vi02, vi00, 1\n";
     std::string vsm = runEmit(body, "vsmScheduleDistantLatencyFiller");
+    REQUIRE(vsm.length() > 0);
+
+    int fillerLine = lineIndex(vsm, "iaddiu VI02");
+    int mtirLine = lineIndex(vsm, "mtir");
+    REQUIRE(fillerLine >= 0);
+    REQUIRE(mtirLine >= 0);
+    CHECK(fillerLine < mtirLine);
+}
+
+TEST_CASE("Scheduling: latency filler spans beyond 48 unready candidates")
+{
+    std::string body =
+        "\tlq.xyz vf09, 0(vi00)\n"
+        "\tmtir vi01, vf09x\n";
+    for( int i = 0; i < 60; ++i )
+        body += "\tadd.xyz vf10, vf09, vf00\n";
+    body += "\tiaddiu vi02, vi00, 1\n";
+
+    std::string vsm = runEmit(body, "vsmScheduleLookaheadBeyond48");
     REQUIRE(vsm.length() > 0);
 
     int fillerLine = lineIndex(vsm, "iaddiu VI02");
