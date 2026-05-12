@@ -150,6 +150,17 @@ TEST_CASE("Pairing: later independent upper op can pair with plain store")
     CHECK(linePairsSubstrings(vsm, "add.xyz", "sq.xyz"));
 }
 
+TEST_CASE("Pairing: store pairing can skip an unpaired lower candidate")
+{
+    const std::string body =
+        "\tsq.xyz vf00, 0(vi00)\n"
+        "\tlq.xyz vf01, 0(vi00)\n"
+        "\tadd.xyz vf02, vf00, vf00\n";
+    std::string vsm = runEmit(body, "vsmPairStoreSkipsLowerCandidate");
+    REQUIRE(vsm.length() > 0);
+    CHECK(linePairsSubstrings(vsm, "add.xyz", "sq.xyz"));
+}
+
 TEST_CASE("Pairing: store reading the upper result is not paired")
 {
     const std::string body =
@@ -516,6 +527,24 @@ TEST_CASE("Scheduling: latency filler may move integer compute before a waiting 
         "\tsq.x vf01, 0(vi04)\n"
         "\tiaddiu vi02, vi00, 1\n";
     std::string vsm = runEmit(body, "vsmScheduleComputeBeforeWaitingStore");
+    REQUIRE(vsm.length() > 0);
+
+    int addLine = lineIndex(vsm, "iaddiu VI02");
+    int storeLine = lineIndex(vsm, "sq.x");
+    REQUIRE(addLine >= 0);
+    REQUIRE(storeLine >= 0);
+    CHECK(addLine < storeLine);
+}
+
+TEST_CASE("Scheduling: latency filler can skip an unmovable candidate")
+{
+    const std::string body =
+        "\tiaddiu vi04, vi00, 4\n"
+        "\tmfir.x vf01, vi00\n"
+        "\tsq.x vf01, 0(vi04)\n"
+        "\tlq.x vf02, 0(vi04)\n"
+        "\tiaddiu vi02, vi00, 1\n";
+    std::string vsm = runEmit(body, "vsmScheduleSkipsUnmovableCandidate");
     REQUIRE(vsm.length() > 0);
 
     int addLine = lineIndex(vsm, "iaddiu VI02");

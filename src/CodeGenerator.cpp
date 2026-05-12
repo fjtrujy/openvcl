@@ -190,7 +190,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				if( !tokenRangeCanBeCrossed(*k, *p)
 				    && !isPlainMemoryStore(*p)
 				    && !tokenCanMoveBefore(*p, *k) )
-					break;
+					continue;
 
 				bool canCross = true;
 				std::list<Token>::iterator c = k;
@@ -224,7 +224,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 					if( !tokenRangeCanBeCrossed(*k, *p)
 					    && !isPlainMemoryStore(*p)
 					    && !tokenCanMoveBefore(*p, *k) )
-						break;
+						continue;
 					if( !tokensCanPair(*filler, *p) )
 						continue;
 
@@ -301,7 +301,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				    && !tokenRangeCanBeCrossed(*k, *p)
 				    && !isPlainMemoryStore(*p)
 				    && !tokenCanMoveBefore(*p, token) )
-					break;
+					continue;
 				if( tokensCanPair(token, *p) )
 				{
 					bool canCross = true;
