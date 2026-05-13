@@ -65,6 +65,8 @@ private:
 	int readHazardDelay( const Token& token, const Token* partner ) const;
 	void padForReadHazards( const Token& token, const Token* partner );
 	void recordRegisterWrites( const Token& token, int issueCycle );
+	unsigned int ignoredImplicitWawResourcesForRemaining( std::list<Token>::const_iterator begin,
+	                                                       std::list<Token>::const_iterator end ) const;
 	bool emitsAsUpperZeroMove( const Token& token ) const;
 	bool tokenIsLowerExecutionPath( const Token& token ) const;
 	bool tokenIsUpperExecutionPath( const Token& token ) const;

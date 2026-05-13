@@ -94,18 +94,14 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 	std::list<Token> workTokens = tokens;
 	coalesceAdjacentVuIntegerAdds(workTokens);
 	const bool macFlagsDead = !vuTokenListReadsMac(workTokens);
-	const bool clipFlagsDead = !vuTokenListReadsClip(workTokens);
-	m_ignoredImplicitWawResources = VU_RESOURCE_NONE;
-	if( macFlagsDead )
-		m_ignoredImplicitWawResources |= VU_RESOURCE_MAC;
-	if( clipFlagsDead )
-		m_ignoredImplicitWawResources |= VU_RESOURCE_CLIP;
 	std::list<Token> scheduledTokens = scheduleVuTokensReadySetWithFlagLiveness(workTokens);
 	workTokens.swap(scheduledTokens);
 	m_enableUpperZeroMoves = macFlagsDead;
+	m_ignoredImplicitWawResources = VU_RESOURCE_NONE;
 
 	for( std::list<Token>::iterator k = workTokens.begin(); k != workTokens.end(); )
 	{
+		m_ignoredImplicitWawResources = ignoredImplicitWawResourcesForRemaining(k, workTokens.end());
 		Token token = *k;
 
 		//handle label
@@ -729,6 +725,28 @@ void CodeGenerator::recordRegisterWrites( const Token& token, int issueCycle )
 		m_qReadyCycle = issueCycle + latency + 1;
 	if( vuTokenWritesP(token) )
 		m_pReadyCycle = issueCycle + latency + 1;
+}
+
+unsigned int CodeGenerator::ignoredImplicitWawResourcesForRemaining( std::list<Token>::const_iterator begin,
+                                                                     std::list<Token>::const_iterator end ) const
+{
+	bool readsMac = false;
+	bool readsClip = false;
+	for( std::list<Token>::const_iterator i = begin; i != end; ++i )
+	{
+		if( !i->operand() )
+			continue;
+		const std::string& name = i->operand()->name();
+		readsMac = readsMac || isVuMacReader(name);
+		readsClip = readsClip || isVuClipReader(name);
+	}
+
+	unsigned int mask = VU_RESOURCE_NONE;
+	if( !readsMac )
+		mask |= VU_RESOURCE_MAC;
+	if( !readsClip )
+		mask |= VU_RESOURCE_CLIP;
+	return mask;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -304,6 +304,30 @@ TEST_CASE("Pairing: vf00 move stays lower when MAC flags are read")
     CHECK(!find_line(vsm, "move.xyz").empty());
 }
 
+TEST_CASE("Pairing: suffix after final MAC reader can cross dead MAC WAW")
+{
+    const std::string body =
+        "\tfmand vi01, vi00\n"
+        "\tlq.xyz vf02, 0(vi00)\n"
+        "\tadd.xyz vf03, vf02, vf00\n"
+        "\tmul.xyz vf04, vf00, vf00\n";
+    std::string vsm = runEmit(body, "vsmPairAfterFinalMacReader");
+    REQUIRE(vsm.length() > 0);
+    CHECK(linePairsSubstrings(vsm, "mul.xyz", "lq.xyz"));
+}
+
+TEST_CASE("Pairing: prefix before final MAC reader keeps MAC WAW order")
+{
+    const std::string body =
+        "\tlq.xyz vf02, 0(vi00)\n"
+        "\tadd.xyz vf03, vf02, vf00\n"
+        "\tmul.xyz vf04, vf00, vf00\n"
+        "\tfmand vi01, vi00\n";
+    std::string vsm = runEmit(body, "vsmNoPairBeforeFinalMacReader");
+    REQUIRE(vsm.length() > 0);
+    CHECK(!linePairsSubstrings(vsm, "mul.xyz", "lq.xyz"));
+}
+
 TEST_CASE("Scheduling: branch emission reuses existing hazard nop before branch")
 {
     const std::string body =

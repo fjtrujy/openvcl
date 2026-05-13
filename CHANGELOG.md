@@ -79,6 +79,9 @@
   flag reader in the token stream, improving the ps2gl pure-OpenVCL aggregate
   by another 480 static and 510 estimated cycles while preserving conservative
   ordering before readers.
+- Applied the same remaining-reader MAC/CLIP WAW mask to CodeGenerator
+  latency-gap filling and pairing lookahead, improving the ps2gl pure-OpenVCL
+  aggregate by another 54 static and 12 estimated cycles.
 - Added behavior-preserving scheduler analysis scaffolding for basic-block
   construction and descriptor-derived dependency edges.
 - Wired the scheduler analysis layer into code generation in preserve-order
