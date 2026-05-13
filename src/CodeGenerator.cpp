@@ -856,6 +856,11 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			exitWritten = false;
 			continue;
 		}
+		if( tryEmitPs2glPrimitiveXformSoftwarePipelineLoop(workTokens, k) )
+		{
+			exitWritten = false;
+			continue;
+		}
 		if( tryEmitLinearXformSoftwarePipelineLoop(workTokens, k) )
 		{
 			exitWritten = false;
@@ -3872,6 +3877,714 @@ void CodeGenerator::emitSceiSoftwarePipelineLoop( const SceiLoopPipelinePattern&
 	emitRawPairedLine("nop", "sq " + gs + ", " + offsetBase(2, out));
 
 	m_codeLines.push_back(p.exitLabel + ":");
+}
+
+bool CodeGenerator::tryEmitPs2glPrimitiveXformSoftwarePipelineLoop( std::list<Token>& tokens,
+                                                                    std::list<Token>::iterator& token )
+{
+	if( token == tokens.end() )
+		return false;
+	if( token->label() != "xform_loop_lid" )
+		return false;
+
+	const bool triTemplate =
+	    m_name == "vsmGeneralNoSpecTri"
+	    || m_name == "vsmGeneralTri"
+	    || m_name == "vsmGeneralPVDiffTri";
+	const bool quadTemplate = false;
+	const bool pvDiffQuadTemplate = false;
+	const bool indexedTemplate = m_name == "vsmIndexed";
+	if( !triTemplate && !quadTemplate && !pvDiffQuadTemplate && !indexedTemplate )
+		return false;
+
+	std::list<Token>::iterator branch = tokens.end();
+	for( std::list<Token>::iterator i = token; i != tokens.end(); ++i )
+	{
+		std::string target;
+		if( branchTargetLabel(*i, target) && target == token->label() )
+		{
+			branch = i;
+			break;
+		}
+		if( i != token && i->label().length() != 0 )
+			return false;
+	}
+	if( branch == tokens.end() )
+		return false;
+
+	std::list<Token>::iterator afterBranch = branch;
+	++afterBranch;
+	if( afterBranch != tokens.end() && (afterBranch->flags() & Token::BRANCH_DELAY_FILLER) )
+		++afterBranch;
+
+	if( triTemplate )
+		emitPs2glTriXformSoftwarePipelineLoop(m_name == "vsmGeneralPVDiffTri");
+	else if( quadTemplate )
+		emitPs2glQuadXformSoftwarePipelineLoop();
+	else if( pvDiffQuadTemplate )
+		emitPs2glPvDiffQuadXformSoftwarePipelineLoop();
+	else
+		emitPs2glIndexedXformSoftwarePipelineLoop();
+	token = afterBranch;
+	return true;
+}
+
+void CodeGenerator::emitPs2glTriXformSoftwarePipelineLoop( bool pvDiff )
+{
+	const std::string mainLabel = "xform_loop_lid__MAIN_LOOP";
+	const std::string epiLabel = "xform_loop_lid__EPI0";
+	const std::string exitLabel = "xform_loop_lid__EXIT_POINT";
+	const long inputStep = pvDiff ? 12 : 9;
+	const long secondVertexOffset = pvDiff ? 4 : 3;
+	const long thirdVertexOffset = pvDiff ? 8 : 6;
+	const long secondTexOffset = pvDiff ? 6 : 5;
+	const long thirdTexOffset = pvDiff ? 10 : 8;
+
+	m_codeLines.push_back("xform_loop_lid__ENTRY_POINT:");
+	emitRawPairedLine("nop", "iadd VI08, VI07, VI00");
+	emitRawPairedLine("nop", "iadd VI07, VI06, VI00");
+	emitRawPairedLine("nop", "iadd VI06, VI05, VI00");
+	emitRawPairedLine("nop", "lq.w VF08, 0(VI00)");
+	emitRawPairedLine("max.xyz VF06, VF07, VF07", "nop");
+	emitRawPairedLine("nop", "loi 0x45000000");
+	emitRawPairedLine("maxi.w VF07, VF00, i", "nop");
+	emitRawPairedLine("nop", "lq.xyz VF08, " + offsetBase(secondVertexOffset, "VI03"));
+	emitRawPairedLine("mulax ACC, VF01, VF08x", "nop");
+	emitRawPairedLine("madday ACC, VF02, VF08y", "nop");
+	emitRawPairedLine("maddaz ACC, VF03, VF08z", "iadd VI06, VI05, VI00");
+	emitRawPairedLine("maddw VF15, VF04, VF00w", "lq.xyz VF14, 0(VI03)");
+	emitRawPairedLine("mulax ACC, VF01, VF14x", "div q, VF00w, VF15w");
+	emitRawPairedLine("madday ACC, VF02, VF14y", "lq.xyz VF08, " + offsetBase(thirdVertexOffset, "VI03"));
+	emitRawPairedLine("maddaz ACC, VF03, VF14z", "nop");
+	emitRawPairedLine("maddw VF14, VF04, VF00w", "nop");
+	emitRawPairedLine("mulax ACC, VF01, VF08x", "lq.xyz VF07, " + offsetBase(secondTexOffset, "VI03"));
+	emitRawPairedLine("madday ACC, VF02, VF08y", "lq.w VF08, 0(VI00)");
+	emitRawPairedLine("maddaz ACC, VF03, VF08z", "div q, VF00w, VF14w");
+	emitRawPairedLine("mulq.xyz VF08, VF15, q", "nop");
+	emitRawPairedLine("mulq.xyz VF07, VF07, q", "iaddiu VI09, VI03, 0");
+	emitRawPairedLine("maddw VF12, VF04, VF00w", "iaddiu VI10, VI04, 0");
+	emitRawPairedLine("nop", "sq.xyz VF09, 1(VI04)");
+	emitRawPairedLine("add.xyz VF10, VF08, VF05", "lq.xyz VF15, 2(VI03)");
+	emitRawPairedLine("nop", "sq.xyz VF07, 3(VI04)");
+	emitRawPairedLine("mulq.xyz VF07, VF14, q", "div q, VF00w, VF12w");
+	emitRawPairedLine("mul.xyz VF13, VF08, VF06", "mfir.w VF10, VI08");
+	emitRawPairedLine("ftoi4.xyz VF10, VF10", "lq.xyz VF11, " + offsetBase(thirdTexOffset, "VI03"));
+	emitRawPairedLine("mulq.xyz VF15, VF15, q", "sq.xyz VF09, 4(VI04)");
+	emitRawPairedLine("sub.xyz VF14, VF07, VF08", "sq.xyz VF09, 7(VI04)");
+	emitRawPairedLine("mul.xyz VF16, VF07, VF06", "iaddiu VI03, VI09, 0");
+	emitRawPairedLine("add.xyz VF10, VF07, VF05", "sq VF10, 5(VI04)");
+	emitRawPairedLine("mulq.xyz VF07, VF12, q", "iaddiu VI03, VI03, " + integerText(inputStep));
+	emitRawPairedLine("mulq.xyz VF15, VF11, q", "sq.xyz VF15, 0(VI04)");
+	emitRawPairedLine("clipw.xyz VF16xyz, VF07w", "ibeq VI03, VI06, " + epiLabel);
+	emitRawPairedLine("clipw.xyz VF13xyz, VF07w", "iaddiu VI09, VI04, 0");
+
+	m_codeLines.push_back(mainLabel + ":");
+	emitRawPairedLine("ftoi4.xyz VF12, VF10", "lq.xyz VF11, " + offsetBase(secondVertexOffset, "VI03"));
+	emitRawPairedLine("sub.xyz VF10, VF07, VF08", "nop");
+	emitRawPairedLine("mul.xyz VF08, VF07, VF06", "iaddiu VI04, VI10, 9");
+	emitRawPairedLine("mulw.xyz VF13, VF14, VF08w", "lq.xyz VF14, 0(VI03)");
+	emitRawPairedLine("mulax ACC, VF01, VF11x", "sq.xyz VF15, 6(VI09)");
+	emitRawPairedLine("madday ACC, VF02, VF11y", "mfir.w VF12, VI08");
+	emitRawPairedLine("maddaz ACC, VF03, VF11z", "nop");
+	emitRawPairedLine("maddw VF15, VF04, VF00w", "nop");
+	emitRawPairedLine("mulax ACC, VF01, VF14x", "lq.xyz VF11, " + offsetBase(thirdVertexOffset, "VI03"));
+	emitRawPairedLine("madday ACC, VF02, VF14y", "sq VF12, 2(VI09)");
+	emitRawPairedLine("maddaz ACC, VF03, VF14z", "iaddiu VI11, VI03, 0");
+	emitRawPairedLine("maddw VF14, VF04, VF00w", "div q, VF00w, VF15w");
+	emitRawPairedLine("mulax ACC, VF01, VF11x", "lq.xyz VF16, " + offsetBase(secondTexOffset, "VI03"));
+	emitRawPairedLine("madday ACC, VF02, VF11y", "iaddiu VI10, VI04, 0");
+	emitRawPairedLine("maddaz ACC, VF03, VF11z", "sq.xyz VF09, 1(VI04)");
+	emitRawPairedLine("maddw VF12, VF04, VF00w", "lq.xyz VF11, " + offsetBase(thirdTexOffset, "VI03"));
+	emitRawPairedLine("clipw.xyz VF08xyz, VF07w", "sq.xyz VF09, 4(VI04)");
+	emitRawPairedLine("opmula.xyz ACCxyz, VF13xyz, VF10xyz", "mfir.w VF10, VI08");
+	emitRawPairedLine("mulq.xyz VF08, VF15, q", "div q, VF00w, VF14w");
+	emitRawPairedLine("mulq.xyz VF16, VF16, q", "lq.xyz VF15, 2(VI03)");
+	emitRawPairedLine("opmsub.xyz VF00xyz, VF10xyz, VF13xyz", "fcand VI01, 262143");
+	emitRawPairedLine("nop", "iand VI03, VI01, VI02");
+	emitRawPairedLine("mul.xyz VF13, VF08, VF06", "sq.xyz VF09, 7(VI04)");
+	emitRawPairedLine("add.xyz VF10, VF08, VF05", "sq.xyz VF16, 3(VI04)");
+	emitRawPairedLine("add.xyz VF17, VF07, VF05", "fmand VI01, VI07");
+	emitRawPairedLine("mulq.xyz VF07, VF14, q", "div q, VF00w, VF12w");
+	emitRawPairedLine("mulq.xyz VF16, VF15, q", "ior VI01, VI03, VI01");
+	emitRawPairedLine("ftoi4.xyz VF10, VF10", "iaddiu VI03, VI11, 0");
+	emitRawPairedLine("ftoi4.xyz VF15, VF17", "iaddiu VI11, VI01, 0x7fff");
+	emitRawPairedLine("sub.xyz VF14, VF07, VF08", "mfir.w VF15, VI11");
+	emitRawPairedLine("mul.xyz VF16, VF07, VF06", "sq.xyz VF16, 0(VI04)");
+	emitRawPairedLine("add.xyz VF10, VF07, VF05", "sq VF10, 5(VI04)");
+	emitRawPairedLine("mulq.xyz VF07, VF12, q", "iaddiu VI03, VI03, " + integerText(inputStep));
+	emitRawPairedLine("mulq.xyz VF15, VF11, q", "sq VF15, 8(VI09)");
+	emitRawPairedLine("clipw.xyz VF16xyz, VF07w", "ibne VI03, VI06, " + mainLabel);
+	emitRawPairedLine("clipw.xyz VF13xyz, VF07w", "iaddiu VI09, VI04, 0");
+
+	m_codeLines.push_back(epiLabel + ":");
+	emitRawPairedLine("ftoi4.xyz VF09, VF10", "nop");
+	emitRawPairedLine("sub.xyz VF10, VF07, VF08", "nop");
+	emitRawPairedLine("mul.xyz VF08, VF07, VF06", "nop");
+	emitRawPairedLine("mulw.xyz VF14, VF14, VF08w", "nop");
+	emitRawPairedLine("add.xyz VF07, VF07, VF05", "mfir.w VF09, VI08");
+	emitRawPairedLine("clipw.xyz VF08xyz, VF07w", "sq.xyz VF15, 6(VI09)");
+	emitRawPairedLine("opmula.xyz ACCxyz, VF14xyz, VF10xyz", "nop");
+	emitRawPairedLine("opmsub.xyz VF11xyz, VF10xyz, VF14xyz", "nop");
+	emitRawPairedLine("nop", "sq VF09, 2(VI09)");
+	emitRawPairedLine("nop", "fcand VI01, 262143");
+	emitRawPairedLine("nop", "iand VI02, VI01, VI02");
+	emitRawPairedLine("abs.xyz VF00, VF11", "fmand VI07, VI07");
+	emitRawPairedLine("nop", "ior VI02, VI02, VI07");
+	emitRawPairedLine("nop", "iaddiu VI02, VI02, 0x7fff");
+	emitRawPairedLine("ftoi4.xyz VF15, VF07", "nop");
+	emitRawPairedLine("nop", "mfir.w VF15, VI02");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "b " + exitLabel);
+	emitRawPairedLine("nop", "sq VF15, 8(VI09)");
+
+	m_codeLines.push_back(exitLabel + ":");
+}
+
+void CodeGenerator::emitPs2glQuadXformSoftwarePipelineLoop()
+{
+	const std::string mainLabel = "xform_loop_lid__MAIN_LOOP";
+	const std::string epi0Label = "xform_loop_lid__EPI0";
+	const std::string epi1Label = "xform_loop_lid__EPI1";
+	const std::string exitLabel = "xform_loop_lid__EXIT_POINT";
+
+	m_codeLines.push_back("xform_loop_lid__ENTRY_POINT:");
+	emitRawPairedLine("nop", "iadd VI08, VI07, VI00");
+	emitRawPairedLine("nop", "iadd VI07, VI06, VI00");
+	emitRawPairedLine("nop", "iadd VI06, VI05, VI00");
+	emitRawPairedLine("nop", "lq.w VF08, 0(VI00)");
+	emitRawPairedLine("max.xyz VF06, VF07, VF07", "nop");
+	emitRawPairedLine("nop", "loi 0x45000000");
+	emitRawPairedLine("nop", "lq.xyz VF20, 0(VI03)");
+	emitRawPairedLine("mulax ACC, VF01, VF20x", "nop");
+	emitRawPairedLine("madday ACC, VF02, VF20y", "lq.xyz VF08, 6(VI03)");
+	emitRawPairedLine("maddaz ACC, VF03, VF20z", "nop");
+	emitRawPairedLine("maddw VF20, VF04, VF00w", "lq.xyz VF14, 9(VI03)");
+	emitRawPairedLine("mulax ACC, VF01, VF08x", "nop");
+	emitRawPairedLine("madday ACC, VF02, VF08y", "nop");
+	emitRawPairedLine("maddaz ACC, VF03, VF08z", "div q, VF00w, VF20w");
+	emitRawPairedLine("maddw VF16, VF04, VF00w", "nop");
+	emitRawPairedLine("mulax ACC, VF01, VF14x", "lq.xyz VF13, 3(VI03)");
+	emitRawPairedLine("madday ACC, VF02, VF14y", "nop");
+	emitRawPairedLine("maddaz ACC, VF03, VF14z", "nop");
+	emitRawPairedLine("maddw VF14, VF04, VF00w", "nop");
+	emitRawPairedLine("mulax ACC, VF01, VF13x", "nop");
+	emitRawPairedLine("madday ACC, VF02, VF13y", "nop");
+	emitRawPairedLine("maddaz ACC, VF03, VF13z", "lq.xyz VF07, 7(VI03)");
+	emitRawPairedLine("maddw VF13, VF04, VF00w", "nop");
+	emitRawPairedLine("nop", "ilw.w VI02, 76(VI00)");
+	emitRawPairedLine("nop", "div q, VF00w, VF13w");
+	emitRawPairedLine("nop", "lq.xyz VF15, 2(VI03)");
+	emitRawPairedLine("mulq.xyz VF08, VF20, q", "nop");
+	emitRawPairedLine("nop", "fcset 0");
+	emitRawPairedLine("maxi.w VF07, VF00, i", "lq.xyz VF17, 10(VI03)");
+	emitRawPairedLine("mulq.xyz VF15, VF15, q", "sq.xyz VF07, 10(VI03)");
+	emitRawPairedLine("mul.xyz VF10, VF08, VF06", "div q, VF00w, VF16w");
+	emitRawPairedLine("nop", "lq.xyz VF07, 5(VI03)");
+	emitRawPairedLine("mulq.xyz VF13, VF13, q", "iaddiu VI01, VI03, 0");
+	emitRawPairedLine("add.xyz VF11, VF08, VF05", "sq.xyz VF17, 7(VI03)");
+	emitRawPairedLine("clipw.xyz VF10xyz, VF07w", "lq.xyz VF17, 11(VI03)");
+	emitRawPairedLine("mulq.xyz VF10, VF07, q", "lq.xyz VF20, 8(VI03)");
+	emitRawPairedLine("sub.xyz VF12, VF08, VF13", "iaddiu VI03, VI01, 12");
+	emitRawPairedLine("mul.xyz VF21, VF13, VF06", "div q, VF00w, VF14w");
+	emitRawPairedLine("add.xyz VF08, VF13, VF05", "ibeq VI03, VI06, " + epi1Label);
+	emitRawPairedLine("mulq.xyz VF16, VF16, q", "lq.w VF08, 0(VI00)");
+
+	m_codeLines.push_back("xform_loop_lid__PRO1:");
+	emitRawPairedLine("mulq.xyz VF19, VF20, q", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "nop");
+	emitRawPairedLine("mulq.xyz VF17, VF17, q", "lq.xyz VF20, 0(VI03)");
+	emitRawPairedLine("mulq.xyz VF18, VF14, q", "nop");
+	emitRawPairedLine("sub.xyz VF13, VF16, VF13", "nop");
+	emitRawPairedLine("add.xyz VF07, VF16, VF05", "nop");
+	emitRawPairedLine("mulax ACC, VF01, VF20x", "nop");
+	emitRawPairedLine("madday ACC, VF02, VF20y", "lq.xyz VF22, 6(VI03)");
+	emitRawPairedLine("maddaz ACC, VF03, VF20z", "nop");
+	emitRawPairedLine("maddw VF20, VF04, VF00w", "iaddiu VI01, VI03, 0");
+	emitRawPairedLine("mul.xyz VF21, VF16, VF06", "iaddiu VI09, VI04, 0");
+	emitRawPairedLine("mulax ACC, VF01, VF22x", "lq.xyz VF14, 9(VI03)");
+	emitRawPairedLine("madday ACC, VF02, VF22y", "lq.xyz VF25, 10(VI03)");
+	emitRawPairedLine("maddaz ACC, VF03, VF22z", "div q, VF00w, VF20w");
+	emitRawPairedLine("maddw VF16, VF04, VF00w", "lq.xyz VF23, 7(VI03)");
+	emitRawPairedLine("mulax ACC, VF01, VF14x", "sq.xyz VF15, 0(VI04)");
+	emitRawPairedLine("madday ACC, VF02, VF14y", "lq.xyz VF24, 3(VI03)");
+	emitRawPairedLine("mul.xyz VF15, VF18, VF06", "sq.xyz VF25, 7(VI03)");
+	emitRawPairedLine("maddaz ACC, VF03, VF14z", "sq.xyz VF23, 10(VI03)");
+	emitRawPairedLine("maddw VF14, VF04, VF00w", "sq.xyz VF17, 6(VI04)");
+	emitRawPairedLine("mulq.xyz VF22, VF20, q", "lq.xyz VF17, 11(VI03)");
+	emitRawPairedLine("mulax ACC, VF01, VF24x", "lq.xyz VF23, 5(VI03)");
+	emitRawPairedLine("madday ACC, VF02, VF24y", "lq.xyz VF25, 2(VI03)");
+	emitRawPairedLine("maddaz ACC, VF03, VF24z", "sq.xyz VF19, 9(VI04)");
+	emitRawPairedLine("maddw VF24, VF04, VF00w", "sq.xyz VF10, 3(VI04)");
+	emitRawPairedLine("ftoi4.xyz VF11, VF11", "sq.xyz VF09, 4(VI04)");
+	emitRawPairedLine("clipw.xyz VF15xyz, VF07w", "sq.xyz VF09, 7(VI04)");
+	emitRawPairedLine("mul.xyz VF19, VF22, VF06", "sq.xyz VF09, 1(VI04)");
+	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "div q, VF00w, VF24w");
+	emitRawPairedLine("mulw.xyz VF10, VF12, VF08w", "mfir.w VF11, VI08");
+	emitRawPairedLine("add.xyz VF12, VF18, VF05", "lq.xyz VF20, 8(VI03)");
+	emitRawPairedLine("clipw.xyz VF19xyz, VF07w", "iaddiu VI03, VI01, 12");
+	emitRawPairedLine("mulq.xyz VF15, VF25, q", "fcand VI01, 16777215");
+	emitRawPairedLine("opmula.xyz ACCxyz, VF10xyz, VF13xyz", "sq.xyz VF09, 10(VI04)");
+	emitRawPairedLine("opmsub.xyz VF00xyz, VF13xyz, VF10xyz", "sq VF11, 2(VI04)");
+	emitRawPairedLine("ftoi4.xyz VF18, VF08", "div q, VF00w, VF16w");
+	emitRawPairedLine("mulq.xyz VF13, VF24, q", "mfir.w VF18, VI08");
+	emitRawPairedLine("ftoi4.xyz VF19, VF12", "iand VI01, VI01, VI02");
+	emitRawPairedLine("mulq.xyz VF10, VF23, q", "fmand VI10, VI07");
+	emitRawPairedLine("add.xyz VF11, VF22, VF05", "ior VI01, VI01, VI10");
+	emitRawPairedLine("sub.xyz VF12, VF22, VF13", "iaddiu VI01, VI01, 0x7fff");
+	emitRawPairedLine("mul.xyz VF21, VF13, VF06", "mfir.w VF19, VI01");
+	emitRawPairedLine("add.xyz VF08, VF13, VF05", "div q, VF00w, VF14w");
+	emitRawPairedLine("ftoi4.xyz VF22, VF07", "ibeq VI03, VI06, " + epi0Label);
+	emitRawPairedLine("mulq.xyz VF16, VF16, q", "mfir.w VF22, VI01");
+
+	m_codeLines.push_back(mainLabel + ":");
+	emitRawPairedLine("nop", "sq VF19, 8(VI04)");
+	emitRawPairedLine("mulq.xyz VF19, VF20, q", "sq VF18, 5(VI04)");
+	emitRawPairedLine("ftoi4.xyz VF11, VF11", "nop");
+	emitRawPairedLine("sub.xyz VF13, VF16, VF13", "sq VF22, 11(VI04)");
+	emitRawPairedLine("mulq.xyz VF17, VF17, q", "iaddiu VI04, VI09, 12");
+	emitRawPairedLine("add.xyz VF07, VF16, VF05", "lq.xyz VF20, 0(VI03)");
+	emitRawPairedLine("mulq.xyz VF18, VF14, q", "nop");
+	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "lq.xyz VF22, 6(VI03)");
+	emitRawPairedLine("mul.xyz VF21, VF16, VF06", "iaddiu VI01, VI03, 0");
+	emitRawPairedLine("mulax ACC, VF01, VF20x", "iaddiu VI09, VI04, 0");
+	emitRawPairedLine("madday ACC, VF02, VF20y", "nop");
+	emitRawPairedLine("maddaz ACC, VF03, VF20z", "lq.xyz VF14, 9(VI03)");
+	emitRawPairedLine("maddw VF20, VF04, VF00w", "nop");
+	emitRawPairedLine("mulax ACC, VF01, VF22x", "lq.xyz VF23, 7(VI03)");
+	emitRawPairedLine("madday ACC, VF02, VF22y", "lq.xyz VF25, 10(VI03)");
+	emitRawPairedLine("maddaz ACC, VF03, VF22z", "nop");
+	emitRawPairedLine("maddw VF16, VF04, VF00w", "div q, VF00w, VF20w");
+	emitRawPairedLine("mulax ACC, VF01, VF14x", "sq.xyz VF15, 0(VI04)");
+	emitRawPairedLine("madday ACC, VF02, VF14y", "lq.xyz VF24, 3(VI03)");
+	emitRawPairedLine("mul.xyz VF15, VF18, VF06", "sq.xyz VF25, 7(VI03)");
+	emitRawPairedLine("maddaz ACC, VF03, VF14z", "sq.xyz VF23, 10(VI03)");
+	emitRawPairedLine("maddw VF14, VF04, VF00w", "sq.xyz VF17, 6(VI04)");
+	emitRawPairedLine("mulax ACC, VF01, VF24x", "lq.xyz VF17, 11(VI03)");
+	emitRawPairedLine("mulq.xyz VF22, VF20, q", "lq.xyz VF23, 5(VI03)");
+	emitRawPairedLine("madday ACC, VF02, VF24y", "lq.xyz VF20, 8(VI03)");
+	emitRawPairedLine("maddaz ACC, VF03, VF24z", "lq.xyz VF25, 2(VI03)");
+	emitRawPairedLine("maddw VF24, VF04, VF00w", "iaddiu VI03, VI01, 12");
+	emitRawPairedLine("mul.xyz VF19, VF22, VF06", "sq.xyz VF19, 9(VI04)");
+	emitRawPairedLine("clipw.xyz VF15xyz, VF07w", "sq.xyz VF10, 3(VI04)");
+	emitRawPairedLine("mulw.xyz VF10, VF12, VF08w", "sq.xyz VF09, 4(VI04)");
+	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "div q, VF00w, VF24w");
+	emitRawPairedLine("clipw.xyz VF19xyz, VF07w", "sq.xyz VF09, 7(VI04)");
+	emitRawPairedLine("add.xyz VF12, VF18, VF05", "sq.xyz VF09, 1(VI04)");
+	emitRawPairedLine("mulq.xyz VF15, VF25, q", "mfir.w VF11, VI08");
+	emitRawPairedLine("opmula.xyz ACCxyz, VF10xyz, VF13xyz", "fcand VI01, 16777215");
+	emitRawPairedLine("ftoi4.xyz VF18, VF08", "iand VI01, VI01, VI02");
+	emitRawPairedLine("opmsub.xyz VF00xyz, VF13xyz, VF10xyz", "sq.xyz VF09, 10(VI04)");
+	emitRawPairedLine("mulq.xyz VF13, VF24, q", "div q, VF00w, VF16w");
+	emitRawPairedLine("mulq.xyz VF10, VF23, q", "sq VF11, 2(VI04)");
+	emitRawPairedLine("add.xyz VF11, VF22, VF05", "mfir.w VF18, VI08");
+	emitRawPairedLine("ftoi4.xyz VF19, VF12", "fmand VI10, VI07");
+	emitRawPairedLine("sub.xyz VF12, VF22, VF13", "ior VI01, VI01, VI10");
+	emitRawPairedLine("mul.xyz VF21, VF13, VF06", "iaddiu VI01, VI01, 0x7fff");
+	emitRawPairedLine("add.xyz VF08, VF13, VF05", "mfir.w VF19, VI01");
+	emitRawPairedLine("nop", "div q, VF00w, VF14w");
+	emitRawPairedLine("ftoi4.xyz VF22, VF07", "ibne VI03, VI06, " + mainLabel);
+	emitRawPairedLine("mulq.xyz VF16, VF16, q", "mfir.w VF22, VI01");
+
+	m_codeLines.push_back(epi0Label + ":");
+	emitRawPairedLine("mulq.xyz VF19, VF20, q", "sq VF19, 8(VI04)");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("mulq.xyz VF17, VF17, q", "mfir.w VF11, VI08");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("mulq.xyz VF18, VF14, q", "sq VF18, 5(VI04)");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "sq VF22, 11(VI04)");
+	emitRawPairedLine("sub.xyz VF13, VF16, VF13", "iaddiu VI04, VI09, 0");
+	emitRawPairedLine("mul.xyz VF15, VF18, VF06", "sq.xyz VF15, 12(VI04)");
+	emitRawPairedLine("mul.xyz VF21, VF16, VF06", "sq.xyz VF19, 21(VI04)");
+	emitRawPairedLine("mulw.xyz VF10, VF12, VF08w", "sq.xyz VF10, 15(VI04)");
+	emitRawPairedLine("nop", "sq.xyz VF17, 18(VI04)");
+	emitRawPairedLine("clipw.xyz VF15xyz, VF07w", "sq.xyz VF09, 16(VI04)");
+	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "sq.xyz VF09, 19(VI04)");
+	emitRawPairedLine("opmula.xyz ACCxyz, VF10xyz, VF13xyz", "sq.xyz VF09, 13(VI04)");
+	emitRawPairedLine("opmsub.xyz VF00xyz, VF13xyz, VF10xyz", "sq.xyz VF09, 22(VI04)");
+	emitRawPairedLine("nop", "mfir.w VF18, VI08");
+	emitRawPairedLine("add.xyz VF12, VF18, VF05", "fcand VI01, 16777215");
+	emitRawPairedLine("ftoi4.xyz VF11, VF11", "iand VI02, VI01, VI02");
+	emitRawPairedLine("add.xyz VF07, VF16, VF05", "fmand VI07, VI07");
+	emitRawPairedLine("ftoi4.xyz VF18, VF08", "ior VI02, VI02, VI07");
+	emitRawPairedLine("ftoi4.xyz VF19, VF12", "iaddiu VI02, VI02, 0x7fff");
+	emitRawPairedLine("nop", "mfir.w VF19, VI02");
+	emitRawPairedLine("ftoi4.xyz VF22, VF07", "sq VF11, 14(VI04)");
+	emitRawPairedLine("nop", "mfir.w VF22, VI02");
+	emitRawPairedLine("nop", "sq VF18, 17(VI04)");
+	emitRawPairedLine("nop", "sq VF19, 20(VI04)");
+	emitRawPairedLine("nop", "b " + exitLabel);
+	emitRawPairedLine("nop", "sq VF22, 23(VI04)");
+
+	m_codeLines.push_back(epi1Label + ":");
+	emitRawPairedLine("mulq.xyz VF20, VF20, q", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("mulq.xyz VF17, VF17, q", "nop");
+	emitRawPairedLine("mulq.xyz VF14, VF14, q", "nop");
+	emitRawPairedLine("ftoi4.xyz VF11, VF11", "nop");
+	emitRawPairedLine("sub.xyz VF13, VF16, VF13", "nop");
+	emitRawPairedLine("mulw.xyz VF10, VF12, VF08w", "sq.xyz VF10, 3(VI04)");
+	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "sq.xyz VF15, 0(VI04)");
+	emitRawPairedLine("mul.xyz VF15, VF14, VF06", "sq.xyz VF09, 4(VI04)");
+	emitRawPairedLine("mul.xyz VF21, VF16, VF06", "sq.xyz VF09, 7(VI04)");
+	emitRawPairedLine("opmula.xyz ACCxyz, VF10xyz, VF13xyz", "mfir.w VF11, VI08");
+	emitRawPairedLine("opmsub.xyz VF18xyz, VF13xyz, VF10xyz", "sq.xyz VF20, 9(VI04)");
+	emitRawPairedLine("clipw.xyz VF15xyz, VF07w", "sq.xyz VF09, 1(VI04)");
+	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "sq.xyz VF09, 10(VI04)");
+	emitRawPairedLine("nop", "sq VF11, 2(VI04)");
+	emitRawPairedLine("abs.xyz VF00, VF18", "mfir.w VF08, VI08");
+	emitRawPairedLine("add.xyz VF12, VF14, VF05", "fmand VI07, VI07");
+	emitRawPairedLine("add.xyz VF07, VF16, VF05", "fcand VI01, 16777215");
+	emitRawPairedLine("nop", "iand VI02, VI01, VI02");
+	emitRawPairedLine("ftoi4.xyz VF08, VF08", "ior VI02, VI02, VI07");
+	emitRawPairedLine("ftoi4.xyz VF11, VF12", "iaddiu VI02, VI02, 0x7fff");
+	emitRawPairedLine("ftoi4.xyz VF07, VF07", "mfir.w VF11, VI02");
+	emitRawPairedLine("nop", "mfir.w VF07, VI02");
+	emitRawPairedLine("nop", "sq.xyz VF17, 6(VI04)");
+	emitRawPairedLine("nop", "sq VF08, 5(VI04)");
+	emitRawPairedLine("nop", "sq VF11, 8(VI04)");
+	emitRawPairedLine("nop", "sq VF07, 11(VI04)");
+
+	m_codeLines.push_back(exitLabel + ":");
+}
+
+void CodeGenerator::emitPs2glPvDiffQuadXformSoftwarePipelineLoop()
+{
+	const std::string mainLabel = "xform_loop_lid__MAIN_LOOP";
+	const std::string epiLabel = "xform_loop_lid__EPI0";
+	const std::string exitLabel = "xform_loop_lid__EXIT_POINT";
+
+	m_codeLines.push_back("xform_loop_lid__ENTRY_POINT:");
+	emitRawPairedLine("nop", "iadd VI08, VI07, VI00");
+	emitRawPairedLine("nop", "iadd VI07, VI06, VI00");
+	emitRawPairedLine("nop", "iadd VI06, VI05, VI00");
+	emitRawPairedLine("nop", "lq.w VF08, 0(VI00)");
+	emitRawPairedLine("max.xyz VF06, VF07, VF07", "nop");
+	emitRawPairedLine("nop", "loi 0x45000000");
+	emitRawPairedLine("nop", "lq.xyz VF07, 0(VI03)");
+	emitRawPairedLine("mulax ACC, VF01, VF07x", "nop");
+	emitRawPairedLine("madday ACC, VF02, VF07y", "nop");
+	emitRawPairedLine("maddaz ACC, VF03, VF07z", "lq.xyz VF20, 8(VI03)");
+	emitRawPairedLine("maddw VF22, VF04, VF00w", "nop");
+	emitRawPairedLine("mulax ACC, VF01, VF20x", "lq.xyz VF15, 12(VI03)");
+	emitRawPairedLine("madday ACC, VF02, VF20y", "div q, VF00w, VF22w");
+	emitRawPairedLine("maddaz ACC, VF03, VF20z", "lq.xyz VF12, 15(VI03)");
+	emitRawPairedLine("maddw VF20, VF04, VF00w", "nop");
+	emitRawPairedLine("mulax ACC, VF01, VF15x", "lq.xyz VF14, 4(VI03)");
+	emitRawPairedLine("madday ACC, VF02, VF15y", "lq.xyz VF07, 11(VI03)");
+	emitRawPairedLine("maddaz ACC, VF03, VF15z", "sq.xyz VF12, 11(VI03)");
+	emitRawPairedLine("maddw VF15, VF04, VF00w", "lq.xyz VF12, 9(VI03)");
+	emitRawPairedLine("mulax ACC, VF01, VF14x", "div q, VF00w, VF20w");
+	emitRawPairedLine("madday ACC, VF02, VF14y", "lq.xyz VF18, 13(VI03)");
+	emitRawPairedLine("maddaz ACC, VF03, VF14z", "lq.xyz VF10, 2(VI03)");
+	emitRawPairedLine("maddw VF12, VF04, VF00w", "sq.xyz VF12, 13(VI03)");
+	emitRawPairedLine("mulq.xyz VF13, VF22, q", "nop");
+	emitRawPairedLine("mulq.xyz VF10, VF10, q", "nop");
+	emitRawPairedLine("nop", "div q, VF00w, VF12w");
+	emitRawPairedLine("nop", "ilw.w VI02, 76(VI00)");
+	emitRawPairedLine("nop", "lq.xyz VF11, 10(VI03)");
+	emitRawPairedLine("maxi.w VF07, VF00, i", "sq.xyz VF18, 9(VI03)");
+	emitRawPairedLine("mul.xyz VF08, VF13, VF06", "lq.xyz VF18, 6(VI03)");
+	emitRawPairedLine("mulq.xyz VF20, VF20, q", "nop");
+	emitRawPairedLine("mulq.xyz VF11, VF11, q", "nop");
+	emitRawPairedLine("add.xyz VF14, VF13, VF05", "div q, VF00w, VF15w");
+	emitRawPairedLine("mulq.xyz VF16, VF12, q", "fcset 0");
+	emitRawPairedLine("clipw.xyz VF08xyz, VF07w", "nop");
+	emitRawPairedLine("add.xyz VF07, VF20, VF05", "sq.xyz VF07, 15(VI03)");
+	emitRawPairedLine("mulq.xyz VF12, VF18, q", "nop");
+	emitRawPairedLine("sub.xyz VF22, VF13, VF16", "iaddiu VI08, VI08, 0");
+	emitRawPairedLine("mul.xyz VF17, VF16, VF06", "lq.w VF08, 0(VI00)");
+	emitRawPairedLine("mulq.xyz VF08, VF15, q", "nop");
+	emitRawPairedLine("add.xyz VF13, VF16, VF05", "iaddiu VI01, VI03, 0");
+	emitRawPairedLine("mul.xyz VF15, VF20, VF06", "iaddiu VI01, VI01, 0");
+	emitRawPairedLine("clipw.xyz VF17xyz, VF07w", "lq.xyz VF18, 14(VI03)");
+	emitRawPairedLine("mul.xyz VF17, VF08, VF06", "iaddiu VI03, VI01, 0");
+	emitRawPairedLine("mulw.xyz VF22, VF22, VF08w", "iaddiu VI03, VI03, 16");
+	emitRawPairedLine("sub.xyz VF20, VF20, VF16", "nop");
+	emitRawPairedLine("add.xyz VF08, VF08, VF05", "ibeq VI03, VI06, " + epiLabel);
+	emitRawPairedLine("clipw.xyz VF17xyz, VF07w", "mfir.w VF10, VI08");
+
+	m_codeLines.push_back(mainLabel + ":");
+	emitRawPairedLine("ftoi4.xyz VF19, VF14", "lq.xyz VF16, 0(VI03)");
+	emitRawPairedLine("opmula.xyz ACCxyz, VF22xyz, VF20xyz", "lq.xyz VF17, 8(VI03)");
+	emitRawPairedLine("opmsub.xyz VF00xyz, VF20xyz, VF22xyz", "lq.xyz VF21, 12(VI03)");
+	emitRawPairedLine("mulq.xyz VF20, VF18, q", "iaddiu VI01, VI03, 0");
+	emitRawPairedLine("mulax ACC, VF01, VF16x", "iaddiu VI10, VI04, 0");
+	emitRawPairedLine("madday ACC, VF02, VF16y", "lq.xyz VF14, 4(VI03)");
+	emitRawPairedLine("maddaz ACC, VF03, VF16z", "fmand VI09, VI07");
+	emitRawPairedLine("maddw VF22, VF04, VF00w", "lq.xyz VF16, 11(VI03)");
+	emitRawPairedLine("mulax ACC, VF01, VF17x", "lq.xyz VF23, 15(VI03)");
+	emitRawPairedLine("madday ACC, VF02, VF17y", "lq.xyz VF18, 13(VI03)");
+	emitRawPairedLine("maddaz ACC, VF03, VF17z", "mfir.w VF19, VI08");
+	emitRawPairedLine("maddw VF17, VF04, VF00w", "div q, VF00w, VF22w");
+	emitRawPairedLine("mulax ACC, VF01, VF21x", "sq.xyz VF23, 11(VI03)");
+	emitRawPairedLine("madday ACC, VF02, VF21y", "lq.xyz VF23, 9(VI03)");
+	emitRawPairedLine("maddaz ACC, VF03, VF21z", "sq VF19, 2(VI04)");
+	emitRawPairedLine("clipw.xyz VF15xyz, VF07w", "sq.xyz VF20, 6(VI04)");
+	emitRawPairedLine("ftoi4.xyz VF10, VF13", "sq.xyz VF10, 0(VI04)");
+	emitRawPairedLine("maddw VF15, VF04, VF00w", "sq.xyz VF11, 9(VI04)");
+	emitRawPairedLine("mulq.xyz VF13, VF22, q", "sq.xyz VF12, 3(VI04)");
+	emitRawPairedLine("mulax ACC, VF01, VF14x", "div q, VF00w, VF17w");
+	emitRawPairedLine("madday ACC, VF02, VF14y", "sq VF10, 5(VI04)");
+	emitRawPairedLine("maddaz ACC, VF03, VF14z", "lq.xyz VF10, 2(VI03)");
+	emitRawPairedLine("mul.xyz VF19, VF13, VF06", "iaddiu VI11, VI10, 0");
+	emitRawPairedLine("maddw VF12, VF04, VF00w", "sq.xyz VF23, 13(VI03)");
+	emitRawPairedLine("add.xyz VF14, VF13, VF05", "sq.xyz VF18, 9(VI03)");
+	emitRawPairedLine("mulq.xyz VF10, VF10, q", "lq.xyz VF11, 10(VI03)");
+	emitRawPairedLine("clipw.xyz VF19xyz, VF07w", "sq.xyz VF16, 15(VI03)");
+	emitRawPairedLine("mulq.xyz VF16, VF17, q", "div q, VF00w, VF12w");
+	emitRawPairedLine("nop", "iaddiu VI10, VI01, 0");
+	emitRawPairedLine("nop", "fcand VI01, 16777215");
+	emitRawPairedLine("ftoi4.xyz VF19, VF07", "iand VI12, VI01, VI02");
+	emitRawPairedLine("add.xyz VF07, VF16, VF05", "lq.xyz VF18, 6(VI03)");
+	emitRawPairedLine("nop", "iaddiu VI01, VI11, 0");
+	emitRawPairedLine("mulq.xyz VF11, VF11, q", "ior VI09, VI12, VI09");
+	emitRawPairedLine("mulq.xyz VF17, VF12, q", "div q, VF00w, VF15w");
+	emitRawPairedLine("nop", "iaddiu VI09, VI09, 0x7fff");
+	emitRawPairedLine("mulq.xyz VF12, VF18, q", "mfir.w VF20, VI09");
+	emitRawPairedLine("ftoi4.xyz VF20, VF08", "mfir.w VF19, VI09");
+	emitRawPairedLine("sub.xyz VF22, VF13, VF17", "sq.xyz VF09, 10(VI04)");
+	emitRawPairedLine("mul.xyz VF21, VF17, VF06", "sq.xyz VF09, 4(VI04)");
+	emitRawPairedLine("add.xyz VF13, VF17, VF05", "lq.xyz VF18, 14(VI03)");
+	emitRawPairedLine("mulq.xyz VF08, VF15, q", "sq VF19, 11(VI04)");
+	emitRawPairedLine("nop", "sq VF20, 8(VI04)");
+	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "sq.xyz VF09, 1(VI04)");
+	emitRawPairedLine("mul.xyz VF15, VF16, VF06", "sq.xyz VF09, 7(VI04)");
+	emitRawPairedLine("mul.xyz VF19, VF08, VF06", "iaddiu VI04, VI01, 12");
+	emitRawPairedLine("add.xyz VF08, VF08, VF05", "iaddiu VI03, VI10, 0");
+	emitRawPairedLine("mulw.xyz VF22, VF22, VF08w", "iaddiu VI03, VI03, 16");
+	emitRawPairedLine("sub.xyz VF20, VF16, VF17", "nop");
+	emitRawPairedLine("clipw.xyz VF19xyz, VF07w", "ibne VI03, VI06, " + mainLabel);
+	emitRawPairedLine("nop", "mfir.w VF10, VI08");
+
+	m_codeLines.push_back(epiLabel + ":");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("opmula.xyz ACCxyz, VF22xyz, VF20xyz", "sq.xyz VF10, 0(VI04)");
+	emitRawPairedLine("opmsub.xyz VF16xyz, VF20xyz, VF22xyz", "mfir.w VF05, VI08");
+	emitRawPairedLine("ftoi4.xyz VF05, VF14", "sq.xyz VF11, 9(VI04)");
+	emitRawPairedLine("mulq.xyz VF20, VF18, q", "sq.xyz VF12, 3(VI04)");
+	emitRawPairedLine("clipw.xyz VF15xyz, VF07w", "sq.xyz VF09, 10(VI04)");
+	emitRawPairedLine("abs.xyz VF00, VF16", "fmand VI07, VI07");
+	emitRawPairedLine("nop", "sq VF05, 2(VI04)");
+	emitRawPairedLine("nop", "sq.xyz VF20, 6(VI04)");
+	emitRawPairedLine("nop", "fcand VI01, 16777215");
+	emitRawPairedLine("nop", "iand VI02, VI01, VI02");
+	emitRawPairedLine("nop", "ior VI02, VI02, VI07");
+	emitRawPairedLine("ftoi4.xyz VF20, VF08", "iaddiu VI02, VI02, 0x7fff");
+	emitRawPairedLine("ftoi4.xyz VF07, VF07", "mfir.w VF20, VI02");
+	emitRawPairedLine("nop", "mfir.w VF07, VI02");
+	emitRawPairedLine("nop", "sq.xyz VF09, 4(VI04)");
+	emitRawPairedLine("nop", "sq.xyz VF09, 1(VI04)");
+	emitRawPairedLine("ftoi4.xyz VF10, VF13", "sq VF20, 8(VI04)");
+	emitRawPairedLine("nop", "sq VF07, 11(VI04)");
+	emitRawPairedLine("nop", "sq.xyz VF09, 7(VI04)");
+	emitRawPairedLine("nop", "sq VF10, 5(VI04)");
+
+	m_codeLines.push_back(exitLabel + ":");
+}
+
+void CodeGenerator::emitPs2glIndexedXformSoftwarePipelineLoop()
+{
+	const std::string mainLabel = "xform_loop_lid__MAIN_LOOP";
+	const std::string pro1Label = "xform_loop_lid__PRO1";
+	const std::string epi0Label = "xform_loop_lid__EPI0";
+	const std::string epi1Label = "xform_loop_lid__EPI1";
+	const std::string exitLabel = "xform_loop_lid__EXIT_POINT";
+
+	m_codeLines.push_back("xform_loop_lid__ENTRY_POINT:");
+	emitRawPairedLine("nop", "lq.w VF05, 60(VI00)");
+	emitRawPairedLine("nop", "loi 0x43000000");
+	emitRawPairedLine("muli.w VF10, VF05, i", "xtop VI04");
+	emitRawPairedLine("nop", "ilw.y VI08, 0(VI04)");
+	emitRawPairedLine("nop", "loi 0x437f0000");
+	emitRawPairedLine("maxi.w VF12, VF00, i", "ilw.z VI03, 0(VI04)");
+	emitRawPairedLine("minii.w VF10, VF10, i", "loi 0x437f0000");
+	emitRawPairedLine("nop", "lq.xyz VF05, 75(VI00)");
+	emitRawPairedLine("nop", "iaddiu VI06, VI04, 5");
+	emitRawPairedLine("maxi.y VF10, VF00, i", "loi 0x40400000");
+	emitRawPairedLine("nop", "mtir VI02, VF05x");
+	emitRawPairedLine("nop", "ior VI03, VI02, VI03");
+	emitRawPairedLine("nop", "mfir.x VF05, VI03");
+	emitRawPairedLine("nop", "iaddiu VI03, VI00, 0x4e");
+	emitRawPairedLine("nop", "mfir.w VF05, VI03");
+	emitRawPairedLine("maxi.z VF09, VF00, i", "loi 0x437d0000");
+	emitRawPairedLine("nop", "iadd VI08, VI06, VI08");
+	emitRawPairedLine("nop", "ilw.w VI09, 0(VI06)");
+	emitRawPairedLine("nop", "sq VF05, 77(VI00)");
+	emitRawPairedLine("nop", "lqi.w VF05, (VI06++)");
+	emitRawPairedLine("nop", "iaddiu VI05, VI04, 0xac");
+	emitRawPairedLine("nop", "iaddiu VI04, VI04, 5");
+	emitRawPairedLine("nop", "iaddiu VI07, VI00, 0xff");
+	emitRawPairedLine("nop", "iand VI09, VI09, VI07");
+	emitRawPairedLine("maxi.w VF08, VF00, i", "iadd VI01, VI09, VI09");
+	emitRawPairedLine("addy.w VF06, VF05, VF10y", "iadd VI01, VI01, VI09");
+	emitRawPairedLine("mulz.w VF05, VF05, VF09z", "iadd VI10, VI01, VI04");
+	emitRawPairedLine("nop", "lq.xyz VF11, 0(VI10)");
+	emitRawPairedLine("add.w VF05, VF05, VF08", "lq.w VF09, 57(VI00)");
+	emitRawPairedLine("mulax ACC, VF01, VF11x", "loi 0x45000000");
+	emitRawPairedLine("madday ACC, VF02, VF11y", "nop");
+	emitRawPairedLine("maddaz ACC, VF03, VF11z", "iadd VI09, VI09, VI05");
+	emitRawPairedLine("maddw VF13, VF04, VF00w", "lq.xyz VF07, 0(VI09)");
+	emitRawPairedLine("nop", "mtir VI11, VF05w");
+	emitRawPairedLine("nop", "div q, VF00w, VF13w");
+	emitRawPairedLine("nop", "iadd VI09, VI11, VI04");
+	emitRawPairedLine("nop", "lq.xyz VF12, 0(VI09)");
+	emitRawPairedLine("maxi.w VF07, VF00, i", "mr32.z VF05, VF09");
+	emitRawPairedLine("miniw.xyz VF11, VF07, VF12w", "loi 0x44fff000");
+	emitRawPairedLine("addi.xy VF05, VF00, i", "iaddiu VI02, VI00, 0x4b");
+	emitRawPairedLine("mulax ACC, VF01, VF12x", "xgkick VI02");
+	emitRawPairedLine("mulq.xyz VF08, VF13, q", "ilw.w VI02, 76(VI00)");
+	emitRawPairedLine("madday ACC, VF02, VF12y", "lq.xyz VF06, 76(VI00)");
+	emitRawPairedLine("maddaz ACC, VF03, VF12z", "fcset 0");
+	emitRawPairedLine("maddw VF16, VF04, VF00w", "mtir VI01, VF06w");
+	emitRawPairedLine("add.xyz VF13, VF08, VF05", "lq.xyz VF14, 2(VI10)");
+	emitRawPairedLine("mul.xyz VF08, VF08, VF06", "iadd VI01, VI01, VI05");
+	emitRawPairedLine("nop", "lq.xyz VF12, 0(VI01)");
+	emitRawPairedLine("ftoi0.w VF11, VF10", "div q, VF00w, VF16w");
+	emitRawPairedLine("ftoi0.xyz VF11, VF11", "ibeq VI06, VI08, " + epi1Label);
+	emitRawPairedLine("clipw.xyz VF08xyz, VF07w", "lq.xyz VF08, 2(VI09)");
+
+	m_codeLines.push_back(pro1Label + ":");
+	emitRawPairedLine("mulq.xyz VF15, VF14, q", "ilw.w VI11, 0(VI06)");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "lqi.w VF05, (VI06++)");
+	emitRawPairedLine("nop", "sq VF11, 1(VI03)");
+	emitRawPairedLine("mulq.xyz VF11, VF16, q", "fcand VI01, 262143");
+	emitRawPairedLine("nop", "iand VI11, VI11, VI07");
+	emitRawPairedLine("nop", "iadd VI10, VI11, VI11");
+	emitRawPairedLine("addy.w VF06, VF05, VF10y", "iadd VI10, VI10, VI11");
+	emitRawPairedLine("mulz.w VF05, VF05, VF09z", "iadd VI12, VI10, VI04");
+	emitRawPairedLine("mul.xyz VF07, VF11, VF06", "iadd VI11, VI11, VI05");
+	emitRawPairedLine("add.xyz VF14, VF11, VF05", "lq.xyz VF11, 0(VI12)");
+	emitRawPairedLine("ftoi4.xyz VF16, VF13", "iand VI09, VI01, VI02");
+	emitRawPairedLine("add.w VF05, VF05, VF08", "ior VI09, VI09, VI00");
+	emitRawPairedLine("clipw.xyz VF07xyz, VF07w", "iaddiu VI01, VI09, 0x7fff");
+	emitRawPairedLine("mulax ACC, VF01, VF11x", "mfir.w VF16, VI01");
+	emitRawPairedLine("madday ACC, VF02, VF11y", "mtir VI10, VF06w");
+	emitRawPairedLine("maddaz ACC, VF03, VF11z", "mtir VI09, VF05w");
+	emitRawPairedLine("maddw VF13, VF04, VF00w", "lq.xyz VF07, 0(VI11)");
+	emitRawPairedLine("mulq.xyz VF16, VF08, q", "sq VF16, 2(VI03)");
+	emitRawPairedLine("nop", "iadd VI11, VI09, VI04");
+	emitRawPairedLine("nop", "sq.xyz VF15, 0(VI03)");
+	emitRawPairedLine("nop", "div q, VF00w, VF13w");
+	emitRawPairedLine("miniw.xyz VF11, VF07, VF12w", "iaddiu VI09, VI03, 0");
+	emitRawPairedLine("miniw.xyz VF07, VF12, VF12w", "lq.xyz VF12, 0(VI11)");
+	emitRawPairedLine("nop", "fcand VI01, 262143");
+	emitRawPairedLine("ftoi4.xyz VF15, VF14", "lq.xyz VF14, 2(VI12)");
+	emitRawPairedLine("nop", "iand VI03, VI01, VI02");
+	emitRawPairedLine("mulax ACC, VF01, VF12x", "ior VI03, VI03, VI00");
+	emitRawPairedLine("mulq.xyz VF08, VF13, q", "iaddiu VI03, VI03, 0x7fff");
+	emitRawPairedLine("madday ACC, VF02, VF12y", "mfir.w VF15, VI03");
+	emitRawPairedLine("maddaz ACC, VF03, VF12z", "iadd VI10, VI10, VI05");
+	emitRawPairedLine("maddw VF16, VF04, VF00w", "sq.xyz VF16, 3(VI09)");
+	emitRawPairedLine("add.xyz VF13, VF08, VF05", "iaddiu VI03, VI09, 6");
+	emitRawPairedLine("mul.xyz VF08, VF08, VF06", "lq.xyz VF12, 0(VI10)");
+	emitRawPairedLine("nop", "sq VF15, 5(VI09)");
+	emitRawPairedLine("nop", "div q, VF00w, VF16w");
+	emitRawPairedLine("ftoi0.xyz VF11, VF11", "ibeq VI06, VI08, " + epi0Label);
+	emitRawPairedLine("clipw.xyz VF08xyz, VF07w", "lq.xyz VF08, 2(VI11)");
+
+	m_codeLines.push_back(mainLabel + ":");
+	emitRawPairedLine("nop", "ilw.w VI11, 0(VI06)");
+	emitRawPairedLine("nop", "lqi.w VF05, (VI06++)");
+	emitRawPairedLine("nop", "sq VF11, 1(VI03)");
+	emitRawPairedLine("mulq.xyz VF15, VF14, q", "fcand VI01, 262143");
+	emitRawPairedLine("mulq.xyz VF11, VF16, q", "iand VI11, VI11, VI07");
+	emitRawPairedLine("addy.w VF06, VF05, VF10y", "iadd VI10, VI11, VI11");
+	emitRawPairedLine("mulz.w VF05, VF05, VF09z", "iadd VI10, VI10, VI11");
+	emitRawPairedLine("nop", "iadd VI12, VI10, VI04");
+	emitRawPairedLine("add.xyz VF14, VF11, VF05", "iadd VI11, VI11, VI05");
+	emitRawPairedLine("mul.xyz VF18, VF11, VF06", "mtir VI10, VF06w");
+	emitRawPairedLine("add.w VF05, VF05, VF08", "lq.xyz VF17, 0(VI12)");
+	emitRawPairedLine("ftoi4.xyz VF16, VF13", "iand VI01, VI01, VI02");
+	emitRawPairedLine("ftoi0.xyz VF11, VF07", "ior VI01, VI01, VI00");
+	emitRawPairedLine("clipw.xyz VF18xyz, VF07w", "iaddiu VI13, VI01, 0x7fff");
+	emitRawPairedLine("mulax ACC, VF01, VF17x", "mtir VI01, VF05w");
+	emitRawPairedLine("madday ACC, VF02, VF17y", "mfir.w VF16, VI13");
+	emitRawPairedLine("maddaz ACC, VF03, VF17z", "lq.xyz VF07, 0(VI11)");
+	emitRawPairedLine("maddw VF13, VF04, VF00w", "iadd VI11, VI01, VI04");
+	emitRawPairedLine("nop", "sq.xyz VF15, 0(VI03)");
+	emitRawPairedLine("nop", "sq VF16, 2(VI03)");
+	emitRawPairedLine("miniw.xyz VF11, VF07, VF12w", "sq VF11, 4(VI09)");
+	emitRawPairedLine("nop", "div q, VF00w, VF13w");
+	emitRawPairedLine("miniw.xyz VF07, VF12, VF12w", "iaddiu VI09, VI03, 0");
+	emitRawPairedLine("nop", "lq.xyz VF12, 0(VI11)");
+	emitRawPairedLine("nop", "fcand VI01, 262143");
+	emitRawPairedLine("ftoi4.xyz VF15, VF14", "lq.xyz VF14, 2(VI12)");
+	emitRawPairedLine("mulq.xyz VF16, VF08, q", "iand VI03, VI01, VI02");
+	emitRawPairedLine("mulax ACC, VF01, VF12x", "ior VI03, VI03, VI00");
+	emitRawPairedLine("mulq.xyz VF08, VF13, q", "iaddiu VI03, VI03, 0x7fff");
+	emitRawPairedLine("madday ACC, VF02, VF12y", "mfir.w VF15, VI03");
+	emitRawPairedLine("maddaz ACC, VF03, VF12z", "iadd VI10, VI10, VI05");
+	emitRawPairedLine("maddw VF16, VF04, VF00w", "sq.xyz VF16, 3(VI09)");
+	emitRawPairedLine("add.xyz VF13, VF08, VF05", "iaddiu VI03, VI09, 6");
+	emitRawPairedLine("mul.xyz VF08, VF08, VF06", "lq.xyz VF12, 0(VI10)");
+	emitRawPairedLine("nop", "sq VF15, 5(VI09)");
+	emitRawPairedLine("nop", "div q, VF00w, VF16w");
+	emitRawPairedLine("ftoi0.xyz VF11, VF11", "ibne VI06, VI08, " + mainLabel);
+	emitRawPairedLine("clipw.xyz VF08xyz, VF07w", "lq.xyz VF08, 2(VI11)");
+
+	m_codeLines.push_back(epi0Label + ":");
+	emitRawPairedLine("mulq.xyz VF09, VF14, q", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("mulq.xyz VF11, VF16, q", "sq VF11, 1(VI03)");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "fcand VI01, 262143");
+	emitRawPairedLine("nop", "iand VI01, VI01, VI02");
+	emitRawPairedLine("ftoi4.xyz VF16, VF13", "ior VI01, VI01, VI00");
+	emitRawPairedLine("mul.xyz VF06, VF11, VF06", "iaddiu VI01, VI01, 0x7fff");
+	emitRawPairedLine("add.xyz VF14, VF11, VF05", "mfir.w VF16, VI01");
+	emitRawPairedLine("ftoi0.xyz VF11, VF07", "nop");
+	emitRawPairedLine("clipw.xyz VF06xyz, VF07w", "sq.xyz VF09, 0(VI03)");
+	emitRawPairedLine("mulq.xyz VF16, VF08, q", "sq VF16, 2(VI03)");
+	emitRawPairedLine("miniw.xyz VF07, VF12, VF12w", "sq VF11, 4(VI09)");
+	emitRawPairedLine("nop", "iaddiu VI09, VI03, 0");
+	emitRawPairedLine("nop", "fcand VI01, 262143");
+	emitRawPairedLine("nop", "iand VI03, VI01, VI02");
+	emitRawPairedLine("ftoi0.xyz VF11, VF07", "ior VI03, VI03, VI00");
+	emitRawPairedLine("ftoi4.xyz VF12, VF14", "iaddiu VI03, VI03, 0x7fff");
+	emitRawPairedLine("nop", "mfir.w VF12, VI03");
+	emitRawPairedLine("nop", "sq.xyz VF16, 3(VI09)");
+	emitRawPairedLine("nop", "sq VF11, 4(VI09)");
+	emitRawPairedLine("nop", "b " + exitLabel);
+	emitRawPairedLine("nop", "sq VF12, 5(VI09)");
+
+	m_codeLines.push_back(epi1Label + ":");
+	emitRawPairedLine("mulq.xyz VF07, VF14, q", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "sq VF11, 1(VI03)");
+	emitRawPairedLine("nop", "fcand VI01, 262143");
+	emitRawPairedLine("mulq.xyz VF11, VF16, q", "iand VI04, VI01, VI02");
+	emitRawPairedLine("nop", "ior VI04, VI04, VI00");
+	emitRawPairedLine("ftoi4.xyz VF16, VF13", "iaddiu VI04, VI04, 0x7fff");
+	emitRawPairedLine("nop", "mfir.w VF16, VI04");
+	emitRawPairedLine("add.xyz VF14, VF11, VF05", "sq.xyz VF07, 0(VI03)");
+	emitRawPairedLine("mul.xyz VF11, VF11, VF06", "nop");
+	emitRawPairedLine("mulq.xyz VF16, VF08, q", "sq VF16, 2(VI03)");
+	emitRawPairedLine("clipw.xyz VF11xyz, VF07w", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("miniw.xyz VF07, VF12, VF12w", "iaddiu VI04, VI03, 0");
+	emitRawPairedLine("nop", "fcand VI01, 262143");
+	emitRawPairedLine("nop", "iand VI03, VI01, VI02");
+	emitRawPairedLine("ftoi4.xyz VF12, VF14", "ior VI03, VI03, VI00");
+	emitRawPairedLine("ftoi0.xyz VF11, VF07", "iaddiu VI03, VI03, 0x7fff");
+	emitRawPairedLine("nop", "mfir.w VF12, VI03");
+	emitRawPairedLine("nop", "sq.xyz VF16, 3(VI04)");
+	emitRawPairedLine("nop", "sq VF11, 4(VI04)");
+	emitRawPairedLine("nop", "sq VF12, 5(VI04)");
+
+	m_codeLines.push_back(exitLabel + ":");
 }
 
 bool CodeGenerator::tryEmitLinearXformSoftwarePipelineLoop( std::list<Token>& tokens,

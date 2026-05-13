@@ -28,6 +28,33 @@ namespace
         return count;
     }
 
+    int blockLineCount(const std::string& text, const std::string& label)
+    {
+        const std::string marker = label + ":\n";
+        std::string::size_type begin = text.find(marker);
+        if (begin == std::string::npos)
+            return -1;
+        begin += marker.size();
+
+        int count = 0;
+        std::string::size_type lineBegin = begin;
+        while (lineBegin < text.size())
+        {
+            std::string::size_type lineEnd = text.find('\n', lineBegin);
+            if (lineEnd == std::string::npos)
+                lineEnd = text.size();
+            std::string line = text.substr(lineBegin, lineEnd - lineBegin);
+            if (!line.empty() && line[0] != ' ' && line[0] != '\t')
+                break;
+            if (!line.empty())
+                ++count;
+            if (lineEnd == text.size())
+                break;
+            lineBegin = lineEnd + 1;
+        }
+        return count;
+    }
+
     std::string runEmit(const std::string& source)
     {
         char tmpl[] = "/tmp/openvcl_pipe_XXXXXX.vsm";
@@ -51,6 +78,25 @@ namespace
         ss << f.rdbuf();
         std::remove(tmpl);
         return ss.str();
+    }
+
+    std::string ps2glNamedXformLoopSource(const std::string& name)
+    {
+        return
+            "\t.init_vf_all\n"
+            "\t.init_vi_all\n"
+            "\t.name " + name + "\n"
+            "\t--enter\n"
+            "\t--endenter\n"
+            "\tiaddiu vi03, vi00, 5\n"
+            "\tiaddiu vi05, vi00, 17\n"
+            "xform_loop_lid:\n"
+            "\tnop\n"
+            "\tiaddiu vi03, vi03, 3\n"
+            "\tibne vi03, vi05, xform_loop_lid\n"
+            "done_lid:\n"
+            "\t--exit\n"
+            "\t--endexit\n";
     }
 
     std::string fastNoLightsPipelineSource()
@@ -855,6 +901,32 @@ TEST_CASE("Software pipeline: linear transform loop falls back when clip scratch
     CHECK(contains(vsm, "iand VI01, VI07, VI06"));
 }
 
+TEST_CASE("Software pipeline: safe ps2gl primitive transform loops keep SCE-sized steady states")
+{
+    struct Case
+    {
+        const char* name;
+        int expectedMainLines;
+    };
+
+    const Case cases[] =
+    {
+        { "vsmGeneralNoSpecTri", 36 },
+        { "vsmGeneralTri", 36 },
+        { "vsmGeneralPVDiffTri", 36 },
+        { "vsmIndexed", 38 }
+    };
+
+    for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i)
+    {
+        std::string vsm = runEmit(ps2glNamedXformLoopSource(cases[i].name));
+        REQUIRE(vsm.length() > 0);
+        CHECK(contains(vsm, "xform_loop_lid__ENTRY_POINT:"));
+        CHECK(contains(vsm, "xform_loop_lid__MAIN_LOOP:"));
+        CHECK(blockLineCount(vsm, "xform_loop_lid__MAIN_LOOP") == cases[i].expectedMainLines);
+    }
+}
+
 TEST_CASE("Software pipeline: no-spec directional light loop emits an 8-cycle steady state")
 {
     std::string vsm = runEmit(dirLightNoSpecPipelineSource());
@@ -931,16 +1003,15 @@ TEST_CASE("Software pipeline: specular point light loop stays scalar until W pow
     CHECK(contains(vsm, "sq.xyz"));
 }
 
-TEST_CASE("Software pipeline: pv-diff specular point light loop keeps per-vertex material diffuse")
+TEST_CASE("Software pipeline: pv-diff specular point light loop stays scalar until W power chain is safe")
 {
     std::string vsm = runEmit(ptLightSpecPvDiffPipelineSource());
     REQUIRE(vsm.length() > 0);
 
-    CHECK(contains(vsm, "pt_light_vert_loop_lid__SPEC_ENTRY_POINT:"));
-    CHECK(contains(vsm, "pt_light_vert_loop_lid__MAIN_LOOP:"));
-    CHECK(contains(vsm, "ibne VI13, VI04, pt_light_vert_loop_lid__MAIN_LOOP"));
+    CHECK(!contains(vsm, "pt_light_vert_loop_lid__SPEC_ENTRY_POINT:"));
+    CHECK(!contains(vsm, "pt_light_vert_loop_lid__MAIN_LOOP:"));
+    CHECK(contains(vsm, "pt_light_vert_loop_lid:"));
+    CHECK(contains(vsm, "ibne VI13, VI04, pt_light_vert_loop_lid"));
     CHECK(contains(vsm, "iaddiu VI13, VI13, 4"));
-    CHECK(contains(vsm, "lq.xyz VF20, -5(VI13)")
-          || contains(vsm, "lq.xyz VF21, -5(VI13)")
-          || contains(vsm, "lq.xyz VF22, -5(VI13)"));
+    CHECK(contains(vsm, "maddaw.xyz ACC"));
 }

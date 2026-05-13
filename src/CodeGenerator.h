@@ -124,6 +124,12 @@ private:
 	                                            LinearXformLoopPipelinePattern& pattern );
 	void emitLinearXformSoftwarePipelineLoop( const LinearXformLoopPipelinePattern& pattern );
 	void emitLinearXformScalarBody( const LinearXformLoopPipelinePattern& pattern );
+	bool tryEmitPs2glPrimitiveXformSoftwarePipelineLoop( std::list<Token>& tokens,
+	                                                     std::list<Token>::iterator& token );
+	void emitPs2glTriXformSoftwarePipelineLoop( bool pvDiff );
+	void emitPs2glQuadXformSoftwarePipelineLoop();
+	void emitPs2glPvDiffQuadXformSoftwarePipelineLoop();
+	void emitPs2glIndexedXformSoftwarePipelineLoop();
 	bool tryEmitDirLightSpecSoftwarePipelineLoop( std::list<Token>& tokens,
 	                                              std::list<Token>::iterator& token );
 	bool collectDirLightSpecLoopPipelinePattern( std::list<Token>::iterator begin,
