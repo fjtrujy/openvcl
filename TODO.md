@@ -89,8 +89,8 @@ openvcl --dump-instruction-info-json
   SCE/reference VSM.
 - Use `--cost-compare` and `--cost-compare-json` for baseline/candidate totals
   when comparing SCE/reference VSMs against OpenVCL output.
-- Generate side-by-side renderer comparison tables with `--cost-compare-json`
-  instead of hand-maintaining Markdown.
+- Generate side-by-side renderer comparison tables with
+  `--cost-compare-markdown` instead of hand-maintaining Markdown.
 - Derive useful default loop weights for ps2gl renderers when possible.
 - Add regression tests for the instruction metadata table and JSON output.
 
@@ -100,6 +100,8 @@ Recently completed:
   - `top_weighted_estimated_blocks`;
   - `top_weighted_idle_blocks`;
   - `top_weighted_wait_blocks`.
+- `--cost-compare-markdown` emits a side-by-side report-table row directly
+  from the same baseline/candidate summary data.
 - Direct branches can now pair with an adjacent preceding upper-pipe
   instruction while still emitting their delay slot. Broader branch-delay
   filling remains intentionally pending.

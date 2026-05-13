@@ -107,6 +107,26 @@ namespace
 			stream << ", \"" << i->name << "\": " << summary.*(i->value);
 		stream << "}";
 	}
+
+	std::string markdownEscape( const std::string& text )
+	{
+		std::ostringstream stream;
+		for( std::string::const_iterator i = text.begin(); i != text.end(); ++i )
+		{
+			if( *i == '|' )
+				stream << "\\|";
+			else
+				stream << *i;
+		}
+		return stream.str();
+	}
+
+	void writeSignedMarkdownNumber( std::ostream& stream, long value )
+	{
+		if( value > 0 )
+			stream << "+";
+		stream << value;
+	}
 }
 
 VsmCostAnalyzer::Summary::Summary()
@@ -1414,6 +1434,49 @@ bool VsmCostAnalyzer::writeComparisonJson( std::ostream& stream, const VsmCostAn
 	writeComparisonBlocksJson( stream, comparisons );
 	stream << std::endl;
 	stream << "}" << std::endl;
+	return true;
+}
+
+bool VsmCostAnalyzer::writeComparisonMarkdown( std::ostream& stream, const VsmCostAnalyzer& baseline, const VsmCostAnalyzer& candidate )
+{
+	const Summary baselineSummary = baseline.summary();
+	const Summary candidateSummary = candidate.summary();
+	const long staticDelta = metricDelta( baselineSummary.staticCycles, candidateSummary.staticCycles );
+	const long estimatedDelta = metricDelta( baselineSummary.estimatedTotalCycles, candidateSummary.estimatedTotalCycles );
+	const long issueStallDelta = metricDelta( baselineSummary.issueStallCycles, candidateSummary.issueStallCycles );
+	const long waitStallDelta = metricDelta( baselineSummary.waitStallCycles, candidateSummary.waitStallCycles );
+	const long pairedDelta = metricDelta( baselineSummary.pairedCycles, candidateSummary.pairedCycles );
+	const double ratio = baselineSummary.estimatedTotalCycles == 0
+	                   ? 0.0
+	                   : static_cast<double>( candidateSummary.estimatedTotalCycles )
+	                     / static_cast<double>( baselineSummary.estimatedTotalCycles );
+
+	stream << "| baseline | candidate | baseline static | candidate static | static delta | baseline estimated | candidate estimated | estimated delta | baseline issue stall | candidate issue stall | issue stall delta | baseline wait stall | candidate wait stall | wait stall delta | estimated ratio | baseline paired | candidate paired | paired delta |" << std::endl;
+	stream << "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|" << std::endl;
+	stream << "| " << markdownEscape( baselineSummary.input )
+	       << " | " << markdownEscape( candidateSummary.input )
+	       << " | " << baselineSummary.staticCycles
+	       << " | " << candidateSummary.staticCycles
+	       << " | ";
+	writeSignedMarkdownNumber( stream, staticDelta );
+	stream << " | " << baselineSummary.estimatedTotalCycles
+	       << " | " << candidateSummary.estimatedTotalCycles
+	       << " | ";
+	writeSignedMarkdownNumber( stream, estimatedDelta );
+	stream << " | " << baselineSummary.issueStallCycles
+	       << " | " << candidateSummary.issueStallCycles
+	       << " | ";
+	writeSignedMarkdownNumber( stream, issueStallDelta );
+	stream << " | " << baselineSummary.waitStallCycles
+	       << " | " << candidateSummary.waitStallCycles
+	       << " | ";
+	writeSignedMarkdownNumber( stream, waitStallDelta );
+	stream << " | " << std::fixed << std::setprecision(2) << ratio << "x"
+	       << " | " << baselineSummary.pairedCycles
+	       << " | " << candidateSummary.pairedCycles
+	       << " | ";
+	writeSignedMarkdownNumber( stream, pairedDelta );
+	stream << " |" << std::endl;
 	return true;
 }
 

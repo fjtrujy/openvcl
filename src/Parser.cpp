@@ -665,6 +665,8 @@ bool Parser::analyzeVsmCostCompare()
 
 		if( m_cmdLine.compareVsmCostJson() )
 			VsmCostAnalyzer::writeComparisonJson( output, baselineAnalyzer, candidateAnalyzer );
+		else if( m_cmdLine.compareVsmCostMarkdown() )
+			VsmCostAnalyzer::writeComparisonMarkdown( output, baselineAnalyzer, candidateAnalyzer );
 		else
 			VsmCostAnalyzer::writeComparisonText( output, baselineAnalyzer, candidateAnalyzer );
 	}
@@ -672,6 +674,8 @@ bool Parser::analyzeVsmCostCompare()
 	{
 		if( m_cmdLine.compareVsmCostJson() )
 			VsmCostAnalyzer::writeComparisonJson( std::cout, baselineAnalyzer, candidateAnalyzer );
+		else if( m_cmdLine.compareVsmCostMarkdown() )
+			VsmCostAnalyzer::writeComparisonMarkdown( std::cout, baselineAnalyzer, candidateAnalyzer );
 		else
 			VsmCostAnalyzer::writeComparisonText( std::cout, baselineAnalyzer, candidateAnalyzer );
 	}

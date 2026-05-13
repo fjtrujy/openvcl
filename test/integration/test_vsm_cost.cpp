@@ -75,6 +75,15 @@ namespace
         return ::test::run_openvcl(args, "");
     }
 
+    ::test::RunResult runCostCompareMarkdown(const std::string& baseline, const std::string& candidate)
+    {
+        std::vector<std::string> args;
+        args.push_back("--cost-compare-markdown");
+        args.push_back(fixturePath(baseline));
+        args.push_back(fixturePath(candidate));
+        return ::test::run_openvcl(args, "");
+    }
+
     ::test::RunResult runCostLoop(const std::string& fixture, const std::string& loop)
     {
         std::vector<std::string> args;
@@ -166,6 +175,17 @@ TEST_CASE("VSM cost CLI: JSON comparison is suitable for scheduler before-after 
     CHECK(contains(r.stdout_data, "\"top_weighted_idle_blocks\""));
     CHECK(contains(r.stdout_data, "\"label\": \"entry_lid\", \"baseline_weighted_nop_slots\": 5, \"candidate_weighted_nop_slots\": 0, \"delta_weighted_nop_slots\": -5"));
     CHECK(contains(r.stdout_data, "\"top_weighted_wait_blocks\""));
+}
+
+TEST_CASE("VSM cost CLI: Markdown comparison emits a report-table row")
+{
+    ::test::RunResult r = runCostCompareMarkdown("simple_scheduled.vsm", "sce_padded_columns.vsm");
+    REQUIRE(r.exit_code == 0);
+    CHECK(contains(r.stdout_data, "| baseline | candidate | baseline static | candidate static | static delta |"));
+    CHECK(contains(r.stdout_data, "| " + fixturePath("simple_scheduled.vsm") + " | " + fixturePath("sce_padded_columns.vsm") + " |"));
+    CHECK(contains(r.stdout_data, " | 5 | 2 | -3 | 5 | 2 | -3 |"));
+    CHECK(contains(r.stdout_data, " | 1 | 1 | 0 |"));
+    CHECK(contains(r.stdout_data, " | 0.40x |"));
 }
 
 TEST_CASE("VSM cost CLI: loop repeat weights static block cost")

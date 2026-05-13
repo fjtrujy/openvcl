@@ -226,6 +226,14 @@ TEST_CASE("VsmCostAnalyzer inline: comparison exposes top block deltas")
     CHECK(contains(json.str(), "\"label\": \"idle_lid\", \"baseline_weighted_nop_slots\": 8, \"candidate_weighted_nop_slots\": 0, \"delta_weighted_nop_slots\": -8"));
     CHECK(contains(json.str(), "\"top_weighted_wait_blocks\""));
     CHECK(contains(json.str(), "\"label\": \"hot_lid\", \"baseline_weighted_wait_stall_cycles\": 18, \"candidate_weighted_wait_stall_cycles\": 15, \"delta_weighted_wait_stall_cycles\": -3"));
+
+    std::ostringstream markdown;
+    REQUIRE(vcl::VsmCostAnalyzer::writeComparisonMarkdown(markdown, baseline, candidate));
+    CHECK(contains(markdown.str(), "| baseline | candidate | baseline static | candidate static | static delta |"));
+    CHECK(contains(markdown.str(), "| baseline_inline.vsm | candidate_inline.vsm |"));
+    CHECK(contains(markdown.str(), " | 4 | 4 | 0 |"));
+    CHECK(contains(markdown.str(), " | 10 | 9 | -1 |"));
+    CHECK(contains(markdown.str(), " | 6 | 5 | -1 | 0.90x |"));
 }
 
 TEST_CASE("VsmCostAnalyzer fixture: SCE padded columns have precomputed cost")

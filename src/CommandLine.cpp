@@ -42,6 +42,7 @@ CommandLine::CommandLine()
 	m_analyzeVsmCostJson = false;
 	m_compareVsmCost = false;
 	m_compareVsmCostJson = false;
+	m_compareVsmCostMarkdown = false;
 	m_dumpInstructionInfo = false;
 	m_dumpInstructionInfoJson = false;
 
@@ -81,6 +82,7 @@ CommandLine::CommandLine()
 	m_options.push_back(Option('\0',"cost-loop",ANALYZE_VSM_COST_LOOP,true));
 	m_options.push_back(Option('\0',"cost-compare",ANALYZE_VSM_COST_COMPARE,true));
 	m_options.push_back(Option('\0',"cost-compare-json",ANALYZE_VSM_COST_COMPARE_JSON,true));
+	m_options.push_back(Option('\0',"cost-compare-markdown",ANALYZE_VSM_COST_COMPARE_MARKDOWN,true));
 	m_options.push_back(Option('\0',"dump-instruction-info",DUMP_INSTRUCTION_INFO,false));
 	m_options.push_back(Option('\0',"dump-instruction-info-json",DUMP_INSTRUCTION_INFO_JSON,false));
 }
@@ -181,8 +183,9 @@ bool CommandLine::parse( int argc, char* argv[] )
 				case SHOW_REGISTER_INFO: m_showRegisterInfo = true; break;
 				case ANALYZE_VSM_COST: m_analyzeVsmCost = true; break;
 				case ANALYZE_VSM_COST_JSON: m_analyzeVsmCost = true; m_analyzeVsmCostJson = true; break;
-				case ANALYZE_VSM_COST_COMPARE: m_compareVsmCost = true; m_costCompareBaseline = argument; break;
-				case ANALYZE_VSM_COST_COMPARE_JSON: m_compareVsmCost = true; m_compareVsmCostJson = true; m_costCompareBaseline = argument; break;
+				case ANALYZE_VSM_COST_COMPARE: m_compareVsmCost = true; m_compareVsmCostJson = false; m_compareVsmCostMarkdown = false; m_costCompareBaseline = argument; break;
+				case ANALYZE_VSM_COST_COMPARE_JSON: m_compareVsmCost = true; m_compareVsmCostJson = true; m_compareVsmCostMarkdown = false; m_costCompareBaseline = argument; break;
+				case ANALYZE_VSM_COST_COMPARE_MARKDOWN: m_compareVsmCost = true; m_compareVsmCostJson = false; m_compareVsmCostMarkdown = true; m_costCompareBaseline = argument; break;
 				case DUMP_INSTRUCTION_INFO: m_dumpInstructionInfo = true; break;
 				case DUMP_INSTRUCTION_INFO_JSON: m_dumpInstructionInfo = true; m_dumpInstructionInfoJson = true; break;
 				case ANALYZE_VSM_COST_LOOP:
@@ -256,6 +259,7 @@ void CommandLine::showUsage( std::ostream& stream )
 	stream << "  --cost-loop L=N    Weight block/label L by N iterations in cost reports." << std::endl;
 	stream << "  --cost-compare <baseline>       Compare input .vsm cost against baseline." << std::endl;
 	stream << "  --cost-compare-json <baseline>  Compare input .vsm cost against baseline as JSON." << std::endl;
+	stream << "  --cost-compare-markdown <baseline>  Compare input .vsm cost against baseline as Markdown." << std::endl;
 	stream << "  --dump-instruction-info       Print the VU instruction metadata table." << std::endl;
 	stream << "  --dump-instruction-info-json  Print the VU instruction metadata table as JSON." << std::endl;
 

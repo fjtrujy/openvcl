@@ -93,6 +93,12 @@ Useful options:
 | `--cpp <name>` | run a specific C preprocessor |
 | `--bthres <n>` | dynamic branch visit threshold |
 | `--show-reg-alloc` | print register allocation information |
+| `--cost` | analyze scheduled `.vsm` cost |
+| `--cost-json` | analyze scheduled `.vsm` cost as JSON |
+| `--cost-loop <label>=<n>` | weight a block by expected iterations |
+| `--cost-compare <baseline>` | compare scheduled `.vsm` cost against a baseline |
+| `--cost-compare-json <baseline>` | compare scheduled `.vsm` cost as JSON |
+| `--cost-compare-markdown <baseline>` | compare scheduled `.vsm` cost as a Markdown table |
 | `--dump-instruction-info` | print the VU instruction metadata table |
 | `--dump-instruction-info-json` | print the VU instruction metadata table as JSON |
 
@@ -119,6 +125,19 @@ Weight hot blocks by expected loop iterations:
 
 ```sh
 ./openvcl --cost --cost-loop xform_loop_lid=100 shader.vsm
+```
+
+Compare a candidate shader against a reference shader:
+
+```sh
+./openvcl --cost-compare sce_reference.vsm openvcl_candidate.vsm
+```
+
+Emit comparison output for scripts or Markdown reports:
+
+```sh
+./openvcl --cost-compare-json sce_reference.vsm openvcl_candidate.vsm
+./openvcl --cost-compare-markdown sce_reference.vsm openvcl_candidate.vsm
 ```
 
 The report includes:

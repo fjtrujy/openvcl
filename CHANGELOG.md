@@ -63,6 +63,8 @@
   mode, establishing the production hook for ready-set scheduling.
 - Added `--cost-compare` and `--cost-compare-json` for side-by-side VSM cost
   comparisons between a baseline and candidate, including signed deltas.
+- Added `--cost-compare-markdown` for direct side-by-side Markdown cost tables
+  suitable for renderer comparison reports.
 - Extended cost comparison reports with top weighted block deltas for estimated
   cycles, idle slots, and wait stalls.
 - Added the first ready-set scheduler pass for straight-line arithmetic runs,
