@@ -56,6 +56,8 @@
 - Added the first ready-set scheduler pass for straight-line arithmetic runs,
   using descriptor-derived dependencies while keeping labels, memory, waits,
   branches, and explicit barriers fixed.
+- Extended the ready-set scheduler to pull plain loads earlier in straight-line
+  blocks so their latency can overlap independent arithmetic.
 
 ## 0.3.3
 

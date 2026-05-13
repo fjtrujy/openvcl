@@ -70,7 +70,9 @@ namespace
 			return false;
 		if( access.instructionFlags & (VU_INSTR_WAIT_Q | VU_INSTR_WAIT_P | VU_INSTR_BRANCH) )
 			return false;
-		if( access.memoryKind != VU_MEMORY_NONE || access.memoryFlags != VU_MEMORY_FLAG_NONE )
+		if( access.memoryFlags != VU_MEMORY_FLAG_NONE )
+			return false;
+		if( access.memoryKind != VU_MEMORY_NONE && access.memoryKind != VU_MEMORY_LOAD )
 			return false;
 		if( access.implicitReads & (VU_RESOURCE_MAC | VU_RESOURCE_CLIP) )
 			return false;
@@ -108,6 +110,11 @@ namespace
 		return (access.instructionFlags & (VU_INSTR_WRITES_Q | VU_INSTR_WRITES_P)) != 0;
 	}
 
+	bool isLatencyLoad( const VuTokenResourceAccess& access )
+	{
+		return access.memoryKind == VU_MEMORY_LOAD;
+	}
+
 	int readyCandidateScore( unsigned int candidate,
 	                         bool haveLastPipe,
 	                         bool lastWasLower,
@@ -118,6 +125,8 @@ namespace
 
 		if( isLongLatencyProducer( accesses[candidate] ) )
 			score -= 500;
+		else if( isLatencyLoad( accesses[candidate] ) )
+			score -= 300;
 
 		if( haveLastPipe && isLowerPipe( *block.tokens[candidate] ) != lastWasLower )
 			score -= 100;

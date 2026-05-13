@@ -220,3 +220,25 @@ TEST_CASE("VuSchedulerAnalysis: ready-set scheduler keeps dependencies and barri
     CHECK(addiPos < sqPos);
     CHECK(sqPos < divPos);
 }
+
+TEST_CASE("VuSchedulerAnalysis: ready-set scheduler pulls plain loads before independent arithmetic")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("lq.xy vf04, 0(vi01)"));
+    REQUIRE(program.parse("mul.xy vf05, vf04, vf06"));
+
+    std::list<vcl::Token> scheduled = vcl::scheduleVuTokensReadySet(program.tokenizer.tokens());
+    REQUIRE(scheduled.size() == program.tokenizer.tokens().size());
+
+    std::list<vcl::Token>::const_iterator i = scheduled.begin();
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "lq");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "add");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "mul");
+}

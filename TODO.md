@@ -67,8 +67,8 @@ openvcl --dump-instruction-info-json
 
 ## Scheduler Improvements
 
-- Extend the first ready-set scheduler pass beyond straight-line arithmetic
-  runs once memory, waits, and branch-delay filling have stronger models.
+- Extend the ready-set scheduler beyond straight-line arithmetic and plain
+  loads once stores, waits, and branch-delay filling have stronger models.
 - Optimize for estimated block cost, not just static row count.
 - Preserve correctness for Q/P, I, MAC, CLIP, ACC, VF/VI, broadcast fields,
   branch delay rules, and memory ordering.
