@@ -35,6 +35,18 @@ namespace
 		edges.push_back( VuDependencyEdge( before, after, kind ) );
 	}
 
+	bool memoryOrderRequiresDependency( const VuTokenResourceAccess& beforeAccess,
+	                                    const VuTokenResourceAccess& afterAccess,
+	                                    const Token& before,
+	                                    const Token& after )
+	{
+		if( beforeAccess.memoryKind == VU_MEMORY_NONE || afterAccess.memoryKind == VU_MEMORY_NONE )
+			return false;
+		if( !isVuMemoryOrderingAccess( before ) && !isVuMemoryOrderingAccess( after ) )
+			return false;
+		return !vuTokenCanMoveBefore( after, before );
+	}
+
 	int readyCandidateScore( unsigned int candidate,
 	                         bool haveLastPipe,
 	                         bool lastWasLower,
@@ -237,9 +249,10 @@ std::vector<VuDependencyEdge> buildVuDependencyGraph( const VuBasicBlock& block 
 			if( a.implicitWrites & b.implicitWrites )
 				addEdge( edges, before, after, VU_DEPENDENCY_RESOURCE_WAW );
 
-			if( a.memoryKind != VU_MEMORY_NONE && b.memoryKind != VU_MEMORY_NONE
-			    && (isVuMemoryOrderingAccess( *block.tokens[before] )
-			        || isVuMemoryOrderingAccess( *block.tokens[after] )) )
+			if( memoryOrderRequiresDependency( a,
+			                                  b,
+			                                  *block.tokens[before],
+			                                  *block.tokens[after] ) )
 				addEdge( edges, before, after, VU_DEPENDENCY_MEMORY );
 		}
 	}

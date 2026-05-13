@@ -123,6 +123,22 @@ TEST_CASE("VuSchedulerAnalysis: dependency graph uses register and resource desc
     CHECK(hasEdge(edges, 4u, 5u, vcl::VU_DEPENDENCY_MEMORY));
 }
 
+TEST_CASE("VuSchedulerAnalysis: dependency graph compares plain memory descriptors")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("sq.xy vf01, 0(vi01)"));
+    REQUIRE(program.parse("lq.xy vf02, 4(vi01)"));
+    REQUIRE(program.parse("lq.xy vf03, 0(vi01)"));
+
+    std::vector<vcl::VuBasicBlock> blocks = vcl::buildVuBasicBlocks(program.tokenizer.tokens());
+    REQUIRE(blocks.size() == 1u);
+
+    std::vector<vcl::VuDependencyEdge> edges = vcl::buildVuDependencyGraph(blocks[0]);
+    CHECK(!hasEdge(edges, 0u, 1u, vcl::VU_DEPENDENCY_MEMORY));
+    CHECK(hasEdge(edges, 0u, 2u, vcl::VU_DEPENDENCY_MEMORY));
+}
+
 TEST_CASE("VuSchedulerAnalysis: preserve-order scheduler keeps block order intact")
 {
     vcl::Error::ResetErrorCount();
@@ -238,6 +254,50 @@ TEST_CASE("VuSchedulerAnalysis: ready-set scheduler pulls plain loads before ind
     ++i;
     REQUIRE(i != scheduled.end());
     CHECK(vcl::normalizeVuMnemonic(i->name()) == "add");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "mul");
+}
+
+TEST_CASE("VuSchedulerAnalysis: ready-set scheduler moves distinct-address loads before stores")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("sq.xy vf01, 0(vi01)"));
+    REQUIRE(program.parse("lq.xy vf02, 4(vi01)"));
+    REQUIRE(program.parse("mul.xy vf03, vf02, vf04"));
+
+    std::list<vcl::Token> scheduled = vcl::scheduleVuTokensReadySet(program.tokenizer.tokens());
+    REQUIRE(scheduled.size() == program.tokenizer.tokens().size());
+
+    std::list<vcl::Token>::const_iterator i = scheduled.begin();
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "lq");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "mul");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "sq");
+}
+
+TEST_CASE("VuSchedulerAnalysis: ready-set scheduler keeps same-address loads behind stores")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("sq.xy vf01, 0(vi01)"));
+    REQUIRE(program.parse("lq.xy vf02, 0(vi01)"));
+    REQUIRE(program.parse("mul.xy vf03, vf02, vf04"));
+
+    std::list<vcl::Token> scheduled = vcl::scheduleVuTokensReadySet(program.tokenizer.tokens());
+    REQUIRE(scheduled.size() == program.tokenizer.tokens().size());
+
+    std::list<vcl::Token>::const_iterator i = scheduled.begin();
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "sq");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "lq");
     ++i;
     REQUIRE(i != scheduled.end());
     CHECK(vcl::normalizeVuMnemonic(i->name()) == "mul");

@@ -58,6 +58,8 @@
 - Let the ready-set scheduler include dependency-safe plain stores so
   long-latency Q/P producers can move ahead of them when descriptors prove the
   movement safe.
+- Let the ready-set dependency graph distinguish plain memory accesses by base
+  register and constant offset, allowing distinct loads/stores to reorder.
 - Added behavior-preserving scheduler analysis scaffolding for basic-block
   construction and descriptor-derived dependency edges.
 - Wired the scheduler analysis layer into code generation in preserve-order

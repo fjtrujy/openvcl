@@ -121,6 +121,8 @@ Recently completed:
 - The ready-set scheduler can now include dependency-safe plain stores in a
   scheduling segment, letting long-latency Q/P producers move ahead of stores
   when register, implicit-resource, and memory-ordering descriptors allow it.
+- Ready-set memory dependencies now use descriptor base/offset comparisons so
+  distinct plain loads and stores can move independently.
 
 ## Correctness Guardrails
 
