@@ -23,6 +23,8 @@
     read-hazard padding is satisfied;
   - pre-increment plain stores can fill branch delay slots by adjusting their
     memory offset against the incremented base register;
+  - independent plain stores can fill loop branch delay slots after the
+    loop-counter increment when they do not read the updated counter;
   - dead VI-only fallthrough integer instructions can fill forward conditional
     branch delay slots when the taken path overwrites the same VI value before
     reading it;

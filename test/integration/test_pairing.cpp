@@ -495,6 +495,50 @@ TEST_CASE("Scheduling: pre-increment store stays before branch when branch ignor
     CHECK(originalStoreLine < branchLine);
 }
 
+TEST_CASE("Scheduling: independent store can fill branch delay after loop increment")
+{
+    const std::string body =
+        "\tiaddiu vi01, vi00, 0\n"
+        "\tiaddiu vi02, vi00, 4\n"
+        "\tiaddiu vi03, vi00, 12\n"
+        "\tiaddiu vi04, vi00, 0x20\n"
+        "loop_lid:\n"
+        "\tisw.w vi04, 3(vi03)\n"
+        "\tiaddiu vi01, vi01, 1\n"
+        "\tibne vi01, vi02, loop_lid\n";
+    std::string vsm = runEmit(body, "vsmIndependentStoreDelay");
+    REQUIRE(vsm.length() > 0);
+
+    int branchLine = lineIndex(vsm, "ibne");
+    int storeLine = lineIndex(vsm, "isw.w VI04, 3(VI03)");
+    int bumpLine = lineIndex(vsm, "iaddiu VI01, VI01, 1");
+    REQUIRE(branchLine >= 0);
+    REQUIRE(storeLine >= 0);
+    REQUIRE(bumpLine >= 0);
+    CHECK(bumpLine < branchLine);
+    CHECK(storeLine == branchLine + 1);
+}
+
+TEST_CASE("Scheduling: store using loop increment register stays before branch")
+{
+    const std::string body =
+        "\tiaddiu vi01, vi00, 0\n"
+        "\tiaddiu vi02, vi00, 4\n"
+        "\tiaddiu vi03, vi00, 12\n"
+        "loop_lid:\n"
+        "\tisw.w vi01, 3(vi03)\n"
+        "\tiaddiu vi01, vi01, 1\n"
+        "\tibne vi01, vi02, loop_lid\n";
+    std::string vsm = runEmit(body, "vsmNoIndependentStoreDelay");
+    REQUIRE(vsm.length() > 0);
+
+    int branchLine = lineIndex(vsm, "ibne");
+    int storeLine = lineIndex(vsm, "isw.w VI01, 3(VI03)");
+    REQUIRE(branchLine >= 0);
+    REQUIRE(storeLine >= 0);
+    CHECK(storeLine < branchLine);
+}
+
 TEST_CASE("Scheduling: dead fallthrough integer op can fill forward branch delay")
 {
     const std::string body =

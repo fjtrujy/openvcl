@@ -998,6 +998,8 @@ void CodeGenerator::fillBranchDelaySlots( std::list<Token>& tokens ) const
 
 		if( movePreIncrementStoreIntoBranchDelaySlot(tokens, branch) )
 			continue;
+		if( moveIndependentStoreIntoBranchDelaySlot(tokens, branch) )
+			continue;
 
 		if( branch == tokens.begin() )
 			continue;
@@ -1060,6 +1062,7 @@ bool CodeGenerator::movePreIncrementStoreIntoBranchDelaySlot( std::list<Token>& 
 	long incrementAmount = 0;
 	if( !integerSelfImmediateAdd(*increment, incrementReg, incrementAmount) )
 		return false;
+	(void)incrementAmount;
 	if( !vuTokenReadsRegister(*branch, incrementReg) )
 		return false;
 
@@ -1090,6 +1093,65 @@ bool CodeGenerator::movePreIncrementStoreIntoBranchDelaySlot( std::list<Token>& 
 	Token filler = *store;
 	if( !adjustPlainStoreOffset(filler, incrementReg, -incrementAmount) )
 		return false;
+	filler.setFlags(filler.flags() | Token::BRANCH_DELAY_FILLER);
+
+	tokens.erase(store);
+	std::list<Token>::iterator afterBranch = branch;
+	++afterBranch;
+	tokens.insert(afterBranch, filler);
+	return true;
+}
+
+bool CodeGenerator::moveIndependentStoreIntoBranchDelaySlot( std::list<Token>& tokens,
+                                                             std::list<Token>::iterator branch ) const
+{
+	if( branch == tokens.begin() )
+		return false;
+	if( nextTokenIsBranchDelayFiller(branch, tokens.end()) )
+		return false;
+
+	std::list<Token>::iterator increment = branch;
+	--increment;
+	if( increment == tokens.begin() )
+		return false;
+	std::list<Token>::iterator store = increment;
+	--store;
+
+	if( store->label().length() != 0 || increment->label().length() != 0 )
+		return false;
+	if( store->flags() & (Token::PREORDERED | Token::E | Token::D | Token::T | Token::BRANCH_DELAY_FILLER) )
+		return false;
+	if( !isVuPlainMemoryStore(*store) )
+		return false;
+
+	std::string incrementReg;
+	long incrementAmount = 0;
+	if( !integerSelfImmediateAdd(*increment, incrementReg, incrementAmount) )
+		return false;
+	if( !vuTokenReadsRegister(*branch, incrementReg) )
+		return false;
+
+	VuTokenResourceAccess storeAccess;
+	VuTokenResourceAccess incrementAccess;
+	VuTokenResourceAccess branchAccess;
+	if( !buildVuTokenResourceAccess(*store, storeAccess)
+	    || !buildVuTokenResourceAccess(*increment, incrementAccess)
+	    || !buildVuTokenResourceAccess(*branch, branchAccess) )
+		return false;
+	if( branchAccess.instructionFlags & (VU_INSTR_LINK_BRANCH | VU_INSTR_REGISTER_BRANCH) )
+		return false;
+	if( storeAccess.memoryFlags != VU_MEMORY_FLAG_NONE
+	    || storeAccess.implicitWrites != VU_RESOURCE_NONE )
+		return false;
+	if( intersectsKeys(storeAccess.registerReads, incrementAccess.registerWrites)
+	    || intersectsKeys(storeAccess.registerWrites, incrementAccess.registerReads)
+	    || intersectsKeys(storeAccess.registerWrites, incrementAccess.registerWrites) )
+		return false;
+	if( intersectsKeys(storeAccess.registerWrites, branchAccess.registerReads)
+	    || intersectsKeys(storeAccess.registerReads, branchAccess.registerWrites) )
+		return false;
+
+	Token filler = *store;
 	filler.setFlags(filler.flags() | Token::BRANCH_DELAY_FILLER);
 
 	tokens.erase(store);

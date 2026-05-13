@@ -75,6 +75,8 @@ private:
 	void fillDeadFallthroughBranchDelaySlots( std::list<Token>& tokens ) const;
 	bool movePreIncrementStoreIntoBranchDelaySlot( std::list<Token>& tokens,
 	                                               std::list<Token>::iterator branch ) const;
+	bool moveIndependentStoreIntoBranchDelaySlot( std::list<Token>& tokens,
+	                                              std::list<Token>::iterator branch ) const;
 	bool moveDeadFallthroughIntoBranchDelaySlot( std::list<Token>& tokens,
 	                                             std::list<Token>::iterator branch ) const;
 	bool canMoveIntoBranchDelaySlot( const Token& candidate, const Token& branch ) const;
