@@ -56,7 +56,9 @@ bool isVuLongLatencyProducer( const Token& token );
 bool isVuLatencyLoad( const Token& token );
 
 bool vuTokensHaveDataDependency( const Token& a, const Token& b );
-bool vuTokenCanMoveBefore( const Token& moved, const Token& crossed );
+bool vuTokenCanMoveBefore( const Token& moved,
+                           const Token& crossed,
+                           unsigned int ignoredImplicitWawResources = 0 );
 bool vuTokenRangeCanBeCrossed( const Token& first, const Token& last );
 bool vuTokenPairResourcesAreIndependent( const Token& a,
                                          const Token& b,

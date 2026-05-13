@@ -111,6 +111,34 @@ TEST_CASE("VuSchedulingRules: movement uses descriptors for memory and implicit 
     CHECK(!vcl::vuTokenRangeCanBeCrossed(program.token(1), program.token(0)));
 }
 
+TEST_CASE("VuSchedulingRules: movement can ignore dead implicit WAW hazards only")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram macProgram;
+    REQUIRE(macProgram.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(macProgram.parse("mul.xy vf04, vf05, vf06"));
+
+    CHECK(!vcl::vuTokenCanMoveBefore(macProgram.token(1), macProgram.token(0)));
+    CHECK(vcl::vuTokenCanMoveBefore(macProgram.token(1), macProgram.token(0), vcl::VU_RESOURCE_MAC));
+
+    ParsedProgram clipProgram;
+    REQUIRE(clipProgram.parse("clipw.xyz vf01, vf02[w]"));
+    REQUIRE(clipProgram.parse("clipw.xyz vf03, vf04[w]"));
+
+    CHECK(!vcl::vuTokenCanMoveBefore(clipProgram.token(1), clipProgram.token(0), vcl::VU_RESOURCE_MAC));
+    CHECK(vcl::vuTokenCanMoveBefore(clipProgram.token(1),
+                                    clipProgram.token(0),
+                                    vcl::VU_RESOURCE_MAC | vcl::VU_RESOURCE_CLIP));
+
+    ParsedProgram readerProgram;
+    REQUIRE(readerProgram.parse("clipw.xyz vf01, vf02[w]"));
+    REQUIRE(readerProgram.parse("fcand vi01, 0x3f"));
+
+    CHECK(!vcl::vuTokenCanMoveBefore(readerProgram.token(1),
+                                     readerProgram.token(0),
+                                     vcl::VU_RESOURCE_CLIP));
+}
+
 TEST_CASE("VuSchedulingRules: scheduler analysis gates are shared predicates")
 {
     vcl::Error::ResetErrorCount();

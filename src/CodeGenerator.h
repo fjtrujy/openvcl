@@ -79,6 +79,7 @@ private:
 
 	bool m_emitSource;
 	bool m_enableUpperZeroMoves;
+	unsigned int m_ignoredImplicitWawResources;
 	std::string m_name;
 
 	// VU1 has a 4-cycle FMAC pipeline.  An FMAC writes the MAC / CLIP /

@@ -72,6 +72,9 @@
   static and 83 estimated cycles.
 - Added the same dead-reader detection for CLIP flags, keeping CLIP WAW
   ordering only when a shader can read CLIP state.
+- Reused the same dead MAC/CLIP WAW mask in CodeGenerator latency-gap filling
+  and pairing lookahead, improving the ps2gl pure-OpenVCL aggregate by another
+  28 static and 32 estimated cycles.
 - Added behavior-preserving scheduler analysis scaffolding for basic-block
   construction and descriptor-derived dependency edges.
 - Wired the scheduler analysis layer into code generation in preserve-order

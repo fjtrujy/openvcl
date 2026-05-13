@@ -42,6 +42,7 @@ CodeGenerator::CodeGenerator()
 {
 	m_currentCycle    = 0;
 	m_enableUpperZeroMoves = false;
+	m_ignoredImplicitWawResources = VU_RESOURCE_NONE;
 	// Sentinels < 0 by more than FMAC latency so the first flag-reader
 	// in the program doesn't trip the cooldown.
 	m_lastFMACCycle   = -10;
@@ -94,15 +95,13 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 	coalesceAdjacentVuIntegerAdds(workTokens);
 	const bool macFlagsDead = !vuTokenListReadsMac(workTokens);
 	const bool clipFlagsDead = !vuTokenListReadsClip(workTokens);
-	{
-		unsigned int ignoredImplicitWawResources = VU_RESOURCE_NONE;
-		if( macFlagsDead )
-			ignoredImplicitWawResources |= VU_RESOURCE_MAC;
-		if( clipFlagsDead )
-			ignoredImplicitWawResources |= VU_RESOURCE_CLIP;
-		std::list<Token> scheduledTokens = scheduleVuTokensReadySet(workTokens, ignoredImplicitWawResources);
-		workTokens.swap(scheduledTokens);
-	}
+	m_ignoredImplicitWawResources = VU_RESOURCE_NONE;
+	if( macFlagsDead )
+		m_ignoredImplicitWawResources |= VU_RESOURCE_MAC;
+	if( clipFlagsDead )
+		m_ignoredImplicitWawResources |= VU_RESOURCE_CLIP;
+	std::list<Token> scheduledTokens = scheduleVuTokensReadySet(workTokens, m_ignoredImplicitWawResources);
+	workTokens.swap(scheduledTokens);
 	m_enableUpperZeroMoves = macFlagsDead;
 
 	for( std::list<Token>::iterator k = workTokens.begin(); k != workTokens.end(); )
@@ -198,7 +197,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 					std::list<Token>::iterator c = k;
 					for( ; c != p; ++c )
 					{
-						if( !vuTokenCanMoveBefore(*p, *c) )
+						if( !vuTokenCanMoveBefore(*p, *c, m_ignoredImplicitWawResources) )
 						{
 							canCross = false;
 							break;
@@ -231,14 +230,14 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 					break;
 				if( !vuTokenRangeCanBeCrossed(*k, *p)
 				    && !isVuPlainMemoryStore(*p)
-				    && !vuTokenCanMoveBefore(*p, *k) )
+				    && !vuTokenCanMoveBefore(*p, *k, m_ignoredImplicitWawResources) )
 					continue;
 
 				bool canCross = true;
 				std::list<Token>::iterator c = k;
 				for( ; c != p; ++c )
 				{
-					if( !vuTokenCanMoveBefore(*p, *c) )
+					if( !vuTokenCanMoveBefore(*p, *c, m_ignoredImplicitWawResources) )
 					{
 						canCross = false;
 						break;
@@ -265,7 +264,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 						break;
 					if( !vuTokenRangeCanBeCrossed(*k, *p)
 					    && !isVuPlainMemoryStore(*p)
-					    && !vuTokenCanMoveBefore(*p, *k) )
+					    && !vuTokenCanMoveBefore(*p, *k, m_ignoredImplicitWawResources) )
 						continue;
 					if( !tokensCanPair(*filler, *p) )
 						continue;
@@ -276,7 +275,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 					{
 						if( c == filler )
 							continue;
-						if( !vuTokenCanMoveBefore(*p, *c) )
+						if( !vuTokenCanMoveBefore(*p, *c, m_ignoredImplicitWawResources) )
 						{
 							canCross = false;
 							break;
@@ -347,7 +346,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				    && !adjacentBranchPair
 				    && !vuTokenRangeCanBeCrossed(*k, *p)
 				    && !isVuPlainMemoryStore(*p)
-				    && !vuTokenCanMoveBefore(*p, token) )
+				    && !vuTokenCanMoveBefore(*p, token, m_ignoredImplicitWawResources) )
 					continue;
 				if( tokensCanPair(token, *p) )
 				{
@@ -356,7 +355,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 					++c;
 					for( ; c != p; ++c )
 					{
-						if( !vuTokenCanMoveBefore(*p, *c) )
+						if( !vuTokenCanMoveBefore(*p, *c, m_ignoredImplicitWawResources) )
 						{
 							canCross = false;
 							break;

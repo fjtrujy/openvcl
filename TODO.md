@@ -10,8 +10,8 @@ correctness fix, is:
 
 | metric | SCE/reference | OpenVCL | delta |
 |---|---:|---:|---:|
-| static scheduled cycles | 6308 | 5557 | -751 |
-| estimated cycles | 6820 | 6279 | -541 |
+| static scheduled cycles | 6308 | 5529 | -779 |
+| estimated cycles | 6820 | 6247 | -573 |
 
 `estimated cycles` includes modeled FDIV/EFU producer issue stalls and explicit
 `waitq`/`waitp` stalls. The numbers are static VSM estimates, not measured
@@ -136,6 +136,9 @@ Recently completed:
   allowing independent FMAC chains to move more freely in MAC-dead shaders.
 - Ready-set scheduling uses the same dead-reader check for CLIP flags, so CLIP
   WAW ordering stays only when a shader can observe CLIP state.
+- CodeGenerator latency-gap filling and pairing lookahead now use the same
+  dead MAC/CLIP WAW mask as ready-set scheduling, improving the ps2gl
+  pure-OpenVCL aggregate by another 28 static and 32 estimated cycles.
 - `--version` now reads from a shared source constant and has CLI regression
   coverage.
 - Alias live ranges are kept sorted as they are added, so intersection checks

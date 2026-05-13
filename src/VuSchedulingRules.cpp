@@ -548,7 +548,9 @@ bool vuTokensHaveDataDependency( const Token& a, const Token& b )
 	    || intersectsKeys( aAccess.registerWrites, bAccess.registerWrites );
 }
 
-bool vuTokenCanMoveBefore( const Token& moved, const Token& crossed )
+bool vuTokenCanMoveBefore( const Token& moved,
+                           const Token& crossed,
+                           unsigned int ignoredImplicitWawResources )
 {
 	if( hasMemoryOrControlSideEffect(moved) || hasMemoryOrControlSideEffect(crossed) )
 	{
@@ -563,9 +565,11 @@ bool vuTokenCanMoveBefore( const Token& moved, const Token& crossed )
 	unsigned int crossedReadsImplicit = 0, crossedWritesImplicit = 0;
 	implicitResources(moved, movedReadsImplicit, movedWritesImplicit);
 	implicitResources(crossed, crossedReadsImplicit, crossedWritesImplicit);
-	if( movedWritesImplicit & (crossedReadsImplicit | crossedWritesImplicit) )
+	if( movedWritesImplicit & crossedReadsImplicit )
 		return false;
-	if( crossedWritesImplicit & (movedReadsImplicit | movedWritesImplicit) )
+	if( crossedWritesImplicit & movedReadsImplicit )
+		return false;
+	if( (movedWritesImplicit & crossedWritesImplicit & ~ignoredImplicitWawResources) != 0 )
 		return false;
 
 	if( vuTokensHaveDataDependency(moved, crossed) || vuTokensHaveDataDependency(crossed, moved) )
