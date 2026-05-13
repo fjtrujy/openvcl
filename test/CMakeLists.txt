@@ -41,6 +41,7 @@ set(OPENVCL_LIB_SOURCES
     ${OPENVCL_ROOT}/src/RegisterAllocator.cpp
     ${OPENVCL_ROOT}/src/Token.cpp
     ${OPENVCL_ROOT}/src/Tokenizer.cpp
+    ${OPENVCL_ROOT}/src/VuSchedulerAnalysis.cpp
     ${OPENVCL_ROOT}/src/VuInstructionInfo.cpp
     ${OPENVCL_ROOT}/src/VuTokenResourceAccess.cpp
     ${OPENVCL_ROOT}/src/VsmCostAnalyzer.cpp
@@ -54,6 +55,7 @@ set(OPENVCL_TEST_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_alias.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_expression.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_tokenizer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_vu_scheduler_analysis.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_vu_instruction_info.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_vu_token_resource_access.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_vsm_cost_analyzer.cpp

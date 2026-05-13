@@ -43,6 +43,8 @@
   onto `VuTokenResourceAccess`.
 - Moved scheduler memory/control classification for loads, stores, `xgkick`,
   pre/post-increment, and branch barriers onto `VuTokenResourceAccess`.
+- Added behavior-preserving scheduler analysis scaffolding for basic-block
+  construction and descriptor-derived dependency edges.
 
 ## 0.3.3
 

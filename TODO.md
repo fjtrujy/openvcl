@@ -68,8 +68,9 @@ openvcl --dump-instruction-info-json
 
 ## Scheduler Improvements
 
-- Replace bounded textual lookahead with a basic-block list scheduler.
-- Build a dependency graph from the shared instruction metadata.
+- Replace bounded textual lookahead with the new basic-block list scheduler
+  scaffolding in `src/VuSchedulerAnalysis.*`.
+- Expand the descriptor-derived dependency graph into the production scheduler.
 - Schedule from a ready set rather than only searching nearby instructions.
 - Optimize for estimated block cost, not just static row count.
 - Preserve correctness for Q/P, I, MAC, CLIP, ACC, VF/VI, broadcast fields,
