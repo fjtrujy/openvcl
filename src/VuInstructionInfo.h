@@ -44,7 +44,10 @@ enum VuInstructionFlags
 	VU_INSTR_WRITES_Q  = 1 << 3,
 	VU_INSTR_WRITES_P  = 1 << 4,
 	VU_INSTR_WRITES_I  = 1 << 5,
-	VU_INSTR_XGKICK    = 1 << 6
+	VU_INSTR_XGKICK    = 1 << 6,
+	VU_INSTR_UNCONDITIONAL_BRANCH = 1 << 7,
+	VU_INSTR_LINK_BRANCH = 1 << 8,
+	VU_INSTR_REGISTER_BRANCH = 1 << 9
 };
 
 enum VuResourceFlags

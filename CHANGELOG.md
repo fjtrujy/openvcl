@@ -45,6 +45,8 @@
   pre/post-increment, and branch barriers onto `VuTokenResourceAccess`.
 - Added memory base-register and constant-offset descriptors and moved the
   scheduler's plain memory alias checks onto them.
+- Added branch behavior flags for unconditional, link, and register branches,
+  and moved branch-delay emission/pairing checks onto descriptor metadata.
 - Added behavior-preserving scheduler analysis scaffolding for basic-block
   construction and descriptor-derived dependency edges.
 

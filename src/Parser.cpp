@@ -63,6 +63,9 @@ namespace
 		{ VU_INSTR_WRITES_P, "writes_p" },
 		{ VU_INSTR_WRITES_I, "writes_i" },
 		{ VU_INSTR_XGKICK, "xgkick" },
+		{ VU_INSTR_UNCONDITIONAL_BRANCH, "unconditional_branch" },
+		{ VU_INSTR_LINK_BRANCH, "link_branch" },
+		{ VU_INSTR_REGISTER_BRANCH, "register_branch" },
 		{ 0, 0 }
 	};
 

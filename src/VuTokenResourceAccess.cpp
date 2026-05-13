@@ -62,6 +62,7 @@ namespace
 
 VuTokenResourceAccess::VuTokenResourceAccess()
 {
+	instructionFlags = VU_INSTR_NONE;
 	implicitReads = VU_RESOURCE_NONE;
 	implicitWrites = VU_RESOURCE_NONE;
 	memoryKind = VU_MEMORY_NONE;
@@ -136,6 +137,7 @@ bool buildVuTokenResourceAccess( const Token& token, VuTokenResourceAccess& acce
 	const VuInstructionInfo* info = tokenInstructionInfo( token );
 	if( info )
 	{
+		access.instructionFlags = info->flags;
 		access.implicitReads = info->implicitReads;
 		access.implicitWrites = info->implicitWrites;
 		access.memoryKind = info->memoryKind;

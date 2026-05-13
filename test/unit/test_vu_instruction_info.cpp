@@ -68,6 +68,18 @@ TEST_CASE("VuInstructionInfo: wait and branch metadata is explicit")
     CHECK(branch->latency == 2);
     CHECK((branch->flags & vcl::VU_INSTR_BRANCH) != 0);
     CHECK(branch->branchDelaySlots == 1);
+
+    const vcl::VuInstructionInfo* unconditional = vcl::findVuInstructionInfo("b");
+    REQUIRE(unconditional != 0);
+    CHECK((unconditional->flags & vcl::VU_INSTR_BRANCH) != 0);
+    CHECK((unconditional->flags & vcl::VU_INSTR_UNCONDITIONAL_BRANCH) != 0);
+    CHECK((unconditional->flags & vcl::VU_INSTR_LINK_BRANCH) == 0);
+
+    const vcl::VuInstructionInfo* jalr = vcl::findVuInstructionInfo("jalr");
+    REQUIRE(jalr != 0);
+    CHECK((jalr->flags & vcl::VU_INSTR_BRANCH) != 0);
+    CHECK((jalr->flags & vcl::VU_INSTR_LINK_BRANCH) != 0);
+    CHECK((jalr->flags & vcl::VU_INSTR_REGISTER_BRANCH) != 0);
 }
 
 TEST_CASE("VuInstructionInfo: iterator exposes parser metadata")

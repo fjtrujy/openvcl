@@ -22,6 +22,7 @@ struct VuTokenResourceAccess
 
 	std::list<std::string> registerReads;
 	std::list<std::string> registerWrites;
+	unsigned int instructionFlags;
 	unsigned int implicitReads;
 	unsigned int implicitWrites;
 	VuMemoryKind memoryKind;

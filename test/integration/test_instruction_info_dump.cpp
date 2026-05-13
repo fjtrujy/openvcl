@@ -31,6 +31,8 @@ TEST_CASE("Instruction info CLI: text dump exposes scheduling metadata")
     CHECK(contains(r.stdout_data, "memory=load memory_flags=postinc"));
     CHECK(contains(r.stdout_data, "ftoi4 pipe=upper unit=fmac"));
     CHECK(contains(r.stdout_data, "bypass=ftoi_to_mtir"));
+    CHECK(contains(r.stdout_data, "b pipe=lower unit=bru"));
+    CHECK(contains(r.stdout_data, "flags=branch|unconditional_branch"));
 }
 
 TEST_CASE("Instruction info CLI: JSON dump is stable enough for tooling")
@@ -45,5 +47,7 @@ TEST_CASE("Instruction info CLI: JSON dump is stable enough for tooling")
     CHECK(contains(r.stdout_data, "\"kind\": \"load\""));
     CHECK(contains(r.stdout_data, "\"flags\": [\"postinc\"]"));
     CHECK(contains(r.stdout_data, "\"branch_delay_slots\": 1"));
+    CHECK(contains(r.stdout_data, "\"unconditional_branch\""));
+    CHECK(contains(r.stdout_data, "\"register_branch\""));
     CHECK(contains(r.stdout_data, "\"bypass\": [\"ftoi_to_mtir\"]"));
 }

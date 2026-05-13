@@ -55,8 +55,8 @@ Remaining table work:
 - migrate scheduler dependency/resource checks onto table-driven read/write
   descriptors;
 - improve exact memory aliasing beyond base register and constant offset;
-- replace branch handling with the branch delay-slot descriptors already in
-  `VuInstructionInfo`.
+- improve branch metadata beyond delay/unconditional/link/register flags when
+  delay-slot filling starts.
 
 The desired user-facing shape is an inspectable table:
 

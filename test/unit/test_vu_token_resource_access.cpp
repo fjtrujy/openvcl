@@ -124,7 +124,18 @@ TEST_CASE("VuTokenResourceAccess: MAC/CLIP, memory, branch, and bypass metadata 
 
     vcl::VuTokenResourceAccess branchAccess;
     REQUIRE(accessFor("ibne vi01, vi02, target", branchAccess));
+    CHECK((branchAccess.instructionFlags & vcl::VU_INSTR_BRANCH) != 0);
     CHECK(branchAccess.branchDelaySlots == 1);
+
+    vcl::VuTokenResourceAccess bAccess;
+    REQUIRE(accessFor("b target", bAccess));
+    CHECK((bAccess.instructionFlags & vcl::VU_INSTR_UNCONDITIONAL_BRANCH) != 0);
+    CHECK((bAccess.instructionFlags & vcl::VU_INSTR_LINK_BRANCH) == 0);
+
+    vcl::VuTokenResourceAccess jalrAccess;
+    REQUIRE(accessFor("jalr vi15, vi01", jalrAccess));
+    CHECK((jalrAccess.instructionFlags & vcl::VU_INSTR_LINK_BRANCH) != 0);
+    CHECK((jalrAccess.instructionFlags & vcl::VU_INSTR_REGISTER_BRANCH) != 0);
 
     vcl::VuTokenResourceAccess ftoiAccess;
     REQUIRE(accessFor("ftoi4 vf01, vf02", ftoiAccess));

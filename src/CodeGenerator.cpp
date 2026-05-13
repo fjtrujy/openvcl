@@ -52,6 +52,8 @@ namespace
 	bool tokenReadsQ( const Token& token );
 	bool tokenReadsP( const Token& token );
 	bool tokenReadsRegister( const Token& token, const std::string& key );
+	bool tokenHasInstructionFlag( const Token& token, unsigned int flag );
+	unsigned int tokenBranchDelaySlots( const Token& token );
 	void collectRegisterReadKeys( const Token& token, std::list<std::string>& reads );
 	void collectRegisterWriteKeys( const Token& token, std::list<std::string>& writes );
 	bool hasImplicitPairDependency( const Token& earlier, const Token& later );
@@ -485,7 +487,8 @@ void CodeGenerator::emitSingleToken( const Token& token )
 		}
 	}
 
-	if( token.operand()->unit() == Operand::BRU )
+	const unsigned int branchDelaySlots = tokenBranchDelaySlots( token );
+	if( branchDelaySlots > 0 )
 	{
 		if( m_codeLines.empty() || m_codeLines.back() != std::string("                    nop                             nop") )
 		{
@@ -494,8 +497,11 @@ void CodeGenerator::emitSingleToken( const Token& token )
 		}
 		m_codeLines.push_back(outputLine);
 		m_currentCycle++;
-		addNopLine();
-		m_currentCycle++;
+		for( unsigned int i = 0; i < branchDelaySlots; ++i )
+		{
+			addNopLine();
+			m_currentCycle++;
+		}
 	}
 	else
 	{
@@ -580,6 +586,21 @@ namespace
 		if( !buildVuTokenResourceAccess( token, access ) )
 			return false;
 		return (write ? access.implicitWrites : access.implicitReads) & resource;
+	}
+
+	bool tokenHasInstructionFlag( const Token& token, unsigned int flag )
+	{
+		VuTokenResourceAccess access;
+		return buildVuTokenResourceAccess( token, access )
+		    && (access.instructionFlags & flag) != 0;
+	}
+
+	unsigned int tokenBranchDelaySlots( const Token& token )
+	{
+		VuTokenResourceAccess access;
+		if( !buildVuTokenResourceAccess( token, access ) )
+			return 0;
+		return access.branchDelaySlots;
 	}
 
 	bool tokenReadsQ( const Token& token )
@@ -933,8 +954,8 @@ namespace {
 
 	bool isTerminalUnconditionalBranch( const Token& token )
 	{
-		const std::string name = lowerName(token);
-		return name == "b" || name == "jr";
+		return tokenHasInstructionFlag( token, VU_INSTR_UNCONDITIONAL_BRANCH )
+		    && !tokenHasInstructionFlag( token, VU_INSTR_LINK_BRANCH );
 	}
 
 	bool isZeroMoveFromVf00( const Token& token )
@@ -1321,21 +1342,22 @@ bool CodeGenerator::tokensCanPair( const Token& a, const Token& b ) const
 	// Keep dynamic control flow and explicit Q/P wait barriers out of the
 	// simple pairing pass.  FDIV/EFU producers can pair with independent
 	// upper-pipe work because their Q/P latency is tracked separately.
-	Operand::Unit ua = a.operand()->unit();
-	Operand::Unit ub = b.operand()->unit();
-	if( ua == Operand::BRU || ub == Operand::BRU )
+	VuTokenResourceAccess aAccess;
+	VuTokenResourceAccess bAccess;
+	buildVuTokenResourceAccess( a, aAccess );
+	buildVuTokenResourceAccess( b, bAccess );
+	if( aAccess.branchDelaySlots > 0 || bAccess.branchDelaySlots > 0 )
 		return false;
-	const std::string aName = lowerName(a);
-	const std::string bName = lowerName(b);
-	if( aName == "waitq" || aName == "waitp" || bName == "waitq" || bName == "waitp" )
+	if( (aAccess.instructionFlags & (VU_INSTR_WAIT_Q | VU_INSTR_WAIT_P))
+	    || (bAccess.instructionFlags & (VU_INSTR_WAIT_Q | VU_INSTR_WAIT_P)) )
 		return false;
 
 	// FMAC writes MAC with 4-cycle latency; clipw additionally writes
 	// CLIP.  Keep same-flag readers out of the pair.  A non-clip FMAC
 	// can still pair with a CLIP reader such as fcand once the previous
 	// clipw result is latency-ready.
-	bool aFMAC = (ua == Operand::FMAC) || emitsAsUpperZeroMove(a);
-	bool bFMAC = (ub == Operand::FMAC) || emitsAsUpperZeroMove(b);
+	bool aFMAC = (a.operand()->unit() == Operand::FMAC) || emitsAsUpperZeroMove(a);
+	bool bFMAC = (b.operand()->unit() == Operand::FMAC) || emitsAsUpperZeroMove(b);
 	if( aFMAC && isMacReader(b.operand()->name()) )
 		return false;
 	if( bFMAC && isMacReader(a.operand()->name()) )
