@@ -143,6 +143,13 @@ TEST_CASE("VSM cost CLI: comparison reports baseline, candidate, and deltas")
     CHECK(contains(r.stdout_data, "estimated_total_cycles: baseline=5 candidate=2 delta=-3"));
     CHECK(contains(r.stdout_data, "instructions: baseline=5 candidate=3 delta=-2"));
     CHECK(contains(r.stdout_data, "nop_slots: baseline=5 candidate=1 delta=-4"));
+    CHECK(contains(r.stdout_data, "top_weighted_estimated_blocks:"));
+    CHECK(contains(r.stdout_data, "entry_lid: baseline_weighted_estimated_cycles=5 candidate_weighted_estimated_cycles=0 delta=-5"));
+    CHECK(contains(r.stdout_data, "sce_style_lid: baseline_weighted_estimated_cycles=0 candidate_weighted_estimated_cycles=2 delta=2"));
+    CHECK(contains(r.stdout_data, "top_weighted_idle_blocks:"));
+    CHECK(contains(r.stdout_data, "entry_lid: baseline_weighted_nop_slots=5 candidate_weighted_nop_slots=0 delta=-5"));
+    CHECK(contains(r.stdout_data, "top_weighted_wait_blocks:"));
+    CHECK(contains(r.stdout_data, "(no block deltas)"));
 }
 
 TEST_CASE("VSM cost CLI: JSON comparison is suitable for scheduler before-after reports")
@@ -154,6 +161,11 @@ TEST_CASE("VSM cost CLI: JSON comparison is suitable for scheduler before-after 
     CHECK(contains(r.stdout_data, "\"delta\": {\"static_cycles\": -3"));
     CHECK(contains(r.stdout_data, "\"estimated_total_cycles\": -3"));
     CHECK(contains(r.stdout_data, "\"nop_slots\": -4"));
+    CHECK(contains(r.stdout_data, "\"top_weighted_estimated_blocks\""));
+    CHECK(contains(r.stdout_data, "\"label\": \"entry_lid\", \"baseline_weighted_estimated_cycles\": 5, \"candidate_weighted_estimated_cycles\": 0, \"delta_weighted_estimated_cycles\": -5"));
+    CHECK(contains(r.stdout_data, "\"top_weighted_idle_blocks\""));
+    CHECK(contains(r.stdout_data, "\"label\": \"entry_lid\", \"baseline_weighted_nop_slots\": 5, \"candidate_weighted_nop_slots\": 0, \"delta_weighted_nop_slots\": -5"));
+    CHECK(contains(r.stdout_data, "\"top_weighted_wait_blocks\""));
 }
 
 TEST_CASE("VSM cost CLI: loop repeat weights static block cost")

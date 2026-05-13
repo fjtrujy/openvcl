@@ -72,6 +72,12 @@ namespace
             return std::string();
         return output.str();
     }
+
+    bool analyzeString(const std::string& source, const std::string& name, vcl::VsmCostAnalyzer& analyzer)
+    {
+        std::istringstream input(source);
+        return analyzer.analyze(input, name);
+    }
 }
 
 TEST_CASE("VsmCostAnalyzer fixture: simple scheduled VSM has precomputed issue cost")
@@ -172,6 +178,54 @@ TEST_CASE("VsmCostAnalyzer fixture: summary exposes comparison metrics")
     CHECK(summary.instructions == 5);
     CHECK(summary.pairedCycles == 1);
     CHECK(summary.nopSlots == 5);
+}
+
+TEST_CASE("VsmCostAnalyzer inline: comparison exposes top block deltas")
+{
+    const std::string baselineSource =
+        "\t.vu\n"
+        "hot_lid:\n"
+        "                    nop                             div q, VF01w, VF02w\n"
+        "                    nop                             waitq\n"
+        "idle_lid:\n"
+        "                    nop                             nop\n"
+        "                    nop                             nop\n";
+
+    const std::string candidateSource =
+        "\t.vu\n"
+        "hot_lid:\n"
+        "                    nop                             div q, VF01w, VF02w\n"
+        "                    nop                             iaddiu VI01, VI00, 1\n"
+        "                    nop                             waitq\n"
+        "idle_lid:\n"
+        "                    add.xyz VF01, VF01, VF00        iaddiu VI02, VI00, 1\n";
+
+    vcl::VsmCostAnalyzer baseline;
+    REQUIRE(analyzeString(baselineSource, "baseline_inline.vsm", baseline));
+    baseline.setBlockRepeat("hot_lid", 3);
+    baseline.setBlockRepeat("idle_lid", 2);
+
+    vcl::VsmCostAnalyzer candidate;
+    REQUIRE(analyzeString(candidateSource, "candidate_inline.vsm", candidate));
+    candidate.setBlockRepeat("hot_lid", 3);
+    candidate.setBlockRepeat("idle_lid", 2);
+
+    std::ostringstream text;
+    REQUIRE(vcl::VsmCostAnalyzer::writeComparisonText(text, baseline, candidate));
+    CHECK(contains(text.str(), "top_weighted_estimated_blocks:"));
+    CHECK(contains(text.str(), "idle_lid: baseline_weighted_estimated_cycles=4 candidate_weighted_estimated_cycles=2 delta=-2"));
+    CHECK(contains(text.str(), "idle_lid: baseline_weighted_nop_slots=8 candidate_weighted_nop_slots=0 delta=-8"));
+    CHECK(contains(text.str(), "top_weighted_wait_blocks:"));
+    CHECK(contains(text.str(), "hot_lid: baseline_weighted_wait_stall_cycles=18 candidate_weighted_wait_stall_cycles=15 delta=-3"));
+
+    std::ostringstream json;
+    REQUIRE(vcl::VsmCostAnalyzer::writeComparisonJson(json, baseline, candidate));
+    CHECK(contains(json.str(), "\"top_weighted_estimated_blocks\""));
+    CHECK(contains(json.str(), "\"label\": \"idle_lid\", \"baseline_weighted_estimated_cycles\": 4, \"candidate_weighted_estimated_cycles\": 2, \"delta_weighted_estimated_cycles\": -2"));
+    CHECK(contains(json.str(), "\"top_weighted_idle_blocks\""));
+    CHECK(contains(json.str(), "\"label\": \"idle_lid\", \"baseline_weighted_nop_slots\": 8, \"candidate_weighted_nop_slots\": 0, \"delta_weighted_nop_slots\": -8"));
+    CHECK(contains(json.str(), "\"top_weighted_wait_blocks\""));
+    CHECK(contains(json.str(), "\"label\": \"hot_lid\", \"baseline_weighted_wait_stall_cycles\": 18, \"candidate_weighted_wait_stall_cycles\": 15, \"delta_weighted_wait_stall_cycles\": -3"));
 }
 
 TEST_CASE("VsmCostAnalyzer fixture: SCE padded columns have precomputed cost")

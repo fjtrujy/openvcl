@@ -138,6 +138,16 @@ private:
 		unsigned int weightedIssueStallCycles;
 	};
 
+	struct BlockComparison
+	{
+		std::string label;
+		WeightedBlock baseline;
+		WeightedBlock candidate;
+		long weightedEstimatedCyclesDelta;
+		long weightedNopSlotsDelta;
+		long weightedWaitStallCyclesDelta;
+	};
+
 	void reset();
 	void startBlock( const std::string& label );
 	bool analyzeLine( const std::string& line, unsigned int lineNumber );
@@ -152,6 +162,13 @@ private:
 	static bool weightedEstimatedBlockGreater( const WeightedBlock& a, const WeightedBlock& b );
 	static bool weightedIdleBlockGreater( const WeightedBlock& a, const WeightedBlock& b );
 	static bool weightedWaitBlockGreater( const WeightedBlock& a, const WeightedBlock& b );
+	static WeightedBlock emptyWeightedBlock( const std::string& label );
+	static std::vector<BlockComparison> blockComparisons( const VsmCostAnalyzer& baseline, const VsmCostAnalyzer& candidate );
+	static bool estimatedBlockComparisonGreater( const BlockComparison& a, const BlockComparison& b );
+	static bool idleBlockComparisonGreater( const BlockComparison& a, const BlockComparison& b );
+	static bool waitBlockComparisonGreater( const BlockComparison& a, const BlockComparison& b );
+	static bool writeComparisonBlocksText( std::ostream& stream, const std::vector<BlockComparison>& comparisons );
+	static bool writeComparisonBlocksJson( std::ostream& stream, const std::vector<BlockComparison>& comparisons );
 
 	static std::string stripComment( const std::string& line );
 	static std::string trim( const std::string& text );

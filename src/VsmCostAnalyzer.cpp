@@ -11,6 +11,7 @@
 #include <cctype>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <sstream>
 
 namespace vcl
@@ -73,6 +74,11 @@ namespace
 	long metricDelta( unsigned int baseline, unsigned int candidate )
 	{
 		return static_cast<long>( candidate ) - static_cast<long>( baseline );
+	}
+
+	unsigned long absLong( long value )
+	{
+		return value < 0 ? static_cast<unsigned long>( -value ) : static_cast<unsigned long>( value );
 	}
 
 	std::string comparisonJsonEscape( const std::string& text )
@@ -676,6 +682,251 @@ std::vector<VsmCostAnalyzer::WeightedBlock> VsmCostAnalyzer::weightedBlocksByWai
 	return weightedBlocks;
 }
 
+VsmCostAnalyzer::WeightedBlock VsmCostAnalyzer::emptyWeightedBlock( const std::string& label )
+{
+	WeightedBlock block;
+	block.label = label;
+	block.cycles = 0;
+	block.repeat = 0;
+	block.weightedCycles = 0;
+	block.pairedCycles = 0;
+	block.nopOnlyCycles = 0;
+	block.nopSlots = 0;
+	block.weightedNopSlots = 0;
+	block.weightedNopOnlyCycles = 0;
+	block.estimatedCycles = 0;
+	block.weightedEstimatedCycles = 0;
+	block.waitStallCycles = 0;
+	block.weightedWaitStallCycles = 0;
+	block.issueStallCycles = 0;
+	block.weightedIssueStallCycles = 0;
+	return block;
+}
+
+std::vector<VsmCostAnalyzer::BlockComparison> VsmCostAnalyzer::blockComparisons( const VsmCostAnalyzer& baseline, const VsmCostAnalyzer& candidate )
+{
+	std::map<std::string, WeightedBlock> baselineBlocks;
+	std::map<std::string, WeightedBlock> candidateBlocks;
+
+	const std::vector<WeightedBlock> baselineWeightedBlocks = baseline.weightedBlocksByCycles();
+	for( std::vector<WeightedBlock>::const_iterator i = baselineWeightedBlocks.begin(); i != baselineWeightedBlocks.end(); ++i )
+		baselineBlocks[i->label] = *i;
+
+	const std::vector<WeightedBlock> candidateWeightedBlocks = candidate.weightedBlocksByCycles();
+	for( std::vector<WeightedBlock>::const_iterator i = candidateWeightedBlocks.begin(); i != candidateWeightedBlocks.end(); ++i )
+		candidateBlocks[i->label] = *i;
+
+	std::map<std::string, bool> labels;
+	for( std::map<std::string, WeightedBlock>::const_iterator i = baselineBlocks.begin(); i != baselineBlocks.end(); ++i )
+		labels[i->first] = true;
+	for( std::map<std::string, WeightedBlock>::const_iterator i = candidateBlocks.begin(); i != candidateBlocks.end(); ++i )
+		labels[i->first] = true;
+
+	std::vector<BlockComparison> result;
+	for( std::map<std::string, bool>::const_iterator i = labels.begin(); i != labels.end(); ++i )
+	{
+		BlockComparison comparison;
+		comparison.label = i->first;
+
+		std::map<std::string, WeightedBlock>::const_iterator baselineBlock = baselineBlocks.find( comparison.label );
+		comparison.baseline = baselineBlock == baselineBlocks.end()
+		                    ? emptyWeightedBlock( comparison.label )
+		                    : baselineBlock->second;
+
+		std::map<std::string, WeightedBlock>::const_iterator candidateBlock = candidateBlocks.find( comparison.label );
+		comparison.candidate = candidateBlock == candidateBlocks.end()
+		                     ? emptyWeightedBlock( comparison.label )
+		                     : candidateBlock->second;
+
+		comparison.weightedEstimatedCyclesDelta = metricDelta( comparison.baseline.weightedEstimatedCycles, comparison.candidate.weightedEstimatedCycles );
+		comparison.weightedNopSlotsDelta = metricDelta( comparison.baseline.weightedNopSlots, comparison.candidate.weightedNopSlots );
+		comparison.weightedWaitStallCyclesDelta = metricDelta( comparison.baseline.weightedWaitStallCycles, comparison.candidate.weightedWaitStallCycles );
+		result.push_back( comparison );
+	}
+
+	return result;
+}
+
+bool VsmCostAnalyzer::estimatedBlockComparisonGreater( const BlockComparison& a, const BlockComparison& b )
+{
+	const unsigned long aAbs = absLong( a.weightedEstimatedCyclesDelta );
+	const unsigned long bAbs = absLong( b.weightedEstimatedCyclesDelta );
+	if( aAbs != bAbs )
+		return aAbs > bAbs;
+	if( a.candidate.weightedEstimatedCycles != b.candidate.weightedEstimatedCycles )
+		return a.candidate.weightedEstimatedCycles > b.candidate.weightedEstimatedCycles;
+	return a.label < b.label;
+}
+
+bool VsmCostAnalyzer::idleBlockComparisonGreater( const BlockComparison& a, const BlockComparison& b )
+{
+	const unsigned long aAbs = absLong( a.weightedNopSlotsDelta );
+	const unsigned long bAbs = absLong( b.weightedNopSlotsDelta );
+	if( aAbs != bAbs )
+		return aAbs > bAbs;
+	if( a.candidate.weightedNopSlots != b.candidate.weightedNopSlots )
+		return a.candidate.weightedNopSlots > b.candidate.weightedNopSlots;
+	return a.label < b.label;
+}
+
+bool VsmCostAnalyzer::waitBlockComparisonGreater( const BlockComparison& a, const BlockComparison& b )
+{
+	const unsigned long aAbs = absLong( a.weightedWaitStallCyclesDelta );
+	const unsigned long bAbs = absLong( b.weightedWaitStallCyclesDelta );
+	if( aAbs != bAbs )
+		return aAbs > bAbs;
+	if( a.candidate.weightedWaitStallCycles != b.candidate.weightedWaitStallCycles )
+		return a.candidate.weightedWaitStallCycles > b.candidate.weightedWaitStallCycles;
+	return a.label < b.label;
+}
+
+bool VsmCostAnalyzer::writeComparisonBlocksText( std::ostream& stream, const std::vector<BlockComparison>& comparisons )
+{
+	std::vector<BlockComparison> sorted = comparisons;
+	unsigned int topCount = 0;
+
+	stream << "top_weighted_estimated_blocks:" << std::endl;
+	std::sort( sorted.begin(), sorted.end(), estimatedBlockComparisonGreater );
+	for( std::vector<BlockComparison>::const_iterator i = sorted.begin(); i != sorted.end() && topCount < 8; ++i )
+	{
+		if( i->weightedEstimatedCyclesDelta == 0 )
+			continue;
+		stream << "  " << i->label
+		       << ": baseline_weighted_estimated_cycles=" << i->baseline.weightedEstimatedCycles
+		       << " candidate_weighted_estimated_cycles=" << i->candidate.weightedEstimatedCycles
+		       << " delta=" << i->weightedEstimatedCyclesDelta
+		       << " baseline_estimated_cycles=" << i->baseline.estimatedCycles
+		       << " candidate_estimated_cycles=" << i->candidate.estimatedCycles
+		       << " baseline_repeat=" << i->baseline.repeat
+		       << " candidate_repeat=" << i->candidate.repeat
+		       << std::endl;
+		++topCount;
+	}
+	if( topCount == 0 )
+		stream << "  (no block deltas)" << std::endl;
+
+	stream << "top_weighted_idle_blocks:" << std::endl;
+	std::sort( sorted.begin(), sorted.end(), idleBlockComparisonGreater );
+	topCount = 0;
+	for( std::vector<BlockComparison>::const_iterator i = sorted.begin(); i != sorted.end() && topCount < 8; ++i )
+	{
+		if( i->weightedNopSlotsDelta == 0 )
+			continue;
+		stream << "  " << i->label
+		       << ": baseline_weighted_nop_slots=" << i->baseline.weightedNopSlots
+		       << " candidate_weighted_nop_slots=" << i->candidate.weightedNopSlots
+		       << " delta=" << i->weightedNopSlotsDelta
+		       << " baseline_nop_slots=" << i->baseline.nopSlots
+		       << " candidate_nop_slots=" << i->candidate.nopSlots
+		       << " baseline_repeat=" << i->baseline.repeat
+		       << " candidate_repeat=" << i->candidate.repeat
+		       << std::endl;
+		++topCount;
+	}
+	if( topCount == 0 )
+		stream << "  (no block deltas)" << std::endl;
+
+	stream << "top_weighted_wait_blocks:" << std::endl;
+	std::sort( sorted.begin(), sorted.end(), waitBlockComparisonGreater );
+	topCount = 0;
+	for( std::vector<BlockComparison>::const_iterator i = sorted.begin(); i != sorted.end() && topCount < 8; ++i )
+	{
+		if( i->weightedWaitStallCyclesDelta == 0 )
+			continue;
+		stream << "  " << i->label
+		       << ": baseline_weighted_wait_stall_cycles=" << i->baseline.weightedWaitStallCycles
+		       << " candidate_weighted_wait_stall_cycles=" << i->candidate.weightedWaitStallCycles
+		       << " delta=" << i->weightedWaitStallCyclesDelta
+		       << " baseline_wait_stall_cycles=" << i->baseline.waitStallCycles
+		       << " candidate_wait_stall_cycles=" << i->candidate.waitStallCycles
+		       << " baseline_repeat=" << i->baseline.repeat
+		       << " candidate_repeat=" << i->candidate.repeat
+		       << std::endl;
+		++topCount;
+	}
+	if( topCount == 0 )
+		stream << "  (no block deltas)" << std::endl;
+
+	return true;
+}
+
+bool VsmCostAnalyzer::writeComparisonBlocksJson( std::ostream& stream, const std::vector<BlockComparison>& comparisons )
+{
+	std::vector<BlockComparison> sorted = comparisons;
+	unsigned int topCount = 0;
+
+	stream << "," << std::endl;
+	stream << "  \"top_weighted_estimated_blocks\": [" << std::endl;
+	std::sort( sorted.begin(), sorted.end(), estimatedBlockComparisonGreater );
+	for( std::vector<BlockComparison>::const_iterator i = sorted.begin(); i != sorted.end() && topCount < 8; ++i )
+	{
+		if( i->weightedEstimatedCyclesDelta == 0 )
+			continue;
+		if( topCount != 0 )
+			stream << "," << std::endl;
+		stream << "    {"
+		       << "\"label\": \"" << comparisonJsonEscape( i->label ) << "\", "
+		       << "\"baseline_weighted_estimated_cycles\": " << i->baseline.weightedEstimatedCycles << ", "
+		       << "\"candidate_weighted_estimated_cycles\": " << i->candidate.weightedEstimatedCycles << ", "
+		       << "\"delta_weighted_estimated_cycles\": " << i->weightedEstimatedCyclesDelta << ", "
+		       << "\"baseline_estimated_cycles\": " << i->baseline.estimatedCycles << ", "
+		       << "\"candidate_estimated_cycles\": " << i->candidate.estimatedCycles << ", "
+		       << "\"baseline_repeat\": " << i->baseline.repeat << ", "
+		       << "\"candidate_repeat\": " << i->candidate.repeat
+		       << "}";
+		++topCount;
+	}
+
+	stream << std::endl << "  ]," << std::endl;
+	stream << "  \"top_weighted_idle_blocks\": [" << std::endl;
+	std::sort( sorted.begin(), sorted.end(), idleBlockComparisonGreater );
+	topCount = 0;
+	for( std::vector<BlockComparison>::const_iterator i = sorted.begin(); i != sorted.end() && topCount < 8; ++i )
+	{
+		if( i->weightedNopSlotsDelta == 0 )
+			continue;
+		if( topCount != 0 )
+			stream << "," << std::endl;
+		stream << "    {"
+		       << "\"label\": \"" << comparisonJsonEscape( i->label ) << "\", "
+		       << "\"baseline_weighted_nop_slots\": " << i->baseline.weightedNopSlots << ", "
+		       << "\"candidate_weighted_nop_slots\": " << i->candidate.weightedNopSlots << ", "
+		       << "\"delta_weighted_nop_slots\": " << i->weightedNopSlotsDelta << ", "
+		       << "\"baseline_nop_slots\": " << i->baseline.nopSlots << ", "
+		       << "\"candidate_nop_slots\": " << i->candidate.nopSlots << ", "
+		       << "\"baseline_repeat\": " << i->baseline.repeat << ", "
+		       << "\"candidate_repeat\": " << i->candidate.repeat
+		       << "}";
+		++topCount;
+	}
+
+	stream << std::endl << "  ]," << std::endl;
+	stream << "  \"top_weighted_wait_blocks\": [" << std::endl;
+	std::sort( sorted.begin(), sorted.end(), waitBlockComparisonGreater );
+	topCount = 0;
+	for( std::vector<BlockComparison>::const_iterator i = sorted.begin(); i != sorted.end() && topCount < 8; ++i )
+	{
+		if( i->weightedWaitStallCyclesDelta == 0 )
+			continue;
+		if( topCount != 0 )
+			stream << "," << std::endl;
+		stream << "    {"
+		       << "\"label\": \"" << comparisonJsonEscape( i->label ) << "\", "
+		       << "\"baseline_weighted_wait_stall_cycles\": " << i->baseline.weightedWaitStallCycles << ", "
+		       << "\"candidate_weighted_wait_stall_cycles\": " << i->candidate.weightedWaitStallCycles << ", "
+		       << "\"delta_weighted_wait_stall_cycles\": " << i->weightedWaitStallCyclesDelta << ", "
+		       << "\"baseline_wait_stall_cycles\": " << i->baseline.waitStallCycles << ", "
+		       << "\"candidate_wait_stall_cycles\": " << i->candidate.waitStallCycles << ", "
+		       << "\"baseline_repeat\": " << i->baseline.repeat << ", "
+		       << "\"candidate_repeat\": " << i->candidate.repeat
+		       << "}";
+		++topCount;
+	}
+	stream << std::endl << "  ]";
+
+	return true;
+}
+
 bool VsmCostAnalyzer::writeText( std::ostream& stream ) const
 {
 	const unsigned int instructions = m_upperInstructions + m_lowerInstructions;
@@ -1110,6 +1361,7 @@ bool VsmCostAnalyzer::writeComparisonText( std::ostream& stream, const VsmCostAn
 {
 	const Summary baselineSummary = baseline.summary();
 	const Summary candidateSummary = candidate.summary();
+	const std::vector<BlockComparison> comparisons = blockComparisons( baseline, candidate );
 
 	stream << "VSM cost comparison" << std::endl;
 	stream << "baseline: " << baselineSummary.input << std::endl;
@@ -1127,6 +1379,8 @@ bool VsmCostAnalyzer::writeComparisonText( std::ostream& stream, const VsmCostAn
 		       << std::endl;
 	}
 
+	writeComparisonBlocksText( stream, comparisons );
+
 	return true;
 }
 
@@ -1134,6 +1388,7 @@ bool VsmCostAnalyzer::writeComparisonJson( std::ostream& stream, const VsmCostAn
 {
 	const Summary baselineSummary = baseline.summary();
 	const Summary candidateSummary = candidate.summary();
+	const std::vector<BlockComparison> comparisons = blockComparisons( baseline, candidate );
 
 	stream << "{" << std::endl;
 	stream << "  \"baseline\": ";
@@ -1155,7 +1410,9 @@ bool VsmCostAnalyzer::writeComparisonJson( std::ostream& stream, const VsmCostAn
 		stream << "\"" << i->name << "\": " << metricDelta( baselineValue, candidateValue );
 	}
 
-	stream << "}" << std::endl;
+	stream << "}";
+	writeComparisonBlocksJson( stream, comparisons );
+	stream << std::endl;
 	stream << "}" << std::endl;
 	return true;
 }
