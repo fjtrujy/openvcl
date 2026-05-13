@@ -70,6 +70,16 @@ namespace
         }
         return false;
     }
+
+    bool hasString(const std::list<std::string>& values, const std::string& value)
+    {
+        for (std::list<std::string>::const_iterator i = values.begin(); i != values.end(); ++i)
+        {
+            if (*i == value)
+                return true;
+        }
+        return false;
+    }
 }
 
 TEST_CASE("VuSchedulerAnalysis: basic blocks split on labels and barriers")
@@ -174,6 +184,63 @@ TEST_CASE("VuSchedulerAnalysis: loop candidates ignore forward branches and mark
     CHECK(!loops[0].simpleCountedLoop);
     REQUIRE(loops[0].branchToken != NULL);
     CHECK(vcl::normalizeVuMnemonic(loops[0].branchToken->name()) == "b");
+}
+
+TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose loop-carried Q state")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 3"));
+    REQUIRE(program.parse("lq.xyz vf01, 0(vi01)"));
+    REQUIRE(program.parse("mul.xyz vf03, vf01, vf02"));
+    REQUIRE(program.parse("div q, vf00[w], vf03[w]"));
+    REQUIRE(program.parse("mulq.xyz vf03, vf03, q"));
+    REQUIRE(program.parse("add.xyz vf05, vf03, vf00"));
+    REQUIRE(program.parse("lq.xyz vf06, 2(vi01)"));
+    REQUIRE(program.parse("mulq.xyz vf06, vf06, q"));
+    REQUIRE(program.parse("sq.xyz vf06, 0(vi02)"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 3"));
+    REQUIRE(program.parse("ibne vi01, vi03, loop_lid"));
+
+    std::vector<vcl::VuLoopPipelineOpportunity> opportunities = vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
+    REQUIRE(opportunities.size() == 1u);
+    CHECK(opportunities[0].label == "loop_lid");
+    CHECK(opportunities[0].branchTokenIndex == 11u);
+    CHECK(opportunities[0].qProducerTokenIndex == 4u);
+    CHECK(opportunities[0].firstQConsumerTokenIndex == 5u);
+    CHECK(opportunities[0].qProducerLatency == 7u);
+    CHECK(opportunities[0].sourcePrefixCycles > 0u);
+    CHECK(opportunities[0].sourcePrefixCycles < opportunities[0].qProducerLatency);
+    CHECK(opportunities[0].sourcePrefixCycles + opportunities[0].sourceSuffixCycles >= opportunities[0].qProducerLatency);
+    CHECK(opportunities[0].branchDelaySlots == 1u);
+    CHECK(opportunities[0].simpleCountedLoop);
+    CHECK(opportunities[0].hasSingleQProducer);
+    CHECK(opportunities[0].requiresPrologEpilog);
+    CHECK(opportunities[0].requiresLoopCarriedRegisters);
+    REQUIRE(opportunities[0].qConsumerTokenIndices.size() == 2u);
+    CHECK(opportunities[0].qConsumerTokenIndices[0] == 5u);
+    CHECK(opportunities[0].qConsumerTokenIndices[1] == 8u);
+    CHECK(hasString(opportunities[0].carriedQInputRegisters, "VF03.x"));
+    CHECK(hasString(opportunities[0].carriedQInputRegisters, "VF06.x"));
+    CHECK(hasString(opportunities[0].carriedQOutputRegisters, "VF03.x"));
+    CHECK(hasString(opportunities[0].carriedQOutputRegisters, "VF06.x"));
+}
+
+TEST_CASE("VuSchedulerAnalysis: pipeline opportunities require Q consumers")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 3"));
+    REQUIRE(program.parse("lq.xyz vf01, 0(vi01)"));
+    REQUIRE(program.parse("mul.xyz vf03, vf01, vf02"));
+    REQUIRE(program.parse("div q, vf00[w], vf03[w]"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 3"));
+    REQUIRE(program.parse("ibne vi01, vi03, loop_lid"));
+
+    std::vector<vcl::VuLoopPipelineOpportunity> opportunities = vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
+    CHECK(opportunities.empty());
 }
 
 TEST_CASE("VuSchedulerAnalysis: dependency graph keeps ACC multiply-add chains ordered")

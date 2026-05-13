@@ -60,10 +60,32 @@ struct VuLoopCandidate
 	const Token* branchToken;
 };
 
+struct VuLoopPipelineOpportunity
+{
+	VuLoopPipelineOpportunity();
+
+	std::string label;
+	unsigned int branchTokenIndex;
+	unsigned int qProducerTokenIndex;
+	unsigned int firstQConsumerTokenIndex;
+	unsigned int qProducerLatency;
+	unsigned int sourcePrefixCycles;
+	unsigned int sourceSuffixCycles;
+	unsigned int branchDelaySlots;
+	bool simpleCountedLoop;
+	bool hasSingleQProducer;
+	bool requiresPrologEpilog;
+	bool requiresLoopCarriedRegisters;
+	std::vector<unsigned int> qConsumerTokenIndices;
+	std::list<std::string> carriedQInputRegisters;
+	std::list<std::string> carriedQOutputRegisters;
+};
+
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens );
 std::vector<VuDependencyEdge> buildVuDependencyGraph( const VuBasicBlock& block,
                                                       unsigned int ignoredImplicitWawResources = 0 );
 std::vector<VuLoopCandidate> findVuLoopCandidates( const std::list<Token>& tokens );
+std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const std::list<Token>& tokens );
 std::list<Token> scheduleVuTokensPreservingOrder( const std::list<Token>& tokens );
 std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens,
                                            unsigned int ignoredImplicitWawResources = 0 );

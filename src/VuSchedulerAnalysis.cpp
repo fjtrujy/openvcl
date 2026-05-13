@@ -242,6 +242,71 @@ namespace
 		const unsigned int next = labelIndex + 1;
 		return next < tokens.size() && tokenIsLoopDirective( *tokens[next] );
 	}
+
+	void addUniqueString( std::list<std::string>& values, const std::string& value )
+	{
+		if( !containsKey( values, value ) )
+			values.push_back( value );
+	}
+
+	void collectLoopCarriedQInputs( const VuLoopCandidate& loop,
+	                                unsigned int consumerOffset,
+	                                std::list<std::string>& carriedInputs )
+	{
+		std::list<std::string> reads;
+		collectVuRegisterReadKeys( *loop.bodyTokens[consumerOffset], reads );
+
+		for( unsigned int before = 0; before < consumerOffset; ++before )
+		{
+			std::list<std::string> writes;
+			collectVuRegisterWriteKeys( *loop.bodyTokens[before], writes );
+			for( std::list<std::string>::const_iterator read = reads.begin(); read != reads.end(); ++read )
+			{
+				if( containsKey( writes, *read ) )
+					addUniqueString( carriedInputs, *read );
+			}
+		}
+	}
+
+	void collectLoopCarriedQOutputs( const VuLoopCandidate& loop,
+	                                 unsigned int consumerOffset,
+	                                 std::list<std::string>& carriedOutputs )
+	{
+		std::list<std::string> writes;
+		collectVuRegisterWriteKeys( *loop.bodyTokens[consumerOffset], writes );
+
+		for( unsigned int after = consumerOffset + 1; after < loop.bodyTokens.size(); ++after )
+		{
+			std::list<std::string> reads;
+			collectVuRegisterReadKeys( *loop.bodyTokens[after], reads );
+			for( std::list<std::string>::const_iterator write = writes.begin(); write != writes.end(); ++write )
+			{
+				if( containsKey( reads, *write ) )
+					addUniqueString( carriedOutputs, *write );
+			}
+		}
+	}
+
+	unsigned int countEmittableTokens( const VuLoopCandidate& loop,
+	                                   unsigned int beginOffset,
+	                                   unsigned int endOffset )
+	{
+		unsigned int count = 0;
+		if( beginOffset > loop.bodyTokens.size() )
+			return 0;
+		if( endOffset > loop.bodyTokens.size() )
+			endOffset = static_cast<unsigned int>( loop.bodyTokens.size() );
+		for( unsigned int i = beginOffset; i < endOffset; ++i )
+		{
+			const Token& token = *loop.bodyTokens[i];
+			if( token.operand()
+			    && !token.operand()->isPreprocessor()
+			    && !(token.flags() & Token::IGNORED)
+			    && (token.operand()->isUpperExecutionPath() || token.operand()->isLowerExecutionPath()) )
+				++count;
+		}
+		return count;
+	}
 }
 
 VuBasicBlock::VuBasicBlock()
@@ -273,6 +338,21 @@ VuLoopCandidate::VuLoopCandidate()
 	hasLoopDirective = false;
 	simpleCountedLoop = false;
 	branchToken = NULL;
+}
+
+VuLoopPipelineOpportunity::VuLoopPipelineOpportunity()
+{
+	branchTokenIndex = 0;
+	qProducerTokenIndex = 0;
+	firstQConsumerTokenIndex = 0;
+	qProducerLatency = 0;
+	sourcePrefixCycles = 0;
+	sourceSuffixCycles = 0;
+	branchDelaySlots = 0;
+	simpleCountedLoop = false;
+	hasSingleQProducer = false;
+	requiresPrologEpilog = false;
+	requiresLoopCarriedRegisters = false;
 }
 
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens )
@@ -400,6 +480,69 @@ std::vector<VuLoopCandidate> findVuLoopCandidates( const std::list<Token>& token
 			candidate.bodyTokens.push_back( indexedTokens[body] );
 
 		result.push_back( candidate );
+	}
+
+	return result;
+}
+
+std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const std::list<Token>& tokens )
+{
+	std::vector<VuLoopPipelineOpportunity> result;
+	std::vector<VuLoopCandidate> loops = findVuLoopCandidates( tokens );
+
+	for( std::vector<VuLoopCandidate>::const_iterator loop = loops.begin(); loop != loops.end(); ++loop )
+	{
+		unsigned int qProducerCount = 0;
+		unsigned int qProducerOffset = 0;
+		for( unsigned int i = 0; i < loop->bodyTokens.size(); ++i )
+		{
+			if( vuTokenWritesQ( *loop->bodyTokens[i] ) )
+			{
+				++qProducerCount;
+				qProducerOffset = i;
+			}
+		}
+
+		if( qProducerCount == 0 )
+			continue;
+
+		std::vector<unsigned int> qConsumerOffsets;
+		for( unsigned int i = qProducerOffset + 1; i < loop->bodyTokens.size(); ++i )
+		{
+			if( vuTokenReadsQ( *loop->bodyTokens[i] ) )
+				qConsumerOffsets.push_back( i );
+		}
+		if( qConsumerOffsets.empty() )
+			continue;
+
+		VuLoopPipelineOpportunity opportunity;
+		opportunity.label = loop->label;
+		opportunity.branchTokenIndex = loop->branchTokenIndex;
+		opportunity.qProducerTokenIndex = loop->firstBodyTokenIndex + qProducerOffset;
+		opportunity.firstQConsumerTokenIndex = loop->firstBodyTokenIndex + qConsumerOffsets.front();
+		opportunity.qProducerLatency = loop->bodyTokens[qProducerOffset]->operand()
+		                             ? loop->bodyTokens[qProducerOffset]->operand()->latency()
+		                             : 0;
+		opportunity.sourcePrefixCycles = countEmittableTokens( *loop, 0, qProducerOffset );
+		opportunity.sourceSuffixCycles = countEmittableTokens( *loop,
+		                                                       qConsumerOffsets.front() + 1,
+		                                                       static_cast<unsigned int>( loop->bodyTokens.size() - 1 ) );
+		opportunity.branchDelaySlots = loop->branchToken ? vuTokenBranchDelaySlots( *loop->branchToken ) : 0;
+		opportunity.simpleCountedLoop = loop->simpleCountedLoop;
+		opportunity.hasSingleQProducer = qProducerCount == 1;
+		opportunity.requiresPrologEpilog = loop->simpleCountedLoop && qProducerCount == 1;
+
+		for( std::vector<unsigned int>::const_iterator q = qConsumerOffsets.begin(); q != qConsumerOffsets.end(); ++q )
+		{
+			opportunity.qConsumerTokenIndices.push_back( loop->firstBodyTokenIndex + *q );
+			collectLoopCarriedQInputs( *loop, *q, opportunity.carriedQInputRegisters );
+			collectLoopCarriedQOutputs( *loop, *q, opportunity.carriedQOutputRegisters );
+		}
+
+		opportunity.requiresLoopCarriedRegisters = !opportunity.carriedQInputRegisters.empty()
+		                                        || !opportunity.carriedQOutputRegisters.empty();
+
+		result.push_back( opportunity );
 	}
 
 	return result;
