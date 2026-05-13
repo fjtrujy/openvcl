@@ -23,6 +23,9 @@
     read-hazard padding is satisfied;
   - pre-increment plain stores can fill branch delay slots by adjusting their
     memory offset against the incremented base register;
+  - dead VI-only fallthrough integer instructions can fill forward conditional
+    branch delay slots when the taken path overwrites the same VI value before
+    reading it;
   - deterministic alias allocation;
   - per-field VF readiness tracking;
   - disjoint VF field read/write pairing;

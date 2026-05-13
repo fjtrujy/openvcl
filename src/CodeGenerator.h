@@ -72,11 +72,18 @@ private:
 	                                                       std::list<Token>::const_iterator end ) const;
 	void fillPreIncrementStoreBranchDelaySlots( std::list<Token>& tokens ) const;
 	void fillBranchDelaySlots( std::list<Token>& tokens ) const;
+	void fillDeadFallthroughBranchDelaySlots( std::list<Token>& tokens ) const;
 	bool movePreIncrementStoreIntoBranchDelaySlot( std::list<Token>& tokens,
 	                                               std::list<Token>::iterator branch ) const;
+	bool moveDeadFallthroughIntoBranchDelaySlot( std::list<Token>& tokens,
+	                                             std::list<Token>::iterator branch ) const;
 	bool canMoveIntoBranchDelaySlot( const Token& candidate, const Token& branch ) const;
 	bool nextTokenIsBranchDelayFiller( std::list<Token>::iterator token,
 	                                   std::list<Token>::iterator end ) const;
+	bool branchTargetLabel( const Token& branch, std::string& label ) const;
+	bool writesAreDeadFromTarget( const std::list<std::string>& writes,
+	                              std::list<Token>::iterator target,
+	                              std::list<Token>::iterator end ) const;
 	bool emitsAsUpperZeroMove( const Token& token ) const;
 	bool tokenIsLowerExecutionPath( const Token& token ) const;
 	bool tokenIsUpperExecutionPath( const Token& token ) const;

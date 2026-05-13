@@ -189,6 +189,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 	m_enableUpperZeroMoves = macFlagsDead;
 	m_ignoredImplicitWawResources = VU_RESOURCE_NONE;
 	fillBranchDelaySlots(workTokens);
+	fillDeadFallthroughBranchDelaySlots(workTokens);
 
 	for( std::list<Token>::iterator k = workTokens.begin(); k != workTokens.end(); )
 	{
@@ -1098,6 +1099,102 @@ bool CodeGenerator::movePreIncrementStoreIntoBranchDelaySlot( std::list<Token>& 
 	return true;
 }
 
+void CodeGenerator::fillDeadFallthroughBranchDelaySlots( std::list<Token>& tokens ) const
+{
+	for( std::list<Token>::iterator branch = tokens.begin(); branch != tokens.end(); ++branch )
+	{
+		if( vuTokenBranchDelaySlots(*branch) != 1 )
+			continue;
+		if( nextTokenIsBranchDelayFiller(branch, tokens.end()) )
+			continue;
+		moveDeadFallthroughIntoBranchDelaySlot(tokens, branch);
+	}
+}
+
+bool CodeGenerator::moveDeadFallthroughIntoBranchDelaySlot( std::list<Token>& tokens,
+                                                            std::list<Token>::iterator branch ) const
+{
+	VuTokenResourceAccess branchAccess;
+	if( !buildVuTokenResourceAccess(*branch, branchAccess) )
+		return false;
+	if( (branchAccess.instructionFlags & VU_INSTR_BRANCH) == 0 )
+		return false;
+	if( branchAccess.instructionFlags & (VU_INSTR_UNCONDITIONAL_BRANCH
+	                                   | VU_INSTR_LINK_BRANCH
+	                                   | VU_INSTR_REGISTER_BRANCH) )
+		return false;
+
+	std::list<Token>::iterator candidate = branch;
+	++candidate;
+	if( candidate == tokens.end() )
+		return false;
+	if( candidate->label().length() != 0 )
+		return false;
+	if( candidate->flags() & (Token::PREORDERED | Token::E | Token::D | Token::T | Token::BRANCH_DELAY_FILLER) )
+		return false;
+	if( !isVuEmittableInstruction(*candidate) )
+		return false;
+	if( !candidate->operand() || candidate->operand()->unit() != Operand::IALU )
+		return false;
+	if( candidate->operand()->latency() > 1 )
+		return false;
+
+	VuTokenResourceAccess candidateAccess;
+	if( !buildVuTokenResourceAccess(*candidate, candidateAccess) )
+		return false;
+	if( candidateAccess.memoryKind != VU_MEMORY_NONE
+	    || candidateAccess.memoryFlags != VU_MEMORY_FLAG_NONE )
+		return false;
+	if( candidateAccess.branchDelaySlots > 0 )
+		return false;
+	if( candidateAccess.instructionFlags & (VU_INSTR_BRANCH
+	                                      | VU_INSTR_WAIT_Q
+	                                      | VU_INSTR_WAIT_P
+	                                      | VU_INSTR_WRITES_Q
+	                                      | VU_INSTR_WRITES_P
+	                                      | VU_INSTR_XGKICK) )
+		return false;
+	if( candidateAccess.implicitReads != VU_RESOURCE_NONE
+	    || candidateAccess.implicitWrites != VU_RESOURCE_NONE )
+		return false;
+	if( candidateAccess.registerWrites.empty() )
+		return false;
+	for( std::list<std::string>::const_iterator i = candidateAccess.registerWrites.begin();
+	     i != candidateAccess.registerWrites.end(); ++i )
+	{
+		if( i->size() < 2 || i->compare(0, 2, "VI") != 0 )
+			return false;
+	}
+
+	std::string targetLabel;
+	if( !branchTargetLabel(*branch, targetLabel) )
+		return false;
+
+	std::list<Token>::iterator target = tokens.end();
+	for( std::list<Token>::iterator i = tokens.begin(); i != tokens.end(); ++i )
+	{
+		if( i->label() == targetLabel )
+		{
+			target = i;
+			break;
+		}
+	}
+	if( target == tokens.end() )
+		return false;
+	if( target->lineNumber() <= branch->lineNumber() )
+		return false;
+	if( !writesAreDeadFromTarget(candidateAccess.registerWrites, target, tokens.end()) )
+		return false;
+
+	Token filler = *candidate;
+	filler.setFlags(filler.flags() | Token::BRANCH_DELAY_FILLER);
+	tokens.erase(candidate);
+	std::list<Token>::iterator afterBranch = branch;
+	++afterBranch;
+	tokens.insert(afterBranch, filler);
+	return true;
+}
+
 bool CodeGenerator::canMoveIntoBranchDelaySlot( const Token& candidate, const Token& branch ) const
 {
 	if( candidate.label().length() != 0 )
@@ -1156,6 +1253,48 @@ bool CodeGenerator::nextTokenIsBranchDelayFiller( std::list<Token>::iterator tok
 	std::list<Token>::iterator next = token;
 	++next;
 	return next != end && (next->flags() & Token::BRANCH_DELAY_FILLER) != 0;
+}
+
+bool CodeGenerator::branchTargetLabel( const Token& branch, std::string& label ) const
+{
+	for( std::list<Token::Argument>::const_iterator i = branch.arguments().begin(); i != branch.arguments().end(); ++i )
+	{
+		if( i->flags() & Token::Argument::BRANCH )
+		{
+			if( i->type() != Token::Argument::IMMEDIATE )
+				return false;
+			label = i->immediate();
+			return true;
+		}
+	}
+	return false;
+}
+
+bool CodeGenerator::writesAreDeadFromTarget( const std::list<std::string>& writes,
+                                             std::list<Token>::iterator target,
+                                             std::list<Token>::iterator end ) const
+{
+	std::list<std::string> remaining = writes;
+	for( std::list<Token>::iterator i = target; i != end; ++i )
+	{
+		VuTokenResourceAccess access;
+		if( !buildVuTokenResourceAccess(*i, access) )
+			continue;
+
+		if( intersectsKeys(access.registerReads, remaining) )
+			return false;
+
+		for( std::list<std::string>::iterator r = remaining.begin(); r != remaining.end(); )
+		{
+			if( containsKey(access.registerWrites, *r) )
+				r = remaining.erase(r);
+			else
+				++r;
+		}
+		if( remaining.empty() )
+			return true;
+	}
+	return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

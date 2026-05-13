@@ -230,10 +230,10 @@ Current ps2gl pure-OpenVCL aggregate cost baseline:
 
 | metric | SCE/reference | OpenVCL | delta |
 |---|---:|---:|---:|
-| static scheduled cycles | 6308 | 5108 | -1200 |
-| estimated cycles | 6820 | 5803 | -1017 |
-| ps2gl-loop weighted static cycles | 100358 | 321116 | +220758 |
-| ps2gl-loop weighted estimated cycles | 100870 | 371905 | +271035 |
+| static scheduled cycles | 6308 | 5084 | -1224 |
+| estimated cycles | 6820 | 5779 | -1041 |
+| ps2gl-loop weighted static cycles | 100358 | 321092 | +220734 |
+| ps2gl-loop weighted estimated cycles | 100870 | 371881 | +271011 |
 
 `estimated cycles` includes modeled FDIV/EFU producer issue stalls and
 explicit `waitq`/`waitp` stalls. These are static VSM estimates, not measured
@@ -247,7 +247,9 @@ instructions plus conservative branch-delay filling for independent integer
 instructions immediately before direct branches. Standalone branches no longer
 emit an extra pre-branch bubble once normal read-hazard padding is satisfied.
 Eligible pre-increment stores can also move into branch delay slots by
-adjusting their offsets against the incremented base register.
+adjusting their offsets against the incremented base register. Dead VI-only
+fallthrough integer instructions can fill forward conditional branch delay
+slots when the taken path overwrites the same VI value before reading it.
 The ACC rule is intentionally more conservative than older reports that let the
 scheduler move `madd*`/`msub*` instructions across ACC producer chains.
 

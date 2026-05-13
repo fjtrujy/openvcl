@@ -495,6 +495,44 @@ TEST_CASE("Scheduling: pre-increment store stays before branch when branch ignor
     CHECK(originalStoreLine < branchLine);
 }
 
+TEST_CASE("Scheduling: dead fallthrough integer op can fill forward branch delay")
+{
+    const std::string body =
+        "\tiaddiu vi01, vi00, 1\n"
+        "\tiaddiu vi02, vi00, 1\n"
+        "\tibeq vi01, vi02, done_lid\n"
+        "\tiand vi01, vi02, vi00\n"
+        "done_lid:\n"
+        "\tiaddiu vi01, vi00, 7\n";
+    std::string vsm = runEmit(body, "vsmDeadFallthroughDelay");
+    REQUIRE(vsm.length() > 0);
+
+    int branchLine = lineIndex(vsm, "ibeq");
+    int fillerLine = lineIndex(vsm, "iand VI01");
+    REQUIRE(branchLine >= 0);
+    REQUIRE(fillerLine >= 0);
+    CHECK(fillerLine == branchLine + 1);
+}
+
+TEST_CASE("Scheduling: live fallthrough integer op stays after branch delay")
+{
+    const std::string body =
+        "\tiaddiu vi01, vi00, 1\n"
+        "\tiaddiu vi02, vi00, 1\n"
+        "\tibeq vi01, vi02, done_lid\n"
+        "\tiand vi01, vi02, vi00\n"
+        "done_lid:\n"
+        "\tiadd vi04, vi01, vi00\n";
+    std::string vsm = runEmit(body, "vsmLiveFallthroughNoDelay");
+    REQUIRE(vsm.length() > 0);
+
+    int branchLine = lineIndex(vsm, "ibeq");
+    int fillerLine = lineIndex(vsm, "iand VI01");
+    REQUIRE(branchLine >= 0);
+    REQUIRE(fillerLine >= 0);
+    CHECK(fillerLine > branchLine + 1);
+}
+
 TEST_CASE("Scheduling: terminal unconditional branch omits unreachable auto-exit footer")
 {
     const std::string body =
