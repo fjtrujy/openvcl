@@ -26,6 +26,10 @@ struct VuTokenResourceAccess
 	unsigned int implicitWrites;
 	VuMemoryKind memoryKind;
 	unsigned int memoryFlags;
+	bool hasMemoryBase;
+	std::string memoryBaseRegister;
+	bool hasMemoryOffset;
+	long memoryOffset;
 	unsigned int branchDelaySlots;
 	unsigned int bypassFlags;
 };

@@ -994,36 +994,20 @@ namespace {
 
 	bool memoryBaseRegisterKey( const Token& token, std::string& key )
 	{
-		const std::list<Token::Argument>& args = token.arguments();
-		for( std::list<Token::Argument>::const_iterator i = args.begin(); i != args.end(); ++i )
-		{
-			if( !((*i).flags() & Token::Argument::INDIRECT) )
-				continue;
-			if( (*i).type() != Token::Argument::INTEGER_REGISTER )
-				continue;
-			return registerKey(*i, key);
-		}
-		return false;
+		VuTokenResourceAccess access;
+		if( !buildVuTokenResourceAccess( token, access ) || !access.hasMemoryBase )
+			return false;
+		key = access.memoryBaseRegister;
+		return true;
 	}
 
 	bool memoryOffset( const Token& token, long& offset )
 	{
-		const std::list<Token::Argument>& args = token.arguments();
-		for( std::list<Token::Argument>::const_iterator i = args.begin(); i != args.end(); ++i )
-		{
-			if( !((*i).flags() & Token::Argument::INDIRECT) )
-				continue;
-			if( (*i).type() != Token::Argument::INTEGER_REGISTER )
-				continue;
-
-			Expression e;
-			e.setCustomOperators( Math::mathOperators() );
-			if( !e.process( (*i).immediate() ) || !e.solve() )
-				return false;
-			offset = static_cast<long>(e.result());
-			return true;
-		}
-		return false;
+		VuTokenResourceAccess access;
+		if( !buildVuTokenResourceAccess( token, access ) || !access.hasMemoryOffset )
+			return false;
+		offset = access.memoryOffset;
+		return true;
 	}
 
 	bool isIntegerImmediateAdd( const Token& token, std::string& dstReg, std::string& srcReg, long& immediate )

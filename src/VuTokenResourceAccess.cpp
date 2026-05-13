@@ -1,6 +1,8 @@
 #include "VuTokenResourceAccess.h"
 
 #include "Dependency.h"
+#include "Expression.h"
+#include "Math.h"
 
 #include <iomanip>
 #include <sstream>
@@ -46,6 +48,16 @@ namespace
 			return 0;
 		return findVuInstructionInfo( normalizeVuMnemonic( token.operand()->name() ) );
 	}
+
+	bool evaluateMemoryOffset( const Token::Argument& arg, long& offset )
+	{
+		Expression e;
+		e.setCustomOperators( Math::mathOperators() );
+		if( !e.process( arg.immediate() ) || !e.solve() )
+			return false;
+		offset = static_cast<long>( e.result() );
+		return true;
+	}
 }
 
 VuTokenResourceAccess::VuTokenResourceAccess()
@@ -54,6 +66,9 @@ VuTokenResourceAccess::VuTokenResourceAccess()
 	implicitWrites = VU_RESOURCE_NONE;
 	memoryKind = VU_MEMORY_NONE;
 	memoryFlags = VU_MEMORY_FLAG_NONE;
+	hasMemoryBase = false;
+	hasMemoryOffset = false;
+	memoryOffset = 0;
 	branchDelaySlots = 0;
 	bypassFlags = VU_BYPASS_NONE;
 }
@@ -144,6 +159,14 @@ bool buildVuTokenResourceAccess( const Token& token, VuTokenResourceAccess& acce
 		std::string key;
 		if( !vuRegisterKey( *i, key ) )
 			continue;
+
+		if( ((*i).flags() & Token::Argument::INDIRECT)
+		    && (*i).type() == Token::Argument::INTEGER_REGISTER )
+		{
+			access.hasMemoryBase = true;
+			access.memoryBaseRegister = key;
+			access.hasMemoryOffset = evaluateMemoryOffset( *i, access.memoryOffset );
+		}
 
 		if( (*i).flags() & Token::Argument::WRITE )
 		{

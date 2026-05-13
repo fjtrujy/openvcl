@@ -54,8 +54,7 @@ Remaining table work:
 
 - migrate scheduler dependency/resource checks onto table-driven read/write
   descriptors;
-- add richer memory descriptors: base register, constant offset, and exact
-  aliasing information;
+- improve exact memory aliasing beyond base register and constant offset;
 - replace branch handling with the branch delay-slot descriptors already in
   `VuInstructionInfo`.
 

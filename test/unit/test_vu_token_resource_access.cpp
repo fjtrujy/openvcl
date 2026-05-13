@@ -103,6 +103,24 @@ TEST_CASE("VuTokenResourceAccess: MAC/CLIP, memory, branch, and bypass metadata 
     REQUIRE(accessFor("lqi.xyzw vf04, (vi01++)", lqiAccess));
     CHECK(lqiAccess.memoryKind == vcl::VU_MEMORY_LOAD);
     CHECK((lqiAccess.memoryFlags & vcl::VU_MEMORY_FLAG_POSTINC) != 0);
+    CHECK(lqiAccess.hasMemoryBase == true);
+    CHECK(lqiAccess.memoryBaseRegister == "VI01");
+
+    vcl::VuTokenResourceAccess lqAccess;
+    REQUIRE(accessFor("lq.xyzw vf04, 4(vi02)", lqAccess));
+    CHECK(lqAccess.memoryKind == vcl::VU_MEMORY_LOAD);
+    CHECK(lqAccess.hasMemoryBase == true);
+    CHECK(lqAccess.memoryBaseRegister == "VI02");
+    CHECK(lqAccess.hasMemoryOffset == true);
+    CHECK(lqAccess.memoryOffset == 4);
+
+    vcl::VuTokenResourceAccess sqAccess;
+    REQUIRE(accessFor("sq.xy vf06, 12(vi03)", sqAccess));
+    CHECK(sqAccess.memoryKind == vcl::VU_MEMORY_STORE);
+    CHECK(sqAccess.hasMemoryBase == true);
+    CHECK(sqAccess.memoryBaseRegister == "VI03");
+    CHECK(sqAccess.hasMemoryOffset == true);
+    CHECK(sqAccess.memoryOffset == 12);
 
     vcl::VuTokenResourceAccess branchAccess;
     REQUIRE(accessFor("ibne vi01, vi02, target", branchAccess));
