@@ -859,7 +859,7 @@ int CodeGenerator::readHazardDelay( const Token& token, const Token* partner ) c
 		         || (partner && isVuMtir(*partner) && vuTokenReadsRegister(*partner, *i)) ) )
 			readyCycle -= 4;
 		if( producer != m_registerProducerMnemonic.end()
-		    && isVuLoadInstruction(producer->second)
+		    && isVuLoadToFtoiBypassProducer(producer->second)
 		    && ( (isVuFtoiConversion(lowerVuTokenName(token)) && vuTokenReadsRegister(token, *i))
 		         || (partner && isVuFtoiConversion(lowerVuTokenName(*partner)) && vuTokenReadsRegister(*partner, *i)) ) )
 			readyCycle -= 4;

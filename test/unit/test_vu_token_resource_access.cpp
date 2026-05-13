@@ -118,6 +118,7 @@ TEST_CASE("VuTokenResourceAccess: MAC/CLIP, memory, branch, and bypass metadata 
     vcl::VuTokenResourceAccess lqAccess;
     REQUIRE(accessFor("lq.xyzw vf04, 4(vi02)", lqAccess));
     CHECK(lqAccess.memoryKind == vcl::VU_MEMORY_LOAD);
+    CHECK((lqAccess.bypassFlags & vcl::VU_BYPASS_LOAD_TO_FTOI) != 0);
     CHECK(lqAccess.hasMemoryBase == true);
     CHECK(lqAccess.memoryBaseRegister == "VI02");
     CHECK(lqAccess.hasMemoryOffset == true);

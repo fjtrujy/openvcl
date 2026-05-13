@@ -290,9 +290,10 @@ bool isVuFtoiConversion( const std::string& name )
 	    || name == "ftoi12" || name == "ftoi15";
 }
 
-bool isVuLoadInstruction( const std::string& name )
+bool isVuLoadToFtoiBypassProducer( const std::string& name )
 {
-	return name == "lq" || name == "lqi" || name == "lqd";
+	const VuInstructionInfo* info = findVuInstructionInfo( name );
+	return info && (info->bypassFlags & VU_BYPASS_LOAD_TO_FTOI) != 0;
 }
 
 bool isVuMacReader( const std::string& name )

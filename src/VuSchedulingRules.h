@@ -22,7 +22,7 @@ bool isVuEmittableInstruction( const Token& token );
 std::string lowerVuTokenName( const Token& token );
 bool isVuMtir( const Token& token );
 bool isVuFtoiConversion( const std::string& name );
-bool isVuLoadInstruction( const std::string& name );
+bool isVuLoadToFtoiBypassProducer( const std::string& name );
 
 bool isVuMacReader( const std::string& name );
 bool isVuClipReader( const std::string& name );

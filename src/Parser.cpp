@@ -139,6 +139,7 @@ namespace
 	const FlagName kBypassFlags[] =
 	{
 		{ VU_BYPASS_FTOI_TO_MTIR, "ftoi_to_mtir" },
+		{ VU_BYPASS_LOAD_TO_FTOI, "load_to_ftoi" },
 		{ 0, 0 }
 	};
 
