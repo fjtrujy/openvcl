@@ -263,6 +263,7 @@ bool RegisterAllocator::process( std::list<Token>& tokens )
 
 	collectLiteralRegisterUsage( tokens );
 	extendContinuationLiveRanges( tokens );
+	extendLoopDirectiveLiveRanges( tokens );
 
 	if( m_aliases.size() > 0 )
 	{
@@ -878,6 +879,103 @@ void RegisterAllocator::extendContinuationLiveRanges( std::list<Token>& tokens )
 
 	if( blockStart != tokens.end() )
 		extendContinuationBlockLiveRanges( blockStart, tokens.end() );
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+bool RegisterAllocator::loopTargetHasLoopDirective( std::list<Token>::iterator target, std::list<Token>::iterator end ) const
+{
+	if( target == end )
+		return false;
+
+	if( target->operand() && target->operand()->name() == "--LoopCS" )
+		return true;
+
+	std::list<Token>::iterator next = target;
+	++next;
+	if( next != end && next->operand() && next->operand()->name() == "--LoopCS" )
+		return true;
+
+	return false;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void RegisterAllocator::extendLoopDirectiveRange( std::list<Token>& tokens, unsigned int loopStart, unsigned int loopEnd )
+{
+	std::set<Alias*> aliases;
+	for( std::list<Token>::iterator t = tokens.begin(); t != tokens.end(); ++t )
+	{
+		if( t->lineNumber() < loopStart || t->lineNumber() > loopEnd )
+			continue;
+
+		for( std::list<Token::Argument>::const_iterator a = t->arguments().begin(); a != t->arguments().end(); ++a )
+		{
+			if( a->content() != Token::Argument::ALIAS || !a->dependency() || !a->dependency()->alias() )
+				continue;
+			Alias* alias = a->dependency()->alias();
+			if( alias->type() == Alias::FLOAT )
+				aliases.insert( alias );
+		}
+	}
+
+	unsigned int availableFloats = 0;
+	for( unsigned int i = 0; i < 32; ++i )
+	{
+		if( m_floats[i].available() )
+			++availableFloats;
+	}
+
+	std::set<Alias*> overlappingAliases;
+	for( AliasMap::iterator i = m_aliases.begin(); i != m_aliases.end(); ++i )
+	{
+		Alias* alias = i->first;
+		if( alias->type() != Alias::FLOAT )
+			continue;
+		if( aliases.find( alias ) != aliases.end() || alias->hasRangeOverlapping( loopStart, loopEnd ) )
+			overlappingAliases.insert( alias );
+	}
+
+	if( overlappingAliases.size() > availableFloats )
+		return;
+
+	for( std::set<Alias*>::iterator a = aliases.begin(); a != aliases.end(); ++a )
+		(*a)->addRange( loopStart, loopEnd );
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void RegisterAllocator::extendLoopDirectiveLiveRanges( std::list<Token>& tokens )
+{
+	for( std::list<Token>::iterator branch = tokens.begin(); branch != tokens.end(); ++branch )
+	{
+		if( !branch->operand() || branch->operand()->unit() != Operand::BRU )
+			continue;
+
+		std::list<Token::Argument>::const_iterator branchDest = branch->arguments().end();
+		for( std::list<Token::Argument>::const_iterator a = branch->arguments().begin(); a != branch->arguments().end(); ++a )
+		{
+			if( a->flags() & Token::Argument::BRANCH )
+			{
+				branchDest = a;
+				break;
+			}
+		}
+		if( branchDest == branch->arguments().end() || branchDest->type() != Token::Argument::IMMEDIATE )
+			continue;
+
+		std::map< std::string, std::list<Token>::iterator >::iterator label = m_labels.find( branchDest->immediate() );
+		if( label == m_labels.end() )
+			continue;
+
+		std::list<Token>::iterator target = label->second;
+		if( target->lineNumber() >= branch->lineNumber() )
+			continue;
+		if( !loopTargetHasLoopDirective( target, tokens.end() ) )
+			continue;
+
+		extendLoopDirectiveRange( tokens, target->lineNumber(), branch->lineNumber() );
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -20,6 +20,15 @@ namespace
 #define VU_UPPER_DEST_READS(mn, name, args, pattern, reads) \
 	VU_INFO(mn, name, args, Operand::UPPER|Operand::DEST, pattern, Operand::FMAC, VU_PIPE_UPPER, VU_EXEC_FMAC, 1, 4, VU_INSTR_NONE, reads, VU_RESOURCE_MAC, VU_MEMORY_NONE, VU_MEMORY_FLAG_NONE, 0, VU_BYPASS_NONE)
 
+#define VU_UPPER_DEST_ACC_READ(mn, name, args, pattern) \
+	VU_INFO(mn, name, args, Operand::UPPER|Operand::DEST, pattern, Operand::FMAC, VU_PIPE_UPPER, VU_EXEC_FMAC, 1, 4, VU_INSTR_NONE, VU_RESOURCE_ACC, VU_RESOURCE_MAC, VU_MEMORY_NONE, VU_MEMORY_FLAG_NONE, 0, VU_BYPASS_NONE)
+
+#define VU_UPPER_DEST_ACC_READS(mn, name, args, pattern, reads) \
+	VU_INFO(mn, name, args, Operand::UPPER|Operand::DEST, pattern, Operand::FMAC, VU_PIPE_UPPER, VU_EXEC_FMAC, 1, 4, VU_INSTR_NONE, VU_RESOURCE_ACC|reads, VU_RESOURCE_MAC, VU_MEMORY_NONE, VU_MEMORY_FLAG_NONE, 0, VU_BYPASS_NONE)
+
+#define VU_UPPER_BC_ACC_READ(mn, name, args, pattern) \
+	VU_INFO(mn, name, args, Operand::UPPER|Operand::BROADCAST, pattern, Operand::FMAC, VU_PIPE_UPPER, VU_EXEC_FMAC, 1, 4, VU_INSTR_NONE, VU_RESOURCE_ACC, VU_RESOURCE_MAC, VU_MEMORY_NONE, VU_MEMORY_FLAG_NONE, 0, VU_BYPASS_NONE)
+
 #define VU_ACC_DEST(mn, name, args, pattern) \
 	VU_INFO(mn, name, args, Operand::UPPER|Operand::DEST, pattern, Operand::FMAC, VU_PIPE_UPPER, VU_EXEC_FMAC, 1, 4, VU_INSTR_NONE, VU_RESOURCE_NONE, VU_RESOURCE_ACC|VU_RESOURCE_MAC, VU_MEMORY_NONE, VU_MEMORY_FLAG_NONE, 0, VU_BYPASS_NONE)
 
@@ -28,6 +37,15 @@ namespace
 
 #define VU_ACC_READS(mn, name, args, pattern, reads) \
 	VU_INFO(mn, name, args, Operand::UPPER|Operand::DEST, pattern, Operand::FMAC, VU_PIPE_UPPER, VU_EXEC_FMAC, 1, 4, VU_INSTR_NONE, reads, VU_RESOURCE_ACC|VU_RESOURCE_MAC, VU_MEMORY_NONE, VU_MEMORY_FLAG_NONE, 0, VU_BYPASS_NONE)
+
+#define VU_ACC_ACC_READ(mn, name, args, pattern) \
+	VU_INFO(mn, name, args, Operand::UPPER|Operand::DEST, pattern, Operand::FMAC, VU_PIPE_UPPER, VU_EXEC_FMAC, 1, 4, VU_INSTR_NONE, VU_RESOURCE_ACC, VU_RESOURCE_ACC|VU_RESOURCE_MAC, VU_MEMORY_NONE, VU_MEMORY_FLAG_NONE, 0, VU_BYPASS_NONE)
+
+#define VU_ACC_ACC_READS(mn, name, args, pattern, reads) \
+	VU_INFO(mn, name, args, Operand::UPPER|Operand::DEST, pattern, Operand::FMAC, VU_PIPE_UPPER, VU_EXEC_FMAC, 1, 4, VU_INSTR_NONE, VU_RESOURCE_ACC|reads, VU_RESOURCE_ACC|VU_RESOURCE_MAC, VU_MEMORY_NONE, VU_MEMORY_FLAG_NONE, 0, VU_BYPASS_NONE)
+
+#define VU_ACC_BC_ACC_READ(mn, name, args, pattern) \
+	VU_INFO(mn, name, args, Operand::UPPER|Operand::BROADCAST, pattern, Operand::FMAC, VU_PIPE_UPPER, VU_EXEC_FMAC, 1, 4, VU_INSTR_NONE, VU_RESOURCE_ACC, VU_RESOURCE_ACC|VU_RESOURCE_MAC, VU_MEMORY_NONE, VU_MEMORY_FLAG_NONE, 0, VU_BYPASS_NONE)
 
 	const VuInstructionInfo kInstructions[] =
 	{
@@ -62,23 +80,23 @@ namespace
 		VU_ACC_READS("mulaq", "MULAq", 3, "acc:dest:write,vf:dest,q", VU_RESOURCE_Q),
 		VU_ACC_BC("mula", "MULA", 3, "acc:dest:write,vf:dest,vf:bc"),
 
-		VU_UPPER_DEST("madd", "MADD", 3, "vf:dest:write,vf:dest,vf:dest"),
-		VU_UPPER_DEST_READS("maddi", "MADDi", 3, "vf:dest:write,vf:dest,i", VU_RESOURCE_I),
-		VU_UPPER_DEST_READS("maddq", "MADDq", 3, "vf:dest:write,vf:dest,q", VU_RESOURCE_Q),
-		VU_UPPER_BC("madd", "MADD", 3, "vf:dest:write,vf:dest,vf:bc"),
-		VU_ACC_DEST("madda", "MADDA", 3, "acc:dest:write,vf:dest,vf:dest"),
-		VU_ACC_READS("maddai", "MADDAi", 3, "acc:dest:write,vf:dest,i", VU_RESOURCE_I),
-		VU_ACC_READS("maddaq", "MADDAq", 3, "acc:dest:write,vf:dest,q", VU_RESOURCE_Q),
-		VU_ACC_BC("madda", "MADDA", 3, "acc:dest:write,vf:dest,vf:bc"),
+		VU_UPPER_DEST_ACC_READ("madd", "MADD", 3, "vf:dest:write,vf:dest,vf:dest"),
+		VU_UPPER_DEST_ACC_READS("maddi", "MADDi", 3, "vf:dest:write,vf:dest,i", VU_RESOURCE_I),
+		VU_UPPER_DEST_ACC_READS("maddq", "MADDq", 3, "vf:dest:write,vf:dest,q", VU_RESOURCE_Q),
+		VU_UPPER_BC_ACC_READ("madd", "MADD", 3, "vf:dest:write,vf:dest,vf:bc"),
+		VU_ACC_ACC_READ("madda", "MADDA", 3, "acc:dest:write,vf:dest,vf:dest"),
+		VU_ACC_ACC_READS("maddai", "MADDAi", 3, "acc:dest:write,vf:dest,i", VU_RESOURCE_I),
+		VU_ACC_ACC_READS("maddaq", "MADDAq", 3, "acc:dest:write,vf:dest,q", VU_RESOURCE_Q),
+		VU_ACC_BC_ACC_READ("madda", "MADDA", 3, "acc:dest:write,vf:dest,vf:bc"),
 
-		VU_UPPER_DEST("msub", "MSUB", 3, "vf:dest:write,vf:dest,vf:dest"),
-		VU_UPPER_DEST_READS("msubi", "MSUBi", 3, "vf:dest:write,vf:dest,i", VU_RESOURCE_I),
-		VU_UPPER_DEST_READS("msubq", "MSUBq", 3, "vf:dest:write,vf:dest,q", VU_RESOURCE_Q),
-		VU_UPPER_BC("msub", "MSUB", 3, "vf:dest:write,vf:dest,vf:bc"),
-		VU_ACC_DEST("msuba", "MSUBA", 3, "acc:dest:write,vf:dest,vf:dest"),
-		VU_ACC_READS("msubai", "MSUBAi", 3, "acc:dest:write,vf:dest,i", VU_RESOURCE_I),
-		VU_ACC_READS("msubaq", "MSUBAq", 3, "acc:dest:write,vf:dest,q", VU_RESOURCE_Q),
-		VU_ACC_BC("msuba", "MSUBA", 3, "acc:dest:write,vf:dest,vf:bc"),
+		VU_UPPER_DEST_ACC_READ("msub", "MSUB", 3, "vf:dest:write,vf:dest,vf:dest"),
+		VU_UPPER_DEST_ACC_READS("msubi", "MSUBi", 3, "vf:dest:write,vf:dest,i", VU_RESOURCE_I),
+		VU_UPPER_DEST_ACC_READS("msubq", "MSUBq", 3, "vf:dest:write,vf:dest,q", VU_RESOURCE_Q),
+		VU_UPPER_BC_ACC_READ("msub", "MSUB", 3, "vf:dest:write,vf:dest,vf:bc"),
+		VU_ACC_ACC_READ("msuba", "MSUBA", 3, "acc:dest:write,vf:dest,vf:dest"),
+		VU_ACC_ACC_READS("msubai", "MSUBAi", 3, "acc:dest:write,vf:dest,i", VU_RESOURCE_I),
+		VU_ACC_ACC_READS("msubaq", "MSUBAq", 3, "acc:dest:write,vf:dest,q", VU_RESOURCE_Q),
+		VU_ACC_BC_ACC_READ("msuba", "MSUBA", 3, "acc:dest:write,vf:dest,vf:bc"),
 
 		VU_UPPER_DEST("max", "MAX", 3, "vf:dest:write,vf:dest,vf:dest"),
 		VU_UPPER_DEST_READS("maxi", "MAXi", 3, "vf:dest:write,vf:dest,i", VU_RESOURCE_I),
@@ -187,9 +205,15 @@ namespace
 		VU_INFO(0, 0, 0, 0, "", Operand::INVALID, VU_PIPE_UNKNOWN, VU_EXEC_UNKNOWN, 0, 0, VU_INSTR_NONE, VU_RESOURCE_NONE, VU_RESOURCE_NONE, VU_MEMORY_NONE, VU_MEMORY_FLAG_NONE, 0, VU_BYPASS_NONE)
 	};
 
+#undef VU_ACC_BC_ACC_READ
+#undef VU_ACC_ACC_READS
+#undef VU_ACC_ACC_READ
 #undef VU_ACC_READS
 #undef VU_ACC_BC
 #undef VU_ACC_DEST
+#undef VU_UPPER_BC_ACC_READ
+#undef VU_UPPER_DEST_ACC_READS
+#undef VU_UPPER_DEST_ACC_READ
 #undef VU_UPPER_DEST_READS
 #undef VU_UPPER_BC
 #undef VU_UPPER_DEST

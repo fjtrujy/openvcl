@@ -216,6 +216,8 @@ VCL `-d`-style output. Current work includes:
 - branch padding reuse when an existing pure `nop/nop` cycle is available;
 - adjacent upper/direct-branch pairing while preserving branch delay slots;
 - deterministic alias allocation for reproducible VSM output;
+- `--LoopCS`-marked loop temporaries get conservative VF lifetime expansion
+  when register pressure allows, giving the scheduler room to overlap loads;
 - static cost reporting used to compare OpenVCL output with SCE/reference VSM.
 
 The current refactor is consolidating instruction facts into one canonical VU
@@ -228,10 +230,10 @@ Current ps2gl pure-OpenVCL aggregate cost baseline:
 
 | metric | SCE/reference | OpenVCL | delta |
 |---|---:|---:|---:|
-| static scheduled cycles | 6308 | 4995 | -1313 |
-| estimated cycles | 6820 | 5725 | -1095 |
-| ps2gl-loop weighted static cycles | 100358 | 307638 | +207280 |
-| ps2gl-loop weighted estimated cycles | 100870 | 361927 | +261057 |
+| static scheduled cycles | 6308 | 5258 | -1050 |
+| estimated cycles | 6820 | 5953 | -867 |
+| ps2gl-loop weighted static cycles | 100358 | 333146 | +232788 |
+| ps2gl-loop weighted estimated cycles | 100870 | 383935 | +283065 |
 
 `estimated cycles` includes modeled FDIV/EFU producer issue stalls and
 explicit `waitq`/`waitp` stalls. These are static VSM estimates, not measured
@@ -239,6 +241,10 @@ runtime per draw call. The loop-weighted rows apply `--cost-loop-preset ps2gl`
 to the 13 matched ps2gl renderer pairs; they better expose the remaining
 hot-loop gap caused by SCE/reference prolog/main/epilog software-pipelined
 loops versus OpenVCL's current single-iteration scheduling.
+
+This baseline uses corrected ACC dependencies for multiply-add/subtract
+instructions. That is intentionally more conservative than older reports that
+let the scheduler move `madd*`/`msub*` instructions across ACC producer chains.
 
 The performance target is per shader, not aggregate. A scheduler change is only
 complete when every matched ps2gl OpenVCL VSM is equal to or faster than its

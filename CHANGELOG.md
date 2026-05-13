@@ -28,6 +28,8 @@
     broadcast component instead of the destination `.xyz` mask;
   - Q/P producer and consumer accounting now treats `mfp` as a P consumer, not
     a new P producer.
+  - `madd*` and `msub*` instruction metadata now models ACC reads, preventing
+    scheduler movement across multiply-add/subtract accumulator chains.
 - Added focused regression tests for the new scheduling hazards.
 - Established the next architecture direction: one canonical VU instruction
   metadata table shared by the scheduler and cost analyzer.
@@ -117,6 +119,9 @@
   checks cheaper while preserving adjacent-range merging.
 - Removed stale token-parser TODO comments now covered by instruction and
   memory descriptor metadata.
+- Extended VF lifetimes inside `--LoopCS`-marked loops when register pressure
+  allows, so loop temporaries that need scheduler overlap are not prematurely
+  coalesced onto one physical register.
 
 ## 0.3.3
 

@@ -86,6 +86,15 @@ TEST_CASE("VuTokenResourceAccess: special registers and waits come from metadata
     vcl::VuTokenResourceAccess addqAccess;
     REQUIRE(accessFor("addq vf01, vf02, q", addqAccess));
     CHECK((addqAccess.implicitReads & vcl::VU_RESOURCE_Q) != 0);
+
+    vcl::VuTokenResourceAccess maddAccess;
+    REQUIRE(accessFor("maddw.xyz vf01, vf02, vf03", maddAccess));
+    CHECK((maddAccess.implicitReads & vcl::VU_RESOURCE_ACC) != 0);
+
+    vcl::VuTokenResourceAccess maddaAccess;
+    REQUIRE(accessFor("madday acc, vf02, vf03", maddaAccess));
+    CHECK((maddaAccess.implicitReads & vcl::VU_RESOURCE_ACC) != 0);
+    CHECK((maddaAccess.implicitWrites & vcl::VU_RESOURCE_ACC) != 0);
 }
 
 TEST_CASE("VuTokenResourceAccess: MAC/CLIP, memory, branch, and bypass metadata are visible")

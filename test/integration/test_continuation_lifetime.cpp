@@ -108,3 +108,27 @@ TEST_CASE("Continuation: pre-cont live alias is not reused inside looping body")
     REQUIRE(tempReg.length() > 0);
     CHECK(keepReg != tempReg);
 }
+
+TEST_CASE("LoopCS: loop temporaries keep distinct registers for scheduling overlap")
+{
+    const std::string body =
+        "\tiaddiu ptr, vi00, 0\n"
+        "\tiaddiu last, vi00, 4\n"
+        "loop_lid:\n"
+        "\t--LoopCS 1,3\n"
+        "\tlq.xyz first, 0(ptr)\n"
+        "\tsq.xyz first, 0(ptr)\n"
+        "\tlq.xyz second, 1(ptr)\n"
+        "\tsq.xyz second, 1(ptr)\n"
+        "\tiaddiu ptr, ptr, 1\n"
+        "\tibne ptr, last, loop_lid\n";
+
+    std::string vsm = runEmit(body, "vsmLoopCsLifetime");
+    REQUIRE(vsm.length() > 0);
+
+    std::string firstReg = nthDest(vsm, "lq", 0);
+    std::string secondReg = nthDest(vsm, "lq", 1);
+    REQUIRE(firstReg.length() > 0);
+    REQUIRE(secondReg.length() > 0);
+    CHECK(firstReg != secondReg);
+}

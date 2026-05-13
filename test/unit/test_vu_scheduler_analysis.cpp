@@ -123,6 +123,22 @@ TEST_CASE("VuSchedulerAnalysis: dependency graph uses register and resource desc
     CHECK(hasEdge(edges, 4u, 5u, vcl::VU_DEPENDENCY_MEMORY));
 }
 
+TEST_CASE("VuSchedulerAnalysis: dependency graph keeps ACC multiply-add chains ordered")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("mulax acc, vf01, vf02"));
+    REQUIRE(program.parse("madday acc, vf03, vf04"));
+    REQUIRE(program.parse("maddw vf05, vf06, vf07"));
+
+    std::vector<vcl::VuBasicBlock> blocks = vcl::buildVuBasicBlocks(program.tokenizer.tokens());
+    REQUIRE(blocks.size() == 1u);
+
+    std::vector<vcl::VuDependencyEdge> edges = vcl::buildVuDependencyGraph(blocks[0]);
+    CHECK(hasEdge(edges, 0u, 1u, vcl::VU_DEPENDENCY_RESOURCE_RAW));
+    CHECK(hasEdge(edges, 1u, 2u, vcl::VU_DEPENDENCY_RESOURCE_RAW));
+}
+
 TEST_CASE("VuSchedulerAnalysis: dependency graph can ignore dead MAC WAW edges")
 {
     vcl::Error::ResetErrorCount();

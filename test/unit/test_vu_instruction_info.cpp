@@ -52,6 +52,25 @@ TEST_CASE("VuInstructionInfo: MFP consumes P but does not produce P")
     CHECK((mfp->flags & vcl::VU_INSTR_WRITES_P) == 0);
 }
 
+TEST_CASE("VuInstructionInfo: multiply-add families read ACC")
+{
+    const vcl::VuInstructionInfo* madd = vcl::findVuInstructionInfo("madd");
+    REQUIRE(madd != 0);
+    CHECK((madd->implicitReads & vcl::VU_RESOURCE_ACC) != 0);
+    CHECK((madd->implicitWrites & vcl::VU_RESOURCE_MAC) != 0);
+
+    const vcl::VuInstructionInfo* madda = vcl::findVuInstructionInfo("madda");
+    REQUIRE(madda != 0);
+    CHECK((madda->implicitReads & vcl::VU_RESOURCE_ACC) != 0);
+    CHECK((madda->implicitWrites & vcl::VU_RESOURCE_ACC) != 0);
+    CHECK((madda->implicitWrites & vcl::VU_RESOURCE_MAC) != 0);
+
+    const vcl::VuInstructionInfo* msubq = vcl::findVuInstructionInfo("msubq");
+    REQUIRE(msubq != 0);
+    CHECK((msubq->implicitReads & vcl::VU_RESOURCE_ACC) != 0);
+    CHECK((msubq->implicitReads & vcl::VU_RESOURCE_Q) != 0);
+}
+
 TEST_CASE("VuInstructionInfo: wait and branch metadata is explicit")
 {
     const vcl::VuInstructionInfo* waitq = vcl::findVuInstructionInfo("waitq");
