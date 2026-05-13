@@ -12,7 +12,7 @@ re-derive the input pattern from a 600-line preprocessed `.vcl`.
 ## quad_adc_bug.vcl
 
 Historical minimal repro for the ps2gl GL_QUADS rendering bug that was
-formerly tracked in [TODO.md](../../TODO.md).
+formerly tracked in the root roadmap.
 
 What it exercises:
 

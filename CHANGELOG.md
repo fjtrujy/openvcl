@@ -1,7 +1,7 @@
 ## Unreleased
 
-- Renamed root documentation files to Markdown: `README.md`, `TODO.md`, and
-  `CHANGELOG.md`.
+- Renamed root documentation files to Markdown and consolidated the active
+  roadmap into `README.md`, removing the standalone TODO file.
 - Added VSM cost analysis modes:
   - `--cost` for human-readable reports;
   - `--cost-json` for machine-readable reports;

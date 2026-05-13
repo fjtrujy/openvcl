@@ -202,7 +202,38 @@ construction and cost-analysis opcode classification. The scheduler should
 migrate onto the same table so resource and barrier rules are not duplicated
 across the codebase.
 
-See [TODO.md](TODO.md) for the active roadmap.
+Current ps2gl pure-OpenVCL aggregate cost baseline:
+
+| metric | SCE/reference | OpenVCL | delta |
+|---|---:|---:|---:|
+| static scheduled cycles | 6308 | 5529 | -779 |
+| estimated cycles | 6820 | 6247 | -573 |
+
+`estimated cycles` includes modeled FDIV/EFU producer issue stalls and
+explicit `waitq`/`waitp` stalls. These are static VSM estimates, not measured
+runtime per draw call.
+
+## Roadmap
+
+The next major scheduler step is a real list scheduler over descriptor-backed
+basic blocks. The intended shape is:
+
+- keep `VuInstructionInfo` as the canonical instruction table for parser,
+  cost analysis, resource descriptors, and scheduler tooling;
+- move remaining emission-time cycle state into an explicit scheduler plan;
+- improve exact memory aliasing beyond base register and constant offset;
+- add precise branch-delay-slot metadata before attempting broader branch NOP
+  removal or delay-slot filling;
+- optimize hot ps2gl loops for estimated block cost and dual-pipe occupancy,
+  guided by `--cost-compare` and `--cost-loop-preset ps2gl`;
+- eventually replace bounded textual lookahead with a ready-set list scheduler
+  and dual-pipe bundler that can prepare software-pipelined loop bodies.
+
+Scheduling changes should preserve Q/P, I, MAC, CLIP, ACC, VF/VI, broadcast
+field, branch-delay, and memory-ordering correctness. Each new scheduling rule
+should have a focused unit or integration test, full OpenVCL test coverage,
+regenerated ps2gl pure-OpenVCL VSMs, and PCSX2 smoke coverage when generated
+output can affect visible examples.
 
 ## Expression Solver
 
