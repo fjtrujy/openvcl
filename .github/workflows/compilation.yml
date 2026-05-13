@@ -26,10 +26,19 @@ jobs:
         cmake --build build -j $(getconf _NPROCESSORS_ONLN)
         cmake --install build
 
-    - name: Compile OpenVCL & Install
+    - name: Compile OpenVCL
       run: |
         make -j $(getconf _NPROCESSORS_ONLN) clean
         make -j $(getconf _NPROCESSORS_ONLN)
+
+    - name: Run OpenVCL tests
+      run: |
+        cmake -S test -B test/build -DCMAKE_BUILD_TYPE=Release
+        cmake --build test/build --target openvcl_unit_tests -j $(getconf _NPROCESSORS_ONLN)
+        ctest --test-dir test/build --output-on-failure
+
+    - name: Install OpenVCL
+      run: |
         make -j $(getconf _NPROCESSORS_ONLN) install
 
     - name: Get short SHA
