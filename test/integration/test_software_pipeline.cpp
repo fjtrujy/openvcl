@@ -394,6 +394,66 @@ namespace
             "\t--endexit\n";
     }
 
+    std::string dirLightSpecPipelineSource()
+    {
+        return
+            "\t.init_vf_all\n"
+            "\t.init_vi_all\n"
+            "\t.name vsmDirLightSpec\n"
+            "\t--enter\n"
+            "\t--endenter\n"
+            "\tiaddiu vi03, vi00, 0\n"
+            "\tiaddiu vi04, vi00, 15\n"
+            "\tiaddiu vi13, vi00, 0\n"
+            "\tmove.xyzw vf06, vf00\n"
+            "\tmove.xyzw vf08, vf00\n"
+            "\tmove.xyzw vf12, vf00\n"
+            "\tmove.xyzw vf13, vf00\n"
+            "\tmove.xyzw vf14, vf00\n"
+            "\tmove.xyzw vf15, vf00\n"
+            "\tmove.xyzw vf16, vf00\n"
+            "\tmove.xyzw vf17, vf00\n"
+            "\tmove.xyzw vf18, vf00\n"
+            "\tmove.xyzw vf19, vf00\n"
+            "\tmove.xyzw vf20, vf00\n"
+            "\tmove.xyzw vf21, vf00\n"
+            "\tmove.xyzw vf22, vf00\n"
+            "\tmove.xyzw vf28, vf00\n"
+            "\tmove.xyzw vf29, vf00\n"
+            "\tmove.xyzw vf30, vf00\n"
+            "\tmaxw.xyzw vf11, vf00, vf00w\n"
+            "dir_light_vert_loop_lid:\n"
+            "\t--LoopCS 1,3\n"
+            "\tlq.xyz vf14, 1(vi13)\n"
+            "\tmul.xyz vf17, vf16, vf14\n"
+            "\tadday.z acc, vf17, vf17y\n"
+            "\tmaddx.z vf17, vf11, vf17x\n"
+            "\tmaxx.z vf17, vf17, vf00x\n"
+            "\tmulz.xyz vf18, vf13, vf17z\n"
+            "\tmula.xyz acc, vf18, vf08\n"
+            "\tmul.xyz vf20, vf19, vf14\n"
+            "\tmr32.xyw vf20, vf20\n"
+            "\taddax.w acc, vf20, vf20x\n"
+            "\tmaddy.w vf21, vf00, vf20y\n"
+            "\tmaxx.w vf22, vf21, vf00x\n"
+            "\tmul.w vf22, vf22, vf22\n"
+            "\tmul.w vf22, vf22, vf22\n"
+            "\tmul.w vf22, vf22, vf22\n"
+            "\tmul.w vf22, vf22, vf22\n"
+            "\tmul.w vf22, vf22, vf22\n"
+            "\tmaddaw.xyz acc, vf15, vf22w\n"
+            "\tmadd.xyz vf28, vf12, vf06\n"
+            "\tlq.xyz vf29, 1(vi03)\n"
+            "\tadd.xyz vf30, vf29, vf28\n"
+            "\tsq.xyz vf30, 1(vi03)\n"
+            "\tiaddiu vi13, vi13, 3\n"
+            "\tiaddiu vi03, vi03, 3\n"
+            "\tibne vi13, vi04, dir_light_vert_loop_lid\n"
+            "done_lid:\n"
+            "\t--exit\n"
+            "\t--endexit\n";
+    }
+
     std::string ptLightNoSpecPipelineSource()
     {
         return
@@ -573,6 +633,19 @@ TEST_CASE("Software pipeline: no-spec directional light loop emits an 8-cycle st
     CHECK(contains(vsm, "dir_light_vert_loop_lid__SCALAR_FALLBACK:"));
     CHECK(contains(vsm, "ibne VI13, VI04, dir_light_vert_loop_lid__MAIN_LOOP"));
     CHECK(contains(vsm, "sq.xyz VF18, -2(VI03)"));
+}
+
+TEST_CASE("Software pipeline: specular directional light loop stays scalar until W power chain is safe")
+{
+    std::string vsm = runEmit(dirLightSpecPipelineSource());
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(!contains(vsm, "dir_light_vert_loop_lid__SPEC_ENTRY_POINT:"));
+    CHECK(!contains(vsm, "dir_light_vert_loop_lid__MAIN_LOOP:"));
+    CHECK(contains(vsm, "dir_light_vert_loop_lid:"));
+    CHECK(contains(vsm, "ibne VI13, VI04, dir_light_vert_loop_lid"));
+    CHECK(contains(vsm, "maddx.z VF17, VF11, VF17x"));
+    CHECK(contains(vsm, "sq.xyz VF30, 1(VI03)"));
 }
 
 TEST_CASE("Software pipeline: no-spec point light loop emits a 26-cycle steady state")

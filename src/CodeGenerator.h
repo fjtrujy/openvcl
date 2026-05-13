@@ -94,6 +94,7 @@ private:
 	struct FastLitLoopPipelinePattern;
 	struct SceiLoopPipelinePattern;
 	struct LinearXformLoopPipelinePattern;
+	struct DirLightSpecLoopPipelinePattern;
 	struct DirLightNoSpecLoopPipelinePattern;
 	struct PtLightNoSpecLoopPipelinePattern;
 	struct FinalColorLoopPipelinePattern;
@@ -122,6 +123,13 @@ private:
 	                                            LinearXformLoopPipelinePattern& pattern );
 	void emitLinearXformSoftwarePipelineLoop( const LinearXformLoopPipelinePattern& pattern );
 	void emitLinearXformScalarBody( const LinearXformLoopPipelinePattern& pattern );
+	bool tryEmitDirLightSpecSoftwarePipelineLoop( std::list<Token>& tokens,
+	                                              std::list<Token>::iterator& token );
+	bool collectDirLightSpecLoopPipelinePattern( std::list<Token>::iterator begin,
+	                                             std::list<Token>::iterator end,
+	                                             DirLightSpecLoopPipelinePattern& pattern );
+	void emitDirLightSpecSoftwarePipelineLoop( const DirLightSpecLoopPipelinePattern& pattern );
+	void emitDirLightSpecScalarFallbackLoop( const DirLightSpecLoopPipelinePattern& pattern );
 	bool tryEmitDirLightNoSpecSoftwarePipelineLoop( std::list<Token>& tokens,
 	                                                std::list<Token>::iterator& token );
 	bool collectDirLightNoSpecLoopPipelinePattern( std::list<Token>::iterator begin,

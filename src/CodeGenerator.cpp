@@ -375,6 +375,59 @@ struct CodeGenerator::DirLightNoSpecLoopPipelinePattern
 	}
 };
 
+struct CodeGenerator::DirLightSpecLoopPipelinePattern
+{
+	std::string sourceLabel;
+	std::string entryLabel;
+	std::string prologOneLabel;
+	std::string prologTwoLabel;
+	std::string mainLabel;
+	std::string drainLabel;
+	std::string fallbackOneLabel;
+	std::string fallbackTwoLabel;
+	std::string fallbackThreeLabel;
+	std::string scalarLabel;
+	std::string exitLabel;
+
+	std::string inputReg;
+	std::string lastInputReg;
+	std::string outputReg;
+	std::string normalReg;
+	std::string colorReg;
+	std::string lightDirReg;
+	std::string diffProductReg;
+	std::string onesReg;
+	std::string lightDiffReg;
+	std::string localDiffReg;
+	std::string materialDiffReg;
+	std::string halfAngleReg;
+	std::string specProductReg;
+	std::string specSwizzleReg;
+	std::string specScratchReg;
+	std::string specIntensityReg;
+	std::string specPowerReg;
+	std::string localSpecReg;
+	std::string lightAmbReg;
+	std::string materialAmbReg;
+	std::string litReg;
+	std::string resultReg;
+
+	long inputStep;
+	long outputStep;
+	long normalOffset;
+	long colorOffset;
+	long storeOffset;
+
+	DirLightSpecLoopPipelinePattern()
+	{
+		inputStep = 0;
+		outputStep = 0;
+		normalOffset = 0;
+		colorOffset = 0;
+		storeOffset = 0;
+	}
+};
+
 struct CodeGenerator::PtLightNoSpecLoopPipelinePattern
 {
 	std::string sourceLabel;
@@ -704,6 +757,8 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			exitWritten = false;
 			continue;
 		}
+		// Specular directional loops have a dependent W power chain that needs
+		// a tighter VU-safe schedule before this recognizer can be enabled.
 		if( tryEmitDirLightNoSpecSoftwarePipelineLoop(workTokens, k) )
 		{
 			exitWritten = false;
@@ -4582,6 +4637,639 @@ bool CodeGenerator::tryEmitDirLightNoSpecSoftwarePipelineLoop( std::list<Token>&
 	emitDirLightNoSpecSoftwarePipelineLoop(pattern);
 	token = afterBranch;
 	return true;
+}
+
+bool CodeGenerator::tryEmitDirLightSpecSoftwarePipelineLoop( std::list<Token>& tokens,
+                                                             std::list<Token>::iterator& token )
+{
+	if( token == tokens.end() )
+		return false;
+	if( token->label() != "dir_light_vert_loop_lid" )
+		return false;
+
+	std::list<Token>::iterator branch = tokens.end();
+	for( std::list<Token>::iterator i = token; i != tokens.end(); ++i )
+	{
+		std::string target;
+		if( branchTargetLabel(*i, target) && target == token->label() )
+		{
+			branch = i;
+			break;
+		}
+		if( i != token && i->label().length() != 0 )
+			return false;
+	}
+	if( branch == tokens.end() )
+		return false;
+
+	std::list<Token>::iterator afterBranch = branch;
+	++afterBranch;
+	if( afterBranch != tokens.end() && (afterBranch->flags() & Token::BRANCH_DELAY_FILLER) )
+		++afterBranch;
+
+	DirLightSpecLoopPipelinePattern pattern;
+	if( !collectDirLightSpecLoopPipelinePattern(token, afterBranch, pattern) )
+	{
+		std::list<Token>::iterator extendedAfterBranch = afterBranch;
+		if( extendedAfterBranch != tokens.end() && extendedAfterBranch->label().length() == 0 )
+			++extendedAfterBranch;
+		if( extendedAfterBranch == afterBranch
+		    || !collectDirLightSpecLoopPipelinePattern(token, extendedAfterBranch, pattern) )
+			return false;
+		afterBranch = extendedAfterBranch;
+	}
+
+	emitDirLightSpecSoftwarePipelineLoop(pattern);
+	token = afterBranch;
+	return true;
+}
+
+bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::iterator begin,
+                                                            std::list<Token>::iterator end,
+                                                            DirLightSpecLoopPipelinePattern& pattern )
+{
+	pattern = DirLightSpecLoopPipelinePattern();
+	pattern.sourceLabel = begin->label();
+	pattern.entryLabel = pattern.sourceLabel + "__SPEC_ENTRY_POINT";
+	pattern.prologOneLabel = pattern.sourceLabel + "__SPEC_PRO1";
+	pattern.prologTwoLabel = pattern.sourceLabel + "__SPEC_PRO2";
+	pattern.mainLabel = pattern.sourceLabel + "__MAIN_LOOP";
+	pattern.drainLabel = pattern.sourceLabel + "__SPEC_DRAIN_TAIL";
+	pattern.fallbackOneLabel = pattern.sourceLabel + "__SPEC_FALLBACK1";
+	pattern.fallbackTwoLabel = pattern.sourceLabel + "__SPEC_FALLBACK2";
+	pattern.fallbackThreeLabel = pattern.sourceLabel + "__SPEC_FALLBACK3";
+	pattern.scalarLabel = pattern.sourceLabel + "__SPEC_SCALAR_FALLBACK";
+	pattern.exitLabel = pattern.sourceLabel + "__SPEC_EXIT_POINT";
+
+	bool haveBranch = false;
+	for( std::list<Token>::iterator i = begin; i != end; ++i )
+	{
+		std::string target;
+		if( branchTargetLabel(*i, target) && target == pattern.sourceLabel )
+		{
+			if( !getRegisterArgKey(*i, 0, pattern.inputReg)
+			    || !getRegisterArgKey(*i, 1, pattern.lastInputReg) )
+				return false;
+			haveBranch = true;
+			break;
+		}
+	}
+	if( !haveBranch )
+		return false;
+
+	bool haveInputIncrement = false;
+	bool haveOutputIncrement = false;
+	bool haveNormalLoad = false;
+	bool haveColorLoad = false;
+	bool haveDiffuseMul = false;
+	bool haveDiffuseAdday = false;
+	bool haveDiffuseMaddx = false;
+	bool haveDiffuseMax = false;
+	bool haveLocalDiff = false;
+	bool haveMula = false;
+	bool haveSpecMul = false;
+	bool haveSpecMr32 = false;
+	bool haveSpecAddax = false;
+	bool haveSpecMaddy = false;
+	bool haveSpecMax = false;
+	bool haveSpecPower = false;
+	bool haveMaddaw = false;
+	bool haveMadd = false;
+	bool haveAdd = false;
+	bool haveStore = false;
+	unsigned int specPowerCount = 0;
+
+	for( std::list<Token>::iterator i = begin; i != end; ++i )
+	{
+		const Token& token = *i;
+		if( !token.operand() || (token.flags() & Token::IGNORED)
+		    || (token.operand()->flags() & Operand::PREPROCESSOR) )
+			continue;
+
+		const std::string mnemonic = lowerVuTokenName(token);
+		if( mnemonic == "nop" )
+			continue;
+
+		std::string target;
+		if( branchTargetLabel(token, target) && target == pattern.sourceLabel )
+			continue;
+
+		if( mnemonic == "lq" )
+		{
+			std::string base;
+			long offset = 0;
+			std::string dst;
+			if( !getIndirectBaseAndOffset(token, base, offset)
+			    || !getRegisterArgKey(token, 0, dst)
+			    || !tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+				return false;
+			if( base == pattern.inputReg && offset == 1 )
+			{
+				pattern.normalReg = dst;
+				pattern.normalOffset = offset;
+				haveNormalLoad = true;
+				continue;
+			}
+			if( base != pattern.inputReg && offset == 1 )
+			{
+				if( !pattern.outputReg.empty() && base != pattern.outputReg )
+					return false;
+				pattern.outputReg = base;
+				pattern.colorReg = dst;
+				pattern.colorOffset = offset;
+				haveColorLoad = true;
+				continue;
+			}
+			return false;
+		}
+
+		if( mnemonic == "iaddiu" )
+		{
+			std::string dst;
+			std::string src;
+			std::string imm;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, src)
+			    || !getImmediateArg(token, 2, imm) )
+				return false;
+			if( dst != src )
+				return false;
+			long value = 0;
+			if( !evaluateIntegerExpression(imm, value) )
+				return false;
+			if( dst == pattern.inputReg )
+			{
+				pattern.inputStep = value;
+				haveInputIncrement = true;
+				continue;
+			}
+			if( !pattern.outputReg.empty() && dst == pattern.outputReg )
+			{
+				pattern.outputStep = value;
+				haveOutputIncrement = true;
+				continue;
+			}
+			return false;
+		}
+
+		if( mnemonic == "mul" && token.broadcast() == 0
+		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string dst;
+			std::string left;
+			std::string right;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, left)
+			    || !getRegisterArgKey(token, 2, right) )
+				return false;
+			if( right == pattern.normalReg && !haveDiffuseMul )
+			{
+				pattern.diffProductReg = dst;
+				pattern.lightDirReg = left;
+				haveDiffuseMul = true;
+				continue;
+			}
+			if( right == pattern.normalReg && haveDiffuseMul && !haveSpecMul )
+			{
+				pattern.specProductReg = dst;
+				pattern.halfAngleReg = left;
+				haveSpecMul = true;
+				continue;
+			}
+			return false;
+		}
+
+		if( mnemonic == "mr32" )
+		{
+			std::string dst;
+			std::string src;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, src) )
+				return false;
+			if( src != pattern.specProductReg )
+				return false;
+			pattern.specSwizzleReg = dst;
+			haveSpecMr32 = true;
+			continue;
+		}
+
+		if( mnemonic == "adda" && token.broadcast() == Token::Y && tokenHasFields(token, Token::Z) )
+		{
+			std::string src;
+			if( !getRegisterArgKey(token, 1, src) || src != pattern.diffProductReg )
+				return false;
+			haveDiffuseAdday = true;
+			continue;
+		}
+
+		if( mnemonic == "madd" && token.broadcast() == Token::X && tokenHasFields(token, Token::Z) )
+		{
+			std::string dst;
+			std::string src;
+			std::string product;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, src)
+			    || !getRegisterArgKey(token, 2, product) )
+				return false;
+			if( dst != pattern.diffProductReg || product != pattern.diffProductReg )
+				return false;
+			pattern.onesReg = src;
+			haveDiffuseMaddx = true;
+			continue;
+		}
+
+		if( mnemonic == "max" && token.broadcast() == Token::X )
+		{
+			std::string dst;
+			std::string src;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, src) )
+				return false;
+			if( tokenHasFields(token, Token::Z) && dst == pattern.diffProductReg
+			    && src == pattern.diffProductReg )
+			{
+				haveDiffuseMax = true;
+				continue;
+			}
+			if( tokenHasFields(token, Token::W) && src == pattern.specScratchReg )
+			{
+				pattern.specIntensityReg = dst;
+				haveSpecMax = true;
+				continue;
+			}
+			return false;
+		}
+
+		if( mnemonic == "mul" && token.broadcast() == Token::Z
+		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string dst;
+			std::string src;
+			std::string product;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, src)
+			    || !getRegisterArgKey(token, 2, product) )
+				return false;
+			if( product != pattern.diffProductReg )
+				return false;
+			pattern.localDiffReg = dst;
+			pattern.lightDiffReg = src;
+			haveLocalDiff = true;
+			continue;
+		}
+
+		if( mnemonic == "mula" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string src;
+			std::string material;
+			if( !getRegisterArgKey(token, 1, src) || !getRegisterArgKey(token, 2, material) )
+				return false;
+			if( src != pattern.localDiffReg )
+				return false;
+			pattern.materialDiffReg = material;
+			haveMula = true;
+			continue;
+		}
+
+		if( mnemonic == "adda" && token.broadcast() == Token::X && tokenHasFields(token, Token::W) )
+		{
+			std::string src;
+			if( !getRegisterArgKey(token, 1, src) || src != pattern.specSwizzleReg )
+				return false;
+			haveSpecAddax = true;
+			continue;
+		}
+
+		if( mnemonic == "madd" && token.broadcast() == Token::Y && tokenHasFields(token, Token::W) )
+		{
+			std::string dst;
+			std::string src;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 2, src) )
+				return false;
+			if( src != pattern.specSwizzleReg )
+				return false;
+			pattern.specScratchReg = dst;
+			haveSpecMaddy = true;
+			continue;
+		}
+
+		if( mnemonic == "mul" && token.broadcast() == 0 && tokenHasFields(token, Token::W) )
+		{
+			std::string dst;
+			std::string src0;
+			std::string src1;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, src0)
+			    || !getRegisterArgKey(token, 2, src1) )
+				return false;
+			if( src0 != src1 )
+				return false;
+			if( pattern.specIntensityReg.empty() || (src0 != pattern.specIntensityReg
+			    && src0 != pattern.specPowerReg) )
+				return false;
+			pattern.specPowerReg = dst;
+			++specPowerCount;
+			haveSpecPower = true;
+			continue;
+		}
+
+		if( mnemonic == "madda" && token.broadcast() == Token::W
+		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string src;
+			if( !getRegisterArgKey(token, 1, src) )
+				return false;
+			pattern.localSpecReg = src;
+			haveMaddaw = true;
+			continue;
+		}
+
+		if( mnemonic == "madd" && token.broadcast() == 0
+		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string dst;
+			std::string amb;
+			std::string mat;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, amb)
+			    || !getRegisterArgKey(token, 2, mat) )
+				return false;
+			pattern.litReg = dst;
+			pattern.lightAmbReg = amb;
+			pattern.materialAmbReg = mat;
+			haveMadd = true;
+			continue;
+		}
+
+		if( mnemonic == "add" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string dst;
+			std::string left;
+			std::string right;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, left)
+			    || !getRegisterArgKey(token, 2, right) )
+				return false;
+			if( left != pattern.colorReg || right != pattern.litReg )
+				return false;
+			pattern.resultReg = dst;
+			haveAdd = true;
+			continue;
+		}
+
+		if( mnemonic == "sq" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string base;
+			long offset = 0;
+			std::string src;
+			if( !getIndirectBaseAndOffset(token, base, offset)
+			    || !getRegisterArgKey(token, 0, src) )
+				return false;
+			if( base != pattern.outputReg || src != pattern.resultReg )
+				return false;
+			pattern.storeOffset = offset;
+			haveStore = true;
+			continue;
+		}
+
+		return false;
+	}
+
+	bool ok = haveBranch
+	    && haveInputIncrement
+	    && haveOutputIncrement
+	    && haveNormalLoad
+	    && haveColorLoad
+	    && haveDiffuseMul
+	    && haveDiffuseAdday
+	    && haveDiffuseMaddx
+	    && haveDiffuseMax
+	    && haveLocalDiff
+	    && haveMula
+	    && haveSpecMul
+	    && haveSpecMr32
+	    && haveSpecAddax
+	    && haveSpecMaddy
+	    && haveSpecMax
+	    && haveSpecPower
+	    && specPowerCount >= 5
+	    && haveMaddaw
+	    && haveMadd
+	    && haveAdd
+	    && haveStore
+	    && pattern.inputStep == 3
+	    && pattern.outputStep == 3
+	    && pattern.normalOffset == 1
+	    && pattern.colorOffset == 1
+	    && pattern.storeOffset == 1
+	    && !pattern.inputReg.empty()
+	    && !pattern.lastInputReg.empty()
+	    && !pattern.outputReg.empty()
+	    && !pattern.normalReg.empty()
+	    && !pattern.colorReg.empty()
+	    && !pattern.lightDirReg.empty()
+	    && !pattern.diffProductReg.empty()
+	    && !pattern.onesReg.empty()
+	    && !pattern.lightDiffReg.empty()
+	    && !pattern.localDiffReg.empty()
+	    && !pattern.materialDiffReg.empty()
+	    && !pattern.halfAngleReg.empty()
+	    && !pattern.specProductReg.empty()
+	    && !pattern.specSwizzleReg.empty()
+	    && !pattern.specScratchReg.empty()
+	    && !pattern.specIntensityReg.empty()
+	    && !pattern.specPowerReg.empty()
+	    && !pattern.localSpecReg.empty()
+	    && !pattern.lightAmbReg.empty()
+	    && !pattern.materialAmbReg.empty()
+	    && !pattern.litReg.empty()
+	    && !pattern.resultReg.empty();
+	return ok;
+}
+
+void CodeGenerator::emitDirLightSpecSoftwarePipelineLoop( const DirLightSpecLoopPipelinePattern& p )
+{
+	const std::string in = p.inputReg;
+	const std::string out = p.outputReg;
+	const std::string last = p.lastInputReg;
+	const std::string normal = p.normalReg;
+	const std::string color = p.colorReg;
+	const std::string diff = p.diffProductReg;
+	const std::string localDiff = p.localDiffReg;
+	const std::string specProd = p.specProductReg;
+	const std::string specScratch = p.specScratchReg;
+	const std::string specIntensity = p.specIntensityReg;
+	const std::string specPower = p.specPowerReg;
+	const std::string lit = p.litReg;
+	const std::string result = p.resultReg;
+	const std::string vf00 = "VF00";
+
+	m_codeLines.push_back(p.entryLabel + ":");
+	emitRawPairedLine("nop", "lq.xyz " + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, "nop");
+	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal, "nop");
+	emitRawPairedLine("nop", "mr32.xyw " + p.specSwizzleReg + ", " + specProd);
+	emitRawPairedLine("nop", "ibeq " + in + ", " + last + ", " + p.fallbackOneLabel);
+	emitRawPairedLine("addax.w ACC, " + p.specSwizzleReg + ", " + fieldArg(p.specSwizzleReg, "x"), "nop");
+
+	m_codeLines.push_back(p.prologOneLabel + ":");
+	emitRawPairedLine("maddy.w " + specScratch + ", " + vf00 + ", " + fieldArg(p.specSwizzleReg, "y"),
+	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine("adday.z ACC, " + diff + ", " + fieldArg(diff, "y"), "nop");
+	emitRawPairedLine("maddx.z " + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), "nop");
+	emitRawPairedLine("maxx.w " + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), "nop");
+	emitRawPairedLine("maxx.z " + diff + ", " + diff + ", " + fieldArg(vf00, "x"), "nop");
+	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, "nop");
+	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, "nop");
+	emitRawPairedLine("nop", "mr32.xyw " + p.specSwizzleReg + ", " + specProd);
+	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, "nop");
+	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal,
+	                  "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diff, "z"), "nop");
+	emitRawPairedLine("addax.w ACC, " + p.specSwizzleReg + ", " + fieldArg(p.specSwizzleReg, "x"),
+	                  "ibeq " + in + ", " + last + ", " + p.fallbackTwoLabel);
+	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, "nop");
+
+	m_codeLines.push_back(p.prologTwoLabel + ":");
+	emitRawPairedLine("maddy.w " + specScratch + ", " + vf00 + ", " + fieldArg(p.specSwizzleReg, "y"), "nop");
+	emitRawPairedLine("adday.z ACC, " + diff + ", " + fieldArg(diff, "y"), "nop");
+	emitRawPairedLine("maddx.z " + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), "nop");
+	emitRawPairedLine("mul.w " + specPower + ", " + specIntensity + ", " + specIntensity, "nop");
+	emitRawPairedLine("maxx.w " + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), "nop");
+	emitRawPairedLine("mula.xyz ACC, " + localDiff + ", " + p.materialDiffReg,
+	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine("maxx.z " + diff + ", " + diff + ", " + fieldArg(vf00, "x"), "nop");
+	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, "nop");
+	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, "nop");
+	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, "nop");
+	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(specPower, "w"), "nop");
+	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, "nop");
+	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg,
+	                  "mr32.xyw " + p.specSwizzleReg + ", " + specProd);
+	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal,
+	                  "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diff, "z"), "nop");
+	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity,
+	                  "ibeq " + in + ", " + last + ", " + p.fallbackThreeLabel);
+	emitRawPairedLine("addax.w ACC, " + p.specSwizzleReg + ", " + fieldArg(p.specSwizzleReg, "x"), "nop");
+
+	m_codeLines.push_back(p.mainLabel + ":");
+	emitRawPairedLine("maddy.w " + specScratch + ", " + vf00 + ", " + fieldArg(p.specSwizzleReg, "y"),
+	                  "iaddiu " + out + ", " + out + ", 3");
+	emitRawPairedLine("adday.z ACC, " + diff + ", " + fieldArg(diff, "y"), "nop");
+	emitRawPairedLine("maddx.z " + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), "nop");
+	emitRawPairedLine("mul.w " + specPower + ", " + specIntensity + ", " + specIntensity, "nop");
+	emitRawPairedLine("maxx.w " + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), "nop");
+	emitRawPairedLine("mula.xyz ACC, " + localDiff + ", " + p.materialDiffReg,
+	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine("maxx.z " + diff + ", " + diff + ", " + fieldArg(vf00, "x"),
+	                  "lq.xyz " + color + ", " + offsetBase(-2, out));
+	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, "nop");
+	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, "nop");
+	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, "nop");
+	emitRawPairedLine("add.xyz " + result + ", " + color + ", " + lit, "nop");
+	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(specPower, "w"), "nop");
+	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity,
+	                  "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg,
+	                  "mr32.xyw " + p.specSwizzleReg + ", " + specProd);
+	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal,
+	                  "sq.xyz " + result + ", " + offsetBase(-2, out));
+	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diff, "z"), "nop");
+	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity,
+	                  "ibne " + in + ", " + last + ", " + p.mainLabel);
+	emitRawPairedLine("addax.w ACC, " + p.specSwizzleReg + ", " + fieldArg(p.specSwizzleReg, "x"), "nop");
+
+	m_codeLines.push_back(p.drainLabel + ":");
+	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", 9");
+	emitRawPairedLine("nop", "b " + p.scalarLabel);
+	emitRawPairedLine("nop", "nop");
+
+	m_codeLines.push_back(p.fallbackOneLabel + ":");
+	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", 3");
+	emitRawPairedLine("nop", "b " + p.scalarLabel);
+	emitRawPairedLine("nop", "nop");
+
+	m_codeLines.push_back(p.fallbackTwoLabel + ":");
+	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", 6");
+	emitRawPairedLine("nop", "b " + p.scalarLabel);
+	emitRawPairedLine("nop", "nop");
+
+	m_codeLines.push_back(p.fallbackThreeLabel + ":");
+	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", 9");
+	emitRawPairedLine("nop", "b " + p.scalarLabel);
+	emitRawPairedLine("nop", "nop");
+
+	emitDirLightSpecScalarFallbackLoop(p);
+}
+
+void CodeGenerator::emitDirLightSpecScalarFallbackLoop( const DirLightSpecLoopPipelinePattern& p )
+{
+	const std::string in = p.inputReg;
+	const std::string out = p.outputReg;
+	const std::string last = p.lastInputReg;
+	const std::string normal = p.normalReg;
+	const std::string color = p.colorReg;
+	const std::string diff = p.diffProductReg;
+	const std::string localDiff = p.localDiffReg;
+	const std::string specProd = p.specProductReg;
+	const std::string specScratch = p.specScratchReg;
+	const std::string specIntensity = p.specIntensityReg;
+	const std::string specPower = p.specPowerReg;
+	const std::string lit = p.litReg;
+	const std::string result = p.resultReg;
+	const std::string vf00 = "VF00";
+
+	m_codeLines.push_back(p.scalarLabel + ":");
+	emitRawPairedLine("nop", "lq.xyz " + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine("nop", "lq.xyz " + color + ", " + offsetBase(1, out));
+	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal, "nop");
+	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "mr32.xyw " + p.specSwizzleReg + ", " + specProd);
+	emitRawPairedLine("adday.z ACC, " + diff + ", " + fieldArg(diff, "y"), "nop");
+	emitRawPairedLine("maddx.z " + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("maxx.z " + diff + ", " + diff + ", " + fieldArg(vf00, "x"), "nop");
+	emitRawPairedLine("addax.w ACC, " + p.specSwizzleReg + ", " + fieldArg(p.specSwizzleReg, "x"), "nop");
+	emitRawPairedLine("maddy.w " + specScratch + ", " + vf00 + ", " + fieldArg(p.specSwizzleReg, "y"), "nop");
+	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diff, "z"), "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("maxx.w " + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), "nop");
+	emitRawPairedLine("mula.xyz ACC, " + localDiff + ", " + p.materialDiffReg, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("mul.w " + specPower + ", " + specIntensity + ", " + specIntensity, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(specPower, "w"), "nop");
+	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("add.xyz " + result + ", " + color + ", " + lit, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "sq.xyz " + result + ", " + offsetBase(1, out));
+	emitRawPairedLine("nop", "ibne " + in + ", " + last + ", " + p.scalarLabel);
+	emitRawPairedLine("nop", "iaddiu " + out + ", " + out + ", 3");
+
+	m_codeLines.push_back(p.exitLabel + ":");
 }
 
 bool CodeGenerator::collectDirLightNoSpecLoopPipelinePattern( std::list<Token>::iterator begin,
