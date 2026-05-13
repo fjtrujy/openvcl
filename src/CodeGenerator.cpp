@@ -415,8 +415,10 @@ struct CodeGenerator::DirLightSpecLoopPipelinePattern
 	long inputStep;
 	long outputStep;
 	long normalOffset;
+	long materialDiffOffset;
 	long colorOffset;
 	long storeOffset;
+	bool materialDiffFromInput;
 	bool postIncrementStore;
 
 	DirLightSpecLoopPipelinePattern()
@@ -424,8 +426,10 @@ struct CodeGenerator::DirLightSpecLoopPipelinePattern
 		inputStep = 0;
 		outputStep = 0;
 		normalOffset = 0;
+		materialDiffOffset = 0;
 		colorOffset = 0;
 		storeOffset = 0;
+		materialDiffFromInput = false;
 		postIncrementStore = false;
 	}
 };
@@ -4722,6 +4726,7 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 	bool haveInputIncrement = false;
 	bool haveOutputIncrement = false;
 	bool haveNormalLoad = false;
+	bool haveMaterialDiffInputLoad = false;
 	bool haveColorLoad = false;
 	bool haveDiffuseMul = false;
 	bool haveDiffuseAdday = false;
@@ -4770,6 +4775,14 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 				pattern.normalReg = dst;
 				pattern.normalOffset = offset;
 				haveNormalLoad = true;
+				continue;
+			}
+			if( base == pattern.inputReg && offset == 3 )
+			{
+				pattern.materialDiffReg = dst;
+				pattern.materialDiffOffset = offset;
+				pattern.materialDiffFromInput = true;
+				haveMaterialDiffInputLoad = true;
 				continue;
 			}
 			if( base != pattern.inputReg && (offset == 0 || offset == 1) )
@@ -4922,7 +4935,15 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 				return false;
 			if( src != pattern.localDiffReg )
 				return false;
-			pattern.materialDiffReg = material;
+			if( pattern.materialDiffFromInput )
+			{
+				if( material != pattern.materialDiffReg )
+					return false;
+			}
+			else
+			{
+				pattern.materialDiffReg = material;
+			}
 			haveMula = true;
 			continue;
 		}
@@ -5061,7 +5082,9 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 	    && haveMadd
 	    && haveAdd
 	    && haveStore
-	    && pattern.inputStep == 3
+	    && ((pattern.materialDiffFromInput && haveMaterialDiffInputLoad && pattern.inputStep == 4
+	         && pattern.materialDiffOffset == 3)
+	        || (!pattern.materialDiffFromInput && pattern.inputStep == 3))
 	    && (pattern.postIncrementStore || pattern.outputStep == 3)
 	    && pattern.normalOffset == 1
 	    && ((pattern.postIncrementStore && pattern.colorOffset == 0 && pattern.storeOffset == 0)
@@ -5107,15 +5130,27 @@ void CodeGenerator::emitDirLightSpecSoftwarePipelineLoop( const DirLightSpecLoop
 	const std::string lit = p.litReg;
 	const std::string result = p.resultReg;
 	const std::string vf00 = "VF00";
+	const std::string inputStep = integerText(p.inputStep);
+	const std::string inputStepOne = integerText(p.inputStep);
+	const std::string inputStepTwo = integerText(p.inputStep * 2);
+	const std::string inputStepThree = integerText(p.inputStep * 3);
 	const std::string mainOutputStep = p.postIncrementStore ? "nop" : "iaddiu " + out + ", " + out + ", 3";
 	const std::string mainColorLoad = p.postIncrementStore ? offsetBase(0, out) : offsetBase(-2, out);
 	const std::string mainStore = p.postIncrementStore
 	                            ? "sqi.xyz " + result + ", (" + out + "++)"
 	                            : "sq.xyz " + result + ", " + offsetBase(-2, out);
+	const std::string prologOneMaterialLoad = p.materialDiffFromInput
+	                                        ? "lq.xyz " + p.materialDiffReg + ", "
+	                                          + offsetBase(p.materialDiffOffset - p.inputStep, in)
+	                                        : "nop";
+	const std::string pipelinedMaterialLoad = p.materialDiffFromInput
+	                                        ? "lq.xyz " + p.materialDiffReg + ", "
+	                                          + offsetBase(p.materialDiffOffset - (2 * p.inputStep), in)
+	                                        : "nop";
 
 	m_codeLines.push_back(p.entryLabel + ":");
 	emitRawPairedLine("nop", "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", " + inputStep);
 	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, "nop");
 	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal, "nop");
 	emitRawPairedLine("nop", "mr32.xyw " + p.specSwizzleReg + ", " + specProd);
@@ -5132,9 +5167,10 @@ void CodeGenerator::emitDirLightSpecSoftwarePipelineLoop( const DirLightSpecLoop
 	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, "nop");
 	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, "nop");
 	emitRawPairedLine("nop", "mr32.xyw " + p.specSwizzleReg + ", " + specProd);
-	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, "nop");
+	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity,
+	                  prologOneMaterialLoad);
 	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal,
-	                  "iaddiu " + in + ", " + in + ", 3");
+	                  "iaddiu " + in + ", " + in + ", " + inputStep);
 	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diff, "z"), "nop");
 	emitRawPairedLine("addax.w ACC, " + p.specSwizzleReg + ", " + fieldArg(p.specSwizzleReg, "x"),
 	                  "ibeq " + in + ", " + last + ", " + p.fallbackTwoLabel);
@@ -5157,8 +5193,9 @@ void CodeGenerator::emitDirLightSpecSoftwarePipelineLoop( const DirLightSpecLoop
 	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg,
 	                  "mr32.xyw " + p.specSwizzleReg + ", " + specProd);
 	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal,
-	                  "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diff, "z"), "nop");
+	                  "iaddiu " + in + ", " + in + ", " + inputStep);
+	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diff, "z"),
+	                  pipelinedMaterialLoad);
 	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity,
 	                  "ibeq " + in + ", " + last + ", " + p.fallbackThreeLabel);
 	emitRawPairedLine("addax.w ACC, " + p.specSwizzleReg + ", " + fieldArg(p.specSwizzleReg, "x"), "nop");
@@ -5180,33 +5217,34 @@ void CodeGenerator::emitDirLightSpecSoftwarePipelineLoop( const DirLightSpecLoop
 	emitRawPairedLine("add.xyz " + result + ", " + color + ", " + lit, "nop");
 	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(specPower, "w"), "nop");
 	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity,
-	                  "iaddiu " + in + ", " + in + ", 3");
+	                  "iaddiu " + in + ", " + in + ", " + inputStep);
 	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg,
 	                  "mr32.xyw " + p.specSwizzleReg + ", " + specProd);
 	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal,
 	                  mainStore);
-	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diff, "z"), "nop");
+	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diff, "z"),
+	                  pipelinedMaterialLoad);
 	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity,
 	                  "ibne " + in + ", " + last + ", " + p.mainLabel);
 	emitRawPairedLine("addax.w ACC, " + p.specSwizzleReg + ", " + fieldArg(p.specSwizzleReg, "x"), "nop");
 
 	m_codeLines.push_back(p.drainLabel + ":");
-	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", 9");
+	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepThree);
 	emitRawPairedLine("nop", "b " + p.scalarLabel);
 	emitRawPairedLine("nop", "nop");
 
 	m_codeLines.push_back(p.fallbackOneLabel + ":");
-	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", 3");
+	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepOne);
 	emitRawPairedLine("nop", "b " + p.scalarLabel);
 	emitRawPairedLine("nop", "nop");
 
 	m_codeLines.push_back(p.fallbackTwoLabel + ":");
-	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", 6");
+	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepTwo);
 	emitRawPairedLine("nop", "b " + p.scalarLabel);
 	emitRawPairedLine("nop", "nop");
 
 	m_codeLines.push_back(p.fallbackThreeLabel + ":");
-	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", 9");
+	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepThree);
 	emitRawPairedLine("nop", "b " + p.scalarLabel);
 	emitRawPairedLine("nop", "nop");
 
@@ -5229,6 +5267,7 @@ void CodeGenerator::emitDirLightSpecScalarFallbackLoop( const DirLightSpecLoopPi
 	const std::string lit = p.litReg;
 	const std::string result = p.resultReg;
 	const std::string vf00 = "VF00";
+	const std::string inputStep = integerText(p.inputStep);
 	const std::string scalarColorLoad = offsetBase(p.colorOffset, out);
 	const std::string scalarStore = p.postIncrementStore
 	                              ? "sqi.xyz " + result + ", (" + out + "++)"
@@ -5238,7 +5277,9 @@ void CodeGenerator::emitDirLightSpecScalarFallbackLoop( const DirLightSpecLoopPi
 	m_codeLines.push_back(p.scalarLabel + ":");
 	emitRawPairedLine("nop", "lq.xyz " + normal + ", " + offsetBase(1, in));
 	emitRawPairedLine("nop", "lq.xyz " + color + ", " + scalarColorLoad);
-	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", 3");
+	if( p.materialDiffFromInput )
+		emitRawPairedLine("nop", "lq.xyz " + p.materialDiffReg + ", " + offsetBase(p.materialDiffOffset, in));
+	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", " + inputStep);
 	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal, "nop");
 	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, "nop");
 	emitRawPairedLine("nop", "nop");
