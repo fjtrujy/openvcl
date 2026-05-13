@@ -613,6 +613,12 @@ unsigned int VsmCostAnalyzer::blockRepeat( const Block& block ) const
 {
 	std::map<std::string, unsigned int>::const_iterator i = m_blockRepeats.find( block.label );
 	if( i == m_blockRepeats.end() )
+	{
+		const std::string canonicalLabel = canonicalBlockLabel( block.label );
+		if( canonicalLabel != block.label )
+			i = m_blockRepeats.find( canonicalLabel );
+	}
+	if( i == m_blockRepeats.end() )
 		return 1;
 	return i->second ? i->second : 1;
 }
@@ -723,6 +729,24 @@ VsmCostAnalyzer::WeightedBlock VsmCostAnalyzer::emptyWeightedBlock( const std::s
 	return block;
 }
 
+std::string VsmCostAnalyzer::canonicalBlockLabel( const std::string& label )
+{
+	static const char kMainLoopSuffix[] = "__MAIN_LOOP";
+	static const char kVclMarker[] = "_vcl_";
+
+	const std::string::size_type suffix = label.find( kMainLoopSuffix );
+	if( suffix == std::string::npos )
+		return label;
+
+	const std::string prefix = label.substr( 0, suffix );
+	const std::string::size_type marker = prefix.rfind( kVclMarker );
+	if( marker == std::string::npos )
+		return label;
+
+	const std::string canonical = prefix.substr( marker + sizeof(kVclMarker) - 1 );
+	return canonical.empty() ? label : canonical;
+}
+
 std::vector<VsmCostAnalyzer::BlockComparison> VsmCostAnalyzer::blockComparisons( const VsmCostAnalyzer& baseline, const VsmCostAnalyzer& candidate )
 {
 	std::map<std::string, WeightedBlock> baselineBlocks;
@@ -730,11 +754,11 @@ std::vector<VsmCostAnalyzer::BlockComparison> VsmCostAnalyzer::blockComparisons(
 
 	const std::vector<WeightedBlock> baselineWeightedBlocks = baseline.weightedBlocksByCycles();
 	for( std::vector<WeightedBlock>::const_iterator i = baselineWeightedBlocks.begin(); i != baselineWeightedBlocks.end(); ++i )
-		baselineBlocks[i->label] = *i;
+		baselineBlocks[canonicalBlockLabel(i->label)] = *i;
 
 	const std::vector<WeightedBlock> candidateWeightedBlocks = candidate.weightedBlocksByCycles();
 	for( std::vector<WeightedBlock>::const_iterator i = candidateWeightedBlocks.begin(); i != candidateWeightedBlocks.end(); ++i )
-		candidateBlocks[i->label] = *i;
+		candidateBlocks[canonicalBlockLabel(i->label)] = *i;
 
 	std::map<std::string, bool> labels;
 	for( std::map<std::string, WeightedBlock>::const_iterator i = baselineBlocks.begin(); i != baselineBlocks.end(); ++i )

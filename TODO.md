@@ -105,6 +105,9 @@ Recently completed:
   from the same baseline/candidate summary data.
 - `--cost-loop-preset ps2gl` applies the known 100-vertex hot labels used by
   ps2gl shader comparisons.
+- `--cost-loop-preset ps2gl` also recognizes SCE optimized
+  `EXPL_...__MAIN_LOOP` labels, making weighted SCE/OpenVCL comparisons
+  meaningful without hand-written duplicate loop flags.
 - Direct branches can now pair with an adjacent preceding upper-pipe
   instruction while still emitting their delay slot. Broader branch-delay
   filling remains intentionally pending.

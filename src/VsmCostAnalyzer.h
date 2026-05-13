@@ -164,6 +164,7 @@ private:
 	static bool weightedIdleBlockGreater( const WeightedBlock& a, const WeightedBlock& b );
 	static bool weightedWaitBlockGreater( const WeightedBlock& a, const WeightedBlock& b );
 	static WeightedBlock emptyWeightedBlock( const std::string& label );
+	static std::string canonicalBlockLabel( const std::string& label );
 	static std::vector<BlockComparison> blockComparisons( const VsmCostAnalyzer& baseline, const VsmCostAnalyzer& candidate );
 	static bool estimatedBlockComparisonGreater( const BlockComparison& a, const BlockComparison& b );
 	static bool idleBlockComparisonGreater( const BlockComparison& a, const BlockComparison& b );
