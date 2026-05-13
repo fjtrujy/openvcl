@@ -235,3 +235,69 @@ TEST_CASE("VsmCostAnalyzer inline: wait instructions add estimated stall cycles"
     CHECK(contains(json.str(), "\"top_weighted_estimated_blocks\""));
     CHECK(contains(json.str(), "\"top_weighted_wait_blocks\""));
 }
+
+TEST_CASE("VsmCostAnalyzer inline: EFU producer throughput adds issue stalls")
+{
+    const std::string source =
+        "\t.vu\n"
+        "efu_lid:\n"
+        "                    nop                             esadd p, VF01\n"
+        "                    nop                             esadd p, VF02\n"
+        "                    nop                             waitp\n"
+        "                    nop                             mfp.w VF03, p\n";
+
+    std::istringstream input(source);
+    vcl::VsmCostAnalyzer analyzer;
+    REQUIRE(analyzer.analyze(input, "inline_efu_issue_stalls.vsm"));
+    analyzer.setBlockRepeat("efu_lid", 2);
+
+    std::ostringstream text;
+    REQUIRE(analyzer.writeText(text));
+    CHECK(textMetric(text.str(), "static_cycles") == 4);
+    CHECK(textMetric(text.str(), "estimated_total_cycles") == 23);
+    CHECK(textMetric(text.str(), "issue_stall_cycles") == 9);
+    CHECK(textMetric(text.str(), "fdiv_issue_stall_cycles") == 0);
+    CHECK(textMetric(text.str(), "efu_issue_stall_cycles") == 9);
+    CHECK(textMetric(text.str(), "wait_stall_cycles") == 10);
+    CHECK(textMetric(text.str(), "waitp_stall_cycles") == 10);
+    CHECK(textMetric(text.str(), "weighted_estimated_total_cycles") == 46);
+    CHECK(textMetric(text.str(), "weighted_issue_stall_cycles") == 18);
+    CHECK(textMetric(text.str(), "weighted_wait_stall_cycles") == 20);
+    CHECK(contains(text.str(), "efu_lid: cycles=4 repeat=2 weighted_cycles=8"));
+    CHECK(contains(text.str(), "issue_stall=9 fdiv_issue_stall=0 efu_issue_stall=9"));
+    CHECK(contains(text.str(), "estimated_cycles=23"));
+
+    std::ostringstream json;
+    REQUIRE(analyzer.writeJson(json));
+    CHECK(jsonMetric(json.str(), "estimated_total_cycles") == 23);
+    CHECK(jsonMetric(json.str(), "issue_stall_cycles") == 9);
+    CHECK(jsonMetric(json.str(), "efu_issue_stall_cycles") == 9);
+    CHECK(jsonMetric(json.str(), "weighted_estimated_total_cycles") == 46);
+    CHECK(jsonMetric(json.str(), "weighted_issue_stall_cycles") == 18);
+    CHECK(contains(json.str(), "\"issue_stall_cycles\": 9"));
+}
+
+TEST_CASE("VsmCostAnalyzer inline: MFP reads P without starting a new P producer")
+{
+    const std::string source =
+        "\t.vu\n"
+        "mfp_lid:\n"
+        "                    nop                             esadd p, VF01\n"
+        "                    nop                             waitp\n"
+        "                    nop                             mfp.w VF02, p\n"
+        "                    nop                             waitp\n";
+
+    std::istringstream input(source);
+    vcl::VsmCostAnalyzer analyzer;
+    REQUIRE(analyzer.analyze(input, "inline_mfp_reads_p.vsm"));
+
+    std::ostringstream text;
+    REQUIRE(analyzer.writeText(text));
+    CHECK(textMetric(text.str(), "static_cycles") == 4);
+    CHECK(textMetric(text.str(), "estimated_total_cycles") == 14);
+    CHECK(textMetric(text.str(), "issue_stall_cycles") == 0);
+    CHECK(textMetric(text.str(), "wait_stall_cycles") == 10);
+    CHECK(textMetric(text.str(), "waitp_stall_cycles") == 10);
+    CHECK(contains(text.str(), "mfp_lid: cycles=4"));
+    CHECK(contains(text.str(), "wait_stall=10 waitq_stall=0 waitp_stall=10 estimated_cycles=14"));
+}

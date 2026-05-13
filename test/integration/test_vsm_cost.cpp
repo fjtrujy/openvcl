@@ -188,3 +188,47 @@ TEST_CASE("VSM cost CLI: stdin wait program reports estimated stalls")
     CHECK(contains(r.stdout_data, "top_weighted_wait_blocks:"));
     CHECK(contains(r.stdout_data, "wait_lid: weighted_wait_stall=48 wait_stall=16 repeat=3"));
 }
+
+TEST_CASE("VSM cost CLI: stdin EFU producer throughput reports issue stalls")
+{
+    const std::string source =
+        "\t.vu\n"
+        "efu_lid:\n"
+        "                    nop                             esadd p, VF01\n"
+        "                    nop                             esadd p, VF02\n"
+        "                    nop                             waitp\n"
+        "                    nop                             mfp.w VF03, p\n";
+
+    ::test::RunResult r = runCostLoopStdin(source, "efu_lid=2");
+    REQUIRE(r.exit_code == 0);
+    CHECK(textMetric(r.stdout_data, "static_cycles") == 4);
+    CHECK(textMetric(r.stdout_data, "estimated_total_cycles") == 23);
+    CHECK(textMetric(r.stdout_data, "issue_stall_cycles") == 9);
+    CHECK(textMetric(r.stdout_data, "efu_issue_stall_cycles") == 9);
+    CHECK(textMetric(r.stdout_data, "wait_stall_cycles") == 10);
+    CHECK(textMetric(r.stdout_data, "weighted_estimated_total_cycles") == 46);
+    CHECK(textMetric(r.stdout_data, "weighted_issue_stall_cycles") == 18);
+    CHECK(contains(r.stdout_data, "efu_lid: cycles=4 repeat=2 weighted_cycles=8"));
+    CHECK(contains(r.stdout_data, "issue_stall=9 fdiv_issue_stall=0 efu_issue_stall=9"));
+}
+
+TEST_CASE("VSM cost CLI: stdin MFP does not report a new P producer stall")
+{
+    const std::string source =
+        "\t.vu\n"
+        "mfp_lid:\n"
+        "                    nop                             esadd p, VF01\n"
+        "                    nop                             waitp\n"
+        "                    nop                             mfp.w VF02, p\n"
+        "                    nop                             waitp\n";
+
+    ::test::RunResult r = runCostLoopStdin(source, "mfp_lid=3");
+    REQUIRE(r.exit_code == 0);
+    CHECK(textMetric(r.stdout_data, "static_cycles") == 4);
+    CHECK(textMetric(r.stdout_data, "estimated_total_cycles") == 14);
+    CHECK(textMetric(r.stdout_data, "issue_stall_cycles") == 0);
+    CHECK(textMetric(r.stdout_data, "wait_stall_cycles") == 10);
+    CHECK(textMetric(r.stdout_data, "weighted_estimated_total_cycles") == 42);
+    CHECK(contains(r.stdout_data, "mfp_lid: cycles=4 repeat=3 weighted_cycles=12"));
+    CHECK(contains(r.stdout_data, "wait_stall=10 waitq_stall=0 waitp_stall=10 estimated_cycles=14"));
+}

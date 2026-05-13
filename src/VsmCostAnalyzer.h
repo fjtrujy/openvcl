@@ -50,6 +50,7 @@ private:
 		bool dBit;
 		bool tBit;
 		unsigned int latency;
+		unsigned int throughput;
 		std::string text;
 		std::string mnemonic;
 		Unit unit;
@@ -68,6 +69,9 @@ private:
 		unsigned int singleLowerCycles;
 		unsigned int nopOnlyCycles;
 		unsigned int nopSlots;
+		unsigned int issueStallCycles;
+		unsigned int fdivIssueStallCycles;
+		unsigned int efuIssueStallCycles;
 		unsigned int waitqStallCycles;
 		unsigned int waitpStallCycles;
 		unsigned int operationLatencyCycles;
@@ -90,6 +94,8 @@ private:
 		unsigned int weightedEstimatedCycles;
 		unsigned int waitStallCycles;
 		unsigned int weightedWaitStallCycles;
+		unsigned int issueStallCycles;
+		unsigned int weightedIssueStallCycles;
 	};
 
 	void reset();
@@ -114,6 +120,9 @@ private:
 	static std::string normalizeMnemonic( const std::string& word );
 	static Unit classifyMnemonic( const std::string& mnemonic );
 	static unsigned int instructionLatency( const std::string& mnemonic );
+	static unsigned int instructionThroughput( const std::string& mnemonic );
+	static bool writesQ( const std::string& mnemonic );
+	static bool writesP( const std::string& mnemonic );
 	static bool isKnownMnemonic( const std::string& mnemonic );
 	static bool startsInstructionToken( const std::string& line, std::string::size_type pos );
 	static bool isDirective( const std::string& line );
@@ -136,6 +145,9 @@ private:
 	unsigned int m_branchCycles;
 	unsigned int m_waitqCycles;
 	unsigned int m_waitpCycles;
+	unsigned int m_issueStallCycles;
+	unsigned int m_fdivIssueStallCycles;
+	unsigned int m_efuIssueStallCycles;
 	unsigned int m_waitqStallCycles;
 	unsigned int m_waitpStallCycles;
 	unsigned int m_fdivOps;
@@ -153,6 +165,8 @@ private:
 	unsigned int m_estimatedCycles;
 	unsigned int m_qReadyCycle;
 	unsigned int m_pReadyCycle;
+	unsigned int m_fdivIssueReadyCycle;
+	unsigned int m_efuIssueReadyCycle;
 };
 
 }
