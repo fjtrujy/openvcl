@@ -1,5 +1,6 @@
 #include "VuSchedulerAnalysis.h"
 
+#include "VuSchedulingRules.h"
 #include "VuTokenResourceAccess.h"
 
 #include <string>
@@ -29,106 +30,24 @@ namespace
 		return false;
 	}
 
-	bool isBoundaryOperand( const Token& token )
-	{
-		if( !token.operand() )
-			return false;
-
-		const std::string& name = token.operand()->name();
-		return name == "--barrier"
-		    || name == "--cont"
-		    || name == "--enter"
-		    || name == "--endenter"
-		    || name == "--exit"
-		    || name == "--endexit";
-	}
-
-	bool isMemoryOrderingAccess( const VuTokenResourceAccess& access )
-	{
-		return access.memoryKind == VU_MEMORY_STORE
-		    || access.memoryKind == VU_MEMORY_XGKICK
-		    || access.memoryFlags != VU_MEMORY_FLAG_NONE;
-	}
-
-	bool isReadyScheduleCandidate( const Token& token )
-	{
-		if( token.label().length() != 0 )
-			return false;
-		if( !token.operand() )
-			return false;
-		if( token.operand()->isPreprocessor() )
-			return false;
-		if( token.flags() & (Token::PREORDERED | Token::IGNORED | Token::E | Token::D | Token::T) )
-			return false;
-		if( !token.operand()->isUpperExecutionPath() && !token.operand()->isLowerExecutionPath() )
-			return false;
-
-		VuTokenResourceAccess access;
-		if( !buildVuTokenResourceAccess( token, access ) )
-			return false;
-		if( access.branchDelaySlots > 0 )
-			return false;
-		if( access.instructionFlags & (VU_INSTR_WAIT_Q | VU_INSTR_WAIT_P | VU_INSTR_BRANCH) )
-			return false;
-		if( access.memoryFlags != VU_MEMORY_FLAG_NONE )
-			return false;
-		if( access.memoryKind != VU_MEMORY_NONE && access.memoryKind != VU_MEMORY_LOAD )
-			return false;
-		if( access.implicitReads & (VU_RESOURCE_MAC | VU_RESOURCE_CLIP) )
-			return false;
-
-		return true;
-	}
-
-	bool isBlockBarrier( const Token& token )
-	{
-		if( token.flags() & Token::PREORDERED )
-			return true;
-		if( isBoundaryOperand( token ) )
-			return true;
-
-		VuTokenResourceAccess access;
-		if( !buildVuTokenResourceAccess( token, access ) )
-			return false;
-
-		return access.branchDelaySlots > 0
-		    || access.memoryKind == VU_MEMORY_XGKICK;
-	}
-
 	void addEdge( std::vector<VuDependencyEdge>& edges, unsigned int before, unsigned int after, VuDependencyKind kind )
 	{
 		edges.push_back( VuDependencyEdge( before, after, kind ) );
 	}
 
-	bool isLowerPipe( const Token& token )
-	{
-		return token.operand() && token.operand()->isLowerExecutionPath();
-	}
-
-	bool isLongLatencyProducer( const VuTokenResourceAccess& access )
-	{
-		return (access.instructionFlags & (VU_INSTR_WRITES_Q | VU_INSTR_WRITES_P)) != 0;
-	}
-
-	bool isLatencyLoad( const VuTokenResourceAccess& access )
-	{
-		return access.memoryKind == VU_MEMORY_LOAD;
-	}
-
 	int readyCandidateScore( unsigned int candidate,
 	                         bool haveLastPipe,
 	                         bool lastWasLower,
-	                         const VuBasicBlock& block,
-	                         const std::vector<VuTokenResourceAccess>& accesses )
+	                         const VuBasicBlock& block )
 	{
 		int score = static_cast<int>( candidate );
 
-		if( isLongLatencyProducer( accesses[candidate] ) )
+		if( isVuLongLatencyProducer( *block.tokens[candidate] ) )
 			score -= 500;
-		else if( isLatencyLoad( accesses[candidate] ) )
+		else if( isVuLatencyLoad( *block.tokens[candidate] ) )
 			score -= 300;
 
-		if( haveLastPipe && isLowerPipe( *block.tokens[candidate] ) != lastWasLower )
+		if( haveLastPipe && isVuLowerPipe( *block.tokens[candidate] ) != lastWasLower )
 			score -= 100;
 
 		return score;
@@ -145,14 +64,6 @@ namespace
 
 		VuBasicBlock block;
 		block.tokens = segment;
-
-		std::vector<VuTokenResourceAccess> accesses;
-		for( std::vector<const Token*>::const_iterator i = block.tokens.begin(); i != block.tokens.end(); ++i )
-		{
-			VuTokenResourceAccess access;
-			buildVuTokenResourceAccess( **i, access );
-			accesses.push_back( access );
-		}
 
 		std::vector<VuDependencyEdge> edges = buildVuDependencyGraph( block );
 		std::vector<unsigned int> incoming( block.tokens.size(), 0 );
@@ -181,7 +92,7 @@ namespace
 				if( emitted[i] || incoming[i] != 0 )
 					continue;
 
-				const int score = readyCandidateScore( i, haveLastPipe, lastWasLower, block, accesses );
+				const int score = readyCandidateScore( i, haveLastPipe, lastWasLower, block );
 				if( best == block.tokens.size() || score < bestScore )
 				{
 					best = i;
@@ -203,7 +114,7 @@ namespace
 			emitted[best] = true;
 			++emittedCount;
 			haveLastPipe = true;
-			lastWasLower = isLowerPipe( *block.tokens[best] );
+			lastWasLower = isVuLowerPipe( *block.tokens[best] );
 
 			for( std::vector<unsigned int>::const_iterator i = outgoing[best].begin(); i != outgoing[best].end(); ++i )
 			{
@@ -219,7 +130,7 @@ namespace
 
 		for( std::vector<const Token*>::const_iterator i = block.tokens.begin(); i != block.tokens.end(); ++i )
 		{
-			if( isReadyScheduleCandidate( **i ) )
+			if( isVuReadyScheduleCandidate( **i ) )
 			{
 				segment.push_back( *i );
 				continue;
@@ -279,7 +190,7 @@ std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens )
 
 		current.tokens.push_back( &*i );
 
-		if( isBlockBarrier( *i ) )
+		if( isVuSchedulingBarrier( *i ) )
 		{
 			current.terminatedByBarrier = true;
 			blocks.push_back( current );
@@ -327,7 +238,8 @@ std::vector<VuDependencyEdge> buildVuDependencyGraph( const VuBasicBlock& block 
 				addEdge( edges, before, after, VU_DEPENDENCY_RESOURCE_WAW );
 
 			if( a.memoryKind != VU_MEMORY_NONE && b.memoryKind != VU_MEMORY_NONE
-			    && (isMemoryOrderingAccess( a ) || isMemoryOrderingAccess( b )) )
+			    && (isVuMemoryOrderingAccess( *block.tokens[before] )
+			        || isVuMemoryOrderingAccess( *block.tokens[after] )) )
 				addEdge( edges, before, after, VU_DEPENDENCY_MEMORY );
 		}
 	}

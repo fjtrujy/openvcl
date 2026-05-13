@@ -46,6 +46,13 @@ bool vuTokenListReadsMac( const std::list<Token>& tokens );
 bool isVuPlainMemoryStore( const Token& token );
 bool isVuPlainMemoryLoad( const Token& token );
 bool isVuXgkick( const Token& token );
+bool isVuMemoryOrderingAccess( const Token& token );
+bool isVuBoundaryOperand( const Token& token );
+bool isVuSchedulingBarrier( const Token& token );
+bool isVuReadyScheduleCandidate( const Token& token );
+bool isVuLowerPipe( const Token& token );
+bool isVuLongLatencyProducer( const Token& token );
+bool isVuLatencyLoad( const Token& token );
 
 bool vuTokensHaveDataDependency( const Token& a, const Token& b );
 bool vuTokenCanMoveBefore( const Token& moved, const Token& crossed );

@@ -110,6 +110,9 @@ Recently completed:
   emittable tokens, movement checks, pair resource conflicts, Q/P and flag
   predicates, branch delays, and adjacent integer-add coalescing. `CodeGenerator`
   keeps the emission cycle state.
+- `VuSchedulerAnalysis` now consumes `VuSchedulingRules` for ready-scheduler
+  candidate gates, block barriers, memory-ordering classification, pipe
+  classification, and long-latency/load prioritization.
 
 ## Correctness Guardrails
 

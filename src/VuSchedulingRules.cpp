@@ -437,6 +437,94 @@ bool isVuXgkick( const Token& token )
 	    && access.memoryKind == VU_MEMORY_XGKICK;
 }
 
+bool isVuMemoryOrderingAccess( const Token& token )
+{
+	VuTokenResourceAccess access;
+	if( !buildVuTokenResourceAccess( token, access ) )
+		return false;
+	return access.memoryKind == VU_MEMORY_STORE
+	    || access.memoryKind == VU_MEMORY_XGKICK
+	    || access.memoryFlags != VU_MEMORY_FLAG_NONE;
+}
+
+bool isVuBoundaryOperand( const Token& token )
+{
+	if( !token.operand() )
+		return false;
+
+	const std::string& name = token.operand()->name();
+	return name == "--barrier"
+	    || name == "--cont"
+	    || name == "--enter"
+	    || name == "--endenter"
+	    || name == "--exit"
+	    || name == "--endexit";
+}
+
+bool isVuSchedulingBarrier( const Token& token )
+{
+	if( token.flags() & Token::PREORDERED )
+		return true;
+	if( isVuBoundaryOperand( token ) )
+		return true;
+
+	VuTokenResourceAccess access;
+	if( !buildVuTokenResourceAccess( token, access ) )
+		return false;
+
+	return access.branchDelaySlots > 0
+	    || access.memoryKind == VU_MEMORY_XGKICK;
+}
+
+bool isVuReadyScheduleCandidate( const Token& token )
+{
+	if( token.label().length() != 0 )
+		return false;
+	if( !token.operand() )
+		return false;
+	if( token.operand()->isPreprocessor() )
+		return false;
+	if( token.flags() & (Token::PREORDERED | Token::IGNORED | Token::E | Token::D | Token::T) )
+		return false;
+	if( !token.operand()->isUpperExecutionPath() && !token.operand()->isLowerExecutionPath() )
+		return false;
+
+	VuTokenResourceAccess access;
+	if( !buildVuTokenResourceAccess( token, access ) )
+		return false;
+	if( access.branchDelaySlots > 0 )
+		return false;
+	if( access.instructionFlags & (VU_INSTR_WAIT_Q | VU_INSTR_WAIT_P | VU_INSTR_BRANCH) )
+		return false;
+	if( access.memoryFlags != VU_MEMORY_FLAG_NONE )
+		return false;
+	if( access.memoryKind != VU_MEMORY_NONE && access.memoryKind != VU_MEMORY_LOAD )
+		return false;
+	if( access.implicitReads & (VU_RESOURCE_MAC | VU_RESOURCE_CLIP) )
+		return false;
+
+	return true;
+}
+
+bool isVuLowerPipe( const Token& token )
+{
+	return token.operand() && token.operand()->isLowerExecutionPath();
+}
+
+bool isVuLongLatencyProducer( const Token& token )
+{
+	VuTokenResourceAccess access;
+	return buildVuTokenResourceAccess( token, access )
+	    && (access.instructionFlags & (VU_INSTR_WRITES_Q | VU_INSTR_WRITES_P)) != 0;
+}
+
+bool isVuLatencyLoad( const Token& token )
+{
+	VuTokenResourceAccess access;
+	return buildVuTokenResourceAccess( token, access )
+	    && access.memoryKind == VU_MEMORY_LOAD;
+}
+
 bool vuTokensHaveDataDependency( const Token& a, const Token& b )
 {
 	VuTokenResourceAccess aAccess;

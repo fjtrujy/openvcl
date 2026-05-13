@@ -52,6 +52,8 @@
 - Added `VuSchedulingRules` as the shared stateless rule layer for emittable
   token checks, token movement, pair resource conflicts, Q/P and MAC/CLIP flag
   predicates, branch-delay queries, and adjacent integer-add coalescing.
+- Moved `VuSchedulerAnalysis` ready-candidate, barrier, memory-ordering, pipe,
+  and latency-priority checks onto `VuSchedulingRules`.
 - Added behavior-preserving scheduler analysis scaffolding for basic-block
   construction and descriptor-derived dependency edges.
 - Wired the scheduler analysis layer into code generation in preserve-order

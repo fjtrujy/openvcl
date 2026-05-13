@@ -111,6 +111,34 @@ TEST_CASE("VuSchedulingRules: movement uses descriptors for memory and implicit 
     CHECK(!vcl::vuTokenRangeCanBeCrossed(program.token(1), program.token(0)));
 }
 
+TEST_CASE("VuSchedulingRules: scheduler analysis gates are shared predicates")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("lq.xy vf04, 0(vi01)"));
+    REQUIRE(program.parse("sq.xy vf04, 0(vi01)"));
+    REQUIRE(program.parse("xgkick vi01"));
+    REQUIRE(program.parse("waitq"));
+    REQUIRE(program.parse("--cont"));
+    REQUIRE(program.parse("div q, vf05[w], vf06[w]"));
+
+    CHECK(vcl::isVuReadyScheduleCandidate(program.token(0)));
+    CHECK(vcl::isVuReadyScheduleCandidate(program.token(1)));
+    CHECK(!vcl::isVuReadyScheduleCandidate(program.token(2)));
+    CHECK(!vcl::isVuReadyScheduleCandidate(program.token(3)));
+    CHECK(!vcl::isVuReadyScheduleCandidate(program.token(4)));
+
+    CHECK(!vcl::isVuMemoryOrderingAccess(program.token(1)));
+    CHECK(vcl::isVuMemoryOrderingAccess(program.token(2)));
+    CHECK(vcl::isVuMemoryOrderingAccess(program.token(3)));
+    CHECK(vcl::isVuSchedulingBarrier(program.token(3)));
+    CHECK(vcl::isVuBoundaryOperand(program.token(5)));
+    CHECK(vcl::isVuLongLatencyProducer(program.token(6)));
+    CHECK(vcl::isVuLatencyLoad(program.token(1)));
+    CHECK(vcl::isVuLowerPipe(program.token(1)));
+}
+
 TEST_CASE("VuSchedulingRules: pair resource checks reject hazards before code emission")
 {
     vcl::Error::ResetErrorCount();
