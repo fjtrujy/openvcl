@@ -85,18 +85,18 @@ openvcl --dump-instruction-info-json
 
 ## Cost Tooling Improvements
 
-- Keep `--cost` and `--cost-json` working on both OpenVCL-generated VSM and
-  SCE/reference VSM.
-- Use `--cost-compare` and `--cost-compare-json` for baseline/candidate totals
-  when comparing SCE/reference VSMs against OpenVCL output.
-- Generate side-by-side renderer comparison tables with
-  `--cost-compare-markdown` instead of hand-maintaining Markdown.
 - Refine ps2gl loop presets as runtime measurements make better defaults
   obvious.
-- Add regression tests for the instruction metadata table and JSON output.
 
 Recently completed:
 
+- `--cost` and `--cost-json` work on both OpenVCL-generated VSM and
+  SCE/reference VSM.
+- `--cost-compare`, `--cost-compare-json`, and `--cost-compare-markdown`
+  provide baseline/candidate totals for renderer reports without
+  hand-maintained tables.
+- Instruction metadata table and JSON dump tests cover the inspectable
+  `--dump-instruction-info` tooling.
 - `--cost-compare` and `--cost-compare-json` now include top block deltas for:
   - `top_weighted_estimated_blocks`;
   - `top_weighted_idle_blocks`;
