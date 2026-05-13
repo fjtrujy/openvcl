@@ -48,6 +48,7 @@ struct VuDependencyEdge
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens );
 std::vector<VuDependencyEdge> buildVuDependencyGraph( const VuBasicBlock& block );
 std::list<Token> scheduleVuTokensPreservingOrder( const std::list<Token>& tokens );
+std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens );
 
 }
 

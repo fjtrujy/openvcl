@@ -53,6 +53,9 @@
   mode, establishing the production hook for ready-set scheduling.
 - Added `--cost-compare` and `--cost-compare-json` for side-by-side VSM cost
   comparisons between a baseline and candidate, including signed deltas.
+- Added the first ready-set scheduler pass for straight-line arithmetic runs,
+  using descriptor-derived dependencies while keeping labels, memory, waits,
+  branches, and explicit barriers fixed.
 
 ## 0.3.3
 

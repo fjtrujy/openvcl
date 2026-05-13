@@ -50,6 +50,34 @@ namespace
 		    || access.memoryFlags != VU_MEMORY_FLAG_NONE;
 	}
 
+	bool isReadyScheduleCandidate( const Token& token )
+	{
+		if( token.label().length() != 0 )
+			return false;
+		if( !token.operand() )
+			return false;
+		if( token.operand()->isPreprocessor() )
+			return false;
+		if( token.flags() & (Token::PREORDERED | Token::IGNORED | Token::E | Token::D | Token::T) )
+			return false;
+		if( !token.operand()->isUpperExecutionPath() && !token.operand()->isLowerExecutionPath() )
+			return false;
+
+		VuTokenResourceAccess access;
+		if( !buildVuTokenResourceAccess( token, access ) )
+			return false;
+		if( access.branchDelaySlots > 0 )
+			return false;
+		if( access.instructionFlags & (VU_INSTR_WAIT_Q | VU_INSTR_WAIT_P | VU_INSTR_BRANCH) )
+			return false;
+		if( access.memoryKind != VU_MEMORY_NONE || access.memoryFlags != VU_MEMORY_FLAG_NONE )
+			return false;
+		if( access.implicitReads & (VU_RESOURCE_MAC | VU_RESOURCE_CLIP) )
+			return false;
+
+		return true;
+	}
+
 	bool isBlockBarrier( const Token& token )
 	{
 		if( token.flags() & Token::PREORDERED )
@@ -68,6 +96,132 @@ namespace
 	void addEdge( std::vector<VuDependencyEdge>& edges, unsigned int before, unsigned int after, VuDependencyKind kind )
 	{
 		edges.push_back( VuDependencyEdge( before, after, kind ) );
+	}
+
+	bool isLowerPipe( const Token& token )
+	{
+		return token.operand() && token.operand()->isLowerExecutionPath();
+	}
+
+	bool isLongLatencyProducer( const VuTokenResourceAccess& access )
+	{
+		return (access.instructionFlags & (VU_INSTR_WRITES_Q | VU_INSTR_WRITES_P)) != 0;
+	}
+
+	int readyCandidateScore( unsigned int candidate,
+	                         bool haveLastPipe,
+	                         bool lastWasLower,
+	                         const VuBasicBlock& block,
+	                         const std::vector<VuTokenResourceAccess>& accesses )
+	{
+		int score = static_cast<int>( candidate );
+
+		if( isLongLatencyProducer( accesses[candidate] ) )
+			score -= 500;
+
+		if( haveLastPipe && isLowerPipe( *block.tokens[candidate] ) != lastWasLower )
+			score -= 100;
+
+		return score;
+	}
+
+	void appendReadyScheduledSegment( const std::vector<const Token*>& segment, std::list<Token>& scheduled )
+	{
+		if( segment.size() < 2 )
+		{
+			for( std::vector<const Token*>::const_iterator i = segment.begin(); i != segment.end(); ++i )
+				scheduled.push_back( **i );
+			return;
+		}
+
+		VuBasicBlock block;
+		block.tokens = segment;
+
+		std::vector<VuTokenResourceAccess> accesses;
+		for( std::vector<const Token*>::const_iterator i = block.tokens.begin(); i != block.tokens.end(); ++i )
+		{
+			VuTokenResourceAccess access;
+			buildVuTokenResourceAccess( **i, access );
+			accesses.push_back( access );
+		}
+
+		std::vector<VuDependencyEdge> edges = buildVuDependencyGraph( block );
+		std::vector<unsigned int> incoming( block.tokens.size(), 0 );
+		std::vector< std::vector<unsigned int> > outgoing( block.tokens.size() );
+
+		for( std::vector<VuDependencyEdge>::const_iterator i = edges.begin(); i != edges.end(); ++i )
+		{
+			if( i->before >= block.tokens.size() || i->after >= block.tokens.size() )
+				continue;
+			++incoming[i->after];
+			outgoing[i->before].push_back( i->after );
+		}
+
+		std::vector<bool> emitted( block.tokens.size(), false );
+		unsigned int emittedCount = 0;
+		bool haveLastPipe = false;
+		bool lastWasLower = false;
+
+		while( emittedCount < block.tokens.size() )
+		{
+			unsigned int best = static_cast<unsigned int>( block.tokens.size() );
+			int bestScore = 0;
+
+			for( unsigned int i = 0; i < block.tokens.size(); ++i )
+			{
+				if( emitted[i] || incoming[i] != 0 )
+					continue;
+
+				const int score = readyCandidateScore( i, haveLastPipe, lastWasLower, block, accesses );
+				if( best == block.tokens.size() || score < bestScore )
+				{
+					best = i;
+					bestScore = score;
+				}
+			}
+
+			if( best == block.tokens.size() )
+			{
+				for( unsigned int i = 0; i < block.tokens.size(); ++i )
+				{
+					if( !emitted[i] )
+						scheduled.push_back( *block.tokens[i] );
+				}
+				return;
+			}
+
+			scheduled.push_back( *block.tokens[best] );
+			emitted[best] = true;
+			++emittedCount;
+			haveLastPipe = true;
+			lastWasLower = isLowerPipe( *block.tokens[best] );
+
+			for( std::vector<unsigned int>::const_iterator i = outgoing[best].begin(); i != outgoing[best].end(); ++i )
+			{
+				if( incoming[*i] > 0 )
+					--incoming[*i];
+			}
+		}
+	}
+
+	void appendReadyScheduledBlock( const VuBasicBlock& block, std::list<Token>& scheduled )
+	{
+		std::vector<const Token*> segment;
+
+		for( std::vector<const Token*>::const_iterator i = block.tokens.begin(); i != block.tokens.end(); ++i )
+		{
+			if( isReadyScheduleCandidate( **i ) )
+			{
+				segment.push_back( *i );
+				continue;
+			}
+
+			appendReadyScheduledSegment( segment, scheduled );
+			segment.clear();
+			scheduled.push_back( **i );
+		}
+
+		appendReadyScheduledSegment( segment, scheduled );
 	}
 }
 
@@ -182,6 +336,17 @@ std::list<Token> scheduleVuTokensPreservingOrder( const std::list<Token>& tokens
 		for( std::vector<const Token*>::const_iterator token = block->tokens.begin(); token != block->tokens.end(); ++token )
 			scheduled.push_back( **token );
 	}
+
+	return scheduled;
+}
+
+std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens )
+{
+	std::list<Token> scheduled;
+	std::vector<VuBasicBlock> blocks = buildVuBasicBlocks( tokens );
+
+	for( std::vector<VuBasicBlock>::const_iterator block = blocks.begin(); block != blocks.end(); ++block )
+		appendReadyScheduledBlock( *block, scheduled );
 
 	return scheduled;
 }

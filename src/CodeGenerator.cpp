@@ -121,7 +121,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 	std::list<Token> workTokens = tokens;
 	coalesceAdjacentIntegerAdds(workTokens);
 	{
-		std::list<Token> scheduledTokens = scheduleVuTokensPreservingOrder(workTokens);
+		std::list<Token> scheduledTokens = scheduleVuTokensReadySet(workTokens);
 		workTokens.swap(scheduledTokens);
 	}
 	m_enableUpperZeroMoves = !tokenListReadsMac(workTokens);

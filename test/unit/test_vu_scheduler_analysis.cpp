@@ -146,3 +146,77 @@ TEST_CASE("VuSchedulerAnalysis: preserve-order scheduler keeps block order intac
         CHECK(a->arguments().size() == b->arguments().size());
     }
 }
+
+TEST_CASE("VuSchedulerAnalysis: ready-set scheduler pulls long Q producers forward")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("div q, vf04[w], vf05[w]"));
+    REQUIRE(program.parse("mul.xy vf06, vf07, vf08"));
+    REQUIRE(program.parse("waitq"));
+
+    std::list<vcl::Token> scheduled = vcl::scheduleVuTokensReadySet(program.tokenizer.tokens());
+    REQUIRE(scheduled.size() == program.tokenizer.tokens().size());
+
+    std::list<vcl::Token>::const_iterator i = scheduled.begin();
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "div");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "add");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "mul");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "waitq");
+}
+
+TEST_CASE("VuSchedulerAnalysis: ready-set scheduler keeps dependencies and barriers ordered")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("mul.xy vf04, vf01, vf05"));
+    REQUIRE(program.parse("loi 1.0"));
+    REQUIRE(program.parse("addi.xy vf06, vf07, i"));
+    REQUIRE(program.parse("sq.xy vf06, 0(vi01)"));
+    REQUIRE(program.parse("div q, vf08[w], vf09[w]"));
+
+    std::list<vcl::Token> scheduled = vcl::scheduleVuTokensReadySet(program.tokenizer.tokens());
+    REQUIRE(scheduled.size() == program.tokenizer.tokens().size());
+
+    std::vector<std::string> names;
+    for( std::list<vcl::Token>::const_iterator i = scheduled.begin(); i != scheduled.end(); ++i )
+        names.push_back(vcl::normalizeVuMnemonic(i->name()));
+
+    REQUIRE(names.size() == 6u);
+
+    unsigned int addPos = 0;
+    unsigned int mulPos = 0;
+    unsigned int loiPos = 0;
+    unsigned int addiPos = 0;
+    unsigned int sqPos = 0;
+    unsigned int divPos = 0;
+    for( unsigned int i = 0; i < names.size(); ++i )
+    {
+        if( names[i] == "add" )
+            addPos = i;
+        else if( names[i] == "mul" )
+            mulPos = i;
+        else if( names[i] == "loi" )
+            loiPos = i;
+        else if( names[i] == "addi" )
+            addiPos = i;
+        else if( names[i] == "sq" )
+            sqPos = i;
+        else if( names[i] == "div" )
+            divPos = i;
+    }
+
+    CHECK(addPos < mulPos);
+    CHECK(loiPos < addiPos);
+    CHECK(addiPos < sqPos);
+    CHECK(sqPos < divPos);
+}
