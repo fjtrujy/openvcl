@@ -583,7 +583,8 @@ void CodeGenerator::emitPairedTokens( const Token& a, const Token& b )
 
 bool CodeGenerator::emitsAsUpperZeroMove( const Token& token ) const
 {
-	return m_enableUpperZeroMoves && isVuZeroMoveFromVf00(token);
+	return ( m_enableUpperZeroMoves || (m_ignoredImplicitWawResources & VU_RESOURCE_MAC) )
+	    && isVuZeroMoveFromVf00(token);
 }
 
 bool CodeGenerator::tokenIsLowerExecutionPath( const Token& token ) const

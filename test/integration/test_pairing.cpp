@@ -304,6 +304,18 @@ TEST_CASE("Pairing: vf00 move stays lower when MAC flags are read")
     CHECK(!find_line(vsm, "move.xyz").empty());
 }
 
+TEST_CASE("Pairing: vf00 move after final MAC reader can emit as upper zero op")
+{
+    const std::string body =
+        "\tfmand vi01, vi00\n"
+        "\tmove.xyz vf01, vf00\n"
+        "\tlq.xyz vf02, 0(vi00)\n";
+    std::string vsm = runEmit(body, "vsmPairUpperZeroMoveAfterMacRead");
+    REQUIRE(vsm.length() > 0);
+    CHECK(linePairsSubstrings(vsm, "max.xyz", "lq.xyz"));
+    CHECK(find_line(vsm, "move.xyz").empty());
+}
+
 TEST_CASE("Pairing: suffix after final MAC reader can cross dead MAC WAW")
 {
     const std::string body =

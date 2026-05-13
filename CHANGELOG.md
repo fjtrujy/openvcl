@@ -82,6 +82,8 @@
 - Applied the same remaining-reader MAC/CLIP WAW mask to CodeGenerator
   latency-gap filling and pairing lookahead, improving the ps2gl pure-OpenVCL
   aggregate by another 54 static and 12 estimated cycles.
+- Allowed `move.xyz <dst>, vf00` to use the upper-pipe zeroing form after the
+  final MAC reader, matching the same MAC-liveness rule used by scheduling.
 - Added behavior-preserving scheduler analysis scaffolding for basic-block
   construction and descriptor-derived dependency edges.
 - Wired the scheduler analysis layer into code generation in preserve-order
