@@ -6542,9 +6542,9 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 	    && haveAttenuateColor
 	    && haveAccumulate
 	    && haveStore
-	    && !pattern.materialDiffFromInput
-	    && !haveMaterialDiffInputLoad
-	    && pattern.inputStep == 3
+	    && ((pattern.materialDiffFromInput && haveMaterialDiffInputLoad && pattern.inputStep == 4
+	         && pattern.materialDiffOffset == 3)
+	        || (!pattern.materialDiffFromInput && pattern.inputStep == 3))
 	    && (pattern.postIncrementStore || pattern.outputStep == 3)
 	    && pattern.vertexOffset == 0
 	    && pattern.normalOffset == 1
@@ -6595,6 +6595,7 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 	const std::string r05 = reserveScratchReg(reserved);
 	const std::string r06 = reserveScratchReg(reserved);
 	const std::string r07 = reserveScratchReg(reserved);
+	const std::string r14 = reserveScratchReg(reserved);
 	const std::string r15 = reserveScratchReg(reserved);
 	const std::string r16 = reserveScratchReg(reserved);
 	const std::string r17 = reserveScratchReg(reserved);
@@ -6609,6 +6610,193 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 	const std::string store = p.postIncrementStore
 	                        ? "sqi.xyz " + r22 + ", (" + out + "++)"
 	                        : "sq.xyz " + r22 + ", " + offsetBase(-2, out);
+
+	if( p.materialDiffFromInput )
+	{
+		const std::string materialLoad = "lq.xyz " + r22 + ", "
+		                               + offsetBase(p.materialDiffOffset - (2 * p.inputStep), in);
+		const std::string normalLoad = "lq.xyz " + r19 + ", "
+		                             + offsetBase(p.normalOffset - p.inputStep, in);
+		const std::string pvStore = p.postIncrementStore
+		                          ? "sqi.xyz " + r19 + ", (" + out + "++)"
+		                          : "sq.xyz " + r19 + ", " + offsetBase(-2, out);
+
+		m_codeLines.push_back(p.entryLabel + ":");
+		emitRawPairedLine("nop", "lq.xyz " + r16 + ", " + offsetBase(0, in));
+		emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", " + inputStep);
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("sub.xyz " + r16 + ", " + p.lightPosReg + ", " + r16, "nop");
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("mul.xyz " + r15 + ", " + r16 + ", " + r16, "nop");
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("adday.z ACC, " + r15 + ", " + fieldArg(r15, "y"), "nop");
+		emitRawPairedLine("maddx.z " + r15 + ", " + p.onesReg + ", " + fieldArg(r15, "x"), "nop");
+		emitRawPairedLine("nop", "sqrt q, " + fieldArg(r15, "z"));
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("addq.y " + r15 + ", " + vf00 + ", q", "waitq");
+		emitRawPairedLine("nop", "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r15, "y"));
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("addw.x " + r15 + ", " + vf00 + ", " + fieldArg(vf00, "w"), "nop");
+		emitRawPairedLine("mulq.xyz " + r16 + ", " + r16 + ", q",
+		                  "ibeq " + in + ", " + last + ", " + p.fallbackOneLabel);
+		emitRawPairedLine("mul.xyz " + r15 + ", " + r15 + ", " + p.attenCoeffReg, "nop");
+
+		m_codeLines.push_back(p.prologOneLabel + ":");
+		emitRawPairedLine("add.xyz " + r17 + ", " + p.viewDirReg + ", " + r16,
+		                  "lq.xyz " + r18 + ", " + offsetBase(0, in));
+		emitRawPairedLine("sub.xyz " + r18 + ", " + p.lightPosReg + ", " + r18,
+		                  "esadd p, " + r17);
+		emitRawPairedLine("mul.xyz " + r20 + ", " + r18 + ", " + r18, normalLoad);
+		emitRawPairedLine("adday.z ACC, " + r20 + ", " + fieldArg(r20, "y"), "nop");
+		emitRawPairedLine("maddx.z " + r20 + ", " + p.onesReg + ", " + fieldArg(r20, "x"), "nop");
+		emitRawPairedLine("nop", "waitp");
+		emitRawPairedLine("addw.x " + r20 + ", " + vf00 + ", " + fieldArg(vf00, "w"),
+		                  "mfp.w " + r06 + ", p");
+		emitRawPairedLine("nop", "sqrt q, " + fieldArg(r20, "z"));
+		emitRawPairedLine("nop", "ersqrt p, " + fieldArg(r06, "w"));
+		emitRawPairedLine("addq.y " + r20 + ", " + vf00 + ", q", "waitq");
+		emitRawPairedLine("nop", "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r20, "y"));
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("mul.xyz " + r15 + ", " + r20 + ", " + p.attenCoeffReg,
+		                  "move.xyz " + r14 + ", " + r15);
+		emitRawPairedLine("mul.xyz " + r20 + ", " + r16 + ", " + r19, "nop");
+		emitRawPairedLine("mulq.xyz " + r16 + ", " + r18 + ", q",
+		                  "iaddiu " + in + ", " + in + ", " + inputStep);
+		emitRawPairedLine("nop", "move.xyz " + r18 + ", " + r17);
+		emitRawPairedLine("nop", "ibeq " + in + ", " + last + ", " + p.fallbackTwoLabel);
+		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r20, "x"),
+		                  "mfp.w " + r06 + ", p");
+
+		m_codeLines.push_back(p.prologTwoLabel + ":");
+		emitRawPairedLine("add.xyz " + r17 + ", " + p.viewDirReg + ", " + r16,
+		                  "lq.xyz " + r22 + ", " + offsetBase(0, in));
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("mulw.xyz " + r21 + ", " + r18 + ", " + fieldArg(r06, "w"), "nop");
+		emitRawPairedLine("sub.xyz " + r18 + ", " + p.lightPosReg + ", " + r22, "nop");
+		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r20, "y"),
+		                  "esadd p, " + r17);
+		emitRawPairedLine("maddz.w " + r06 + ", " + vf00 + ", " + fieldArg(r20, "z"), "nop");
+		emitRawPairedLine("mul.xyz " + r21 + ", " + r21 + ", " + r19, "nop");
+		emitRawPairedLine("mul.xyz " + r20 + ", " + r18 + ", " + r18, "nop");
+		emitRawPairedLine("maxx.w " + r05 + ", " + r06 + ", " + fieldArg(vf00, "x"), "nop");
+		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r21, "x"), "nop");
+		emitRawPairedLine("adday.z ACC, " + r20 + ", " + fieldArg(r20, "y"), "nop");
+		emitRawPairedLine("maddx.z " + r20 + ", " + p.onesReg + ", " + fieldArg(r20, "x"), "nop");
+		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r21, "y"), "nop");
+		emitRawPairedLine("maddz.w " + r07 + ", " + vf00 + ", " + fieldArg(r21, "z"), "waitp");
+		emitRawPairedLine("mulw.xyz " + r21 + ", " + p.lightDiffReg + ", " + fieldArg(r05, "w"),
+		                  "mfp.w " + r06 + ", p");
+		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r14, "x"),
+		                  "sqrt q, " + fieldArg(r20, "z"));
+		emitRawPairedLine("maxx.w " + r05 + ", " + r07 + ", " + fieldArg(vf00, "x"), "nop");
+		emitRawPairedLine("addw.x " + r20 + ", " + vf00 + ", " + fieldArg(vf00, "w"),
+		                  "ersqrt p, " + fieldArg(r06, "w"));
+		emitRawPairedLine("mul.w " + r06 + ", " + r05 + ", " + r05, "nop");
+		emitRawPairedLine("addq.y " + r20 + ", " + vf00 + ", q", "waitq");
+		emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06,
+		                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r20, "y"));
+		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r14, "y"), normalLoad);
+		emitRawPairedLine("maddz.w " + r05 + ", " + vf00 + ", " + fieldArg(r14, "z"), "nop");
+		emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06, materialLoad);
+		emitRawPairedLine("mul.xyz " + r15 + ", " + r20 + ", " + p.attenCoeffReg,
+		                  "move.xyz " + r14 + ", " + r15);
+		emitRawPairedLine("mul.xyz " + r20 + ", " + r16 + ", " + r19, "nop");
+		emitRawPairedLine("mulq.xyz " + r16 + ", " + r18 + ", q",
+		                  "iaddiu " + in + ", " + in + ", " + inputStep);
+		emitRawPairedLine("mul.w " + r07 + ", " + r06 + ", " + r06,
+		                  "move.xyz " + r18 + ", " + r17);
+		emitRawPairedLine("mula.xyz ACC, " + r21 + ", " + r22,
+		                  "ibeq " + in + ", " + last + ", " + p.fallbackThreeLabel);
+		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r20, "x"),
+		                  "mfp.w " + r06 + ", p");
+
+		m_codeLines.push_back(p.mainLabel + ":");
+		emitRawPairedLine("add.xyz " + r17 + ", " + p.viewDirReg + ", " + r16,
+		                  "lq.xyz " + r22 + ", " + offsetBase(0, in));
+		emitRawPairedLine("mul.w " + r07 + ", " + r07 + ", " + r07, mainOutputStep);
+		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r20, "y"), "nop");
+		emitRawPairedLine("mulw.xyz " + r21 + ", " + r18 + ", " + fieldArg(r06, "w"), "nop");
+		emitRawPairedLine("sub.xyz " + r18 + ", " + p.lightPosReg + ", " + r22,
+		                  "esadd p, " + r17);
+		emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(r07, "w"), "nop");
+		emitRawPairedLine("maddz.w " + r06 + ", " + vf00 + ", " + fieldArg(r20, "z"), "nop");
+		emitRawPairedLine("mul.xyz " + r21 + ", " + r21 + ", " + r19, "nop");
+		emitRawPairedLine("mul.xyz " + r20 + ", " + r18 + ", " + r18, "nop");
+		emitRawPairedLine("madd.xyz " + r19 + ", " + p.lightAmbReg + ", " + p.materialAmbReg, "nop");
+		emitRawPairedLine("maxx.w " + r05 + ", " + r06 + ", " + fieldArg(vf00, "x"),
+		                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r05, "w"));
+		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r21, "x"), "nop");
+		emitRawPairedLine("adday.z ACC, " + r20 + ", " + fieldArg(r20, "y"), "nop");
+		emitRawPairedLine("maddx.z " + r20 + ", " + p.onesReg + ", " + fieldArg(r20, "x"), "nop");
+		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r21, "y"), "nop");
+		emitRawPairedLine("maddz.w " + r07 + ", " + vf00 + ", " + fieldArg(r21, "z"),
+		                  "mfp.w " + r06 + ", p");
+		emitRawPairedLine("nop", "lq.xyz " + color + ", " + mainColorLoad);
+		emitRawPairedLine("mulq.xyz " + r19 + ", " + r19 + ", q",
+		                  "sqrt q, " + fieldArg(r20, "z"));
+		emitRawPairedLine("mulw.xyz " + r21 + ", " + p.lightDiffReg + ", " + fieldArg(r05, "w"), "nop");
+		emitRawPairedLine("maxx.w " + r05 + ", " + r07 + ", " + fieldArg(vf00, "x"), "nop");
+		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r14, "x"),
+		                  "ersqrt p, " + fieldArg(r06, "w"));
+		emitRawPairedLine("add.xyz " + r19 + ", " + color + ", " + r19, "nop");
+		emitRawPairedLine("addw.x " + r20 + ", " + vf00 + ", " + fieldArg(vf00, "w"), "nop");
+		emitRawPairedLine("mul.w " + r06 + ", " + r05 + ", " + r05, "nop");
+		emitRawPairedLine("addq.y " + r20 + ", " + vf00 + ", q", materialLoad);
+		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r14, "y"), pvStore);
+		emitRawPairedLine("maddz.w " + r05 + ", " + vf00 + ", " + fieldArg(r14, "z"),
+		                  "move.xyz " + r14 + ", " + r15);
+		emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06, normalLoad);
+		emitRawPairedLine("mul.xyz " + r15 + ", " + r20 + ", " + p.attenCoeffReg,
+		                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r20, "y"));
+		emitRawPairedLine("mula.xyz ACC, " + r21 + ", " + r22, "nop");
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06, "nop");
+		emitRawPairedLine("mul.xyz " + r20 + ", " + r16 + ", " + r19, "nop");
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("mulq.xyz " + r16 + ", " + r18 + ", q",
+		                  "iaddiu " + in + ", " + in + ", " + inputStep);
+		emitRawPairedLine("mul.w " + r07 + ", " + r06 + ", " + r06,
+		                  "move.xyz " + r18 + ", " + r17);
+		emitRawPairedLine("nop", "ibne " + in + ", " + last + ", " + p.mainLabel);
+		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r20, "x"),
+		                  "mfp.w " + r06 + ", p");
+
+		m_codeLines.push_back(p.drainLabel + ":");
+		emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepThree);
+		emitRawPairedLine("nop", "b " + p.scalarLabel);
+		emitRawPairedLine("nop", "nop");
+
+		m_codeLines.push_back(p.fallbackOneLabel + ":");
+		emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepOne);
+		emitRawPairedLine("nop", "b " + p.scalarLabel);
+		emitRawPairedLine("nop", "nop");
+
+		m_codeLines.push_back(p.fallbackTwoLabel + ":");
+		emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepTwo);
+		emitRawPairedLine("nop", "b " + p.scalarLabel);
+		emitRawPairedLine("nop", "nop");
+
+		m_codeLines.push_back(p.fallbackThreeLabel + ":");
+		emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepThree);
+		emitRawPairedLine("nop", "b " + p.scalarLabel);
+		emitRawPairedLine("nop", "nop");
+
+		emitPtLightSpecScalarFallbackLoop(p);
+		return;
+	}
 
 	m_codeLines.push_back(p.entryLabel + ":");
 	emitRawPairedLine("nop", "lq.xyz " + r17 + ", " + offsetBase(0, in));
@@ -6806,6 +6994,9 @@ void CodeGenerator::emitPtLightSpecScalarFallbackLoop( const PtLightSpecLoopPipe
 	emitRawPairedLine("nop", "lq.xyz " + p.vertexReg + ", " + offsetBase(p.vertexOffset, in));
 	emitRawPairedLine("nop", "lq.xyz " + p.normalReg + ", " + offsetBase(p.normalOffset, in));
 	emitRawPairedLine("nop", "lq.xyz " + p.currentColorReg + ", " + scalarColorLoad);
+	if( p.materialDiffFromInput )
+		emitRawPairedLine("nop", "lq.xyz " + p.materialDiffReg + ", "
+		                         + offsetBase(p.materialDiffOffset, in));
 	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", " + integerText(p.inputStep));
 	emitRawPairedLine("nop", "nop");
 	emitRawPairedLine("sub.xyz " + p.toLightReg + ", " + p.lightPosReg + ", " + p.vertexReg, "nop");

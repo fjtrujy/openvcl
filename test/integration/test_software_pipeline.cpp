@@ -739,6 +739,23 @@ namespace
             "\t--exit\n"
             "\t--endexit\n";
     }
+
+    std::string ptLightSpecPvDiffPipelineSource()
+    {
+        std::string source = ptLightSpecPipelineSource();
+        std::string::size_type pos = source.find("\tlq.xyz vf17, 1(vi13)\n");
+        if (pos != std::string::npos)
+            source.insert(pos + std::string("\tlq.xyz vf17, 1(vi13)\n").size(),
+                          "\tlq.xyz vf08, 3(vi13)\n");
+        while ((pos = source.find("\tiaddiu vi13, vi13, 3")) != std::string::npos)
+            source.replace(pos, std::string("\tiaddiu vi13, vi13, 3").size(),
+                           "\tiaddiu vi13, vi13, 4");
+        pos = source.find("\tiaddiu vi04, vi00, 15");
+        if (pos != std::string::npos)
+            source.replace(pos, std::string("\tiaddiu vi04, vi00, 15").size(),
+                           "\tiaddiu vi04, vi00, 20");
+        return source;
+    }
 }
 
 TEST_CASE("Software pipeline: fast_nolights transform loop emits a 12-cycle steady state")
@@ -912,4 +929,18 @@ TEST_CASE("Software pipeline: specular point light loop stays scalar until W pow
     CHECK(contains(vsm, "ibne VI13, VI04, pt_light_vert_loop_lid"));
     CHECK(contains(vsm, "maddaw.xyz ACC"));
     CHECK(contains(vsm, "sq.xyz"));
+}
+
+TEST_CASE("Software pipeline: pv-diff specular point light loop keeps per-vertex material diffuse")
+{
+    std::string vsm = runEmit(ptLightSpecPvDiffPipelineSource());
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(contains(vsm, "pt_light_vert_loop_lid__SPEC_ENTRY_POINT:"));
+    CHECK(contains(vsm, "pt_light_vert_loop_lid__MAIN_LOOP:"));
+    CHECK(contains(vsm, "ibne VI13, VI04, pt_light_vert_loop_lid__MAIN_LOOP"));
+    CHECK(contains(vsm, "iaddiu VI13, VI13, 4"));
+    CHECK(contains(vsm, "lq.xyz VF20, -5(VI13)")
+          || contains(vsm, "lq.xyz VF21, -5(VI13)")
+          || contains(vsm, "lq.xyz VF22, -5(VI13)"));
 }
