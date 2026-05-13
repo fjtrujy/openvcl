@@ -273,6 +273,50 @@ namespace
             "\t--exit\n"
             "\t--endexit\n";
     }
+
+    std::string dirLightNoSpecPipelineSource()
+    {
+        return
+            "\t.init_vf_all\n"
+            "\t.init_vi_all\n"
+            "\t.name vsmDirLight\n"
+            "\t--enter\n"
+            "\t--endenter\n"
+            "\tiaddiu vi03, vi00, 0\n"
+            "\tiaddiu vi04, vi00, 15\n"
+            "\tiaddiu vi13, vi00, 0\n"
+            "\tmove.xyzw vf06, vf00\n"
+            "\tmove.xyzw vf08, vf00\n"
+            "\tmove.xyzw vf09, vf00\n"
+            "\tmove.xyzw vf10, vf00\n"
+            "\tmove.xyzw vf11, vf00\n"
+            "\tmove.xyzw vf12, vf00\n"
+            "\tmove.xyzw vf13, vf00\n"
+            "\tmove.xyzw vf14, vf00\n"
+            "\tmove.xyzw vf15, vf00\n"
+            "\tmove.xyzw vf16, vf00\n"
+            "\tmove.xyzw vf17, vf00\n"
+            "\tmove.xyzw vf18, vf00\n"
+            "dir_light_vert_loop_lid:\n"
+            "\t--LoopCS 1,3\n"
+            "\tlq.xyz vf12, 1(vi13)\n"
+            "\tlq.xyz vf17, 1(vi03)\n"
+            "\tmul.xyz vf14, vf13, vf12\n"
+            "\tadday.z acc, vf14, vf14y\n"
+            "\tmaddx.z vf14, vf09, vf14x\n"
+            "\tmaxx.z vf14, vf14, vf00x\n"
+            "\tmulz.xyz vf15, vf11, vf14z\n"
+            "\tmula.xyz acc, vf15, vf08\n"
+            "\tmadd.xyz vf16, vf10, vf06\n"
+            "\tadd.xyz vf18, vf17, vf16\n"
+            "\tsq.xyz vf18, 1(vi03)\n"
+            "\tiaddiu vi13, vi13, 3\n"
+            "\tibne vi13, vi04, dir_light_vert_loop_lid\n"
+            "\tiaddiu vi03, vi03, 3\n"
+            "done_lid:\n"
+            "\t--exit\n"
+            "\t--endexit\n";
+    }
 }
 
 TEST_CASE("Software pipeline: fast_nolights transform loop emits a 12-cycle steady state")
@@ -335,4 +379,16 @@ TEST_CASE("Software pipeline: final color loop keeps the original output registe
     CHECK(contains(vsm, "sq VF08, -8(VI03)"));
     CHECK(contains(vsm, "ftoi0.xyz VF08, VF24"));
     CHECK(!contains(vsm, "sq VF25, -8(VI03)"));
+}
+
+TEST_CASE("Software pipeline: no-spec directional light loop emits an 8-cycle steady state")
+{
+    std::string vsm = runEmit(dirLightNoSpecPipelineSource());
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(contains(vsm, "dir_light_vert_loop_lid__ENTRY_POINT:"));
+    CHECK(contains(vsm, "dir_light_vert_loop_lid__MAIN_LOOP:"));
+    CHECK(contains(vsm, "dir_light_vert_loop_lid__SCALAR_FALLBACK:"));
+    CHECK(contains(vsm, "ibne VI13, VI04, dir_light_vert_loop_lid__MAIN_LOOP"));
+    CHECK(contains(vsm, "sq.xyz VF18, -2(VI03)"));
 }

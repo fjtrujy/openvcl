@@ -806,12 +806,24 @@ std::string VsmCostAnalyzer::canonicalBlockLabel( const std::string& label )
 	if( marker == std::string::npos )
 	{
 		static const char kOpenVclXformLoop[] = "xform_loop_lid";
+		static const char kOpenVclDirLightLoop[] = "dir_light_vert_loop_lid";
+		static const char kOpenVclPointLightLoop[] = "pt_light_vert_loop_lid";
 		static const char kOpenVclFinalLoop[] = "final_loop_lid";
 		if( prefix.size() >= sizeof(kOpenVclXformLoop) - 1
 		    && prefix.compare(prefix.size() - (sizeof(kOpenVclXformLoop) - 1),
 		                      sizeof(kOpenVclXformLoop) - 1,
 		                      kOpenVclXformLoop) == 0 )
 			return "xform_loop_lid";
+		if( prefix.size() >= sizeof(kOpenVclDirLightLoop) - 1
+		    && prefix.compare(prefix.size() - (sizeof(kOpenVclDirLightLoop) - 1),
+		                      sizeof(kOpenVclDirLightLoop) - 1,
+		                      kOpenVclDirLightLoop) == 0 )
+			return "dir_light_vert_loop_lid";
+		if( prefix.size() >= sizeof(kOpenVclPointLightLoop) - 1
+		    && prefix.compare(prefix.size() - (sizeof(kOpenVclPointLightLoop) - 1),
+		                      sizeof(kOpenVclPointLightLoop) - 1,
+		                      kOpenVclPointLightLoop) == 0 )
+			return "pt_light_vert_loop_lid";
 		if( prefix.size() >= sizeof(kOpenVclFinalLoop) - 1
 		    && prefix.compare(prefix.size() - (sizeof(kOpenVclFinalLoop) - 1),
 		                      sizeof(kOpenVclFinalLoop) - 1,
