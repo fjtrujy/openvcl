@@ -454,6 +454,70 @@ namespace
             "\t--endexit\n";
     }
 
+    std::string dirLightSpecIndexedPipelineSource()
+    {
+        return
+            "\t.init_vf_all\n"
+            "\t.init_vi_all\n"
+            "\t.name vsmDirLightSpecIndexed\n"
+            "\t--enter\n"
+            "\t--endenter\n"
+            "\tiaddiu vi04, vi00, 0\n"
+            "\tiaddiu vi05, vi00, 0\n"
+            "\tiaddiu vi06, vi00, 15\n"
+            "\tmove.xyzw vf05, vf00\n"
+            "\tmove.xyzw vf06, vf00\n"
+            "\tmove.xyzw vf09, vf00\n"
+            "\tmove.xyzw vf10, vf00\n"
+            "\tmove.xyzw vf11, vf00\n"
+            "\tmove.xyzw vf12, vf00\n"
+            "\tmove.xyzw vf13, vf00\n"
+            "\tmove.xyzw vf14, vf00\n"
+            "\tmove.xyzw vf15, vf00\n"
+            "\tmove.xyzw vf16, vf00\n"
+            "\tmove.xyzw vf17, vf00\n"
+            "\tmove.xyzw vf18, vf00\n"
+            "\tmove.xyzw vf19, vf00\n"
+            "\tmove.xyzw vf20, vf00\n"
+            "\tmove.xyzw vf21, vf00\n"
+            "\tmove.xyzw vf22, vf00\n"
+            "\tmove.xyzw vf23, vf00\n"
+            "\tmove.xyzw vf24, vf00\n"
+            "\tmove.xyzw vf25, vf00\n"
+            "\tmove.xyzw vf26, vf00\n"
+            "\tmove.xyzw vf27, vf00\n"
+            "\tmove.xyzw vf28, vf00\n"
+            "dir_light_vert_loop_lid:\n"
+            "\t--LoopCS 1,3\n"
+            "\tlq.xyz vf12, 1(vi04)\n"
+            "\tmul.xyz vf15, vf14, vf12\n"
+            "\tadday.z acc, vf15, vf15y\n"
+            "\tmaddx.z vf15, vf09, vf15x\n"
+            "\tmaxx.z vf15, vf15, vf00x\n"
+            "\tmulz.xyz vf16, vf11, vf15z\n"
+            "\tmula.xyz acc, vf16, vf06\n"
+            "\tmul.xyz vf18, vf17, vf12\n"
+            "\tmr32.xyw vf18, vf18\n"
+            "\taddax.w acc, vf18, vf18x\n"
+            "\tmaddy.w vf19, vf00, vf18y\n"
+            "\tmaxx.w vf20, vf19, vf00x\n"
+            "\tmul.w vf21, vf20, vf20\n"
+            "\tmul.w vf22, vf21, vf21\n"
+            "\tmul.w vf23, vf22, vf22\n"
+            "\tmul.w vf24, vf23, vf23\n"
+            "\tmul.w vf25, vf24, vf24\n"
+            "\tmaddaw.xyz acc, vf13, vf25w\n"
+            "\tmadd.xyz vf26, vf10, vf05\n"
+            "\tlq.xyz vf27, 0(vi05)\n"
+            "\tadd.xyz vf28, vf27, vf26\n"
+            "\tsqi.xyz vf28, (vi05++)\n"
+            "\tiaddiu vi04, vi04, 3\n"
+            "\tibne vi04, vi06, dir_light_vert_loop_lid\n"
+            "done_lid:\n"
+            "\t--exit\n"
+            "\t--endexit\n";
+    }
+
     std::string ptLightNoSpecPipelineSource()
     {
         return
@@ -646,6 +710,18 @@ TEST_CASE("Software pipeline: specular directional light loop stays scalar until
     CHECK(contains(vsm, "ibne VI13, VI04, dir_light_vert_loop_lid"));
     CHECK(contains(vsm, "maddx.z VF17, VF11, VF17x"));
     CHECK(contains(vsm, "sq.xyz VF30, 1(VI03)"));
+}
+
+TEST_CASE("Software pipeline: indexed specular directional light loop keeps postincrement stores")
+{
+    std::string vsm = runEmit(dirLightSpecIndexedPipelineSource());
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(contains(vsm, "dir_light_vert_loop_lid__SPEC_ENTRY_POINT:"));
+    CHECK(contains(vsm, "dir_light_vert_loop_lid__MAIN_LOOP:"));
+    CHECK(contains(vsm, "ibne VI04, VI06, dir_light_vert_loop_lid__MAIN_LOOP"));
+    CHECK(contains(vsm, "lq.xyz VF27, 0(VI05)"));
+    CHECK(contains(vsm, "sqi.xyz VF28, (VI05++)"));
 }
 
 TEST_CASE("Software pipeline: no-spec point light loop emits a 26-cycle steady state")
