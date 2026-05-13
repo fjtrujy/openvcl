@@ -91,12 +91,19 @@ private:
 	bool tokenIsUpperExecutionPath( const Token& token ) const;
 	std::string generateUpperZeroMoveInstruction( const Token& token );
 	struct FastNoLightsLoopPipelinePattern;
+	struct FastLitLoopPipelinePattern;
 	bool tryEmitFastNoLightsSoftwarePipelineLoop( std::list<Token>& tokens,
 	                                              std::list<Token>::iterator& token );
 	bool collectFastNoLightsLoopPipelinePattern( std::list<Token>::iterator begin,
 	                                             std::list<Token>::iterator end,
 	                                             FastNoLightsLoopPipelinePattern& pattern );
 	void emitFastNoLightsSoftwarePipelineLoop( const FastNoLightsLoopPipelinePattern& pattern );
+	bool tryEmitFastLitSoftwarePipelineLoop( std::list<Token>& tokens,
+	                                         std::list<Token>::iterator& token );
+	bool collectFastLitLoopPipelinePattern( std::list<Token>::iterator begin,
+	                                        std::list<Token>::iterator end,
+	                                        FastLitLoopPipelinePattern& pattern );
+	void emitFastLitSoftwarePipelineLoop( const FastLitLoopPipelinePattern& pattern );
 	void emitRawPairedLine( const std::string& upper, const std::string& lower );
 
 	// Dual-pipe pairing helpers.  Stateless legality rules live in
