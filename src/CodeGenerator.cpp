@@ -306,6 +306,61 @@ struct CodeGenerator::DirLightNoSpecLoopPipelinePattern
 	}
 };
 
+struct CodeGenerator::PtLightNoSpecLoopPipelinePattern
+{
+	std::string sourceLabel;
+	std::string entryLabel;
+	std::string prologLabel;
+	std::string mainLabel;
+	std::string drainLabel;
+	std::string fallbackOneLabel;
+	std::string fallbackTwoLabel;
+	std::string scalarLabel;
+	std::string exitLabel;
+
+	std::string inputReg;
+	std::string lastInputReg;
+	std::string outputReg;
+	std::string normalReg;
+	std::string vertexReg;
+	std::string currentColorReg;
+	std::string lightPosReg;
+	std::string toLightReg;
+	std::string attenReg;
+	std::string attenCoeffReg;
+	std::string attenProductReg;
+	std::string onesReg;
+	std::string normalizedLightReg;
+	std::string normalProductReg;
+	std::string intensityReg;
+	std::string clampedIntensityReg;
+	std::string lightDiffReg;
+	std::string localDiffuseReg;
+	std::string materialDiffReg;
+	std::string lightAmbReg;
+	std::string materialAmbReg;
+	std::string litColorReg;
+	std::string attenuatedColorReg;
+	std::string resultReg;
+
+	long inputStep;
+	long outputStep;
+	long vertexOffset;
+	long normalOffset;
+	long colorOffset;
+	long storeOffset;
+
+	PtLightNoSpecLoopPipelinePattern()
+	{
+		inputStep = 0;
+		outputStep = 0;
+		vertexOffset = 0;
+		normalOffset = 0;
+		colorOffset = 0;
+		storeOffset = 0;
+	}
+};
+
 struct CodeGenerator::FinalColorLoopPipelinePattern
 {
 	std::string sourceLabel;
@@ -569,6 +624,11 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			continue;
 		}
 		if( tryEmitDirLightNoSpecSoftwarePipelineLoop(workTokens, k) )
+		{
+			exitWritten = false;
+			continue;
+		}
+		if( tryEmitPtLightNoSpecSoftwarePipelineLoop(workTokens, k) )
 		{
 			exitWritten = false;
 			continue;
@@ -4080,6 +4140,750 @@ void CodeGenerator::emitDirLightNoSpecScalarFallbackLoop( const DirLightNoSpecLo
 	emitRawPairedLine("nop", "nop");
 	emitRawPairedLine("nop", "nop");
 	emitRawPairedLine("add.xyz " + result + ", " + color + ", " + lit, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "sq.xyz " + result + ", " + offsetBase(1, out));
+	emitRawPairedLine("nop", "ibne " + in + ", " + last + ", " + p.scalarLabel);
+	emitRawPairedLine("nop", "iaddiu " + out + ", " + out + ", 3");
+
+	m_codeLines.push_back(p.exitLabel + ":");
+}
+
+bool CodeGenerator::tryEmitPtLightNoSpecSoftwarePipelineLoop( std::list<Token>& tokens,
+                                                              std::list<Token>::iterator& token )
+{
+	if( token == tokens.end() )
+		return false;
+	if( token->label() != "pt_light_vert_loop_lid" )
+		return false;
+
+	std::list<Token>::iterator branch = tokens.end();
+	for( std::list<Token>::iterator i = token; i != tokens.end(); ++i )
+	{
+		std::string target;
+		if( branchTargetLabel(*i, target) && target == token->label() )
+		{
+			branch = i;
+			break;
+		}
+		if( i != token && i->label().length() != 0 )
+			return false;
+	}
+	if( branch == tokens.end() )
+		return false;
+
+	std::list<Token>::iterator afterBranch = branch;
+	++afterBranch;
+	if( afterBranch != tokens.end() && (afterBranch->flags() & Token::BRANCH_DELAY_FILLER) )
+		++afterBranch;
+
+	PtLightNoSpecLoopPipelinePattern pattern;
+	if( !collectPtLightNoSpecLoopPipelinePattern(token, afterBranch, pattern) )
+		return false;
+
+	emitPtLightNoSpecSoftwarePipelineLoop(pattern);
+	token = afterBranch;
+	return true;
+}
+
+bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::iterator begin,
+                                                             std::list<Token>::iterator end,
+                                                             PtLightNoSpecLoopPipelinePattern& pattern )
+{
+	pattern = PtLightNoSpecLoopPipelinePattern();
+	pattern.sourceLabel = begin->label();
+	pattern.entryLabel = pattern.sourceLabel + "__ENTRY_POINT";
+	pattern.prologLabel = pattern.sourceLabel + "__PRO1";
+	pattern.mainLabel = pattern.sourceLabel + "__MAIN_LOOP";
+	pattern.drainLabel = pattern.sourceLabel + "__DRAIN_TAIL";
+	pattern.fallbackOneLabel = pattern.sourceLabel + "__FALLBACK1";
+	pattern.fallbackTwoLabel = pattern.sourceLabel + "__FALLBACK2";
+	pattern.scalarLabel = pattern.sourceLabel + "__SCALAR_FALLBACK";
+	pattern.exitLabel = pattern.sourceLabel + "__EXIT_POINT";
+
+	bool haveBranch = false;
+	for( std::list<Token>::iterator i = begin; i != end; ++i )
+	{
+		std::string target;
+		if( branchTargetLabel(*i, target) && target == pattern.sourceLabel )
+		{
+			if( !getRegisterArgKey(*i, 0, pattern.inputReg)
+			    || !getRegisterArgKey(*i, 1, pattern.lastInputReg) )
+				return false;
+			haveBranch = true;
+			break;
+		}
+	}
+	if( !haveBranch )
+		return false;
+
+	bool haveInputIncrement = false;
+	bool haveOutputIncrement = false;
+	bool haveNormalLoad = false;
+	bool haveVertexLoad = false;
+	bool haveColorLoad = false;
+	bool haveSub = false;
+	bool haveDistanceMul = false;
+	bool haveDistanceAdday = false;
+	bool haveDistanceMaddx = false;
+	bool haveSqrt = false;
+	bool haveDistanceSetOne = false;
+	bool haveDistanceSetLength = false;
+	bool haveInverseDistanceDiv = false;
+	bool haveNormalize = false;
+	bool haveAttenProduct = false;
+	bool haveAttenMulax = false;
+	bool haveAttenMadday = false;
+	bool haveAttenMaddz = false;
+	bool haveNormalProduct = false;
+	bool haveIntensityMulax = false;
+	bool haveIntensityMadday = false;
+	bool haveIntensityMaddz = false;
+	bool haveClamp = false;
+	bool haveLocalDiffuse = false;
+	bool haveDiffuseMaterial = false;
+	bool haveAmbientMaterial = false;
+	bool haveAttenuationDiv = false;
+	bool haveAttenuateColor = false;
+	bool haveAccumulate = false;
+	bool haveStore = false;
+
+	for( std::list<Token>::iterator i = begin; i != end; ++i )
+	{
+		const Token& token = *i;
+		if( !token.operand() || (token.flags() & Token::IGNORED)
+		    || (token.operand()->flags() & Operand::PREPROCESSOR) )
+			continue;
+
+		const std::string mnemonic = lowerVuTokenName(token);
+		if( mnemonic == "nop" )
+			continue;
+		if( mnemonic == "esadd" || mnemonic == "ersqrt" || mnemonic == "mfp" || mnemonic == "waitp" )
+			return false;
+
+		std::string target;
+		if( branchTargetLabel(token, target) && target == pattern.sourceLabel )
+			continue;
+
+		if( mnemonic == "lq" )
+		{
+			std::string base;
+			long offset = 0;
+			std::string dst;
+			if( !getIndirectBaseAndOffset(token, base, offset)
+			    || !getRegisterArgKey(token, 0, dst)
+			    || !tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+				continue;
+
+			if( base == pattern.inputReg && offset == 0 )
+			{
+				pattern.vertexReg = dst;
+				pattern.vertexOffset = offset;
+				haveVertexLoad = true;
+				continue;
+			}
+			if( base == pattern.inputReg && offset == 1 )
+			{
+				pattern.normalReg = dst;
+				pattern.normalOffset = offset;
+				haveNormalLoad = true;
+				continue;
+			}
+			if( base != pattern.inputReg && offset == 1 )
+			{
+				if( pattern.outputReg.empty() || pattern.outputReg == base )
+				{
+					pattern.outputReg = base;
+					pattern.currentColorReg = dst;
+					pattern.colorOffset = offset;
+					haveColorLoad = true;
+				}
+				continue;
+			}
+			return false;
+		}
+
+		if( mnemonic == "iaddiu" )
+		{
+			std::string dst;
+			std::string src;
+			std::string imm;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, src)
+			    || !getImmediateArg(token, 2, imm) )
+				continue;
+			if( dst != src )
+				continue;
+			long value = 0;
+			if( !evaluateIntegerExpression(imm, value) )
+				continue;
+			if( dst == pattern.inputReg )
+			{
+				pattern.inputStep = value;
+				haveInputIncrement = true;
+			}
+			else if( !pattern.outputReg.empty() && dst == pattern.outputReg )
+			{
+				pattern.outputStep = value;
+				haveOutputIncrement = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "sub" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string dst;
+			std::string left;
+			std::string right;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, left)
+			    || !getRegisterArgKey(token, 2, right) )
+				continue;
+			if( right == pattern.vertexReg )
+			{
+				pattern.toLightReg = dst;
+				pattern.lightPosReg = left;
+				haveSub = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "mul" && token.broadcast() == 0
+		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string dst;
+			std::string left;
+			std::string right;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, left)
+			    || !getRegisterArgKey(token, 2, right) )
+				continue;
+			if( !pattern.toLightReg.empty() && left == pattern.toLightReg && right == pattern.toLightReg )
+			{
+				pattern.attenReg = dst;
+				haveDistanceMul = true;
+				continue;
+			}
+			if( !pattern.attenReg.empty() && left == pattern.attenReg )
+			{
+				pattern.attenProductReg = dst;
+				pattern.attenCoeffReg = right;
+				haveAttenProduct = true;
+				continue;
+			}
+			if( !pattern.normalizedLightReg.empty()
+			    && left == pattern.normalizedLightReg
+			    && right == pattern.normalReg )
+			{
+				pattern.normalProductReg = dst;
+				haveNormalProduct = true;
+				continue;
+			}
+			continue;
+		}
+
+		if( mnemonic == "adda" && token.broadcast() == Token::Y && tokenHasFields(token, Token::Z) )
+		{
+			std::string src;
+			if( getRegisterArgKey(token, 1, src) && src == pattern.attenReg )
+				haveDistanceAdday = true;
+			continue;
+		}
+
+		if( mnemonic == "madd" && token.broadcast() == Token::X && tokenHasFields(token, Token::Z) )
+		{
+			std::string dst;
+			std::string src;
+			std::string product;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, src)
+			    || !getRegisterArgKey(token, 2, product) )
+				continue;
+			if( dst == pattern.attenReg && product == pattern.attenReg )
+			{
+				pattern.onesReg = src;
+				haveDistanceMaddx = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "sqrt" )
+		{
+			std::string src;
+			if( getRegisterArgKey(token, 1, src) && src == pattern.attenReg )
+				haveSqrt = true;
+			continue;
+		}
+
+		if( mnemonic == "add" && token.broadcast() == Token::W && tokenHasFields(token, Token::X) )
+		{
+			std::string dst;
+			if( getRegisterArgKey(token, 0, dst) && dst == pattern.attenReg )
+				haveDistanceSetOne = true;
+			continue;
+		}
+
+		Token::Argument qArg("");
+		const bool addReadsQ = getArg(token, 2, qArg) && qArg.type() == Token::Argument::Q;
+		if( (mnemonic == "addq" || (mnemonic == "add" && addReadsQ))
+		    && tokenHasFields(token, Token::Y) )
+		{
+			std::string dst;
+			if( getRegisterArgKey(token, 0, dst) && dst == pattern.attenReg )
+				haveDistanceSetLength = true;
+			continue;
+		}
+
+		if( mnemonic == "div" )
+		{
+			std::string denom;
+			if( !getRegisterArgKey(token, 2, denom) )
+				continue;
+			if( denom == pattern.attenReg )
+			{
+				if( !haveInverseDistanceDiv )
+					haveInverseDistanceDiv = true;
+				else
+					haveAttenuationDiv = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "mulq" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string dst;
+			std::string src;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, src) )
+				continue;
+			if( src == pattern.toLightReg )
+			{
+				pattern.normalizedLightReg = dst;
+				haveNormalize = true;
+			}
+			else if( src == pattern.litColorReg )
+			{
+				pattern.attenuatedColorReg = dst;
+				haveAttenuateColor = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "mula" && token.broadcast() == Token::X && tokenHasFields(token, Token::W) )
+		{
+			std::string src;
+			if( getRegisterArgKey(token, 2, src) )
+			{
+				if( src == pattern.attenProductReg )
+					haveAttenMulax = true;
+				else if( src == pattern.normalProductReg )
+					haveIntensityMulax = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "madda" && token.broadcast() == Token::Y && tokenHasFields(token, Token::W) )
+		{
+			std::string src;
+			if( getRegisterArgKey(token, 2, src) )
+			{
+				if( src == pattern.attenProductReg )
+					haveAttenMadday = true;
+				else if( src == pattern.normalProductReg )
+					haveIntensityMadday = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "madd" && token.broadcast() == Token::Z && tokenHasFields(token, Token::W) )
+		{
+			std::string dst;
+			std::string src;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 2, src) )
+				continue;
+			if( src == pattern.attenProductReg )
+			{
+				if( dst != pattern.attenReg )
+					continue;
+				haveAttenMaddz = true;
+			}
+			else if( src == pattern.normalProductReg )
+			{
+				pattern.intensityReg = dst;
+				haveIntensityMaddz = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "max" && token.broadcast() == Token::X && tokenHasFields(token, Token::W) )
+		{
+			std::string dst;
+			std::string src;
+			if( getRegisterArgKey(token, 0, dst) && getRegisterArgKey(token, 1, src)
+			    && src == pattern.intensityReg )
+			{
+				pattern.clampedIntensityReg = dst;
+				haveClamp = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "mul" && token.broadcast() == Token::W
+		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string dst;
+			std::string left;
+			std::string right;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, left)
+			    || !getRegisterArgKey(token, 2, right) )
+				continue;
+			if( right == pattern.clampedIntensityReg )
+			{
+				pattern.localDiffuseReg = dst;
+				pattern.lightDiffReg = left;
+				haveLocalDiffuse = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "mula" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string src;
+			std::string material;
+			if( !getRegisterArgKey(token, 1, src) || !getRegisterArgKey(token, 2, material) )
+				continue;
+			if( src == pattern.localDiffuseReg )
+			{
+				pattern.materialDiffReg = material;
+				haveDiffuseMaterial = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "madd" && token.broadcast() == 0
+		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string dst;
+			std::string left;
+			std::string right;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, left)
+			    || !getRegisterArgKey(token, 2, right) )
+				continue;
+			pattern.litColorReg = dst;
+			pattern.lightAmbReg = left;
+			pattern.materialAmbReg = right;
+			haveAmbientMaterial = true;
+			continue;
+		}
+
+		if( mnemonic == "add" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string dst;
+			std::string left;
+			std::string right;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, left)
+			    || !getRegisterArgKey(token, 2, right) )
+				continue;
+			if( left == pattern.currentColorReg && right == pattern.attenuatedColorReg )
+			{
+				pattern.resultReg = dst;
+				haveAccumulate = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "sq" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string base;
+			long offset = 0;
+			std::string src;
+			if( !getIndirectBaseAndOffset(token, base, offset)
+			    || !getRegisterArgKey(token, 0, src) )
+				continue;
+			if( base == pattern.outputReg && src == pattern.resultReg )
+			{
+				pattern.storeOffset = offset;
+				haveStore = true;
+			}
+			continue;
+		}
+	}
+
+	return haveBranch
+	    && haveInputIncrement
+	    && haveOutputIncrement
+	    && haveNormalLoad
+	    && haveVertexLoad
+	    && haveColorLoad
+	    && haveSub
+	    && haveDistanceMul
+	    && haveDistanceAdday
+	    && haveDistanceMaddx
+	    && haveSqrt
+	    && haveDistanceSetOne
+	    && haveDistanceSetLength
+	    && haveInverseDistanceDiv
+	    && haveNormalize
+	    && haveAttenProduct
+	    && haveAttenMulax
+	    && haveAttenMadday
+	    && haveAttenMaddz
+	    && haveNormalProduct
+	    && haveIntensityMulax
+	    && haveIntensityMadday
+	    && haveIntensityMaddz
+	    && haveClamp
+	    && haveLocalDiffuse
+	    && haveDiffuseMaterial
+	    && haveAmbientMaterial
+	    && haveAttenuationDiv
+	    && haveAttenuateColor
+	    && haveAccumulate
+	    && haveStore
+	    && pattern.inputStep == 3
+	    && pattern.outputStep == 3
+	    && pattern.vertexOffset == 0
+	    && pattern.normalOffset == 1
+	    && pattern.colorOffset == 1
+	    && pattern.storeOffset == 1
+	    && !pattern.inputReg.empty()
+	    && !pattern.lastInputReg.empty()
+	    && !pattern.outputReg.empty()
+	    && !pattern.normalReg.empty()
+	    && !pattern.vertexReg.empty()
+	    && !pattern.currentColorReg.empty()
+	    && !pattern.lightPosReg.empty()
+	    && !pattern.toLightReg.empty()
+	    && !pattern.attenReg.empty()
+	    && !pattern.attenCoeffReg.empty()
+	    && !pattern.attenProductReg.empty()
+	    && !pattern.onesReg.empty()
+	    && !pattern.normalizedLightReg.empty()
+	    && !pattern.normalProductReg.empty()
+	    && !pattern.intensityReg.empty()
+	    && !pattern.clampedIntensityReg.empty()
+	    && !pattern.lightDiffReg.empty()
+	    && !pattern.localDiffuseReg.empty()
+	    && !pattern.materialDiffReg.empty()
+	    && !pattern.lightAmbReg.empty()
+	    && !pattern.materialAmbReg.empty()
+	    && !pattern.litColorReg.empty()
+	    && !pattern.attenuatedColorReg.empty()
+	    && !pattern.resultReg.empty();
+}
+
+void CodeGenerator::emitPtLightNoSpecSoftwarePipelineLoop( const PtLightNoSpecLoopPipelinePattern& p )
+{
+	const std::string in = p.inputReg;
+	const std::string out = p.outputReg;
+	const std::string last = p.lastInputReg;
+	const std::string normal = p.normalReg;
+	const std::string vertex = p.vertexReg;
+	const std::string currentColor = p.currentColorReg;
+	const std::string lightPos = p.lightPosReg;
+	const std::string delta = p.toLightReg;
+	const std::string atten = p.attenReg;
+	const std::string attenProduct = p.attenProductReg;
+	const std::string normalized = p.normalizedLightReg;
+	const std::string lit = p.litColorReg;
+	const std::string vf00 = "VF00";
+
+	m_codeLines.push_back(p.entryLabel + ":");
+	emitRawPairedLine("nop", "lq.xyz " + delta + ", " + offsetBase(0, in));
+	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("sub.xyz " + delta + ", " + lightPos + ", " + delta, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("mul.xyz " + atten + ", " + delta + ", " + delta, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("adday.z ACC, " + atten + ", " + fieldArg(atten, "y"), "nop");
+	emitRawPairedLine("maddx.z " + atten + ", " + p.onesReg + ", " + fieldArg(atten, "x"), "nop");
+	emitRawPairedLine("addw.x " + atten + ", " + vf00 + ", " + fieldArg(vf00, "w"), "nop");
+	emitRawPairedLine("nop", "sqrt q, " + fieldArg(atten, "z"));
+	emitRawPairedLine("addq.y " + atten + ", " + vf00 + ", q", "waitq");
+	emitRawPairedLine("nop", "ibeq " + in + ", " + last + ", " + p.fallbackOneLabel);
+	emitRawPairedLine("nop", "nop");
+
+	m_codeLines.push_back(p.prologLabel + ":");
+	emitRawPairedLine("nop", "lq.xyz " + vertex + ", " + offsetBase(0, in));
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("mul.xyz " + attenProduct + ", " + atten + ", " + p.attenCoeffReg,
+	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(atten, "y"));
+	emitRawPairedLine("sub.xyz " + delta + ", " + lightPos + ", " + vertex,
+	                  "move.xyz " + vertex + ", " + delta);
+	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "x"),
+	                  "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine("mul.xyz " + atten + ", " + delta + ", " + delta, "nop");
+	emitRawPairedLine("nop", "waitq");
+	emitRawPairedLine("mulq.xyz " + vertex + ", " + vertex + ", q",
+	                  "lq.xyz " + normal + ", " + offsetBase(-5, in));
+	emitRawPairedLine("adday.z ACC, " + atten + ", " + fieldArg(atten, "y"), "nop");
+	emitRawPairedLine("maddx.z " + atten + ", " + p.onesReg + ", " + fieldArg(atten, "x"), "nop");
+	emitRawPairedLine("mul.xyz " + vertex + ", " + vertex + ", " + normal, "nop");
+	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "y"),
+	                  "sqrt q, " + fieldArg(atten, "z"));
+	emitRawPairedLine("maddz.w " + p.materialAmbReg + ", " + vf00 + ", " + fieldArg(attenProduct, "z"), "nop");
+	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(vertex, "x"), "nop");
+	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(vertex, "y"), "nop");
+	emitRawPairedLine("maddz.w " + p.materialDiffReg + ", " + vf00 + ", " + fieldArg(vertex, "z"), "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("addw.x " + atten + ", " + vf00 + ", " + fieldArg(vf00, "w"), "nop");
+	emitRawPairedLine("addq.y " + atten + ", " + vf00 + ", q",
+	                  "ibeq " + in + ", " + last + ", " + p.fallbackTwoLabel);
+	emitRawPairedLine("maxx.w " + p.materialDiffReg + ", " + p.materialDiffReg + ", " + fieldArg(vf00, "x"), "nop");
+	emitRawPairedLine("nop", "iaddiu " + out + ", " + out + ", 6");
+
+	m_codeLines.push_back(p.mainLabel + ":");
+	emitRawPairedLine("nop", "lq.xyz " + vertex + ", " + offsetBase(0, in));
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("mul.xyz " + attenProduct + ", " + atten + ", " + p.attenCoeffReg,
+	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(atten, "y"));
+	emitRawPairedLine("mulw.xyz " + atten + ", " + p.lightDiffReg + ", " + fieldArg(p.materialDiffReg, "w"),
+	                  "iaddiu " + out + ", " + out + ", 3");
+	emitRawPairedLine("sub.xyz " + delta + ", " + lightPos + ", " + vertex,
+	                  "move.xyz " + vertex + ", " + delta);
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("mula.xyz ACC, " + atten + ", " + p.materialDiffReg, "nop");
+	emitRawPairedLine("mul.xyz " + atten + ", " + delta + ", " + delta, "nop");
+	emitRawPairedLine("mulq.xyz " + vertex + ", " + vertex + ", q",
+	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(p.materialAmbReg, "w"));
+	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg,
+	                  "lq.xyz " + normal + ", " + offsetBase(-2, in));
+	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "x"), "nop");
+	emitRawPairedLine("adday.z ACC, " + atten + ", " + fieldArg(atten, "y"), "nop");
+	emitRawPairedLine("maddx.z " + atten + ", " + p.onesReg + ", " + fieldArg(atten, "x"), "nop");
+	emitRawPairedLine("mul.xyz " + vertex + ", " + vertex + ", " + normal, "nop");
+	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "y"), "nop");
+	emitRawPairedLine("maddz.w " + p.materialAmbReg + ", " + vf00 + ", " + fieldArg(attenProduct, "z"),
+	                  "lq.xyz " + attenProduct + ", " + offsetBase(-8, out));
+	emitRawPairedLine("mulq.xyz " + lit + ", " + lit + ", q",
+	                  "sqrt q, " + fieldArg(atten, "z"));
+	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(vertex, "x"), "nop");
+	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(vertex, "y"), "nop");
+	emitRawPairedLine("maddz.w " + p.materialDiffReg + ", " + vf00 + ", " + fieldArg(vertex, "z"), "nop");
+	emitRawPairedLine("add.xyz " + attenProduct + ", " + attenProduct + ", " + lit, "nop");
+	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine("addw.x " + atten + ", " + vf00 + ", " + fieldArg(vf00, "w"), "nop");
+	emitRawPairedLine("addq.y " + atten + ", " + vf00 + ", q",
+	                  "ibne " + in + ", " + last + ", " + p.mainLabel);
+	emitRawPairedLine("maxx.w " + p.materialDiffReg + ", " + p.materialDiffReg + ", " + fieldArg(vf00, "x"),
+	                  "sq.xyz " + attenProduct + ", " + offsetBase(-8, out));
+
+	m_codeLines.push_back(p.drainLabel + ":");
+	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", 6");
+	emitRawPairedLine("nop", "isubiu " + out + ", " + out + ", 6");
+	emitRawPairedLine("nop", "b " + p.scalarLabel);
+	emitRawPairedLine("nop", "nop");
+
+	m_codeLines.push_back(p.fallbackOneLabel + ":");
+	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", 3");
+	emitRawPairedLine("nop", "b " + p.scalarLabel);
+	emitRawPairedLine("nop", "nop");
+
+	m_codeLines.push_back(p.fallbackTwoLabel + ":");
+	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", 6");
+	emitRawPairedLine("nop", "b " + p.scalarLabel);
+	emitRawPairedLine("nop", "nop");
+
+	emitPtLightNoSpecScalarFallbackLoop(p);
+}
+
+void CodeGenerator::emitPtLightNoSpecScalarFallbackLoop( const PtLightNoSpecLoopPipelinePattern& p )
+{
+	const std::string in = p.inputReg;
+	const std::string out = p.outputReg;
+	const std::string last = p.lastInputReg;
+	const std::string normal = p.normalReg;
+	const std::string vertex = p.vertexReg;
+	const std::string currentColor = p.currentColorReg;
+	const std::string delta = p.toLightReg;
+	const std::string atten = p.attenReg;
+	const std::string attenProduct = p.attenProductReg;
+	const std::string normalized = p.normalizedLightReg;
+	const std::string normalProduct = p.normalProductReg;
+	const std::string intensity = p.intensityReg;
+	const std::string clamped = p.clampedIntensityReg;
+	const std::string localDiffuse = p.localDiffuseReg;
+	const std::string lit = p.litColorReg;
+	const std::string attenuated = p.attenuatedColorReg;
+	const std::string result = p.resultReg;
+	const std::string vf00 = "VF00";
+
+	m_codeLines.push_back(p.scalarLabel + ":");
+	emitRawPairedLine("nop", "lq.xyz " + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine("nop", "lq.xyz " + vertex + ", " + offsetBase(0, in));
+	emitRawPairedLine("nop", "lq.xyz " + currentColor + ", " + offsetBase(1, out));
+	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("sub.xyz " + delta + ", " + p.lightPosReg + ", " + vertex, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("mul.xyz " + atten + ", " + delta + ", " + delta, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("adday.z ACC, " + atten + ", " + fieldArg(atten, "y"), "nop");
+	emitRawPairedLine("maddx.z " + atten + ", " + p.onesReg + ", " + fieldArg(atten, "x"), "nop");
+	emitRawPairedLine("addw.x " + atten + ", " + vf00 + ", " + fieldArg(vf00, "w"), "nop");
+	emitRawPairedLine("nop", "sqrt q, " + fieldArg(atten, "z"));
+	emitRawPairedLine("addq.y " + atten + ", " + vf00 + ", q", "waitq");
+	emitRawPairedLine("mul.xyz " + attenProduct + ", " + atten + ", " + p.attenCoeffReg,
+	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(atten, "y"));
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "x"), "nop");
+	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "y"), "nop");
+	emitRawPairedLine("maddz.w " + atten + ", " + vf00 + ", " + fieldArg(attenProduct, "z"), "nop");
+	emitRawPairedLine("mulq.xyz " + normalized + ", " + delta + ", q", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(atten, "w"));
+	emitRawPairedLine("mul.xyz " + normalProduct + ", " + normalized + ", " + normal, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(normalProduct, "x"), "nop");
+	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(normalProduct, "y"), "nop");
+	emitRawPairedLine("maddz.w " + intensity + ", " + vf00 + ", " + fieldArg(normalProduct, "z"), "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("maxx.w " + clamped + ", " + intensity + ", " + fieldArg(vf00, "x"), "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("mulw.xyz " + localDiffuse + ", " + p.lightDiffReg + ", " + fieldArg(clamped, "w"), "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("mula.xyz ACC, " + localDiffuse + ", " + p.materialDiffReg, "nop");
+	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("mulq.xyz " + attenuated + ", " + lit + ", q", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("add.xyz " + result + ", " + currentColor + ", " + attenuated, "nop");
 	emitRawPairedLine("nop", "nop");
 	emitRawPairedLine("nop", "nop");
 	emitRawPairedLine("nop", "nop");

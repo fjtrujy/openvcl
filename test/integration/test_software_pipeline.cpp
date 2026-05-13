@@ -317,6 +317,77 @@ namespace
             "\t--exit\n"
             "\t--endexit\n";
     }
+
+    std::string ptLightNoSpecPipelineSource()
+    {
+        return
+            "\t.init_vf_all\n"
+            "\t.init_vi_all\n"
+            "\t.name vsmPtLight\n"
+            "\t--enter\n"
+            "\t--endenter\n"
+            "\tiaddiu vi03, vi00, 0\n"
+            "\tiaddiu vi04, vi00, 15\n"
+            "\tiaddiu vi13, vi00, 0\n"
+            "\tmove.xyzw vf06, vf00\n"
+            "\tmove.xyzw vf08, vf00\n"
+            "\tmove.xyzw vf09, vf00\n"
+            "\tmove.xyzw vf10, vf00\n"
+            "\tmove.xyzw vf11, vf00\n"
+            "\tmove.xyzw vf12, vf00\n"
+            "\tmove.xyzw vf13, vf00\n"
+            "\tmove.xyzw vf14, vf00\n"
+            "\tmove.xyzw vf15, vf00\n"
+            "\tmove.xyzw vf16, vf00\n"
+            "\tmove.xyzw vf17, vf00\n"
+            "\tmove.xyzw vf18, vf00\n"
+            "\tmove.xyzw vf19, vf00\n"
+            "\tmove.xyzw vf20, vf00\n"
+            "\tmove.xyzw vf21, vf00\n"
+            "\tmove.xyzw vf22, vf00\n"
+            "\tmove.xyzw vf23, vf00\n"
+            "\tmove.xyzw vf24, vf00\n"
+            "\tmove.xyzw vf25, vf00\n"
+            "\tmove.xyzw vf26, vf00\n"
+            "\tmove.xyzw vf27, vf00\n"
+            "pt_light_vert_loop_lid:\n"
+            "\t--LoopCS 1,3\n"
+            "\t--LoopExtra 5\n"
+            "\tlq.xyz vf14, 1(vi13)\n"
+            "\tlq.xyz vf15, 0(vi13)\n"
+            "\tsub.xyz vf16, vf13, vf15\n"
+            "\tmul.xyz vf18, vf16, vf16\n"
+            "\tadday.z acc, vf18, vf18y\n"
+            "\tmaddx.z vf18, vf09, vf18x\n"
+            "\tsqrt q, vf18z\n"
+            "\taddw.x vf18, vf00, vf00w\n"
+            "\taddq.y vf18, vf00, q\n"
+            "\tdiv q, vf00w, vf18y\n"
+            "\tmulq.xyz vf17, vf16, q\n"
+            "\tmul.xyz vf19, vf18, vf12\n"
+            "\tmulax.w acc, vf00, vf19x\n"
+            "\tmadday.w acc, vf00, vf19y\n"
+            "\tmaddz.w vf18, vf00, vf19z\n"
+            "\tmul.xyz vf20, vf17, vf14\n"
+            "\tmulax.w acc, vf00, vf20x\n"
+            "\tmadday.w acc, vf00, vf20y\n"
+            "\tmaddz.w vf21, vf00, vf20z\n"
+            "\tmaxx.w vf22, vf21, vf00x\n"
+            "\tmulw.xyz vf23, vf11, vf22w\n"
+            "\tmula.xyz acc, vf23, vf08\n"
+            "\tmadd.xyz vf24, vf10, vf06\n"
+            "\tdiv q, vf00w, vf18w\n"
+            "\tmulq.xyz vf25, vf24, q\n"
+            "\tlq.xyz vf26, 1(vi03)\n"
+            "\tadd.xyz vf27, vf26, vf25\n"
+            "\tsq.xyz vf27, 1(vi03)\n"
+            "\tiaddiu vi13, vi13, 3\n"
+            "\tiaddiu vi03, vi03, 3\n"
+            "\tibne vi13, vi04, pt_light_vert_loop_lid\n"
+            "done_lid:\n"
+            "\t--exit\n"
+            "\t--endexit\n";
+    }
 }
 
 TEST_CASE("Software pipeline: fast_nolights transform loop emits a 12-cycle steady state")
@@ -391,4 +462,17 @@ TEST_CASE("Software pipeline: no-spec directional light loop emits an 8-cycle st
     CHECK(contains(vsm, "dir_light_vert_loop_lid__SCALAR_FALLBACK:"));
     CHECK(contains(vsm, "ibne VI13, VI04, dir_light_vert_loop_lid__MAIN_LOOP"));
     CHECK(contains(vsm, "sq.xyz VF18, -2(VI03)"));
+}
+
+TEST_CASE("Software pipeline: no-spec point light loop emits a 26-cycle steady state")
+{
+    std::string vsm = runEmit(ptLightNoSpecPipelineSource());
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(contains(vsm, "pt_light_vert_loop_lid__ENTRY_POINT:"));
+    CHECK(contains(vsm, "pt_light_vert_loop_lid__PRO1:"));
+    CHECK(contains(vsm, "pt_light_vert_loop_lid__MAIN_LOOP:"));
+    CHECK(contains(vsm, "pt_light_vert_loop_lid__SCALAR_FALLBACK:"));
+    CHECK(contains(vsm, "ibne VI13, VI04, pt_light_vert_loop_lid__MAIN_LOOP"));
+    CHECK(contains(vsm, "sq.xyz VF19, -8(VI03)"));
 }
