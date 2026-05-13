@@ -82,6 +82,8 @@
   blocks so their latency can overlap independent arithmetic.
 - Added conservative adjacent upper/direct-branch pairing, preserving the
   branch delay slot and avoiding branch hoists across control flow.
+- Moved the CLI version string into a shared source constant and added
+  `--version` regression coverage.
 
 ## 0.3.3
 

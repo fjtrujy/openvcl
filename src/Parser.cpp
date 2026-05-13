@@ -10,6 +10,7 @@
 
 #include "Parser.h"
 #include "Error.h"
+#include "OpenVclVersion.h"
 #include "VsmCostAnalyzer.h"
 #include "VuInstructionInfo.h"
 
@@ -1066,8 +1067,7 @@ bool Parser::writeOutputStream( std::ostream& stream )
 
 bool Parser::showVersion()
 {
-	// TODO: can we automate updates of this somehow
-	std::cout << "OpenVCL Version 0.3.3" << std::endl;
+	std::cout << "OpenVCL Version " << OPENVCL_VERSION << std::endl;
 
 	return false;
 }

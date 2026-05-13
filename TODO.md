@@ -128,6 +128,8 @@ Recently completed:
   distinct plain loads and stores can move independently.
 - Ready-set scheduling now prefers longer dependency chains over unrelated
   short work, starting producer chains earlier in hot renderer blocks.
+- `--version` now reads from a shared source constant and has CLI regression
+  coverage.
 
 ## Correctness Guardrails
 
@@ -152,7 +154,6 @@ Known fragile areas:
 
 - Complete or remove stale inline TODO comments once the instruction metadata
   table makes their intent explicit.
-- Automate `--version` updates or move version ownership into one constant.
 - Store memory-group information in token arguments if it remains useful after
   the memory descriptor work.
 - Keep diagnostic repros in `test/repro/` only when they still explain an
