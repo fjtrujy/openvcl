@@ -54,6 +54,9 @@
   predicates, branch-delay queries, and adjacent integer-add coalescing.
 - Moved `VuSchedulerAnalysis` ready-candidate, barrier, memory-ordering, pipe,
   and latency-priority checks onto `VuSchedulingRules`.
+- Let the ready-set scheduler include dependency-safe plain stores so
+  long-latency Q/P producers can move ahead of them when descriptors prove the
+  movement safe.
 - Added behavior-preserving scheduler analysis scaffolding for basic-block
   construction and descriptor-derived dependency edges.
 - Wired the scheduler analysis layer into code generation in preserve-order

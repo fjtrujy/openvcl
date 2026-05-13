@@ -125,7 +125,7 @@ TEST_CASE("VuSchedulingRules: scheduler analysis gates are shared predicates")
 
     CHECK(vcl::isVuReadyScheduleCandidate(program.token(0)));
     CHECK(vcl::isVuReadyScheduleCandidate(program.token(1)));
-    CHECK(!vcl::isVuReadyScheduleCandidate(program.token(2)));
+    CHECK(vcl::isVuReadyScheduleCandidate(program.token(2)));
     CHECK(!vcl::isVuReadyScheduleCandidate(program.token(3)));
     CHECK(!vcl::isVuReadyScheduleCandidate(program.token(4)));
 

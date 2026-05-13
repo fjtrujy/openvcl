@@ -498,7 +498,9 @@ bool isVuReadyScheduleCandidate( const Token& token )
 		return false;
 	if( access.memoryFlags != VU_MEMORY_FLAG_NONE )
 		return false;
-	if( access.memoryKind != VU_MEMORY_NONE && access.memoryKind != VU_MEMORY_LOAD )
+	if( access.memoryKind != VU_MEMORY_NONE
+	    && access.memoryKind != VU_MEMORY_LOAD
+	    && access.memoryKind != VU_MEMORY_STORE )
 		return false;
 	if( access.implicitReads & (VU_RESOURCE_MAC | VU_RESOURCE_CLIP) )
 		return false;

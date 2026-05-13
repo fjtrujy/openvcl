@@ -113,6 +113,9 @@ Recently completed:
 - `VuSchedulerAnalysis` now consumes `VuSchedulingRules` for ready-scheduler
   candidate gates, block barriers, memory-ordering classification, pipe
   classification, and long-latency/load prioritization.
+- The ready-set scheduler can now include dependency-safe plain stores in a
+  scheduling segment, letting long-latency Q/P producers move ahead of stores
+  when register, implicit-resource, and memory-ordering descriptors allow it.
 
 ## Correctness Guardrails
 

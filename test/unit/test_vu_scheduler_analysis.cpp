@@ -218,7 +218,7 @@ TEST_CASE("VuSchedulerAnalysis: ready-set scheduler keeps dependencies and barri
     CHECK(addPos < mulPos);
     CHECK(loiPos < addiPos);
     CHECK(addiPos < sqPos);
-    CHECK(sqPos < divPos);
+    CHECK(divPos < sqPos);
 }
 
 TEST_CASE("VuSchedulerAnalysis: ready-set scheduler pulls plain loads before independent arithmetic")
@@ -241,4 +241,30 @@ TEST_CASE("VuSchedulerAnalysis: ready-set scheduler pulls plain loads before ind
     ++i;
     REQUIRE(i != scheduled.end());
     CHECK(vcl::normalizeVuMnemonic(i->name()) == "mul");
+}
+
+TEST_CASE("VuSchedulerAnalysis: ready-set scheduler can move Q producers before independent plain stores")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("sq.xy vf01, 0(vi01)"));
+    REQUIRE(program.parse("div q, vf02[w], vf03[w]"));
+    REQUIRE(program.parse("add.xy vf04, vf05, vf06"));
+    REQUIRE(program.parse("mulq.xy vf07, vf08, q"));
+
+    std::list<vcl::Token> scheduled = vcl::scheduleVuTokensReadySet(program.tokenizer.tokens());
+    REQUIRE(scheduled.size() == program.tokenizer.tokens().size());
+
+    std::list<vcl::Token>::const_iterator i = scheduled.begin();
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "div");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "add");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "sq");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "mulq");
 }
