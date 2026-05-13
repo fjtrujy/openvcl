@@ -44,6 +44,7 @@ public:
 		ANALYZE_VSM_COST_COMPARE,
 		ANALYZE_VSM_COST_COMPARE_LIST,
 		DUMP_INSTRUCTION_INFO,
+		DUMP_LOOP_PIPELINE_INFO,
 		PREPROCESS,
 		TOKENIZE,
 		ALLOCATE_REGISTERS,
@@ -88,6 +89,7 @@ private:
 	bool analyzeVsmCostCompare();
 	bool analyzeVsmCostCompareList();
 	bool dumpInstructionInfo();
+	bool dumpLoopPipelineInfo();
 	bool readInput();
 	bool preProcess();
 	bool tokenize();

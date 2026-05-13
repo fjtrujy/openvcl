@@ -89,6 +89,11 @@ bool vuRegisterKey( const Token::Argument& arg, std::string& key )
 			key = dependency->alias()->allocatedRegister()->name();
 			return true;
 		}
+		if( !arg.alias().empty() )
+		{
+			key = arg.alias();
+			return true;
+		}
 	}
 
 	std::stringstream s;

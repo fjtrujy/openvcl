@@ -70,6 +70,8 @@ CommandLine::CommandLine()
 	m_compareVsmCostListCheck = false;
 	m_dumpInstructionInfo = false;
 	m_dumpInstructionInfoJson = false;
+	m_dumpLoopPipelineInfo = false;
+	m_dumpLoopPipelineInfoJson = false;
 
 	m_gasp = "gasp";
 	m_cpp = "cpp";
@@ -113,6 +115,8 @@ CommandLine::CommandLine()
 	m_options.push_back(Option('\0',"cost-compare-list-check",ANALYZE_VSM_COST_COMPARE_LIST_CHECK,true));
 	m_options.push_back(Option('\0',"dump-instruction-info",DUMP_INSTRUCTION_INFO,false));
 	m_options.push_back(Option('\0',"dump-instruction-info-json",DUMP_INSTRUCTION_INFO_JSON,false));
+	m_options.push_back(Option('\0',"dump-loop-pipeline-info",DUMP_LOOP_PIPELINE_INFO,false));
+	m_options.push_back(Option('\0',"dump-loop-pipeline-info-json",DUMP_LOOP_PIPELINE_INFO_JSON,false));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -218,6 +222,8 @@ bool CommandLine::parse( int argc, char* argv[] )
 				case ANALYZE_VSM_COST_COMPARE_LIST_CHECK: m_compareVsmCostListCheck = true; m_costCompareListCheckMetric = argument; break;
 				case DUMP_INSTRUCTION_INFO: m_dumpInstructionInfo = true; break;
 				case DUMP_INSTRUCTION_INFO_JSON: m_dumpInstructionInfo = true; m_dumpInstructionInfoJson = true; break;
+				case DUMP_LOOP_PIPELINE_INFO: m_dumpLoopPipelineInfo = true; break;
+				case DUMP_LOOP_PIPELINE_INFO_JSON: m_dumpLoopPipelineInfo = true; m_dumpLoopPipelineInfoJson = true; break;
 				case ANALYZE_VSM_COST_LOOP:
 				{
 					std::string::size_type separator = argument.find('=');
@@ -300,6 +306,8 @@ void CommandLine::showUsage( std::ostream& stream )
 	stream << "  --cost-compare-list-check <metric>  Fail when any listed candidate exceeds its baseline." << std::endl;
 	stream << "  --dump-instruction-info       Print the VU instruction metadata table." << std::endl;
 	stream << "  --dump-instruction-info-json  Print the VU instruction metadata table as JSON." << std::endl;
+	stream << "  --dump-loop-pipeline-info       Print loop-carried Q pipeline opportunities." << std::endl;
+	stream << "  --dump-loop-pipeline-info-json  Print loop-carried Q pipeline opportunities as JSON." << std::endl;
 
 	stream << std::endl << "  If no input or output file are specified, standard I/O will be used instead." << std::endl;
 

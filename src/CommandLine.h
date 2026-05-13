@@ -51,6 +51,8 @@ public:
 	bool compareVsmCostListCheck() const;
 	bool dumpInstructionInfo() const;
 	bool dumpInstructionInfoJson() const;
+	bool dumpLoopPipelineInfo() const;
+	bool dumpLoopPipelineInfoJson() const;
 	const std::vector< std::pair<std::string, unsigned int> >& costLoops() const;
 	const std::string& costCompareBaseline() const;
 	const std::string& costCompareListCheckMetric() const;
@@ -118,6 +120,8 @@ private:
 		ANALYZE_VSM_COST_COMPARE_LIST_CHECK,
 		DUMP_INSTRUCTION_INFO,
 		DUMP_INSTRUCTION_INFO_JSON,
+		DUMP_LOOP_PIPELINE_INFO,
+		DUMP_LOOP_PIPELINE_INFO_JSON,
 
 		IGNORE
 	};
@@ -164,6 +168,8 @@ private:
 	bool m_compareVsmCostListCheck;
 	bool m_dumpInstructionInfo;
 	bool m_dumpInstructionInfoJson;
+	bool m_dumpLoopPipelineInfo;
+	bool m_dumpLoopPipelineInfoJson;
 	std::vector< std::pair<std::string, unsigned int> > m_costLoops;
 	std::string m_costCompareBaseline;
 	std::string m_costCompareListCheckMetric;

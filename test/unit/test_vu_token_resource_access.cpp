@@ -69,6 +69,19 @@ TEST_CASE("VuTokenResourceAccess: broadcast VF reads use the broadcast component
     CHECK(!hasKey(access.registerReads, "VF03.x"));
 }
 
+TEST_CASE("VuTokenResourceAccess: unresolved aliases keep symbolic resource keys")
+{
+    vcl::VuTokenResourceAccess access;
+    REQUIRE(accessFor("mul.xyz dst, src, vf02", access));
+    CHECK(hasKey(access.registerWrites, "dst.x"));
+    CHECK(hasKey(access.registerWrites, "dst.y"));
+    CHECK(hasKey(access.registerWrites, "dst.z"));
+    CHECK(hasKey(access.registerReads, "src.x"));
+    CHECK(hasKey(access.registerReads, "src.y"));
+    CHECK(hasKey(access.registerReads, "src.z"));
+    CHECK(hasKey(access.registerReads, "VF02.x"));
+}
+
 TEST_CASE("VuTokenResourceAccess: special registers and waits come from metadata and operands")
 {
     vcl::VuTokenResourceAccess loiAccess;

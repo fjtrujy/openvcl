@@ -13,6 +13,7 @@
 #include "OpenVclVersion.h"
 #include "VsmCostAnalyzer.h"
 #include "VuInstructionInfo.h"
+#include "VuSchedulerAnalysis.h"
 
 #include <iostream>
 #include <fstream>
@@ -342,6 +343,102 @@ namespace
 		}
 		stream << "\n  ]\n}" << std::endl;
 	}
+
+	void writeStringListText( std::ostream& stream, const std::list<std::string>& values )
+	{
+		bool wrote = false;
+		for( std::list<std::string>::const_iterator i = values.begin(); i != values.end(); ++i )
+		{
+			if( wrote )
+				stream << "|";
+			stream << *i;
+			wrote = true;
+		}
+		if( !wrote )
+			stream << "-";
+	}
+
+	void writeStringListJson( std::ostream& stream, const std::list<std::string>& values )
+	{
+		stream << "[";
+		bool wrote = false;
+		for( std::list<std::string>::const_iterator i = values.begin(); i != values.end(); ++i )
+		{
+			if( wrote )
+				stream << ", ";
+			writeJsonString( stream, i->c_str() );
+			wrote = true;
+		}
+		stream << "]";
+	}
+
+	void writeUnsignedVectorJson( std::ostream& stream, const std::vector<unsigned int>& values )
+	{
+		stream << "[";
+		for( unsigned int i = 0; i < values.size(); ++i )
+		{
+			if( i != 0 )
+				stream << ", ";
+			stream << values[i];
+		}
+		stream << "]";
+	}
+
+	void writeLoopPipelineInfoText( std::ostream& stream,
+	                                const std::vector<VuLoopPipelineOpportunity>& opportunities )
+	{
+		stream << "OpenVCL VU loop pipeline opportunities" << std::endl;
+		for( std::vector<VuLoopPipelineOpportunity>::const_iterator i = opportunities.begin(); i != opportunities.end(); ++i )
+		{
+			stream << i->label
+			       << " q_producer_token=" << i->qProducerTokenIndex
+			       << " first_q_consumer_token=" << i->firstQConsumerTokenIndex
+			       << " q_consumers=" << i->qConsumerTokenIndices.size()
+			       << " q_latency=" << i->qProducerLatency
+			       << " source_prefix_cycles=" << i->sourcePrefixCycles
+			       << " source_suffix_cycles=" << i->sourceSuffixCycles
+			       << " branch_delay_slots=" << i->branchDelaySlots
+			       << " simple_counted_loop=" << (i->simpleCountedLoop ? "yes" : "no")
+			       << " single_q_producer=" << (i->hasSingleQProducer ? "yes" : "no")
+			       << " requires_prolog_epilog=" << (i->requiresPrologEpilog ? "yes" : "no")
+			       << " requires_loop_carried_registers=" << (i->requiresLoopCarriedRegisters ? "yes" : "no")
+			       << " carried_q_inputs=";
+			writeStringListText( stream, i->carriedQInputRegisters );
+			stream << " carried_q_outputs=";
+			writeStringListText( stream, i->carriedQOutputRegisters );
+			stream << std::endl;
+		}
+	}
+
+	void writeLoopPipelineInfoJson( std::ostream& stream,
+	                                const std::vector<VuLoopPipelineOpportunity>& opportunities )
+	{
+		stream << "{\n  \"loop_pipeline_opportunities\": [\n";
+		for( unsigned int i = 0; i < opportunities.size(); ++i )
+		{
+			const VuLoopPipelineOpportunity& opportunity = opportunities[i];
+			if( i != 0 )
+				stream << ",\n";
+			stream << "    {\n";
+			stream << "      \"label\": "; writeJsonString( stream, opportunity.label.c_str() ); stream << ",\n";
+			stream << "      \"branch_token_index\": " << opportunity.branchTokenIndex << ",\n";
+			stream << "      \"q_producer_token_index\": " << opportunity.qProducerTokenIndex << ",\n";
+			stream << "      \"first_q_consumer_token_index\": " << opportunity.firstQConsumerTokenIndex << ",\n";
+			stream << "      \"q_consumer_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.qConsumerTokenIndices ); stream << ",\n";
+			stream << "      \"q_producer_latency\": " << opportunity.qProducerLatency << ",\n";
+			stream << "      \"source_prefix_cycles\": " << opportunity.sourcePrefixCycles << ",\n";
+			stream << "      \"source_suffix_cycles\": " << opportunity.sourceSuffixCycles << ",\n";
+			stream << "      \"branch_delay_slots\": " << opportunity.branchDelaySlots << ",\n";
+			stream << "      \"simple_counted_loop\": " << (opportunity.simpleCountedLoop ? "true" : "false") << ",\n";
+			stream << "      \"single_q_producer\": " << (opportunity.hasSingleQProducer ? "true" : "false") << ",\n";
+			stream << "      \"requires_prolog_epilog\": " << (opportunity.requiresPrologEpilog ? "true" : "false") << ",\n";
+			stream << "      \"requires_loop_carried_registers\": " << (opportunity.requiresLoopCarriedRegisters ? "true" : "false") << ",\n";
+			stream << "      \"carried_q_input_registers\": "; writeStringListJson( stream, opportunity.carriedQInputRegisters ); stream << ",\n";
+			stream << "      \"carried_q_output_registers\": "; writeStringListJson( stream, opportunity.carriedQOutputRegisters ); stream << "\n";
+			stream << "    }";
+		}
+		stream << "\n  ]\n}" << std::endl;
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -381,6 +478,8 @@ bool Parser::create( int argc, char* argv[] )
 		setState( SHOW_USAGE );
 	else if( m_cmdLine.dumpInstructionInfo() )
 		setState( DUMP_INSTRUCTION_INFO );
+	else if( m_cmdLine.dumpLoopPipelineInfo() )
+		setState( READ_INPUT );
 	else if( m_cmdLine.compareVsmCostListMarkdown() || m_cmdLine.compareVsmCostListCheck() )
 		setState( ANALYZE_VSM_COST_COMPARE_LIST );
 	else if( m_cmdLine.compareVsmCost() )
@@ -415,6 +514,7 @@ bool Parser::run()
 		case SHOW_VERSION: return showVersion();
 		case SHOW_USAGE: return showUsage();
 		case DUMP_INSTRUCTION_INFO: return dumpInstructionInfo();
+		case DUMP_LOOP_PIPELINE_INFO: return dumpLoopPipelineInfo();
 		case ANALYZE_VSM_COST: return analyzeVsmCost();
 		case ANALYZE_VSM_COST_COMPARE: return analyzeVsmCostCompare();
 		case ANALYZE_VSM_COST_COMPARE_LIST: return analyzeVsmCostCompareList();
@@ -917,6 +1017,38 @@ bool Parser::dumpInstructionInfo()
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+bool Parser::dumpLoopPipelineInfo()
+{
+	const std::vector<VuLoopPipelineOpportunity> opportunities = findVuLoopPipelineOpportunities( m_tokenizer.tokens() );
+
+	if( m_cmdLine.output().length() > 0 )
+	{
+		std::ofstream output( m_cmdLine.output().c_str() );
+		if( !output.good() )
+		{
+			Error::Display( Error( "Could not open output file" ) );
+			return false;
+		}
+
+		if( m_cmdLine.dumpLoopPipelineInfoJson() )
+			writeLoopPipelineInfoJson( output, opportunities );
+		else
+			writeLoopPipelineInfoText( output, opportunities );
+	}
+	else
+	{
+		if( m_cmdLine.dumpLoopPipelineInfoJson() )
+			writeLoopPipelineInfoJson( std::cout, opportunities );
+		else
+			writeLoopPipelineInfoText( std::cout, opportunities );
+	}
+
+	setState( EXIT );
+	return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 bool Parser::readInputStream( std::istream& stream )
 {
 	std::string buffer;
@@ -1192,7 +1324,10 @@ bool Parser::tokenize()
 			return false;
 	}
 
-	setState( ALLOCATE_REGISTERS );
+	if( m_cmdLine.dumpLoopPipelineInfo() )
+		setState( DUMP_LOOP_PIPELINE_INFO );
+	else
+		setState( ALLOCATE_REGISTERS );
 
 	return true;
 }
