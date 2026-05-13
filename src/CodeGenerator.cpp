@@ -846,15 +846,6 @@ namespace {
 			reads |= RES_CLIP;
 	}
 
-	bool canPairLaterIWriteWithEarlierIRead( const Token& earlier, const Token& later )
-	{
-		if( !earlier.operand() || !later.operand() )
-			return false;
-		if( earlier.operand()->unit() != Operand::FMAC )
-			return false;
-		return lowerName(later) == "loi";
-	}
-
 	bool hasImplicitPairDependency( const Token& earlier, const Token& later )
 	{
 		unsigned int earlierReads = 0;
@@ -870,11 +861,7 @@ namespace {
 		if( laterWrites & earlierWrites )
 			return true;
 
-		unsigned int laterWriteToEarlierRead = laterWrites & earlierReads;
-		if( canPairLaterIWriteWithEarlierIRead(earlier, later) )
-			laterWriteToEarlierRead &= ~RES_I;
-
-		return laterWriteToEarlierRead != 0;
+		return (laterWrites & earlierReads) != 0;
 	}
 
 	bool containsKey( const std::list<std::string>& keys, const std::string& key )
@@ -904,6 +891,9 @@ namespace {
 	{
 		if( arg.type() != Token::Argument::FLOAT_REGISTER )
 			return Token::X | Token::Y | Token::Z | Token::W;
+
+		if( (arg.flags() & Token::Argument::BROADCAST) && token.broadcast() )
+			return token.broadcast();
 
 		unsigned int fields = arg.fields();
 		if( fields == 0 )
@@ -1347,8 +1337,7 @@ bool CodeGenerator::hasDataDependency( const Token& a, const Token& b )
 	// same VF/VI when their lifetimes don't overlap in the data-flow view,
 	// but pairing them in one cycle WOULD overlap their writes in hardware.
 	// Single-instance resources (ACC, Q, P, I, R, flags) are handled by
-	// hasImplicitPairDependency(), which can model VU's special same-cycle
-	// `FMAC reads old I` + `loi writes next I` behavior.
+	// hasImplicitPairDependency().
 
 	// (a) Register-class args — physical-register comparison.
 	const std::list<Token::Argument>& aArgs = a.arguments();

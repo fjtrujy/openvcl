@@ -114,6 +114,24 @@ static int lineIndex( const std::string& vsm, const std::string& pattern )
     return -1;
 }
 
+static int lastLineIndex( const std::string& vsm, const std::string& pattern )
+{
+    std::string::size_type pos = 0;
+    int lineNo = 0;
+    int found = -1;
+    while( pos < vsm.size() )
+    {
+        std::string::size_type end = vsm.find('\n', pos);
+        if( end == std::string::npos ) end = vsm.size();
+        std::string line = vsm.substr(pos, end - pos);
+        if( line.find(pattern) != std::string::npos )
+            found = lineNo;
+        pos = end + 1;
+        lineNo++;
+    }
+    return found;
+}
+
 static int countSubstrings( const std::string& text, const std::string& pattern )
 {
     int count = 0;
@@ -139,17 +157,17 @@ TEST_CASE("Pairing: independent upper+lower ops pair into one cycle")
     CHECK(linePairsSubstrings(vsm, "mulax", "lq.xyz"));
 }
 
-TEST_CASE("Pairing: later LOI can pair with current I reader")
+TEST_CASE("Pairing: later LOI does not pair with current I reader")
 {
-    const std::string body =
-        "\tloi 1.0\n"
-        "\tmuli.xyz vf01, vf00, i\n"
-        "\tloi 2.0\n"
-        "\taddi.xyz vf02, vf00, i\n";
-    std::string vsm = runEmit(body, "vsmPairLaterLoiWithIReader");
-    REQUIRE(vsm.length() > 0);
-    CHECK(linePairsSubstrings(vsm, "muli.xyz", "loi 0x40000000"));
-    CHECK(!linePairsSubstrings(vsm, "muli.xyz", "loi 0x3f800000"));
+	const std::string body =
+		"\tloi 1.0\n"
+		"\tmuli.xyz vf01, vf00, i\n"
+		"\tloi 2.0\n"
+		"\taddi.xyz vf02, vf00, i\n";
+	std::string vsm = runEmit(body, "vsmNoPairLaterLoiWithIReader");
+	REQUIRE(vsm.length() > 0);
+	CHECK(!linePairsSubstrings(vsm, "muli.xyz", "loi 0x40000000"));
+	CHECK(!linePairsSubstrings(vsm, "muli.xyz", "loi 0x3f800000"));
 }
 
 TEST_CASE("Pairing: LOI producer does not pair with its I reader")
@@ -424,6 +442,39 @@ TEST_CASE("Scheduling: overlapping VF field write cannot cross a reader")
     std::string vsm = runEmit(body, "vsmNoMoveFieldWriteCrossesReader");
     REQUIRE(vsm.length() > 0);
     CHECK(lineIndex(vsm, "mul.xyz") < lineIndex(vsm, "mfir.x"));
+}
+
+TEST_CASE("Scheduling: implicit broadcast reads the broadcast component")
+{
+    const std::string body =
+        "\tmove.xyzw vf01, vf00\n"
+        "\tmulw.xyz vf02, vf01, vf01\n"
+        "\tmfir.w vf01, vi00\n";
+    std::string vsm = runEmit(body, "vsmImplicitBroadcastBlocksWWrite");
+    REQUIRE(vsm.length() > 0);
+    CHECK(lineIndex(vsm, "mulw.xyz") < lineIndex(vsm, "mfir.w"));
+}
+
+TEST_CASE("Scheduling: implicit broadcast waits for MFP W producer")
+{
+    const std::string body =
+        "\tadd.xyz vf01, vf00, vf00\n"
+        "\tesadd p, vf01\n"
+        "\tmfp.w vf01, p\n"
+        "\tersqrt p, vf01w\n"
+        "\tmfp.w vf01, p\n"
+        "\tmulw.xyz vf01, vf01, vf01\n";
+    std::string vsm = runEmit(body, "vsmImplicitBroadcastWaitsForMfpW");
+    REQUIRE(vsm.length() > 0);
+
+    int mulwLine = lineIndex(vsm, "mulw.xyz");
+    int firstMfpLine = lineIndex(vsm, "mfp.w");
+    int lastMfpLine = lastLineIndex(vsm, "mfp.w");
+    REQUIRE(mulwLine >= 0);
+    REQUIRE(firstMfpLine >= 0);
+    REQUIRE(lastMfpLine >= 0);
+    CHECK(firstMfpLine < mulwLine);
+    CHECK(lastMfpLine < mulwLine);
 }
 
 TEST_CASE("Pairing: independent non-adjacent lower op can fill current upper slot")
@@ -867,19 +918,18 @@ TEST_CASE("Pairing: LOI is not paired with the next FMAC that reads I")
     CHECK(!linePairsSubstrings(vsm, "addi.xy", "loi"));
 }
 
-TEST_CASE("Pairing: FMAC reading I can pair with following LOI")
+TEST_CASE("Pairing: FMAC reading I is not paired with following LOI")
 {
-    // SCE VSM output commonly pairs an I-consuming FMAC with the next LOI.
-    // The upper pipe reads the old I while the lower pipe prepares I for a
-    // later instruction.  The opposite order is still blocked above.
-    const std::string body =
-        "\tloi 0x42000000\n"
-        "\taddi.xy vf01, vf00, i\n"
-        "\tloi 0x43000000\n";
-    std::string vsm = runEmit(body, "vsmPairFmacIToLoi");
-    REQUIRE(vsm.length() > 0);
-    CHECK(linePairsSubstrings(vsm, "addi.xy", "loi 0x43000000"));
-    CHECK(!linePairsSubstrings(vsm, "addi.xy", "loi 0x42000000"));
+	// Pairing an I-consuming FMAC with the next LOI changes the logo lighting
+	// path: the upper pipe observes the new I value on hardware.
+	const std::string body =
+		"\tloi 0x42000000\n"
+		"\taddi.xy vf01, vf00, i\n"
+		"\tloi 0x43000000\n";
+	std::string vsm = runEmit(body, "vsmNoPairFmacIToLoi");
+	REQUIRE(vsm.length() > 0);
+	CHECK(!linePairsSubstrings(vsm, "addi.xy", "loi 0x43000000"));
+	CHECK(!linePairsSubstrings(vsm, "addi.xy", "loi 0x42000000"));
 }
 
 TEST_CASE("Pairing: FMAC opmsub is not paired with fmand reading MAC")
