@@ -60,6 +60,8 @@ private:
 	void emitWaitQ();
 	void emitWaitP();
 	void emitUpperWithWait( const Token& token, bool waitQ );
+	bool branchNeedsPreBubble( const Token& token ) const;
+	void padForBranchPreBubble( const Token& token );
 	void emitSingleToken( const Token& token );
 	void emitBranchWithDelayFiller( const Token& branch, const Token& filler );
 	void emitPairedTokens( const Token& a, const Token& b );

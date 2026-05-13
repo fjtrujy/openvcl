@@ -19,6 +19,8 @@
   - safe plain-store and selected memory movement;
   - branch-padding reuse;
   - conservative branch-delay filling for independent integer instructions;
+  - standalone branches omit the old extra pre-branch bubble after normal
+    read-hazard padding is satisfied;
   - deterministic alias allocation;
   - per-field VF readiness tracking;
   - disjoint VF field read/write pairing;

@@ -522,6 +522,36 @@ void CodeGenerator::emitUpperWithWait( const Token& token, bool waitQ )
 	m_currentCycle = issueCycle + 1;
 }
 
+bool CodeGenerator::branchNeedsPreBubble( const Token& token ) const
+{
+	if( vuTokenBranchDelaySlots( token ) == 0 )
+		return false;
+
+	VuTokenResourceAccess access;
+	if( !buildVuTokenResourceAccess( token, access ) )
+		return true;
+
+	if( !(access.instructionFlags & VU_INSTR_BRANCH) )
+		return false;
+
+	if( access.instructionFlags & VU_INSTR_REGISTER_BRANCH )
+		return true;
+
+	return !(access.instructionFlags & VU_INSTR_UNCONDITIONAL_BRANCH);
+}
+
+void CodeGenerator::padForBranchPreBubble( const Token& token )
+{
+	if( !branchNeedsPreBubble( token ) )
+		return;
+
+	if( m_codeLines.empty() || m_codeLines.back() != std::string("                    nop                             nop") )
+	{
+		addNopLine();
+		m_currentCycle++;
+	}
+}
+
 void CodeGenerator::emitSingleToken( const Token& token )
 {
 	std::string instruction = generateInstruction(token);
@@ -568,11 +598,7 @@ void CodeGenerator::emitSingleToken( const Token& token )
 	const unsigned int branchDelaySlots = vuTokenBranchDelaySlots( token );
 	if( branchDelaySlots > 0 )
 	{
-		if( m_codeLines.empty() || m_codeLines.back() != std::string("                    nop                             nop") )
-		{
-			addNopLine();
-			m_currentCycle++;
-		}
+		padForBranchPreBubble( token );
 		m_codeLines.push_back(outputLine);
 		m_currentCycle++;
 		for( unsigned int i = 0; i < branchDelaySlots; ++i )
@@ -636,11 +662,7 @@ void CodeGenerator::emitBranchWithDelayFiller( const Token& branch, const Token&
 		}
 	}
 
-	if( m_codeLines.empty() || m_codeLines.back() != std::string("                    nop                             nop") )
-	{
-		addNopLine();
-		m_currentCycle++;
-	}
+	padForBranchPreBubble( branch );
 	m_codeLines.push_back(branchLine);
 	m_currentCycle++;
 
@@ -693,6 +715,10 @@ void CodeGenerator::emitPairedTokens( const Token& a, const Token& b )
 		pairedLine = formatPairedLine(b, a);
 	else
 		pairedLine = formatPairedLine(a, b);
+	if( branchNeedsPreBubble(a) )
+		padForBranchPreBubble(a);
+	if( branchNeedsPreBubble(b) )
+		padForBranchPreBubble(b);
 	m_codeLines.push_back(pairedLine);
 
 	// Either side of the pair could be the FMAC / clipw we need to remember

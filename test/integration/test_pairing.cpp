@@ -417,6 +417,38 @@ TEST_CASE("Scheduling: branch delay filler cannot write branch condition")
     CHECK(bumpLine < branchLine);
 }
 
+TEST_CASE("Scheduling: unconditional standalone branch does not add a pre-branch bubble")
+{
+    const std::string body =
+        "\tloi 1.0\n"
+        "\tb done_lid\n"
+        "done_lid:\n";
+    std::string vsm = runEmit(body, "vsmNoPreBranchBubble");
+    REQUIRE(vsm.length() > 0);
+
+    int loiLine = lineIndex(vsm, "loi");
+    int branchLine = lineIndex(vsm, "b done_lid");
+    REQUIRE(loiLine >= 0);
+    REQUIRE(branchLine >= 0);
+    CHECK(branchLine == loiLine + 1);
+}
+
+TEST_CASE("Scheduling: conditional standalone branch keeps a pre-branch bubble")
+{
+    const std::string body =
+        "\tloi 1.0\n"
+        "\tibne vi00, vi00, done_lid\n"
+        "done_lid:\n";
+    std::string vsm = runEmit(body, "vsmConditionalPreBranchBubble");
+    REQUIRE(vsm.length() > 0);
+
+    int loiLine = lineIndex(vsm, "loi");
+    int branchLine = lineIndex(vsm, "ibne");
+    REQUIRE(loiLine >= 0);
+    REQUIRE(branchLine >= 0);
+    CHECK(branchLine == loiLine + 2);
+}
+
 TEST_CASE("Scheduling: terminal unconditional branch omits unreachable auto-exit footer")
 {
     const std::string body =

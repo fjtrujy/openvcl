@@ -230,10 +230,10 @@ Current ps2gl pure-OpenVCL aggregate cost baseline:
 
 | metric | SCE/reference | OpenVCL | delta |
 |---|---:|---:|---:|
-| static scheduled cycles | 6308 | 5227 | -1081 |
-| estimated cycles | 6820 | 5922 | -898 |
-| ps2gl-loop weighted static cycles | 100358 | 330046 | +229688 |
-| ps2gl-loop weighted estimated cycles | 100870 | 380835 | +279965 |
+| static scheduled cycles | 6308 | 5135 | -1173 |
+| estimated cycles | 6820 | 5830 | -990 |
+| ps2gl-loop weighted static cycles | 100358 | 323816 | +223458 |
+| ps2gl-loop weighted estimated cycles | 100870 | 374605 | +273735 |
 
 `estimated cycles` includes modeled FDIV/EFU producer issue stalls and
 explicit `waitq`/`waitp` stalls. These are static VSM estimates, not measured
@@ -244,9 +244,10 @@ loops versus OpenVCL's current single-iteration scheduling.
 
 This baseline uses corrected ACC dependencies for multiply-add/subtract
 instructions plus conservative branch-delay filling for independent integer
-instructions immediately before direct branches. The ACC rule is intentionally
-more conservative than older reports that let the scheduler move
-`madd*`/`msub*` instructions across ACC producer chains.
+instructions immediately before direct branches. Standalone branches no longer
+emit an extra pre-branch bubble once normal read-hazard padding is satisfied.
+The ACC rule is intentionally more conservative than older reports that let the
+scheduler move `madd*`/`msub*` instructions across ACC producer chains.
 
 The performance target is per shader, not aggregate. A scheduler change is only
 complete when every matched ps2gl OpenVCL VSM is equal to or faster than its
