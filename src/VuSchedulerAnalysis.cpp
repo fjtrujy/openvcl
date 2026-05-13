@@ -92,7 +92,9 @@ namespace
 		return priority;
 	}
 
-	void appendReadyScheduledSegment( const std::vector<const Token*>& segment, std::list<Token>& scheduled )
+	void appendReadyScheduledSegment( const std::vector<const Token*>& segment,
+	                                  std::list<Token>& scheduled,
+	                                  unsigned int ignoredImplicitWawResources )
 	{
 		if( segment.size() < 2 )
 		{
@@ -104,7 +106,7 @@ namespace
 		VuBasicBlock block;
 		block.tokens = segment;
 
-		std::vector<VuDependencyEdge> edges = buildVuDependencyGraph( block );
+		std::vector<VuDependencyEdge> edges = buildVuDependencyGraph( block, ignoredImplicitWawResources );
 		std::vector<unsigned int> incoming( block.tokens.size(), 0 );
 		std::vector< std::vector<unsigned int> > outgoing( block.tokens.size() );
 
@@ -164,7 +166,9 @@ namespace
 		}
 	}
 
-	void appendReadyScheduledBlock( const VuBasicBlock& block, std::list<Token>& scheduled )
+	void appendReadyScheduledBlock( const VuBasicBlock& block,
+	                                std::list<Token>& scheduled,
+	                                unsigned int ignoredImplicitWawResources )
 	{
 		std::vector<const Token*> segment;
 
@@ -176,12 +180,12 @@ namespace
 				continue;
 			}
 
-			appendReadyScheduledSegment( segment, scheduled );
+			appendReadyScheduledSegment( segment, scheduled, ignoredImplicitWawResources );
 			segment.clear();
 			scheduled.push_back( **i );
 		}
 
-		appendReadyScheduledSegment( segment, scheduled );
+		appendReadyScheduledSegment( segment, scheduled, ignoredImplicitWawResources );
 	}
 }
 
@@ -245,7 +249,8 @@ std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens )
 	return blocks;
 }
 
-std::vector<VuDependencyEdge> buildVuDependencyGraph( const VuBasicBlock& block )
+std::vector<VuDependencyEdge> buildVuDependencyGraph( const VuBasicBlock& block,
+                                                      unsigned int ignoredImplicitWawResources )
 {
 	std::vector<VuDependencyEdge> edges;
 	std::vector<VuTokenResourceAccess> accesses;
@@ -274,7 +279,7 @@ std::vector<VuDependencyEdge> buildVuDependencyGraph( const VuBasicBlock& block 
 				addEdge( edges, before, after, VU_DEPENDENCY_RESOURCE_RAW );
 			if( a.implicitReads & b.implicitWrites )
 				addEdge( edges, before, after, VU_DEPENDENCY_RESOURCE_WAR );
-			if( a.implicitWrites & b.implicitWrites )
+			if( (a.implicitWrites & b.implicitWrites & ~ignoredImplicitWawResources) != 0 )
 				addEdge( edges, before, after, VU_DEPENDENCY_RESOURCE_WAW );
 
 			if( memoryOrderRequiresDependency( a,
@@ -302,13 +307,14 @@ std::list<Token> scheduleVuTokensPreservingOrder( const std::list<Token>& tokens
 	return scheduled;
 }
 
-std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens )
+std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens,
+                                           unsigned int ignoredImplicitWawResources )
 {
 	std::list<Token> scheduled;
 	std::vector<VuBasicBlock> blocks = buildVuBasicBlocks( tokens );
 
 	for( std::vector<VuBasicBlock>::const_iterator block = blocks.begin(); block != blocks.end(); ++block )
-		appendReadyScheduledBlock( *block, scheduled );
+		appendReadyScheduledBlock( *block, scheduled, ignoredImplicitWawResources );
 
 	return scheduled;
 }

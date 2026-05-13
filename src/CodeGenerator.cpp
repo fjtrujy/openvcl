@@ -20,6 +20,7 @@
 #include "Math.h"
 #include "VuSchedulerAnalysis.h"
 #include "VuSchedulingRules.h"
+#include "VuInstructionInfo.h"
 
 #include <iostream>
 #include <iomanip>
@@ -91,11 +92,13 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 
 	std::list<Token> workTokens = tokens;
 	coalesceAdjacentVuIntegerAdds(workTokens);
+	const bool macFlagsDead = !vuTokenListReadsMac(workTokens);
 	{
-		std::list<Token> scheduledTokens = scheduleVuTokensReadySet(workTokens);
+		const unsigned int ignoredImplicitWawResources = macFlagsDead ? VU_RESOURCE_MAC : VU_RESOURCE_NONE;
+		std::list<Token> scheduledTokens = scheduleVuTokensReadySet(workTokens, ignoredImplicitWawResources);
 		workTokens.swap(scheduledTokens);
 	}
-	m_enableUpperZeroMoves = !vuTokenListReadsMac(workTokens);
+	m_enableUpperZeroMoves = macFlagsDead;
 
 	for( std::list<Token>::iterator k = workTokens.begin(); k != workTokens.end(); )
 	{

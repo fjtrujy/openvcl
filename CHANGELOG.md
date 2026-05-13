@@ -67,6 +67,9 @@
 - Added deferred-wait pairing for independent upper-pipe work above lower-pipe
   Q/P consumers, allowing a movable upper instruction to share the `waitq` or
   `waitp` row.
+- Ignored MAC flag WAW edges in ready-set scheduling when the full shader never
+  reads MAC flags, improving the ps2gl pure-OpenVCL aggregate by another 84
+  static and 83 estimated cycles.
 - Added behavior-preserving scheduler analysis scaffolding for basic-block
   construction and descriptor-derived dependency edges.
 - Wired the scheduler analysis layer into code generation in preserve-order

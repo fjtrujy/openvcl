@@ -10,8 +10,8 @@ correctness fix, is:
 
 | metric | SCE/reference | OpenVCL | delta |
 |---|---:|---:|---:|
-| static scheduled cycles | 6308 | 5641 | -667 |
-| estimated cycles | 6820 | 6362 | -458 |
+| static scheduled cycles | 6308 | 5557 | -751 |
+| estimated cycles | 6820 | 6279 | -541 |
 
 `estimated cycles` includes modeled FDIV/EFU producer issue stalls and explicit
 `waitq`/`waitp` stalls. The numbers are static VSM estimates, not measured
@@ -132,6 +132,8 @@ Recently completed:
   costlier producer chains earlier when dependencies permit it.
 - Independent upper-pipe work can now pair with a deferred `waitq`/`waitp`
   row when a lower-pipe Q/P consumer is waiting.
+- Ready-set scheduling can ignore MAC flag WAW ordering when no token reads MAC,
+  allowing independent FMAC chains to move more freely in MAC-dead shaders.
 - `--version` now reads from a shared source constant and has CLI regression
   coverage.
 - Alias live ranges are kept sorted as they are added, so intersection checks

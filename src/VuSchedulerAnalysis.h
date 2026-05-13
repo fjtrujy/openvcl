@@ -46,9 +46,11 @@ struct VuDependencyEdge
 };
 
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens );
-std::vector<VuDependencyEdge> buildVuDependencyGraph( const VuBasicBlock& block );
+std::vector<VuDependencyEdge> buildVuDependencyGraph( const VuBasicBlock& block,
+                                                      unsigned int ignoredImplicitWawResources = 0 );
 std::list<Token> scheduleVuTokensPreservingOrder( const std::list<Token>& tokens );
-std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens );
+std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens,
+                                           unsigned int ignoredImplicitWawResources = 0 );
 
 }
 
