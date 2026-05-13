@@ -141,6 +141,15 @@ namespace
         return ::test::run_openvcl(args, source);
     }
 
+    ::test::RunResult runCostJsonLoopStdin(const std::string& source, const std::string& loop)
+    {
+        std::vector<std::string> args;
+        args.push_back("--cost-json");
+        args.push_back("--cost-loop");
+        args.push_back(loop);
+        return ::test::run_openvcl(args, source);
+    }
+
     ::test::RunResult runCostLoopPresetStdin(const std::string& source, const std::string& preset)
     {
         std::vector<std::string> args;
@@ -242,7 +251,9 @@ TEST_CASE("VSM cost CLI: Markdown comparison exposes loop-weighted totals")
     REQUIRE(r.exit_code == 0);
     CHECK(contains(r.stdout_data, "baseline weighted static"));
     CHECK(contains(r.stdout_data, "candidate weighted estimated"));
+    CHECK(contains(r.stdout_data, "baseline affine estimated"));
     CHECK(contains(r.stdout_data, " | 20 | 2 | -18 | 20 | 2 | -18 | 0.10x |"));
+    CHECK(contains(r.stdout_data, " | 0 + 5n | 2 + 0n | +2 | -5 |"));
 }
 
 TEST_CASE("VSM cost CLI: Markdown comparison list emits one table with multiple rows")
@@ -303,6 +314,11 @@ TEST_CASE("VSM cost CLI: loop repeat weights static block cost")
     CHECK(textMetric(r.stdout_data, "weighted_static_cycles") == 20);
     CHECK(textMetric(r.stdout_data, "weighted_instructions") == 20);
     CHECK(textMetric(r.stdout_data, "weighted_paired_cycles") == 4);
+    CHECK(textMetric(r.stdout_data, "affine_static_base_cycles") == 0);
+    CHECK(textMetric(r.stdout_data, "affine_static_loop_cycles") == 5);
+    CHECK(textMetric(r.stdout_data, "affine_estimated_base_cycles") == 0);
+    CHECK(textMetric(r.stdout_data, "affine_estimated_loop_cycles") == 5);
+    CHECK(contains(r.stdout_data, "affine_estimated_cycles: 0 + 5n"));
     CHECK(contains(r.stdout_data, "entry_lid: cycles=5 repeat=4 weighted_cycles=20"));
     CHECK(contains(r.stdout_data, "top_weighted_blocks:"));
     CHECK(contains(r.stdout_data, "entry_lid: weighted_cycles=20 cycles=5 repeat=4"));
@@ -311,6 +327,39 @@ TEST_CASE("VSM cost CLI: loop repeat weights static block cost")
     CHECK(contains(r.stdout_data, "weighted_nop_slots=20"));
     CHECK(contains(r.stdout_data, "top_weighted_idle_blocks:"));
     CHECK(contains(r.stdout_data, "entry_lid: weighted_nop_slots=20 nop_slots=5 repeat=4"));
+}
+
+TEST_CASE("VSM cost CLI: affine loop cost reports setup plus per-vertex term")
+{
+    const std::string source =
+        "\t.vu\n"
+        "init_lid:\n"
+        "                    nop                             iaddiu VI01, VI00, 1\n"
+        "loop_lid:\n"
+        "                    add.xyz VF01, VF02, VF03        iaddiu VI01, VI01, -1\n"
+        "done_lid:\n"
+        "                    nop                             xgkick VI01\n";
+
+    ::test::RunResult text = runCostLoopStdin(source, "loop_lid=10");
+    REQUIRE(text.exit_code == 0);
+    CHECK(textMetric(text.stdout_data, "static_cycles") == 3);
+    CHECK(textMetric(text.stdout_data, "estimated_total_cycles") == 3);
+    CHECK(textMetric(text.stdout_data, "weighted_static_cycles") == 12);
+    CHECK(textMetric(text.stdout_data, "weighted_estimated_total_cycles") == 12);
+    CHECK(textMetric(text.stdout_data, "affine_static_base_cycles") == 2);
+    CHECK(textMetric(text.stdout_data, "affine_static_loop_cycles") == 1);
+    CHECK(textMetric(text.stdout_data, "affine_estimated_base_cycles") == 2);
+    CHECK(textMetric(text.stdout_data, "affine_estimated_loop_cycles") == 1);
+    CHECK(contains(text.stdout_data, "affine_static_cycles: 2 + 1n"));
+    CHECK(contains(text.stdout_data, "affine_estimated_cycles: 2 + 1n"));
+
+    ::test::RunResult json = runCostJsonLoopStdin(source, "loop_lid=10");
+    REQUIRE(json.exit_code == 0);
+    CHECK(jsonMetric(json.stdout_data, "affine_static_base_cycles") == 2);
+    CHECK(jsonMetric(json.stdout_data, "affine_static_loop_cycles") == 1);
+    CHECK(jsonMetric(json.stdout_data, "affine_estimated_base_cycles") == 2);
+    CHECK(jsonMetric(json.stdout_data, "affine_estimated_loop_cycles") == 1);
+    CHECK(contains(json.stdout_data, "\"affine_estimated_cycles\": \"2 + 1n\""));
 }
 
 TEST_CASE("VSM cost CLI: ps2gl loop preset weights known hot labels")

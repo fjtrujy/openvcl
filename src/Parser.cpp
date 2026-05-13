@@ -79,6 +79,26 @@ namespace
 			value = summary.weightedEstimatedTotalCycles;
 			return true;
 		}
+		if( metric == "affine-static-base" || metric == "affine_static_base_cycles" )
+		{
+			value = summary.affineStaticBaseCycles;
+			return true;
+		}
+		if( metric == "affine-static-loop" || metric == "affine_static_loop_cycles" )
+		{
+			value = summary.affineStaticLoopCycles;
+			return true;
+		}
+		if( metric == "affine-estimated-base" || metric == "affine_estimated_base_cycles" )
+		{
+			value = summary.affineEstimatedBaseCycles;
+			return true;
+		}
+		if( metric == "affine-estimated-loop" || metric == "affine_estimated_loop_cycles" )
+		{
+			value = summary.affineEstimatedLoopCycles;
+			return true;
+		}
 		return false;
 	}
 

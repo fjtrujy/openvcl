@@ -47,6 +47,10 @@ namespace
 		{ "weighted_paired_cycles", &VsmCostAnalyzer::Summary::weightedPairedCycles },
 		{ "weighted_nop_only_cycles", &VsmCostAnalyzer::Summary::weightedNopOnlyCycles },
 		{ "weighted_nop_slots", &VsmCostAnalyzer::Summary::weightedNopSlots },
+		{ "affine_static_base_cycles", &VsmCostAnalyzer::Summary::affineStaticBaseCycles },
+		{ "affine_static_loop_cycles", &VsmCostAnalyzer::Summary::affineStaticLoopCycles },
+		{ "affine_estimated_base_cycles", &VsmCostAnalyzer::Summary::affineEstimatedBaseCycles },
+		{ "affine_estimated_loop_cycles", &VsmCostAnalyzer::Summary::affineEstimatedLoopCycles },
 		{ "instructions", &VsmCostAnalyzer::Summary::instructions },
 		{ "upper_instructions", &VsmCostAnalyzer::Summary::upperInstructions },
 		{ "lower_instructions", &VsmCostAnalyzer::Summary::lowerInstructions },
@@ -151,6 +155,10 @@ VsmCostAnalyzer::Summary::Summary()
 	weightedPairedCycles = 0;
 	weightedNopOnlyCycles = 0;
 	weightedNopSlots = 0;
+	affineStaticBaseCycles = 0;
+	affineStaticLoopCycles = 0;
+	affineEstimatedBaseCycles = 0;
+	affineEstimatedLoopCycles = 0;
 	instructions = 0;
 	upperInstructions = 0;
 	lowerInstructions = 0;
@@ -194,6 +202,14 @@ VsmCostAnalyzer::Block::Block( const std::string& blockLabel )
 	operationLatencyCycles = 0;
 	longLatencyOps = 0;
 	longLatencyCycles = 0;
+}
+
+VsmCostAnalyzer::AffineCost::AffineCost()
+{
+	staticBaseCycles = 0;
+	staticLoopCycles = 0;
+	estimatedBaseCycles = 0;
+	estimatedLoopCycles = 0;
 }
 
 VsmCostAnalyzer::VsmCostAnalyzer()
@@ -294,6 +310,12 @@ VsmCostAnalyzer::Summary VsmCostAnalyzer::summary() const
 
 	result.weightedWaitStallCycles = result.weightedWaitqStallCycles + result.weightedWaitpStallCycles;
 	result.weightedEstimatedTotalCycles = result.weightedStaticCycles + result.weightedIssueStallCycles + result.weightedWaitStallCycles;
+
+	const AffineCost affine = affineCost();
+	result.affineStaticBaseCycles = affine.staticBaseCycles;
+	result.affineStaticLoopCycles = affine.staticLoopCycles;
+	result.affineEstimatedBaseCycles = affine.estimatedBaseCycles;
+	result.affineEstimatedLoopCycles = affine.estimatedLoopCycles;
 
 	return result;
 }
@@ -623,6 +645,47 @@ unsigned int VsmCostAnalyzer::blockRepeat( const Block& block ) const
 	return i->second ? i->second : 1;
 }
 
+bool VsmCostAnalyzer::blockIsAffineLoop( const Block& block ) const
+{
+	if( m_blockRepeats.find( block.label ) != m_blockRepeats.end() )
+		return true;
+
+	const std::string canonicalLabel = canonicalBlockLabel( block.label );
+	if( canonicalLabel != block.label && m_blockRepeats.find( canonicalLabel ) != m_blockRepeats.end() )
+		return true;
+
+	return false;
+}
+
+unsigned int VsmCostAnalyzer::estimatedBlockCycles( const Block& block )
+{
+	return block.cycles + block.issueStallCycles + block.waitqStallCycles + block.waitpStallCycles;
+}
+
+VsmCostAnalyzer::AffineCost VsmCostAnalyzer::affineCost() const
+{
+	AffineCost result;
+
+	for( std::vector<Block>::const_iterator i = m_blocks.begin(); i != m_blocks.end(); ++i )
+	{
+		if( i->cycles == 0 )
+			continue;
+
+		if( blockIsAffineLoop(*i) )
+		{
+			result.staticLoopCycles += i->cycles;
+			result.estimatedLoopCycles += estimatedBlockCycles(*i);
+		}
+		else
+		{
+			result.staticBaseCycles += i->cycles;
+			result.estimatedBaseCycles += estimatedBlockCycles(*i);
+		}
+	}
+
+	return result;
+}
+
 bool VsmCostAnalyzer::weightedBlockGreater( const WeightedBlock& a, const WeightedBlock& b )
 {
 	if( a.weightedCycles != b.weightedCycles )
@@ -679,7 +742,7 @@ std::vector<VsmCostAnalyzer::WeightedBlock> VsmCostAnalyzer::weightedBlocksByCyc
 		block.weightedIssueStallCycles = i->issueStallCycles * repeat;
 		block.waitStallCycles = i->waitqStallCycles + i->waitpStallCycles;
 		block.weightedWaitStallCycles = block.waitStallCycles * repeat;
-		block.estimatedCycles = i->cycles + block.issueStallCycles + block.waitStallCycles;
+		block.estimatedCycles = estimatedBlockCycles(*i);
 		block.weightedEstimatedCycles = block.estimatedCycles * repeat;
 		weightedBlocks.push_back(block);
 	}
@@ -995,6 +1058,7 @@ bool VsmCostAnalyzer::writeText( std::ostream& stream ) const
 	unsigned int weightedIssueStallCycles = 0;
 	unsigned int weightedFdivIssueStallCycles = 0;
 	unsigned int weightedEfuIssueStallCycles = 0;
+	const AffineCost affine = affineCost();
 
 	for( std::vector<Block>::const_iterator i = m_blocks.begin(); i != m_blocks.end(); ++i )
 	{
@@ -1032,6 +1096,12 @@ bool VsmCostAnalyzer::writeText( std::ostream& stream ) const
 	stream << "weighted_wait_stall_cycles: " << weightedWaitStallCycles << std::endl;
 	stream << "weighted_waitq_stall_cycles: " << weightedWaitqStallCycles << std::endl;
 	stream << "weighted_waitp_stall_cycles: " << weightedWaitpStallCycles << std::endl;
+	stream << "affine_static_cycles: " << affineExpression( affine.staticBaseCycles, affine.staticLoopCycles ) << std::endl;
+	stream << "affine_static_base_cycles: " << affine.staticBaseCycles << std::endl;
+	stream << "affine_static_loop_cycles: " << affine.staticLoopCycles << std::endl;
+	stream << "affine_estimated_cycles: " << affineExpression( affine.estimatedBaseCycles, affine.estimatedLoopCycles ) << std::endl;
+	stream << "affine_estimated_base_cycles: " << affine.estimatedBaseCycles << std::endl;
+	stream << "affine_estimated_loop_cycles: " << affine.estimatedLoopCycles << std::endl;
 	stream << "weighted_instruction_slots: " << (weightedStaticCycles * 2) << std::endl;
 	stream << "weighted_instructions: " << weightedInstructions << std::endl;
 	stream << "weighted_paired_cycles: " << weightedPairedCycles << std::endl;
@@ -1098,7 +1168,7 @@ bool VsmCostAnalyzer::writeText( std::ostream& stream ) const
 		       << " wait_stall=" << (i->waitqStallCycles + i->waitpStallCycles)
 		       << " waitq_stall=" << i->waitqStallCycles
 		       << " waitp_stall=" << i->waitpStallCycles
-		       << " estimated_cycles=" << (i->cycles + i->issueStallCycles + i->waitqStallCycles + i->waitpStallCycles)
+		       << " estimated_cycles=" << estimatedBlockCycles(*i)
 		       << " op_latency=" << i->operationLatencyCycles
 		       << " long_ops=" << i->longLatencyOps
 		       << " long_cycles=" << i->longLatencyCycles
@@ -1201,6 +1271,7 @@ bool VsmCostAnalyzer::writeJson( std::ostream& stream ) const
 	unsigned int weightedIssueStallCycles = 0;
 	unsigned int weightedFdivIssueStallCycles = 0;
 	unsigned int weightedEfuIssueStallCycles = 0;
+	const AffineCost affine = affineCost();
 
 	for( std::vector<Block>::const_iterator i = m_blocks.begin(); i != m_blocks.end(); ++i )
 	{
@@ -1238,6 +1309,12 @@ bool VsmCostAnalyzer::writeJson( std::ostream& stream ) const
 	stream << "  \"weighted_wait_stall_cycles\": " << weightedWaitStallCycles << "," << std::endl;
 	stream << "  \"weighted_waitq_stall_cycles\": " << weightedWaitqStallCycles << "," << std::endl;
 	stream << "  \"weighted_waitp_stall_cycles\": " << weightedWaitpStallCycles << "," << std::endl;
+	stream << "  \"affine_static_cycles\": \"" << affineExpression( affine.staticBaseCycles, affine.staticLoopCycles ) << "\"," << std::endl;
+	stream << "  \"affine_static_base_cycles\": " << affine.staticBaseCycles << "," << std::endl;
+	stream << "  \"affine_static_loop_cycles\": " << affine.staticLoopCycles << "," << std::endl;
+	stream << "  \"affine_estimated_cycles\": \"" << affineExpression( affine.estimatedBaseCycles, affine.estimatedLoopCycles ) << "\"," << std::endl;
+	stream << "  \"affine_estimated_base_cycles\": " << affine.estimatedBaseCycles << "," << std::endl;
+	stream << "  \"affine_estimated_loop_cycles\": " << affine.estimatedLoopCycles << "," << std::endl;
 	stream << "  \"weighted_instruction_slots\": " << (weightedStaticCycles * 2) << "," << std::endl;
 	stream << "  \"weighted_instructions\": " << weightedInstructions << "," << std::endl;
 	stream << "  \"weighted_paired_cycles\": " << weightedPairedCycles << "," << std::endl;
@@ -1298,7 +1375,7 @@ bool VsmCostAnalyzer::writeJson( std::ostream& stream ) const
 		       << "\"wait_stall_cycles\": " << (i->waitqStallCycles + i->waitpStallCycles) << ", "
 		       << "\"waitq_stall_cycles\": " << i->waitqStallCycles << ", "
 		       << "\"waitp_stall_cycles\": " << i->waitpStallCycles << ", "
-		       << "\"estimated_cycles\": " << (i->cycles + i->issueStallCycles + i->waitqStallCycles + i->waitpStallCycles) << ", "
+		       << "\"estimated_cycles\": " << estimatedBlockCycles(*i) << ", "
 		       << "\"operation_latency_cycles\": " << i->operationLatencyCycles << ", "
 		       << "\"long_latency_ops\": " << i->longLatencyOps << ", "
 		       << "\"long_latency_cycles\": " << i->longLatencyCycles
@@ -1476,8 +1553,8 @@ bool VsmCostAnalyzer::writeComparisonMarkdown( std::ostream& stream, const VsmCo
 
 bool VsmCostAnalyzer::writeComparisonMarkdownHeader( std::ostream& stream )
 {
-	stream << "| baseline | candidate | baseline static | candidate static | static delta | baseline estimated | candidate estimated | estimated delta | estimated ratio | baseline weighted static | candidate weighted static | weighted static delta | baseline weighted estimated | candidate weighted estimated | weighted estimated delta | weighted estimated ratio | baseline issue stall | candidate issue stall | issue stall delta | baseline wait stall | candidate wait stall | wait stall delta | baseline paired | candidate paired | paired delta |" << std::endl;
-	stream << "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|" << std::endl;
+	stream << "| baseline | candidate | baseline static | candidate static | static delta | baseline estimated | candidate estimated | estimated delta | estimated ratio | baseline weighted static | candidate weighted static | weighted static delta | baseline weighted estimated | candidate weighted estimated | weighted estimated delta | weighted estimated ratio | baseline affine estimated | candidate affine estimated | affine estimated base delta | affine estimated loop delta | baseline issue stall | candidate issue stall | issue stall delta | baseline wait stall | candidate wait stall | wait stall delta | baseline paired | candidate paired | paired delta |" << std::endl;
+	stream << "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|" << std::endl;
 	return true;
 }
 
@@ -1489,6 +1566,8 @@ bool VsmCostAnalyzer::writeComparisonMarkdownRow( std::ostream& stream, const Vs
 	const long estimatedDelta = metricDelta( baselineSummary.estimatedTotalCycles, candidateSummary.estimatedTotalCycles );
 	const long weightedStaticDelta = metricDelta( baselineSummary.weightedStaticCycles, candidateSummary.weightedStaticCycles );
 	const long weightedEstimatedDelta = metricDelta( baselineSummary.weightedEstimatedTotalCycles, candidateSummary.weightedEstimatedTotalCycles );
+	const long affineEstimatedBaseDelta = metricDelta( baselineSummary.affineEstimatedBaseCycles, candidateSummary.affineEstimatedBaseCycles );
+	const long affineEstimatedLoopDelta = metricDelta( baselineSummary.affineEstimatedLoopCycles, candidateSummary.affineEstimatedLoopCycles );
 	const long issueStallDelta = metricDelta( baselineSummary.issueStallCycles, candidateSummary.issueStallCycles );
 	const long waitStallDelta = metricDelta( baselineSummary.waitStallCycles, candidateSummary.waitStallCycles );
 	const long pairedDelta = metricDelta( baselineSummary.pairedCycles, candidateSummary.pairedCycles );
@@ -1521,6 +1600,12 @@ bool VsmCostAnalyzer::writeComparisonMarkdownRow( std::ostream& stream, const Vs
 	       << " | ";
 	writeSignedMarkdownNumber( stream, weightedEstimatedDelta );
 	stream << " | " << std::fixed << std::setprecision(2) << weightedRatio << "x";
+	stream << " | " << affineExpression( baselineSummary.affineEstimatedBaseCycles, baselineSummary.affineEstimatedLoopCycles )
+	       << " | " << affineExpression( candidateSummary.affineEstimatedBaseCycles, candidateSummary.affineEstimatedLoopCycles )
+	       << " | ";
+	writeSignedMarkdownNumber( stream, affineEstimatedBaseDelta );
+	stream << " | ";
+	writeSignedMarkdownNumber( stream, affineEstimatedLoopDelta );
 	stream << " | " << baselineSummary.issueStallCycles
 	       << " | " << candidateSummary.issueStallCycles
 	       << " | ";
@@ -1655,6 +1740,13 @@ bool VsmCostAnalyzer::isLabelOnly( const std::string& line )
 		return false;
 	return line.find( ' ' ) == std::string::npos
 	    && line.find( '\t' ) == std::string::npos;
+}
+
+std::string VsmCostAnalyzer::affineExpression( unsigned int baseCycles, unsigned int loopCycles )
+{
+	std::ostringstream stream;
+	stream << baseCycles << " + " << loopCycles << "n";
+	return stream.str();
 }
 
 std::string VsmCostAnalyzer::jsonEscape( const std::string& text )

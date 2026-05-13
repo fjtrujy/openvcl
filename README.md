@@ -136,6 +136,17 @@ Apply the ps2gl 100-vertex hot-loop preset:
 ./openvcl --cost --cost-loop-preset ps2gl shader.vsm
 ```
 
+When loop labels are configured, reports also include an affine cost expression:
+
+```text
+affine_estimated_cycles: 120 + 25n
+```
+
+The base term is the one-time cost for setup plus teardown. The `n` term is
+the cost of the selected loop block(s) for each vertex. Static affine cost uses
+the scheduled instruction cycles as emitted; estimated affine cost also adds the
+modeled FDIV/EFU issue stalls and explicit `waitq`/`waitp` stalls.
+
 The preset recognizes both OpenVCL labels such as `xform_loop_lid` and SCE
 optimized main-loop labels such as `EXPL_..._xform_loop_lid__MAIN_LOOP`. It
 also maps SCE fast-family `adcLoop_done_lid__MAIN_LOOP` labels onto
@@ -169,9 +180,11 @@ Fail when any listed candidate is slower than its own baseline:
 ./openvcl --cost-compare-list-check weighted-estimated --cost-loop-preset ps2gl pairs.txt
 ```
 
-Supported check metrics are `static`, `estimated`, `weighted-static`, and
-`weighted-estimated`. This check is per row: an OpenVCL shader only passes when
-that specific shader is equal to or faster than its matching SCE/reference VSM.
+Supported check metrics are `static`, `estimated`, `weighted-static`,
+`weighted-estimated`, `affine-static-base`, `affine-static-loop`,
+`affine-estimated-base`, and `affine-estimated-loop`. This check is per row: an
+OpenVCL shader only passes when that specific shader is equal to or faster than
+its matching SCE/reference VSM.
 
 The report includes:
 
@@ -179,6 +192,7 @@ The report includes:
 - estimated cycles including modeled FDIV/EFU producer issue stalls and
   explicit `waitq`/`waitp` stalls;
 - loop-weighted totals when `--cost-loop` or `--cost-loop-preset` is used;
+- affine `base + loop*n` static and estimated costs for selected loop labels;
 - upper/lower slot usage, paired cycles, NOP slots, and nop-only cycles;
 - per-label block costs;
 - weighted hot-block, idle-slot, estimated-cost, and wait-stall rankings;

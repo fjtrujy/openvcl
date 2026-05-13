@@ -43,6 +43,10 @@ public:
 		unsigned int weightedPairedCycles;
 		unsigned int weightedNopOnlyCycles;
 		unsigned int weightedNopSlots;
+		unsigned int affineStaticBaseCycles;
+		unsigned int affineStaticLoopCycles;
+		unsigned int affineEstimatedBaseCycles;
+		unsigned int affineEstimatedLoopCycles;
 		unsigned int instructions;
 		unsigned int upperInstructions;
 		unsigned int lowerInstructions;
@@ -151,16 +155,29 @@ private:
 		long weightedWaitStallCyclesDelta;
 	};
 
+	struct AffineCost
+	{
+		AffineCost();
+
+		unsigned int staticBaseCycles;
+		unsigned int staticLoopCycles;
+		unsigned int estimatedBaseCycles;
+		unsigned int estimatedLoopCycles;
+	};
+
 	void reset();
 	void startBlock( const std::string& label );
 	bool analyzeLine( const std::string& line, unsigned int lineNumber );
 	bool parseCycle( const std::string& line, Slot& upper, Slot& lower ) const;
 	void recordCycle( const Slot& upper, const Slot& lower );
 	unsigned int blockRepeat( const Block& block ) const;
+	bool blockIsAffineLoop( const Block& block ) const;
+	AffineCost affineCost() const;
 	std::vector<WeightedBlock> weightedBlocksByCycles() const;
 	std::vector<WeightedBlock> weightedBlocksByEstimatedCycles() const;
 	std::vector<WeightedBlock> weightedBlocksByIdleSlots() const;
 	std::vector<WeightedBlock> weightedBlocksByWaitStalls() const;
+	static unsigned int estimatedBlockCycles( const Block& block );
 	static bool weightedBlockGreater( const WeightedBlock& a, const WeightedBlock& b );
 	static bool weightedEstimatedBlockGreater( const WeightedBlock& a, const WeightedBlock& b );
 	static bool weightedIdleBlockGreater( const WeightedBlock& a, const WeightedBlock& b );
@@ -188,6 +205,7 @@ private:
 	static bool startsInstructionToken( const std::string& line, std::string::size_type pos );
 	static bool isDirective( const std::string& line );
 	static bool isLabelOnly( const std::string& line );
+	static std::string affineExpression( unsigned int baseCycles, unsigned int loopCycles );
 	static std::string jsonEscape( const std::string& text );
 
 	std::string m_inputName;

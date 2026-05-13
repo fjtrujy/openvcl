@@ -136,6 +136,12 @@ TEST_CASE("VsmCostAnalyzer fixture: block repeats expose weighted cost")
     CHECK(textMetric(text.str(), "weighted_instructions") == 20);
     CHECK(textMetric(text.str(), "weighted_paired_cycles") == 4);
     CHECK(textMetric(text.str(), "weighted_nop_only_cycles") == 4);
+    CHECK(textMetric(text.str(), "affine_static_base_cycles") == 0);
+    CHECK(textMetric(text.str(), "affine_static_loop_cycles") == 5);
+    CHECK(textMetric(text.str(), "affine_estimated_base_cycles") == 0);
+    CHECK(textMetric(text.str(), "affine_estimated_loop_cycles") == 5);
+    CHECK(contains(text.str(), "affine_static_cycles: 0 + 5n"));
+    CHECK(contains(text.str(), "affine_estimated_cycles: 0 + 5n"));
     CHECK(contains(text.str(), "entry_lid: cycles=5 repeat=4 weighted_cycles=20"));
     CHECK(contains(text.str(), "top_weighted_blocks:"));
     CHECK(contains(text.str(), "entry_lid: weighted_cycles=20 cycles=5 repeat=4"));
@@ -149,12 +155,55 @@ TEST_CASE("VsmCostAnalyzer fixture: block repeats expose weighted cost")
     REQUIRE(analyzer.writeJson(json));
     CHECK(jsonMetric(json.str(), "weighted_static_cycles") == 20);
     CHECK(jsonMetric(json.str(), "weighted_instructions") == 20);
+    CHECK(jsonMetric(json.str(), "affine_static_base_cycles") == 0);
+    CHECK(jsonMetric(json.str(), "affine_static_loop_cycles") == 5);
+    CHECK(jsonMetric(json.str(), "affine_estimated_base_cycles") == 0);
+    CHECK(jsonMetric(json.str(), "affine_estimated_loop_cycles") == 5);
+    CHECK(contains(json.str(), "\"affine_static_cycles\": \"0 + 5n\""));
+    CHECK(contains(json.str(), "\"affine_estimated_cycles\": \"0 + 5n\""));
     CHECK(contains(json.str(), "\"repeat\": 4"));
     CHECK(contains(json.str(), "\"weighted_cycles\": 20"));
     CHECK(contains(json.str(), "\"weighted_nop_slots\": 20"));
     CHECK(contains(json.str(), "\"top_weighted_blocks\""));
     CHECK(contains(json.str(), "\"top_weighted_estimated_blocks\""));
     CHECK(contains(json.str(), "\"top_weighted_idle_blocks\""));
+}
+
+TEST_CASE("VsmCostAnalyzer inline: affine cost separates setup, loop, and teardown")
+{
+    const std::string source =
+        "\t.vu\n"
+        "init_lid:\n"
+        "                    nop                             iaddiu VI01, VI00, 1\n"
+        "loop_lid:\n"
+        "                    add.xyz VF01, VF02, VF03        iaddiu VI01, VI01, -1\n"
+        "done_lid:\n"
+        "                    nop                             xgkick VI01\n";
+
+    vcl::VsmCostAnalyzer analyzer;
+    REQUIRE(analyzeString(source, "affine_inline.vsm", analyzer));
+    analyzer.setBlockRepeat("loop_lid", 10);
+
+    std::ostringstream text;
+    REQUIRE(analyzer.writeText(text));
+    CHECK(textMetric(text.str(), "static_cycles") == 3);
+    CHECK(textMetric(text.str(), "estimated_total_cycles") == 3);
+    CHECK(textMetric(text.str(), "weighted_static_cycles") == 12);
+    CHECK(textMetric(text.str(), "weighted_estimated_total_cycles") == 12);
+    CHECK(textMetric(text.str(), "affine_static_base_cycles") == 2);
+    CHECK(textMetric(text.str(), "affine_static_loop_cycles") == 1);
+    CHECK(textMetric(text.str(), "affine_estimated_base_cycles") == 2);
+    CHECK(textMetric(text.str(), "affine_estimated_loop_cycles") == 1);
+    CHECK(contains(text.str(), "affine_static_cycles: 2 + 1n"));
+    CHECK(contains(text.str(), "affine_estimated_cycles: 2 + 1n"));
+
+    std::ostringstream json;
+    REQUIRE(analyzer.writeJson(json));
+    CHECK(jsonMetric(json.str(), "affine_static_base_cycles") == 2);
+    CHECK(jsonMetric(json.str(), "affine_static_loop_cycles") == 1);
+    CHECK(jsonMetric(json.str(), "affine_estimated_base_cycles") == 2);
+    CHECK(jsonMetric(json.str(), "affine_estimated_loop_cycles") == 1);
+    CHECK(contains(json.str(), "\"affine_estimated_cycles\": \"2 + 1n\""));
 }
 
 TEST_CASE("VsmCostAnalyzer inline: ps2gl preset labels match SCE optimized main loops")
@@ -213,6 +262,10 @@ TEST_CASE("VsmCostAnalyzer fixture: summary exposes comparison metrics")
     CHECK(summary.weightedInstructions == 20);
     CHECK(summary.weightedPairedCycles == 4);
     CHECK(summary.weightedNopSlots == 20);
+    CHECK(summary.affineStaticBaseCycles == 0);
+    CHECK(summary.affineStaticLoopCycles == 5);
+    CHECK(summary.affineEstimatedBaseCycles == 0);
+    CHECK(summary.affineEstimatedLoopCycles == 5);
     CHECK(summary.instructions == 5);
     CHECK(summary.pairedCycles == 1);
     CHECK(summary.nopSlots == 5);
