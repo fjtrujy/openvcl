@@ -10,8 +10,8 @@ correctness fix, is:
 
 | metric | SCE/reference | OpenVCL | delta |
 |---|---:|---:|---:|
-| static scheduled cycles | 6308 | 5715 | -593 |
-| estimated cycles | 6820 | 6436 | -384 |
+| static scheduled cycles | 6308 | 5647 | -661 |
+| estimated cycles | 6820 | 6368 | -452 |
 
 `estimated cycles` includes modeled FDIV/EFU producer issue stalls and explicit
 `waitq`/`waitp` stalls. The numbers are static VSM estimates, not measured
@@ -123,6 +123,8 @@ Recently completed:
   when register, implicit-resource, and memory-ordering descriptors allow it.
 - Ready-set memory dependencies now use descriptor base/offset comparisons so
   distinct plain loads and stores can move independently.
+- Ready-set scheduling now prefers longer dependency chains over unrelated
+  short work, starting producer chains earlier in hot renderer blocks.
 
 ## Correctness Guardrails
 

@@ -50,7 +50,8 @@ namespace
 	int readyCandidateScore( unsigned int candidate,
 	                         bool haveLastPipe,
 	                         bool lastWasLower,
-	                         const VuBasicBlock& block )
+	                         const VuBasicBlock& block,
+	                         const std::vector<unsigned int>& priority )
 	{
 		int score = static_cast<int>( candidate );
 
@@ -62,7 +63,30 @@ namespace
 		if( haveLastPipe && isVuLowerPipe( *block.tokens[candidate] ) != lastWasLower )
 			score -= 100;
 
+		if( candidate < priority.size() )
+			score -= static_cast<int>( priority[candidate] * 10 );
+
 		return score;
+	}
+
+	std::vector<unsigned int> buildDependencyPriorities( const VuBasicBlock& block,
+	                                                    const std::vector< std::vector<unsigned int> >& outgoing )
+	{
+		std::vector<unsigned int> priority( block.tokens.size(), 1 );
+
+		for( unsigned int reverse = block.tokens.size(); reverse > 0; --reverse )
+		{
+			const unsigned int i = reverse - 1;
+			unsigned int best = 1;
+			for( std::vector<unsigned int>::const_iterator edge = outgoing[i].begin(); edge != outgoing[i].end(); ++edge )
+			{
+				if( *edge < priority.size() && priority[*edge] + 1 > best )
+					best = priority[*edge] + 1;
+			}
+			priority[i] = best;
+		}
+
+		return priority;
 	}
 
 	void appendReadyScheduledSegment( const std::vector<const Token*>& segment, std::list<Token>& scheduled )
@@ -89,6 +113,7 @@ namespace
 			outgoing[i->before].push_back( i->after );
 		}
 
+		const std::vector<unsigned int> priority = buildDependencyPriorities( block, outgoing );
 		std::vector<bool> emitted( block.tokens.size(), false );
 		unsigned int emittedCount = 0;
 		bool haveLastPipe = false;
@@ -104,7 +129,7 @@ namespace
 				if( emitted[i] || incoming[i] != 0 )
 					continue;
 
-				const int score = readyCandidateScore( i, haveLastPipe, lastWasLower, block );
+				const int score = readyCandidateScore( i, haveLastPipe, lastWasLower, block, priority );
 				if( best == block.tokens.size() || score < bestScore )
 				{
 					best = i;

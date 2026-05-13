@@ -60,6 +60,8 @@
   movement safe.
 - Let the ready-set dependency graph distinguish plain memory accesses by base
   register and constant offset, allowing distinct loads/stores to reorder.
+- Added dependency-chain priority to the ready-set scheduler so critical
+  producer chains are chosen ahead of unrelated short work.
 - Added behavior-preserving scheduler analysis scaffolding for basic-block
   construction and descriptor-derived dependency edges.
 - Wired the scheduler analysis layer into code generation in preserve-order

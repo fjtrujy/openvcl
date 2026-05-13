@@ -259,6 +259,36 @@ TEST_CASE("VuSchedulerAnalysis: ready-set scheduler pulls plain loads before ind
     CHECK(vcl::normalizeVuMnemonic(i->name()) == "mul");
 }
 
+TEST_CASE("VuSchedulerAnalysis: ready-set scheduler prefers longer dependency chains")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("iaddiu vi10, vi00, 1"));
+    REQUIRE(program.parse("iaddiu vi01, vi00, 1"));
+    REQUIRE(program.parse("iaddiu vi04, vi01, 1"));
+    REQUIRE(program.parse("iaddiu vi06, vi04, 1"));
+
+    std::list<vcl::Token> scheduled = vcl::scheduleVuTokensReadySet(program.tokenizer.tokens());
+    REQUIRE(scheduled.size() == program.tokenizer.tokens().size());
+
+    std::list<vcl::Token>::const_iterator i = scheduled.begin();
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "iaddiu");
+    CHECK(i->arguments().begin()->regNumber() == 1u);
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "iaddiu");
+    CHECK(i->arguments().begin()->regNumber() == 4u);
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "iaddiu");
+    CHECK(i->arguments().begin()->regNumber() == 10u);
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "iaddiu");
+    CHECK(i->arguments().begin()->regNumber() == 6u);
+}
+
 TEST_CASE("VuSchedulerAnalysis: ready-set scheduler moves distinct-address loads before stores")
 {
     vcl::Error::ResetErrorCount();
