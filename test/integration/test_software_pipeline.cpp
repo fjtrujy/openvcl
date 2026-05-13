@@ -656,6 +656,89 @@ namespace
             "\t--exit\n"
             "\t--endexit\n";
     }
+
+    std::string ptLightSpecPipelineSource()
+    {
+        return
+            "\t.init_vf_all\n"
+            "\t.init_vi_all\n"
+            "\t.name vsmPtLightSpec\n"
+            "\t--enter\n"
+            "\t--endenter\n"
+            "\tiaddiu vi03, vi00, 0\n"
+            "\tiaddiu vi04, vi00, 15\n"
+            "\tiaddiu vi13, vi00, 0\n"
+            "\tmove.xyzw vf06, vf00\n"
+            "\tmove.xyzw vf08, vf00\n"
+            "\tmove.xyzw vf10, vf00\n"
+            "\tmove.xyzw vf11, vf00\n"
+            "\tmove.xyzw vf12, vf00\n"
+            "\tmove.xyzw vf13, vf00\n"
+            "\tmove.xyzw vf14, vf00\n"
+            "\tmove.xyzw vf15, vf00\n"
+            "\tmove.xyzw vf16, vf00\n"
+            "\tmove.xyzw vf17, vf00\n"
+            "\tmove.xyzw vf18, vf00\n"
+            "\tmove.xyzw vf19, vf00\n"
+            "\tmove.xyzw vf20, vf00\n"
+            "\tmove.xyzw vf21, vf00\n"
+            "\tmove.xyzw vf22, vf00\n"
+            "\tmaxw.xyzw vf11, vf00, vf00w\n"
+            "pt_light_vert_loop_lid:\n"
+            "\t--LoopCS 1,3\n"
+            "\t--LoopExtra 5\n"
+            "\tlq.xyz vf17, 1(vi13)\n"
+            "\tlq.xyz vf18, 0(vi13)\n"
+            "\tsub.xyz vf20, vf16, vf18\n"
+            "\tmul.xyz vf22, vf20, vf20\n"
+            "\tadday.z acc, vf22, vf22y\n"
+            "\tmaddx.z vf22, vf11, vf22x\n"
+            "\tsqrt q, vf22z\n"
+            "\taddw.x vf22, vf00, vf00w\n"
+            "\taddq.y vf22, vf00, q\n"
+            "\tdiv q, vf00w, vf22y\n"
+            "\tmulq.xyz vf18, vf20, q\n"
+            "\tmul.xyz vf20, vf22, vf14\n"
+            "\tmulax.w acc, vf00, vf20x\n"
+            "\tmadday.w acc, vf00, vf20y\n"
+            "\tmaddz.w vf22, vf00, vf20z\n"
+            "\tadd.xyz vf19, vf10, vf18\n"
+            "\tmul.xyz vf20, vf18, vf17\n"
+            "\tesadd p, vf19\n"
+            "\tmulax.w acc, vf00, vf20x\n"
+            "\tmadday.w acc, vf00, vf20y\n"
+            "\tmaddz.w vf21, vf00, vf20z\n"
+            "\tmfp.w vf19, p\n"
+            "\tersqrt p, vf19w\n"
+            "\tmaxx.w vf20, vf21, vf00x\n"
+            "\tmfp.w vf19, p\n"
+            "\tmulw.xyz vf21, vf13, vf20w\n"
+            "\tmulw.xyz vf19, vf19, vf19w\n"
+            "\tmula.xyz acc, vf21, vf08\n"
+            "\tmul.xyz vf18, vf19, vf17\n"
+            "\tmulax.w acc, vf00, vf18x\n"
+            "\tmadday.w acc, vf00, vf18y\n"
+            "\tmaddz.w vf17, vf00, vf18z\n"
+            "\tmaxx.w vf18, vf17, vf00x\n"
+            "\tmul.w vf17, vf18, vf18\n"
+            "\tmul.w vf18, vf17, vf17\n"
+            "\tmul.w vf17, vf18, vf18\n"
+            "\tmul.w vf18, vf17, vf17\n"
+            "\tmul.w vf17, vf18, vf18\n"
+            "\tmaddaw.xyz acc, vf15, vf17w\n"
+            "\tmadd.xyz vf17, vf12, vf06\n"
+            "\tdiv q, vf00w, vf22w\n"
+            "\tmulq.xyz vf18, vf17, q\n"
+            "\tlq.xyz vf17, 1(vi03)\n"
+            "\tadd.xyz vf20, vf17, vf18\n"
+            "\tsq.xyz vf20, 1(vi03)\n"
+            "\tiaddiu vi13, vi13, 3\n"
+            "\tiaddiu vi03, vi03, 3\n"
+            "\tibne vi13, vi04, pt_light_vert_loop_lid\n"
+            "done_lid:\n"
+            "\t--exit\n"
+            "\t--endexit\n";
+    }
 }
 
 TEST_CASE("Software pipeline: fast_nolights transform loop emits a 12-cycle steady state")
@@ -816,4 +899,17 @@ TEST_CASE("Software pipeline: no-spec point light loop emits a 26-cycle steady s
     CHECK(contains(vsm, "pt_light_vert_loop_lid__SCALAR_FALLBACK:"));
     CHECK(contains(vsm, "ibne VI13, VI04, pt_light_vert_loop_lid__MAIN_LOOP"));
     CHECK(contains(vsm, "sq.xyz VF19, -8(VI03)"));
+}
+
+TEST_CASE("Software pipeline: specular point light loop stays scalar until W power chain is safe")
+{
+    std::string vsm = runEmit(ptLightSpecPipelineSource());
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(!contains(vsm, "pt_light_vert_loop_lid__SPEC_ENTRY_POINT:"));
+    CHECK(!contains(vsm, "pt_light_vert_loop_lid__MAIN_LOOP:"));
+    CHECK(contains(vsm, "pt_light_vert_loop_lid:"));
+    CHECK(contains(vsm, "ibne VI13, VI04, pt_light_vert_loop_lid"));
+    CHECK(contains(vsm, "maddaw.xyz ACC"));
+    CHECK(contains(vsm, "sq.xyz"));
 }
