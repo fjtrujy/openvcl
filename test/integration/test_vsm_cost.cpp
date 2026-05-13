@@ -102,6 +102,15 @@ namespace
         args.push_back(loop);
         return ::test::run_openvcl(args, source);
     }
+
+    ::test::RunResult runCostLoopPresetStdin(const std::string& source, const std::string& preset)
+    {
+        std::vector<std::string> args;
+        args.push_back("--cost");
+        args.push_back("--cost-loop-preset");
+        args.push_back(preset);
+        return ::test::run_openvcl(args, source);
+    }
 }
 
 TEST_CASE("VSM cost CLI: fixture file reports precomputed scheduled cost")
@@ -204,6 +213,27 @@ TEST_CASE("VSM cost CLI: loop repeat weights static block cost")
     CHECK(contains(r.stdout_data, "weighted_nop_slots=20"));
     CHECK(contains(r.stdout_data, "top_weighted_idle_blocks:"));
     CHECK(contains(r.stdout_data, "entry_lid: weighted_nop_slots=20 nop_slots=5 repeat=4"));
+}
+
+TEST_CASE("VSM cost CLI: ps2gl loop preset weights known hot labels")
+{
+    const std::string source =
+        "\t.vu\n"
+        "xform_loop_lid:\n"
+        "                    add.xyz VF01, VF02, VF03        iaddiu VI01, VI00, 1\n"
+        "                    nop                             nop\n";
+
+    ::test::RunResult r = runCostLoopPresetStdin(source, "ps2gl");
+    REQUIRE(r.exit_code == 0);
+    CHECK(textMetric(r.stdout_data, "static_cycles") == 2);
+    CHECK(textMetric(r.stdout_data, "weighted_static_cycles") == 200);
+    CHECK(contains(r.stdout_data, "xform_loop_lid: cycles=2 repeat=100 weighted_cycles=200"));
+}
+
+TEST_CASE("VSM cost CLI: unknown loop preset is rejected")
+{
+    ::test::RunResult r = runCostLoopPresetStdin("\t.vu\n", "unknown");
+    CHECK(r.exit_code != 0);
 }
 
 TEST_CASE("VSM cost CLI: fixture accepts SCE-style padded VSM output")

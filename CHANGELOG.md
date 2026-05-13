@@ -5,7 +5,8 @@
 - Added VSM cost analysis modes:
   - `--cost` for human-readable reports;
   - `--cost-json` for machine-readable reports;
-  - `--cost-loop <label>=<count>` for loop-weighted block analysis.
+  - `--cost-loop <label>=<count>` for loop-weighted block analysis;
+  - `--cost-loop-preset ps2gl` for known ps2gl hot-loop weights.
 - Cost reports now include static cycles, estimated cycles, FDIV/EFU producer
   issue stalls, explicit `waitq`/`waitp` stalls, slot usage, paired cycles,
   NOP slots, per-label block costs, and weighted hot-block rankings.

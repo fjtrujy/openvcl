@@ -91,7 +91,8 @@ openvcl --dump-instruction-info-json
   when comparing SCE/reference VSMs against OpenVCL output.
 - Generate side-by-side renderer comparison tables with
   `--cost-compare-markdown` instead of hand-maintaining Markdown.
-- Derive useful default loop weights for ps2gl renderers when possible.
+- Refine ps2gl loop presets as runtime measurements make better defaults
+  obvious.
 - Add regression tests for the instruction metadata table and JSON output.
 
 Recently completed:
@@ -102,6 +103,8 @@ Recently completed:
   - `top_weighted_wait_blocks`.
 - `--cost-compare-markdown` emits a side-by-side report-table row directly
   from the same baseline/candidate summary data.
+- `--cost-loop-preset ps2gl` applies the known 100-vertex hot labels used by
+  ps2gl shader comparisons.
 - Direct branches can now pair with an adjacent preceding upper-pipe
   instruction while still emitting their delay slot. Broader branch-delay
   filling remains intentionally pending.

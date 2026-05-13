@@ -96,6 +96,7 @@ Useful options:
 | `--cost` | analyze scheduled `.vsm` cost |
 | `--cost-json` | analyze scheduled `.vsm` cost as JSON |
 | `--cost-loop <label>=<n>` | weight a block by expected iterations |
+| `--cost-loop-preset ps2gl` | apply known ps2gl hot-loop weights |
 | `--cost-compare <baseline>` | compare scheduled `.vsm` cost against a baseline |
 | `--cost-compare-json <baseline>` | compare scheduled `.vsm` cost as JSON |
 | `--cost-compare-markdown <baseline>` | compare scheduled `.vsm` cost as a Markdown table |
@@ -125,6 +126,12 @@ Weight hot blocks by expected loop iterations:
 
 ```sh
 ./openvcl --cost --cost-loop xform_loop_lid=100 shader.vsm
+```
+
+Apply the ps2gl 100-vertex hot-loop preset:
+
+```sh
+./openvcl --cost --cost-loop-preset ps2gl shader.vsm
 ```
 
 Compare a candidate shader against a reference shader:

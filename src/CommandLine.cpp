@@ -17,6 +17,29 @@
 namespace vcl
 {
 
+namespace
+{
+	void appendCostLoop( std::vector< std::pair<std::string, unsigned int> >& loops,
+	                     const char* label,
+	                     unsigned int repeat )
+	{
+		loops.push_back( std::make_pair( std::string(label), repeat ) );
+	}
+
+	bool appendCostLoopPreset( const std::string& preset,
+	                           std::vector< std::pair<std::string, unsigned int> >& loops )
+	{
+		if( preset != "ps2gl" && preset != "ps2gl-100" )
+			return false;
+
+		appendCostLoop( loops, "xform_loop_lid", 100 );
+		appendCostLoop( loops, "dir_light_vert_loop_lid", 100 );
+		appendCostLoop( loops, "pt_light_vert_loop_lid", 100 );
+		appendCostLoop( loops, "final_loop_lid", 100 );
+		return true;
+	}
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 CommandLine::CommandLine()
@@ -80,6 +103,7 @@ CommandLine::CommandLine()
 	m_options.push_back(Option('\0',"cost",ANALYZE_VSM_COST,false));
 	m_options.push_back(Option('\0',"cost-json",ANALYZE_VSM_COST_JSON,false));
 	m_options.push_back(Option('\0',"cost-loop",ANALYZE_VSM_COST_LOOP,true));
+	m_options.push_back(Option('\0',"cost-loop-preset",ANALYZE_VSM_COST_LOOP_PRESET,true));
 	m_options.push_back(Option('\0',"cost-compare",ANALYZE_VSM_COST_COMPARE,true));
 	m_options.push_back(Option('\0',"cost-compare-json",ANALYZE_VSM_COST_COMPARE_JSON,true));
 	m_options.push_back(Option('\0',"cost-compare-markdown",ANALYZE_VSM_COST_COMPARE_MARKDOWN,true));
@@ -203,6 +227,11 @@ bool CommandLine::parse( int argc, char* argv[] )
 					m_costLoops.push_back(std::make_pair(label, static_cast<unsigned int>(repeat)));
 					break;
 				}
+				case ANALYZE_VSM_COST_LOOP_PRESET:
+					m_analyzeVsmCost = true;
+					if( !appendCostLoopPreset( argument, m_costLoops ) )
+						return false;
+					break;
 
 				case IGNORE: break;
 				break;
@@ -257,6 +286,7 @@ void CommandLine::showUsage( std::ostream& stream )
 	stream << "  --cost             Analyze scheduled .vsm cost instead of compiling VCL." << std::endl;
 	stream << "  --cost-json        Analyze scheduled .vsm cost and emit JSON." << std::endl;
 	stream << "  --cost-loop L=N    Weight block/label L by N iterations in cost reports." << std::endl;
+	stream << "  --cost-loop-preset ps2gl  Apply known ps2gl hot-loop weights." << std::endl;
 	stream << "  --cost-compare <baseline>       Compare input .vsm cost against baseline." << std::endl;
 	stream << "  --cost-compare-json <baseline>  Compare input .vsm cost against baseline as JSON." << std::endl;
 	stream << "  --cost-compare-markdown <baseline>  Compare input .vsm cost against baseline as Markdown." << std::endl;
