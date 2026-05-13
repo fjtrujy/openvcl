@@ -22,8 +22,17 @@ especially in transform and lighting loops.
 
 ## Next Major Direction
 
-Create one canonical VU instruction metadata table and make both scheduling
-and cost analysis consume it.
+Create one canonical VU instruction metadata table and make scheduling, parser
+operand definitions, and cost analysis consume it.
+
+First slice complete:
+
+- `src/VuInstructionInfo.*` defines shared mnemonic normalization, pipe/unit,
+  throughput, latency, and Q/P/I/wait/branch flags.
+- `VsmCostAnalyzer` consumes `VuInstructionInfo` instead of owning duplicate
+  opcode sets and latency/throughput tables.
+- Unit tests cover broadcast mnemonic normalization, Q/P producer costs, `mfp`,
+  waits, and branch metadata.
 
 The table should describe:
 
@@ -40,6 +49,16 @@ The table should describe:
 - branch and delay-slot behavior;
 - special bypasses, for example `ftoi* -> mtir`;
 - required wait behavior for Q/P producers and consumers.
+
+Remaining table work:
+
+- migrate parser operand construction from local `Operand(...)` literals onto
+  `VuInstructionInfo`;
+- migrate scheduler dependency/resource checks onto table-driven read/write
+  descriptors;
+- add memory descriptors and branch delay-slot descriptors;
+- expose the table through `--dump-instruction-info` and
+  `--dump-instruction-info-json`.
 
 The desired user-facing shape is an inspectable table:
 

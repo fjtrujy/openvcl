@@ -5,12 +5,12 @@
  */
 
 #include "VsmCostAnalyzer.h"
+#include "VuInstructionInfo.h"
 
 #include <algorithm>
 #include <cctype>
 #include <iomanip>
 #include <iostream>
-#include <set>
 #include <sstream>
 
 namespace vcl
@@ -29,123 +29,6 @@ namespace
 		    || c == '_' || c == '.' || c == '[' || c == ']';
 	}
 
-	bool setContains( const std::set<std::string>& values, const std::string& key )
-	{
-		return values.find( key ) != values.end();
-	}
-
-	std::set<std::string> makeUpperOps()
-	{
-		std::set<std::string> ops;
-		const char* names[] =
-		{
-			"abs",
-			"add", "addi", "addq", "adda", "addai", "addaq",
-			"sub", "subi", "subq", "suba", "subai", "subaq",
-			"mul", "muli", "mulq", "mula", "mulai", "mulaq",
-			"madd", "maddi", "maddq", "madda", "maddai", "maddaq",
-			"msub", "msubi", "msubq", "msuba", "msubai", "msubaq",
-			"max", "maxi", "mini", "minii",
-			"opmula", "opmsub",
-			"ftoi0", "ftoi4", "ftoi12", "ftoi15",
-			"itof0", "itof4", "itof12", "itof15",
-			"clip", "clipw", "cliplw",
-			0
-		};
-		for( unsigned int i = 0; names[i]; ++i )
-			ops.insert( names[i] );
-		return ops;
-	}
-
-	std::set<std::string> makeLowerOps()
-	{
-		std::set<std::string> ops;
-		const char* names[] =
-		{
-			"iadd", "iaddi", "iaddiu", "iand", "ior", "isub", "isubiu",
-			"move", "mfir", "mtir", "mr32",
-			"lq", "lqd", "lqi", "sq", "sqd", "sqi",
-			"ilw", "isw", "ilwr", "iswr", "loi",
-			"rinit", "rget", "rnext", "rxor",
-			"fsand", "fseq", "fsor", "fsset",
-			"fmand", "fmeq", "fmor",
-			"fcand", "fceq", "fcor", "fcset", "fcget",
-			"xgkick", "xtop", "xitop",
-			0
-		};
-		for( unsigned int i = 0; names[i]; ++i )
-			ops.insert( names[i] );
-		return ops;
-	}
-
-	std::set<std::string> makeBranchOps()
-	{
-		std::set<std::string> ops;
-		const char* names[] =
-		{
-			"ibeq", "ibgez", "ibgtz", "iblez", "ibltz", "ibne",
-			"b", "bal", "jr", "jalr",
-			0
-		};
-		for( unsigned int i = 0; names[i]; ++i )
-			ops.insert( names[i] );
-		return ops;
-	}
-
-	std::set<std::string> makeFdivOps()
-	{
-		std::set<std::string> ops;
-		ops.insert( "div" );
-		ops.insert( "sqrt" );
-		ops.insert( "rsqrt" );
-		return ops;
-	}
-
-	std::set<std::string> makeEfuOps()
-	{
-		std::set<std::string> ops;
-		const char* names[] =
-		{
-			"mfp",
-			"esadd", "ersadd", "eleng", "erleng",
-			"eatanxy", "eatanxz", "esum", "ercpr", "ersqrt",
-			"esin", "eatan", "eexp",
-			0
-		};
-		for( unsigned int i = 0; names[i]; ++i )
-			ops.insert( names[i] );
-		return ops;
-	}
-
-	const std::set<std::string>& upperOps()
-	{
-		static const std::set<std::string> ops = makeUpperOps();
-		return ops;
-	}
-
-	const std::set<std::string>& lowerOps()
-	{
-		static const std::set<std::string> ops = makeLowerOps();
-		return ops;
-	}
-
-	const std::set<std::string>& branchOps()
-	{
-		static const std::set<std::string> ops = makeBranchOps();
-		return ops;
-	}
-
-	const std::set<std::string>& fdivOps()
-	{
-		static const std::set<std::string> ops = makeFdivOps();
-		return ops;
-	}
-
-	const std::set<std::string>& efuOps()
-	{
-		static const std::set<std::string> ops = makeEfuOps();
-		return ops;
-	}
 }
 
 VsmCostAnalyzer::Slot::Slot()
@@ -1110,171 +993,60 @@ std::string VsmCostAnalyzer::lower( const std::string& text )
 
 std::string VsmCostAnalyzer::normalizeMnemonic( const std::string& word )
 {
-	std::string mnemonic = lower( word );
-
-	std::string::size_type flag = mnemonic.find( '[' );
-	if( flag != std::string::npos )
-		mnemonic = mnemonic.substr( 0, flag );
-
-	std::string::size_type fields = mnemonic.find( '.' );
-	if( fields != std::string::npos )
-		mnemonic = mnemonic.substr( 0, fields );
-
-	if( setContains( lowerOps(), mnemonic )
-	    || setContains( branchOps(), mnemonic )
-	    || setContains( fdivOps(), mnemonic )
-	    || setContains( efuOps(), mnemonic )
-	    || mnemonic == "waitq" || mnemonic == "waitp"
-	    || mnemonic == "nop" )
-		return mnemonic;
-
-	if( setContains( upperOps(), mnemonic ) )
-		return mnemonic;
-
-	if( mnemonic.size() > 1 )
-	{
-		char suffix = mnemonic[mnemonic.size() - 1];
-		if( suffix == 'x' || suffix == 'y' || suffix == 'z' || suffix == 'w' )
-		{
-			std::string base = mnemonic.substr( 0, mnemonic.size() - 1 );
-			if( setContains( upperOps(), base ) )
-				return base;
-		}
-	}
-
-	return mnemonic;
+	return normalizeVuMnemonic( word );
 }
 
 VsmCostAnalyzer::Unit VsmCostAnalyzer::classifyMnemonic( const std::string& mnemonic )
 {
-	if( mnemonic == "nop" )
+	const VuInstructionInfo* info = findVuInstructionInfo( mnemonic );
+	if( !info )
+		return UNIT_UNKNOWN;
+	if( info->pipe == VU_PIPE_NOP )
 		return UNIT_NOP;
-	if( mnemonic == "waitq" )
+	if( info->flags & VU_INSTR_WAIT_Q )
 		return UNIT_WAITQ;
-	if( mnemonic == "waitp" )
+	if( info->flags & VU_INSTR_WAIT_P )
 		return UNIT_WAITP;
-	if( setContains( branchOps(), mnemonic ) )
+	if( info->flags & VU_INSTR_BRANCH )
 		return UNIT_BRANCH;
-	if( setContains( fdivOps(), mnemonic ) )
+	if( info->unit == VU_EXEC_FDIV )
 		return UNIT_FDIV;
-	if( setContains( efuOps(), mnemonic ) )
+	if( info->unit == VU_EXEC_EFU )
 		return UNIT_EFU;
-	if( setContains( upperOps(), mnemonic ) )
+	if( info->pipe == VU_PIPE_UPPER )
 		return UNIT_UPPER;
-	if( setContains( lowerOps(), mnemonic ) )
+	if( info->pipe == VU_PIPE_LOWER )
 		return UNIT_LOWER;
 	return UNIT_UNKNOWN;
 }
 
 unsigned int VsmCostAnalyzer::instructionLatency( const std::string& mnemonic )
 {
-	if( mnemonic == "nop" )
-		return 0;
-
-	// Upper FMAC pipeline results, including MAC/CLIP flags, settle after
-	// four cycles on VU1.  This latency table intentionally mirrors the
-	// Operand metadata used by OpenVCL's compiler path, but works directly
-	// from already-scheduled VSM text.
-	if( setContains( upperOps(), mnemonic ) )
-		return 4;
-
-	if( mnemonic == "div" || mnemonic == "sqrt" )
-		return 7;
-	if( mnemonic == "rsqrt" )
-		return 13;
-	if( mnemonic == "waitq" || mnemonic == "waitp" )
-		return 1;
-
-	if( setContains( branchOps(), mnemonic ) )
-		return 2;
-
-	if( mnemonic == "mfp" )
-		return 4;
-	if( mnemonic == "esadd" )
-		return 11;
-	if( mnemonic == "ersadd" || mnemonic == "eleng" || mnemonic == "ersqrt" )
-		return 18;
-	if( mnemonic == "erleng" )
-		return 24;
-	if( mnemonic == "eatanxy" || mnemonic == "eatanxz" || mnemonic == "eatan" )
-		return 54;
-	if( mnemonic == "esum" || mnemonic == "ercpr" )
-		return 12;
-	if( mnemonic == "esin" )
-		return 29;
-	if( mnemonic == "eexp" )
-		return 44;
-
-	if( mnemonic == "lq" || mnemonic == "lqd" || mnemonic == "lqi"
-	    || mnemonic == "sq" || mnemonic == "sqd" || mnemonic == "sqi"
-	    || mnemonic == "ilw" || mnemonic == "isw"
-	    || mnemonic == "ilwr" || mnemonic == "iswr"
-	    || mnemonic == "move" || mnemonic == "mfir" || mnemonic == "mr32"
-	    || mnemonic == "rget" || mnemonic == "rnext"
-	    || mnemonic == "fsset" || mnemonic == "fcset" )
-		return 4;
-
-	if( isKnownMnemonic( mnemonic ) )
-		return 1;
-
-	return 0;
+	const VuInstructionInfo* info = findVuInstructionInfo( mnemonic );
+	return info ? info->latency : 0;
 }
 
 unsigned int VsmCostAnalyzer::instructionThroughput( const std::string& mnemonic )
 {
-	// Mirrors Parser.cpp operand throughput metadata.  Only Q/P producers
-	// consume multi-cycle producer issue bandwidth; MFP reads P and keeps a
-	// throughput of one cycle.
-	if( mnemonic == "div" || mnemonic == "sqrt" )
-		return 7;
-	if( mnemonic == "rsqrt" )
-		return 13;
-
-	if( mnemonic == "esadd" )
-		return 10;
-	if( mnemonic == "ersadd" || mnemonic == "eleng" || mnemonic == "ersqrt" )
-		return 17;
-	if( mnemonic == "erleng" )
-		return 23;
-	if( mnemonic == "eatanxy" || mnemonic == "eatanxz" || mnemonic == "eatan" )
-		return 53;
-	if( mnemonic == "esum" || mnemonic == "ercpr" )
-		return 11;
-	if( mnemonic == "esin" )
-		return 28;
-	if( mnemonic == "eexp" )
-		return 43;
-
-	if( isKnownMnemonic( mnemonic ) )
-		return 1;
-
-	return 0;
+	const VuInstructionInfo* info = findVuInstructionInfo( mnemonic );
+	return info ? info->throughput : 0;
 }
 
 bool VsmCostAnalyzer::writesQ( const std::string& mnemonic )
 {
-	return mnemonic == "div" || mnemonic == "sqrt" || mnemonic == "rsqrt";
+	const VuInstructionInfo* info = findVuInstructionInfo( mnemonic );
+	return info && (info->flags & VU_INSTR_WRITES_Q);
 }
 
 bool VsmCostAnalyzer::writesP( const std::string& mnemonic )
 {
-	return mnemonic == "esadd"
-	    || mnemonic == "ersadd"
-	    || mnemonic == "eleng"
-	    || mnemonic == "erleng"
-	    || mnemonic == "eatanxy"
-	    || mnemonic == "eatanxz"
-	    || mnemonic == "esum"
-	    || mnemonic == "ercpr"
-	    || mnemonic == "ersqrt"
-	    || mnemonic == "esin"
-	    || mnemonic == "eatan"
-	    || mnemonic == "eexp";
+	const VuInstructionInfo* info = findVuInstructionInfo( mnemonic );
+	return info && (info->flags & VU_INSTR_WRITES_P);
 }
 
 bool VsmCostAnalyzer::isKnownMnemonic( const std::string& mnemonic )
 {
-	return classifyMnemonic( mnemonic ) != UNIT_UNKNOWN;
+	return isKnownVuInstruction( mnemonic );
 }
 
 bool VsmCostAnalyzer::startsInstructionToken( const std::string& line, std::string::size_type pos )

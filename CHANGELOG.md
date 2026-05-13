@@ -30,6 +30,9 @@
 - Added focused regression tests for the new scheduling hazards.
 - Established the next architecture direction: one canonical VU instruction
   metadata table shared by the scheduler and cost analyzer.
+- Introduced `VuInstructionInfo` as the first shared VU instruction metadata
+  table and moved cost-analyzer opcode classification, latency, throughput,
+  and Q/P producer checks onto it.
 
 ## 0.3.3
 

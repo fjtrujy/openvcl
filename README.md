@@ -143,10 +143,11 @@ VCL `-d`-style output. Current work includes:
 - deterministic alias allocation for reproducible VSM output;
 - static cost reporting used to compare OpenVCL output with SCE/reference VSM.
 
-The next major internal step is to consolidate instruction facts into one
-canonical VU instruction metadata table. The scheduler and cost analyzer
-should both consume that table so latency, throughput, resource, and barrier
-rules are not duplicated across the codebase.
+The current refactor is consolidating instruction facts into one canonical VU
+instruction metadata table. `src/VuInstructionInfo.*` is now the first shared
+source for cost-analysis opcode classification, latency, throughput, and Q/P
+producer flags. The scheduler and parser should migrate onto the same table so
+resource and barrier rules are not duplicated across the codebase.
 
 See [TODO.md](TODO.md) for the active roadmap.
 
