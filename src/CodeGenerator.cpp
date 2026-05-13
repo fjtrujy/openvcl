@@ -992,6 +992,8 @@ void CodeGenerator::fillBranchDelaySlots( std::list<Token>& tokens ) const
 			continue;
 		if( branchAccess.instructionFlags & (VU_INSTR_LINK_BRANCH | VU_INSTR_REGISTER_BRANCH) )
 			continue;
+		if( nextTokenIsBranchDelayFiller(branch, tokens.end()) )
+			continue;
 
 		if( movePreIncrementStoreIntoBranchDelaySlot(tokens, branch) )
 			continue;
