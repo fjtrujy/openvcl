@@ -218,6 +218,7 @@ TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose loop-carried Q sta
     CHECK(opportunities[0].hasSingleQProducer);
     CHECK(opportunities[0].requiresPrologEpilog);
     CHECK(opportunities[0].requiresLoopCarriedRegisters);
+    CHECK(opportunities[0].eligibleSingleQSoftwarePipeline);
     REQUIRE(opportunities[0].qConsumerTokenIndices.size() == 2u);
     CHECK(opportunities[0].qConsumerTokenIndices[0] == 5u);
     CHECK(opportunities[0].qConsumerTokenIndices[1] == 8u);

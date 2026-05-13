@@ -353,6 +353,7 @@ VuLoopPipelineOpportunity::VuLoopPipelineOpportunity()
 	hasSingleQProducer = false;
 	requiresPrologEpilog = false;
 	requiresLoopCarriedRegisters = false;
+	eligibleSingleQSoftwarePipeline = false;
 }
 
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens )
@@ -541,6 +542,10 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 
 		opportunity.requiresLoopCarriedRegisters = !opportunity.carriedQInputRegisters.empty()
 		                                        || !opportunity.carriedQOutputRegisters.empty();
+		opportunity.eligibleSingleQSoftwarePipeline = opportunity.simpleCountedLoop
+		                                           && opportunity.hasSingleQProducer
+		                                           && opportunity.branchDelaySlots > 0
+		                                           && (opportunity.sourcePrefixCycles + opportunity.sourceSuffixCycles) >= opportunity.qProducerLatency;
 
 		result.push_back( opportunity );
 	}

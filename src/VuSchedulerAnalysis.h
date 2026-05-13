@@ -76,6 +76,7 @@ struct VuLoopPipelineOpportunity
 	bool hasSingleQProducer;
 	bool requiresPrologEpilog;
 	bool requiresLoopCarriedRegisters;
+	bool eligibleSingleQSoftwarePipeline;
 	std::vector<unsigned int> qConsumerTokenIndices;
 	std::list<std::string> carriedQInputRegisters;
 	std::list<std::string> carriedQOutputRegisters;

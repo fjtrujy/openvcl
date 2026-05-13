@@ -402,6 +402,7 @@ namespace
 			       << " single_q_producer=" << (i->hasSingleQProducer ? "yes" : "no")
 			       << " requires_prolog_epilog=" << (i->requiresPrologEpilog ? "yes" : "no")
 			       << " requires_loop_carried_registers=" << (i->requiresLoopCarriedRegisters ? "yes" : "no")
+			       << " eligible_single_q_pipeline=" << (i->eligibleSingleQSoftwarePipeline ? "yes" : "no")
 			       << " carried_q_inputs=";
 			writeStringListText( stream, i->carriedQInputRegisters );
 			stream << " carried_q_outputs=";
@@ -433,6 +434,7 @@ namespace
 			stream << "      \"single_q_producer\": " << (opportunity.hasSingleQProducer ? "true" : "false") << ",\n";
 			stream << "      \"requires_prolog_epilog\": " << (opportunity.requiresPrologEpilog ? "true" : "false") << ",\n";
 			stream << "      \"requires_loop_carried_registers\": " << (opportunity.requiresLoopCarriedRegisters ? "true" : "false") << ",\n";
+			stream << "      \"eligible_single_q_pipeline\": " << (opportunity.eligibleSingleQSoftwarePipeline ? "true" : "false") << ",\n";
 			stream << "      \"carried_q_input_registers\": "; writeStringListJson( stream, opportunity.carriedQInputRegisters ); stream << ",\n";
 			stream << "      \"carried_q_output_registers\": "; writeStringListJson( stream, opportunity.carriedQOutputRegisters ); stream << "\n";
 			stream << "    }";
