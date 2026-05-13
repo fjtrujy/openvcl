@@ -183,6 +183,21 @@ TEST_CASE("Latency: lq followed by vf consumer has at least 5 cycles between")
     CHECK(d >= 5);
 }
 
+TEST_CASE("Latency: lq result can feed ftoi on the next cycle")
+{
+    // SCE-generated ps2gl ADC setup emits `lq -> ftoi0` tightly.  Keep this as
+    // a narrow conversion bypass while preserving normal load-use padding.
+    const std::string body =
+        "\tlq vf01, 0(vi00)\n"
+        "\tftoi0 vf02, vf01\n";
+
+    std::string vsm = runEmit(body, "vsmLatencyLqFtoiBypass");
+    REQUIRE(vsm.length() > 0);
+    int d = cycleDistance(vsm, "lq", "ftoi0");
+    REQUIRE(d > 0);
+    CHECK(d == 1);
+}
+
 TEST_CASE("Latency: FMAC vf write followed by lower vf consumer has at least 5 cycles between")
 {
     // ps2gl's perspective path writes xformed_vert.w with an FMAC and then

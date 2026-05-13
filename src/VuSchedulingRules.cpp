@@ -290,6 +290,11 @@ bool isVuFtoiConversion( const std::string& name )
 	    || name == "ftoi12" || name == "ftoi15";
 }
 
+bool isVuLoadInstruction( const std::string& name )
+{
+	return name == "lq" || name == "lqi" || name == "lqd";
+}
+
 bool isVuMacReader( const std::string& name )
 {
 	return name == "fmand" || name == "fmeq" || name == "fmor"

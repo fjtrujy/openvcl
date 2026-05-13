@@ -858,6 +858,11 @@ int CodeGenerator::readHazardDelay( const Token& token, const Token* partner ) c
 		    && ( (isVuMtir(token) && vuTokenReadsRegister(token, *i))
 		         || (partner && isVuMtir(*partner) && vuTokenReadsRegister(*partner, *i)) ) )
 			readyCycle -= 4;
+		if( producer != m_registerProducerMnemonic.end()
+		    && isVuLoadInstruction(producer->second)
+		    && ( (isVuFtoiConversion(lowerVuTokenName(token)) && vuTokenReadsRegister(token, *i))
+		         || (partner && isVuFtoiConversion(lowerVuTokenName(*partner)) && vuTokenReadsRegister(*partner, *i)) ) )
+			readyCycle -= 4;
 		const int gap = readyCycle - m_currentCycle;
 		if( gap > needed )
 			needed = gap;

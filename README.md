@@ -230,10 +230,10 @@ Current ps2gl pure-OpenVCL aggregate cost baseline:
 
 | metric | SCE/reference | OpenVCL | delta |
 |---|---:|---:|---:|
-| static scheduled cycles | 6308 | 5078 | -1230 |
-| estimated cycles | 6820 | 5773 | -1047 |
-| ps2gl-loop weighted static cycles | 100358 | 321086 | +220728 |
-| ps2gl-loop weighted estimated cycles | 100870 | 371875 | +271005 |
+| static scheduled cycles | 6308 | 5054 | -1254 |
+| estimated cycles | 6820 | 5749 | -1071 |
+| ps2gl-loop weighted static cycles | 100358 | 321062 | +220704 |
+| ps2gl-loop weighted estimated cycles | 100870 | 371851 | +270981 |
 
 `estimated cycles` includes modeled FDIV/EFU producer issue stalls and
 explicit `waitq`/`waitp` stalls. These are static VSM estimates, not measured
@@ -252,7 +252,9 @@ fallthrough integer instructions can fill forward conditional branch delay
 slots when the taken path overwrites the same VI value before reading it.
 Independent plain stores immediately before loop-counter increments can fill
 the following branch delay slot when the store does not depend on the updated
-counter value.
+counter value. Load results can feed `ftoi*` conversions with the same narrow
+bypass behavior used by the SCE-generated ps2gl ADC setup, while normal
+load-to-VF consumers still keep the conservative load-use padding.
 The ACC rule is intentionally more conservative than older reports that let the
 scheduler move `madd*`/`msub*` instructions across ACC producer chains.
 
