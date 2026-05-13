@@ -130,6 +130,8 @@ Recently completed:
   short work, starting producer chains earlier in hot renderer blocks.
 - `--version` now reads from a shared source constant and has CLI regression
   coverage.
+- Alias live ranges are kept sorted as they are added, so intersection checks
+  can break early while preserving adjacent-range merging.
 
 ## Correctness Guardrails
 

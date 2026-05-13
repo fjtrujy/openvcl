@@ -84,6 +84,8 @@
   branch delay slot and avoiding branch hoists across control flow.
 - Moved the CLI version string into a shared source constant and added
   `--version` regression coverage.
+- Kept alias live ranges sorted as they are built, making range intersection
+  checks cheaper while preserving adjacent-range merging.
 
 ## 0.3.3
 

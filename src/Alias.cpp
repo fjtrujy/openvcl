@@ -26,43 +26,46 @@ unsigned int Alias::s_nextId = 1;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+namespace
+{
+	bool rangesHaveGap( unsigned int leftStop, unsigned int rightStart )
+	{
+		return leftStop < rightStart && (rightStart - leftStop) > 1;
+	}
+
+	bool rangesOverlap( const Alias::Range& a, const Alias::Range& b )
+	{
+		return !(a.m_stop < b.m_start || b.m_stop < a.m_start);
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 void Alias::addRange( unsigned int start, unsigned int stop )
 {
 	assert( start <= stop );
 
-	// find range intersections or immediately adjacent ranges
-	// Adjacent ranges (where one ends exactly where another starts)
-	// should be merged to handle loop-carried dependencies
+	Range merged;
+	merged.m_start = start;
+	merged.m_stop = stop;
 
-	for( std::list<Range>::iterator i = m_ranges.begin(); i != m_ranges.end(); ++i )
+	std::list<Range>::iterator insertAt = m_ranges.begin();
+	while( insertAt != m_ranges.end() )
 	{
-		Range r = *i;
-
-		// Check for overlap
-		bool overlaps = (((start >= r.m_start) && (start <= r.m_stop)) || ((stop >= r.m_start) && (stop <= r.m_stop))) ||
-		                (((r.m_start >= start) && (r.m_start <= stop)) || ((r.m_stop >= start) && (r.m_stop <= stop)));
-
-		// Check for immediate adjacency (r ends where we start, or we end where r starts)
-		bool adjacent = (r.m_stop + 1 == start) || (stop + 1 == r.m_start);
-
-		if( overlaps || adjacent )
+		if( rangesHaveGap( merged.m_stop, insertAt->m_start ) )
+			break;
+		if( rangesHaveGap( insertAt->m_stop, merged.m_start ) )
 		{
-			// range intersects or is immediately adjacent, merge
-
-			m_ranges.erase(i);
-			addRange( min(start,r.m_start), max(stop, r.m_stop) );
-
-			return;
+			++insertAt;
+			continue;
 		}
+
+		merged.m_start = min( merged.m_start, insertAt->m_start );
+		merged.m_stop = max( merged.m_stop, insertAt->m_stop );
+		insertAt = m_ranges.erase( insertAt );
 	}
 
-	// no previous range intersected or was adjacent, insert into list
-
-	Range newRange;
-	newRange.m_start = start;
-	newRange.m_stop = stop;
-
-	m_ranges.push_back( newRange );
+	m_ranges.insert( insertAt, merged );
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -85,8 +88,6 @@ void Alias::merge( Alias* alias )
 
 bool Alias::intersects( Alias* alias )
 {
-	// TODO: if we sort the ranges before intersecting, this can get a lot faster
-
 	for( std::list<Range>::iterator i = m_ranges.begin(); i != m_ranges.end(); ++i )
 	{
 		Range& r1 = *i;
@@ -94,15 +95,12 @@ bool Alias::intersects( Alias* alias )
 		for( std::list<Range>::iterator j = alias->m_ranges.begin(); j != alias->m_ranges.end(); ++j )
 		{
 			Range& r2 = *j;
-
-			// Check for actual overlap
-			bool overlaps = (((r1.m_start >= r2.m_start) && (r1.m_start <= r2.m_stop)) || ((r1.m_stop >= r2.m_start) && (r1.m_stop <= r2.m_stop))) ||
-			                (((r2.m_start >= r1.m_start) && (r2.m_start <= r1.m_stop)) || ((r2.m_stop >= r1.m_start) && (r2.m_stop <= r1.m_stop)));
-
-			if( overlaps )
-			{
+			if( r2.m_start > r1.m_stop )
+				break;
+			if( r1.m_start > r2.m_stop )
+				continue;
+			if( rangesOverlap( r1, r2 ) )
 				return true;
-			}
 		}
 	}
 
