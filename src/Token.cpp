@@ -66,8 +66,6 @@ bool Token::processOperand( const Operand* operand, bool newSyntax, Token::Argum
 			activeFields = X|Y|Z;
 	}
 
-	// TODO: refactor this code, it can be made smaller and more efficient
-
 	std::list<Argument>::iterator i;
 	unsigned int argumentIndex;
 	for( argumentIndex = 0, i = m_arguments.begin(); (i != m_arguments.end()) && (ofs < pattern.length()); argumentIndex++,i++ )
@@ -489,8 +487,7 @@ bool Token::processOperand( const Operand* operand, bool newSyntax, Token::Argum
 
 	setBroadcast( activeBroadcast );
 
-	// Debug print disabled by default; re-enable when diagnosing operand parsing.
-	// TODO: make this optional through a commandline-parameter.
+	// Debug print disabled by default; re-enable locally when diagnosing operand parsing.
 	// printInformation( operand, std::cerr );
 
 	return true;
@@ -659,9 +656,9 @@ bool Token::extractRegister( std::string name, Argument& argument, unsigned int 
 		std::string extra = name.substr(name.find(')',stop)+1);
 		name = name.substr( start, stop-start );
 
-		// remove memory-group first if present
-		// TODO: store memory-group in token-argument
-		extra = extra.substr( 0, extra.find(':') );
+			// Accept and strip VCL memory-group suffixes; scheduling now uses
+			// explicit memory descriptors derived from the parsed register/offset.
+			extra = extra.substr( 0, extra.find(':') );
 
 		// parse any attached fields (placed after the terminating ')' on indirect reads)
 

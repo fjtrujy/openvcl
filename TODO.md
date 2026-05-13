@@ -132,6 +132,8 @@ Recently completed:
   coverage.
 - Alias live ranges are kept sorted as they are added, so intersection checks
   can break early while preserving adjacent-range merging.
+- Stale inline TODO comments in the token parser were removed or replaced with
+  comments that describe the current descriptor-based behavior.
 
 ## Correctness Guardrails
 
@@ -154,10 +156,6 @@ Known fragile areas:
 
 ## Smaller Cleanup Items
 
-- Complete or remove stale inline TODO comments once the instruction metadata
-  table makes their intent explicit.
-- Store memory-group information in token arguments if it remains useful after
-  the memory descriptor work.
 - Keep diagnostic repros in `test/repro/` only when they still explain an
   active or historically important bug.
 

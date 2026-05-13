@@ -86,6 +86,8 @@
   `--version` regression coverage.
 - Kept alias live ranges sorted as they are built, making range intersection
   checks cheaper while preserving adjacent-range merging.
+- Removed stale token-parser TODO comments now covered by instruction and
+  memory descriptor metadata.
 
 ## 0.3.3
 
