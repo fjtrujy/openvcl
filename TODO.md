@@ -102,6 +102,9 @@ Recently completed:
 - Direct branches can now pair with an adjacent preceding upper-pipe
   instruction while still emitting their delay slot. Broader branch-delay
   filling remains intentionally pending.
+- CodeGenerator register conflict checks now consume
+  `VuTokenResourceAccess` read/write descriptors instead of duplicating
+  argument-level field-mask logic.
 
 ## Correctness Guardrails
 

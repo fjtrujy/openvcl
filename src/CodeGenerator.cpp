@@ -859,75 +859,12 @@ namespace {
 		return false;
 	}
 
-	unsigned int writeFieldMask( const Token& token, const Token::Argument& arg )
+	bool intersectsKeys( const std::list<std::string>& a, const std::list<std::string>& b )
 	{
-		return vuWriteFieldMask( token, arg );
-	}
-
-	unsigned int readFieldMask( const Token& token, const Token::Argument& arg )
-	{
-		return vuReadFieldMask( token, arg );
-	}
-
-	bool disjointFloatWrites( const Token& a, const Token::Argument& aArg,
-	                          const Token& b, const Token::Argument& bArg )
-	{
-		if( aArg.type() != Token::Argument::FLOAT_REGISTER
-		    || bArg.type() != Token::Argument::FLOAT_REGISTER )
-			return false;
-		if( !(aArg.flags() & Token::Argument::WRITE)
-		    || !(bArg.flags() & Token::Argument::WRITE) )
-			return false;
-
-		return (writeFieldMask(a, aArg) & writeFieldMask(b, bArg)) == 0;
-	}
-
-	bool disjointFloatWriteAndRead( const Token& writer, const Token::Argument& writeArg,
-	                                const Token& reader, const Token::Argument& readArg )
-	{
-		if( writeArg.type() != Token::Argument::FLOAT_REGISTER
-		    || readArg.type() != Token::Argument::FLOAT_REGISTER )
-			return false;
-		if( !(writeArg.flags() & Token::Argument::WRITE)
-		    || (readArg.flags() & Token::Argument::WRITE) )
-			return false;
-
-		return (writeFieldMask(writer, writeArg) & readFieldMask(reader, readArg)) == 0;
-	}
-
-	bool writeConflictsWithArgument( const Token& writer, const Token::Argument& writeArg,
-	                                 const Token& other, const Token::Argument& otherArg )
-	{
-		if( !(writeArg.flags() & Token::Argument::WRITE) )
-			return false;
-		if( otherArg.type() != Token::Argument::FLOAT_REGISTER
-		    && otherArg.type() != Token::Argument::INTEGER_REGISTER )
-			return false;
-
-		std::string writeKey;
-		std::string otherKey;
-		if( !registerKey(writeArg, writeKey) || !registerKey(otherArg, otherKey) )
-			return false;
-		if( writeKey != otherKey )
-			return false;
-
-		if( otherArg.flags() & Token::Argument::WRITE )
-			return !disjointFloatWrites(writer, writeArg, other, otherArg);
-		return !disjointFloatWriteAndRead(writer, writeArg, other, otherArg);
-	}
-
-	bool tokensHaveRegisterOrderingConflict( const Token& a, const Token& b )
-	{
-		const std::list<Token::Argument>& aArgs = a.arguments();
-		const std::list<Token::Argument>& bArgs = b.arguments();
-		for( std::list<Token::Argument>::const_iterator ai = aArgs.begin(); ai != aArgs.end(); ++ai )
+		for( std::list<std::string>::const_iterator i = a.begin(); i != a.end(); ++i )
 		{
-			for( std::list<Token::Argument>::const_iterator bi = bArgs.begin(); bi != bArgs.end(); ++bi )
-			{
-				if( writeConflictsWithArgument(a, *ai, b, *bi)
-				    || writeConflictsWithArgument(b, *bi, a, *ai) )
-					return true;
-			}
+			if( containsKey( b, *i ) )
+				return true;
 		}
 		return false;
 	}
@@ -1234,57 +1171,13 @@ namespace {
 
 bool CodeGenerator::hasDataDependency( const Token& a, const Token& b )
 {
-	// Conservative pair-blocking dependency check for register-class args
-	// (FLOAT_REGISTER, INTEGER_REGISTER).  Conflict on PHYSICAL register
-	// (allocatedRegister()) because two distinct Aliases can land on the
-	// same VF/VI when their lifetimes don't overlap in the data-flow view,
-	// but pairing them in one cycle WOULD overlap their writes in hardware.
-	// Single-instance resources (ACC, Q, P, I, R, flags) are handled by
-	// hasImplicitPairDependency().
+	VuTokenResourceAccess aAccess;
+	VuTokenResourceAccess bAccess;
+	if( !buildVuTokenResourceAccess( a, aAccess ) || !buildVuTokenResourceAccess( b, bAccess ) )
+		return false;
 
-	// (a) Register-class args — physical-register comparison.
-	const std::list<Token::Argument>& aArgs = a.arguments();
-	const std::list<Token::Argument>& bArgs = b.arguments();
-
-	for( std::list<Token::Argument>::const_iterator ai = aArgs.begin(); ai != aArgs.end(); ++ai )
-	{
-		const bool aWrite = ((*ai).flags() & Token::Argument::WRITE) != 0;
-		if( !aWrite )
-			continue;
-
-		Token::Argument::Type aType = (*ai).type();
-		if( aType != Token::Argument::FLOAT_REGISTER
-		    && aType != Token::Argument::INTEGER_REGISTER )
-			continue;
-
-		std::string aKey;
-		if( !registerKey(*ai, aKey) )
-			continue;
-
-		for( std::list<Token::Argument>::const_iterator bi = bArgs.begin(); bi != bArgs.end(); ++bi )
-		{
-			Token::Argument::Type bType = (*bi).type();
-			if( bType != aType )
-				continue;
-			std::string bKey;
-			if( !registerKey(*bi, bKey) )
-				continue;
-
-			if( aKey != bKey )
-				continue;
-
-			const bool bWrite = ((*bi).flags() & Token::Argument::WRITE) != 0;
-			if( bWrite && disjointFloatWrites(a, *ai, b, *bi) )
-				continue;
-			if( !bWrite && disjointFloatWriteAndRead(a, *ai, b, *bi) )
-				continue;
-
-			// RAW (b reads what a writes) or overlapping WAW.
-			return true;
-		}
-	}
-
-	return false;
+	return intersectsKeys( aAccess.registerWrites, bAccess.registerReads )
+	    || intersectsKeys( aAccess.registerWrites, bAccess.registerWrites );
 }
 
 bool CodeGenerator::tokenCanMoveBefore( const Token& moved, const Token& crossed )
@@ -1307,7 +1200,7 @@ bool CodeGenerator::tokenCanMoveBefore( const Token& moved, const Token& crossed
 	if( crossedWritesImplicit & (movedReadsImplicit | movedWritesImplicit) )
 		return false;
 
-	if( tokensHaveRegisterOrderingConflict(moved, crossed) )
+	if( hasDataDependency(moved, crossed) || hasDataDependency(crossed, moved) )
 		return false;
 
 	return true;
