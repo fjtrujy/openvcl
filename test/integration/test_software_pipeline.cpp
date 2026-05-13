@@ -171,6 +171,83 @@ namespace
             "\t--exit\n"
             "\t--endexit\n";
     }
+
+    std::string sceiPipelineSource()
+    {
+        return
+            "\t.init_vf_all\n"
+            "\t.init_vi_all\n"
+            "\t.name vsmSCEI\n"
+            "\t--enter\n"
+            "\t--endenter\n"
+            "\tiaddiu vi01, vi00, 0\n"
+            "\tiaddiu vi03, vi00, 0\n"
+            "\tiaddiu vi04, vi00, 0\n"
+            "\tiaddiu vi05, vi00, 9\n"
+            "\tmove.xyzw vf01, vf00\n"
+            "\tmove.xyzw vf02, vf00\n"
+            "\tmove.xyzw vf03, vf00\n"
+            "\tmove.xyzw vf04, vf00\n"
+            "\tmove.xyzw vf05, vf00\n"
+            "\tmove.xyzw vf06, vf00\n"
+            "\tmove.xyzw vf07, vf00\n"
+            "\tmove.xyzw vf08, vf00\n"
+            "\tmove.xyzw vf09, vf00\n"
+            "\tmove.xyzw vf10, vf00\n"
+            "\tmove.xyzw vf11, vf00\n"
+            "\tmove.xyzw vf12, vf00\n"
+            "\tmove.xyzw vf13, vf00\n"
+            "\tmove.xyzw vf14, vf00\n"
+            "\tmove.xyzw vf15, vf00\n"
+            "\tmove.xyzw vf16, vf00\n"
+            "\tmove.xyzw vf17, vf00\n"
+            "\tmove.xyzw vf18, vf00\n"
+            "\tmove.xyzw vf19, vf00\n"
+            "\tmove.xyzw vf20, vf00\n"
+            "\tmove.xyzw vf21, vf00\n"
+            "\tmove.xyzw vf22, vf00\n"
+            "\tmove.xyzw vf23, vf00\n"
+            "xform_loop_lid:\n"
+            "\t--LoopCS 1,3\n"
+            "\tlq.xyz vf09, 0(vi03)\n"
+            "\tlq.xyz vf19, 1(vi03)\n"
+            "\tilw.w vi06, 0(vi03)\n"
+            "\tlq.xyz vf22, 2(vi03)\n"
+            "\tiaddiu vi03, vi03, 3\n"
+            "\tmulax acc, vf01, vf09\n"
+            "\tmadday acc, vf02, vf09\n"
+            "\tmaddaz acc, vf03, vf09\n"
+            "\tmaddw vf10, vf04, vf00\n"
+            "\tmulax.xyz acc, vf11, vf19\n"
+            "\tmadday.xyz acc, vf14, vf19\n"
+            "\tmaddz.xyz vf20, vf16, vf19\n"
+            "\tdiv q, vf00w, vf10w\n"
+            "\tmulq.xyz vf10, vf10, q\n"
+            "\tmax.xyz vf21, vf20, vf00\n"
+            "\tmulq.xyz vf23, vf22, q\n"
+            "\tadd.xyz vf13, vf10, vf06\n"
+            "\tmul.xyz vf18, vf10, vf08\n"
+            "\tmulax.xyz acc, vf12, vf21\n"
+            "\tmadday.xyz acc, vf15, vf21\n"
+            "\tmaddz.xyz vf05, vf17, vf21\n"
+            "\tftoi4.xyz vf13, vf13\n"
+            "\tclipw.xyz vf18, vf08w\n"
+            "\tadd.xyz vf05, vf05, vf07\n"
+            "\tfcand vi01, 0x003ffff\n"
+            "\tior vi07, vi01, vi06\n"
+            "\tiaddiu vi07, vi07, 0x7fff\n"
+            "\tmfir.w vf13, vi07\n"
+            "\tminiw.xyz vf05, vf05, vf06w\n"
+            "\tsq.xyz vf23, 0(vi04)\n"
+            "\tsq vf13, 2(vi04)\n"
+            "\tsq vf05, 1(vi04)\n"
+            "\tiaddiu vi04, vi04, 3\n"
+            "\tibne vi03, vi05, xform_loop_lid\n"
+            "done_lid:\n"
+            "\txgkick vi01\n"
+            "\t--exit\n"
+            "\t--endexit\n";
+    }
 }
 
 TEST_CASE("Software pipeline: fast_nolights transform loop emits a 12-cycle steady state")
@@ -201,4 +278,19 @@ TEST_CASE("Software pipeline: fast lit transform loop emits a 16-cycle steady st
     CHECK(contains(vsm, "ibne VI02, VI05, xform_loop_lid__MAIN_LOOP"));
     CHECK(contains(vsm, "maddz.xyz VF23, VF17, VF19z     lq.xyz VF10, 1(VI02)"));
     CHECK(contains(vsm, "mulq.xyz VF25, VF24, q          mfir.w VF09, VI06"));
+}
+
+TEST_CASE("Software pipeline: SCEI transform loop emits a 19-cycle steady state")
+{
+    std::string vsm = runEmit(sceiPipelineSource());
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(contains(vsm, "xform_loop_lid__ENTRY_POINT:"));
+    CHECK(contains(vsm, "xform_loop_lid__PRO1:"));
+    CHECK(contains(vsm, "xform_loop_lid__MAIN_LOOP:"));
+    CHECK(contains(vsm, "xform_loop_lid__EPI0:"));
+    CHECK(contains(vsm, "xform_loop_lid__EPI1:"));
+    CHECK(contains(vsm, "ibne VI03, VI05, xform_loop_lid__MAIN_LOOP"));
+    CHECK(contains(vsm, "clipw.xyz VF18xyz, VF08w        div q, VF00w, VF10w"));
+    CHECK(contains(vsm, "mulq.xyz VF24, VF10, q          iaddiu VI07, VI07, 0x7fff"));
 }

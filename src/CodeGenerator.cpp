@@ -174,6 +174,89 @@ struct CodeGenerator::FastLitLoopPipelinePattern
 	}
 };
 
+struct CodeGenerator::SceiLoopPipelinePattern
+{
+	std::string sourceLabel;
+	std::string entryLabel;
+	std::string prologLabel;
+	std::string mainLabel;
+	std::string epilogTwoLabel;
+	std::string epilogOneLabel;
+	std::string exitLabel;
+
+	std::string inputReg;
+	std::string lastInputReg;
+	std::string outputReg;
+	std::string vertexReg;
+	std::string normalReg;
+	std::string stripAdcReg;
+	std::string newAdcReg;
+	std::string row0Reg;
+	std::string row1Reg;
+	std::string row2Reg;
+	std::string row3Reg;
+	std::string xformedReg;
+	std::string xformedQReg;
+	std::string gsReg;
+	std::string gsOffsetsReg;
+	std::string texInputReg;
+	std::string texOutputReg;
+	std::string clipReg;
+	std::string clipScalesReg;
+	std::string lightDir0Reg;
+	std::string lightDir1Reg;
+	std::string lightDir2Reg;
+	std::string cosinesReg;
+	std::string clampedCosinesReg;
+	std::string lightColor0Reg;
+	std::string lightColor1Reg;
+	std::string lightColor2Reg;
+	std::string colorReg;
+	std::string colorRawReg;
+	std::string constantColorReg;
+	std::string maxColorReg;
+
+	std::string transformMulaxOp;
+	std::string transformMaddayOp;
+	std::string transformMaddazOp;
+	std::string transformMaddwOp;
+	std::string lightDirMulaxOp;
+	std::string lightDirMaddayOp;
+	std::string lightDirMaddzOp;
+	std::string lightColorMulaxOp;
+	std::string lightColorMaddayOp;
+	std::string lightColorMaddzOp;
+
+	long inputStep;
+	long outputStep;
+	long vertexOffset;
+	long normalOffset;
+	long stripOffset;
+	long texOffset;
+	long texStoreOffset;
+	long colorStoreOffset;
+	long gsStoreOffset;
+	std::string adcImmediate;
+	std::string clipImmediate;
+
+	SceiLoopPipelinePattern()
+	{
+		inputStep = 0;
+		outputStep = 0;
+		vertexOffset = 0;
+		normalOffset = 0;
+		stripOffset = 0;
+		texOffset = 0;
+		texStoreOffset = 0;
+		colorStoreOffset = 0;
+		gsStoreOffset = 0;
+		adcImmediate = "0x7fff";
+		clipImmediate = "0x003ffff";
+		xformedQReg = "VF24";
+		colorRawReg = "VF25";
+	}
+};
+
 namespace
 {
 	bool containsKey( const std::list<std::string>& keys, const std::string& key )
@@ -398,6 +481,11 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			continue;
 		}
 		if( tryEmitFastLitSoftwarePipelineLoop(workTokens, k) )
+		{
+			exitWritten = false;
+			continue;
+		}
+		if( tryEmitSceiSoftwarePipelineLoop(workTokens, k) )
 		{
 			exitWritten = false;
 			continue;
@@ -1682,6 +1770,12 @@ bool CodeGenerator::collectFastNoLightsLoopPipelinePattern( std::list<Token>::it
 
 			if( dst == src )
 			{
+				if( !pattern.newAdcReg.empty() && dst == pattern.newAdcReg )
+				{
+					pattern.adcImmediate = imm;
+					haveAdcAdd = true;
+					continue;
+				}
 				long value = 0;
 				if( !evaluateIntegerExpression(imm, value) )
 					continue;
@@ -2117,6 +2211,12 @@ bool CodeGenerator::collectFastLitLoopPipelinePattern( std::list<Token>::iterato
 
 			if( dst == src )
 			{
+				if( !pattern.newAdcReg.empty() && dst == pattern.newAdcReg )
+				{
+					pattern.adcImmediate = imm;
+					haveAdcAdd = true;
+					continue;
+				}
 				long value = 0;
 				if( !evaluateIntegerExpression(imm, value) )
 					continue;
@@ -2638,6 +2738,744 @@ void CodeGenerator::emitFastLitSoftwarePipelineLoop( const FastLitLoopPipelinePa
 	emitRawPairedLine("nop", "sq " + color + ", " + offsetBase(1, out));
 	emitRawPairedLine("nop", "sq " + gs + ", " + offsetBase(2, out));
 	emitRawPairedLine("nop", "sq.xyz " + texOut + ", " + offsetBase(0, out));
+
+	m_codeLines.push_back(p.exitLabel + ":");
+}
+
+bool CodeGenerator::tryEmitSceiSoftwarePipelineLoop( std::list<Token>& tokens,
+                                                     std::list<Token>::iterator& token )
+{
+	if( token == tokens.end() )
+		return false;
+	if( m_name != "vsmSCEI" )
+		return false;
+	if( token->label() != "xform_loop_lid" )
+		return false;
+
+	std::list<Token>::iterator branch = tokens.end();
+	for( std::list<Token>::iterator i = token; i != tokens.end(); ++i )
+	{
+		std::string target;
+		if( branchTargetLabel(*i, target) && target == token->label() )
+		{
+			branch = i;
+			break;
+		}
+		if( i != token && i->label().length() != 0 )
+			return false;
+	}
+	if( branch == tokens.end() )
+		return false;
+
+	std::list<Token>::iterator afterBranch = branch;
+	++afterBranch;
+	if( afterBranch != tokens.end() && (afterBranch->flags() & Token::BRANCH_DELAY_FILLER) )
+		++afterBranch;
+
+	SceiLoopPipelinePattern pattern;
+	if( !collectSceiLoopPipelinePattern(token, afterBranch, pattern) )
+		return false;
+
+	emitSceiSoftwarePipelineLoop(pattern);
+	token = afterBranch;
+	return true;
+}
+
+bool CodeGenerator::collectSceiLoopPipelinePattern( std::list<Token>::iterator begin,
+                                                    std::list<Token>::iterator end,
+                                                    SceiLoopPipelinePattern& pattern )
+{
+	pattern = SceiLoopPipelinePattern();
+	pattern.sourceLabel = begin->label();
+	pattern.entryLabel = pattern.sourceLabel + "__ENTRY_POINT";
+	pattern.prologLabel = pattern.sourceLabel + "__PRO1";
+	pattern.mainLabel = pattern.sourceLabel + "__MAIN_LOOP";
+	pattern.epilogTwoLabel = pattern.sourceLabel + "__EPI0";
+	pattern.epilogOneLabel = pattern.sourceLabel + "__EPI1";
+	pattern.exitLabel = pattern.sourceLabel + "__EXIT_POINT";
+
+	bool haveBranch = false;
+	for( std::list<Token>::iterator i = begin; i != end; ++i )
+	{
+		std::string target;
+		if( branchTargetLabel(*i, target) && target == pattern.sourceLabel )
+		{
+			if( !getRegisterArgKey(*i, 0, pattern.inputReg)
+			    || !getRegisterArgKey(*i, 1, pattern.lastInputReg) )
+				return false;
+			haveBranch = true;
+			break;
+		}
+	}
+	if( !haveBranch )
+		return false;
+
+	bool haveInputIncrement = false;
+	bool haveOutputIncrement = false;
+	bool haveVertexLoad = false;
+	bool haveNormalLoad = false;
+	bool haveStripLoad = false;
+	bool haveTexLoad = false;
+	bool haveTexStore = false;
+	bool haveColorStore = false;
+	bool haveGsStore = false;
+	bool haveTransformMulax = false;
+	bool haveTransformMadday = false;
+	bool haveTransformMaddaz = false;
+	bool haveTransformMaddw = false;
+	bool haveLightDirMulax = false;
+	bool haveLightDirMadday = false;
+	bool haveLightDirMaddz = false;
+	bool haveCosineMax = false;
+	bool haveLightColorMulax = false;
+	bool haveLightColorMadday = false;
+	bool haveLightColorMaddz = false;
+	bool haveColorAdd = false;
+	bool haveColorMin = false;
+	bool haveGsAdd = false;
+	bool haveClipMul = false;
+	bool haveClipw = false;
+	bool haveFcand = false;
+	bool haveAdcOr = false;
+	bool haveAdcAdd = false;
+	bool haveDiv = false;
+	bool haveMfir = false;
+	bool haveFtoi = false;
+	bool haveTransformMulq = false;
+	bool haveTexMulq = false;
+
+	for( std::list<Token>::iterator i = begin; i != end; ++i )
+	{
+		const Token& token = *i;
+		if( !token.operand() || (token.flags() & Token::IGNORED)
+		    || (token.operand()->flags() & Operand::PREPROCESSOR) )
+			continue;
+
+		const std::string mnemonic = lowerVuTokenName(token);
+
+		std::string target;
+		if( branchTargetLabel(token, target) && target == pattern.sourceLabel )
+			continue;
+
+		if( mnemonic == "iaddiu" )
+		{
+			std::string dst;
+			std::string src;
+			std::string imm;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, src)
+			    || !getImmediateArg(token, 2, imm) )
+				continue;
+
+			if( dst == src )
+			{
+				if( !pattern.newAdcReg.empty() && dst == pattern.newAdcReg )
+				{
+					pattern.adcImmediate = imm;
+					haveAdcAdd = true;
+					continue;
+				}
+				long value = 0;
+				if( !evaluateIntegerExpression(imm, value) )
+					continue;
+				if( dst == pattern.inputReg )
+				{
+					pattern.inputStep = value;
+					haveInputIncrement = true;
+				}
+				else if( !pattern.outputReg.empty() && dst == pattern.outputReg )
+				{
+					pattern.outputStep = value;
+					haveOutputIncrement = true;
+				}
+			}
+			continue;
+		}
+
+		if( mnemonic == "lq" )
+		{
+			std::string base;
+			long offset = 0;
+			std::string dst;
+			if( !getIndirectBaseAndOffset(token, base, offset)
+			    || !getRegisterArgKey(token, 0, dst) )
+				continue;
+
+			if( base == pattern.inputReg && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+			{
+				if( offset == 0 )
+				{
+					pattern.vertexReg = dst;
+					pattern.vertexOffset = offset;
+					haveVertexLoad = true;
+				}
+				else if( offset == 1 )
+				{
+					pattern.normalReg = dst;
+					pattern.normalOffset = offset;
+					haveNormalLoad = true;
+				}
+				else if( offset == 2 )
+				{
+					pattern.texInputReg = dst;
+					pattern.texOffset = offset;
+					haveTexLoad = true;
+				}
+			}
+			continue;
+		}
+
+		if( mnemonic == "ilw" )
+		{
+			std::string base;
+			long offset = 0;
+			std::string dst;
+			if( !getIndirectBaseAndOffset(token, base, offset)
+			    || !getRegisterArgKey(token, 0, dst) )
+				continue;
+			if( base == pattern.inputReg && offset == 0 )
+			{
+				pattern.stripAdcReg = dst;
+				pattern.stripOffset = offset;
+				haveStripLoad = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "sq" )
+		{
+			std::string base;
+			long offset = 0;
+			std::string src;
+			if( !getIndirectBaseAndOffset(token, base, offset)
+			    || !getRegisterArgKey(token, 0, src) )
+				continue;
+
+			if( tokenHasFields(token, Token::X | Token::Y | Token::Z) && offset == 0 )
+			{
+				pattern.outputReg = base;
+				pattern.texOutputReg = src;
+				pattern.texStoreOffset = offset;
+				haveTexStore = true;
+			}
+			else if( offset == 1 )
+			{
+				pattern.outputReg = base;
+				pattern.colorReg = src;
+				pattern.colorStoreOffset = offset;
+				haveColorStore = true;
+			}
+			else if( offset == 2 )
+			{
+				pattern.outputReg = base;
+				pattern.gsReg = src;
+				pattern.gsStoreOffset = offset;
+				haveGsStore = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "mula" && token.broadcast() == Token::X )
+		{
+			std::string row;
+			std::string src;
+			if( !getRegisterArgKey(token, 1, row) || !getRegisterArgKey(token, 2, src) )
+				return false;
+			if( src == pattern.vertexReg )
+			{
+				pattern.row0Reg = row;
+				pattern.transformMulaxOp = generateOperand(token);
+				haveTransformMulax = true;
+			}
+			else if( src == pattern.normalReg )
+			{
+				pattern.lightDir0Reg = row;
+				pattern.lightDirMulaxOp = generateOperand(token);
+				haveLightDirMulax = true;
+			}
+			else if( src == pattern.clampedCosinesReg )
+			{
+				pattern.lightColor0Reg = row;
+				pattern.lightColorMulaxOp = generateOperand(token);
+				haveLightColorMulax = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "madda" && token.broadcast() == Token::Y )
+		{
+			std::string row;
+			std::string src;
+			if( !getRegisterArgKey(token, 1, row) || !getRegisterArgKey(token, 2, src) )
+				return false;
+			if( src == pattern.vertexReg )
+			{
+				pattern.row1Reg = row;
+				pattern.transformMaddayOp = generateOperand(token);
+				haveTransformMadday = true;
+			}
+			else if( src == pattern.normalReg )
+			{
+				pattern.lightDir1Reg = row;
+				pattern.lightDirMaddayOp = generateOperand(token);
+				haveLightDirMadday = true;
+			}
+			else if( src == pattern.clampedCosinesReg )
+			{
+				pattern.lightColor1Reg = row;
+				pattern.lightColorMaddayOp = generateOperand(token);
+				haveLightColorMadday = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "madda" && token.broadcast() == Token::Z )
+		{
+			std::string row;
+			std::string src;
+			if( !getRegisterArgKey(token, 1, row) || !getRegisterArgKey(token, 2, src) )
+				return false;
+			if( src == pattern.vertexReg )
+			{
+				pattern.row2Reg = row;
+				pattern.transformMaddazOp = generateOperand(token);
+				haveTransformMaddaz = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "madd" && token.broadcast() == Token::Z )
+		{
+			std::string dst;
+			std::string row;
+			std::string src;
+			if( !getRegisterArgKey(token, 0, dst)
+			    || !getRegisterArgKey(token, 1, row)
+			    || !getRegisterArgKey(token, 2, src) )
+				return false;
+			if( src == pattern.normalReg )
+			{
+				pattern.lightDir2Reg = row;
+				pattern.cosinesReg = dst;
+				pattern.lightDirMaddzOp = generateOperand(token);
+				haveLightDirMaddz = true;
+			}
+			else if( src == pattern.clampedCosinesReg )
+			{
+				pattern.lightColor2Reg = row;
+				pattern.colorReg = dst;
+				pattern.lightColorMaddzOp = generateOperand(token);
+				haveLightColorMaddz = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "madd" && token.broadcast() == Token::W )
+		{
+			if( !getRegisterArgKey(token, 0, pattern.xformedReg)
+			    || !getRegisterArgKey(token, 1, pattern.row3Reg) )
+				return false;
+			pattern.transformMaddwOp = generateOperand(token);
+			haveTransformMaddw = true;
+			continue;
+		}
+
+		if( mnemonic == "max" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string dst;
+			std::string src;
+			if( getRegisterArgKey(token, 0, dst) && getRegisterArgKey(token, 1, src)
+			    && !pattern.cosinesReg.empty() && src == pattern.cosinesReg )
+			{
+				pattern.clampedCosinesReg = dst;
+				haveCosineMax = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "mul" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string dst;
+			std::string src0;
+			std::string src1;
+			if( !getRegisterArgKey(token, 0, dst)
+			    || !getRegisterArgKey(token, 1, src0)
+			    || !getRegisterArgKey(token, 2, src1) )
+				continue;
+			if( !pattern.xformedReg.empty() && src0 == pattern.xformedReg )
+			{
+				pattern.clipReg = dst;
+				pattern.clipScalesReg = src1;
+				haveClipMul = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "add" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string dst;
+			std::string src0;
+			std::string src1;
+			if( !getRegisterArgKey(token, 0, dst)
+			    || !getRegisterArgKey(token, 1, src0)
+			    || !getRegisterArgKey(token, 2, src1) )
+				continue;
+			if( !pattern.xformedReg.empty() && src0 == pattern.xformedReg )
+			{
+				pattern.gsReg = dst;
+				pattern.gsOffsetsReg = src1;
+				haveGsAdd = true;
+			}
+			else if( !pattern.colorReg.empty() && dst == pattern.colorReg && src0 == pattern.colorReg )
+			{
+				pattern.constantColorReg = src1;
+				haveColorAdd = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "mini" && token.broadcast() == Token::W
+		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string dst;
+			std::string src0;
+			std::string src1;
+			if( !getRegisterArgKey(token, 0, dst)
+			    || !getRegisterArgKey(token, 1, src0)
+			    || !getRegisterArgKey(token, 2, src1) )
+				continue;
+			if( !pattern.colorReg.empty() && dst == pattern.colorReg && src0 == pattern.colorReg )
+			{
+				pattern.maxColorReg = src1;
+				haveColorMin = true;
+			}
+			continue;
+		}
+
+		if( isVuClipw(mnemonic) )
+		{
+			std::string clip;
+			std::string scales;
+			if( !getRegisterArgKey(token, 0, clip) || !getRegisterArgKey(token, 1, scales) )
+				return false;
+			if( clip == pattern.clipReg )
+			{
+				pattern.clipScalesReg = scales;
+				haveClipw = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "fcand" )
+		{
+			std::string imm;
+			if( getImmediateArg(token, 1, imm) )
+				pattern.clipImmediate = imm;
+			haveFcand = true;
+			continue;
+		}
+
+		if( mnemonic == "ior" )
+		{
+			std::string dst;
+			std::string src0;
+			std::string src1;
+			if( !getRegisterArgKey(token, 0, dst)
+			    || !getRegisterArgKey(token, 1, src0)
+			    || !getRegisterArgKey(token, 2, src1) )
+				continue;
+			if( !pattern.stripAdcReg.empty()
+			    && ((src0 == "VI01" && src1 == pattern.stripAdcReg)
+			        || (src1 == "VI01" && src0 == pattern.stripAdcReg)) )
+			{
+				pattern.newAdcReg = dst;
+				haveAdcOr = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "div" )
+		{
+			std::string denom;
+			if( !getRegisterArgKey(token, 2, denom) )
+				return false;
+			if( !pattern.xformedReg.empty() && denom != pattern.xformedReg )
+				return false;
+			haveDiv = true;
+			continue;
+		}
+
+		if( mnemonic == "mfir" )
+		{
+			std::string dst;
+			std::string src;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, src) )
+				return false;
+			pattern.gsReg = dst;
+			pattern.newAdcReg = src;
+			haveMfir = true;
+			continue;
+		}
+
+		if( mnemonic == "ftoi4" )
+		{
+			std::string dst;
+			if( !getRegisterArgKey(token, 0, dst) )
+				return false;
+			pattern.gsReg = dst;
+			haveFtoi = true;
+			continue;
+		}
+
+		if( mnemonic == "mulq" )
+		{
+			std::string dst;
+			std::string src;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, src) )
+				continue;
+			if( src == pattern.xformedReg )
+				haveTransformMulq = true;
+			else if( src == pattern.texInputReg )
+			{
+				pattern.texOutputReg = dst;
+				haveTexMulq = true;
+			}
+			continue;
+		}
+	}
+
+	return haveBranch
+	    && haveInputIncrement
+	    && haveOutputIncrement
+	    && haveVertexLoad
+	    && haveNormalLoad
+	    && haveStripLoad
+	    && haveTexLoad
+	    && haveTexStore
+	    && haveColorStore
+	    && haveGsStore
+	    && haveTransformMulax
+	    && haveTransformMadday
+	    && haveTransformMaddaz
+	    && haveTransformMaddw
+	    && haveLightDirMulax
+	    && haveLightDirMadday
+	    && haveLightDirMaddz
+	    && haveCosineMax
+	    && haveLightColorMulax
+	    && haveLightColorMadday
+	    && haveLightColorMaddz
+	    && haveColorAdd
+	    && haveColorMin
+	    && haveGsAdd
+	    && haveClipMul
+	    && haveClipw
+	    && haveFcand
+	    && haveAdcOr
+	    && haveAdcAdd
+	    && haveDiv
+	    && haveMfir
+	    && haveFtoi
+	    && haveTransformMulq
+	    && haveTexMulq
+	    && pattern.inputStep == 3
+	    && pattern.outputStep == 3
+	    && pattern.vertexOffset == 0
+	    && pattern.normalOffset == 1
+	    && pattern.stripOffset == 0
+	    && pattern.texOffset == 2
+	    && pattern.texStoreOffset == 0
+	    && pattern.colorStoreOffset == 1
+	    && pattern.gsStoreOffset == 2
+	    && !pattern.inputReg.empty()
+	    && !pattern.lastInputReg.empty()
+	    && !pattern.outputReg.empty()
+	    && !pattern.vertexReg.empty()
+	    && !pattern.normalReg.empty()
+	    && !pattern.stripAdcReg.empty()
+	    && !pattern.newAdcReg.empty()
+	    && !pattern.row0Reg.empty()
+	    && !pattern.row1Reg.empty()
+	    && !pattern.row2Reg.empty()
+	    && !pattern.row3Reg.empty()
+	    && !pattern.xformedReg.empty()
+	    && !pattern.xformedQReg.empty()
+	    && !pattern.gsReg.empty()
+	    && !pattern.gsOffsetsReg.empty()
+	    && !pattern.texInputReg.empty()
+	    && !pattern.texOutputReg.empty()
+	    && !pattern.clipReg.empty()
+	    && !pattern.clipScalesReg.empty()
+	    && !pattern.lightDir0Reg.empty()
+	    && !pattern.lightDir1Reg.empty()
+	    && !pattern.lightDir2Reg.empty()
+	    && !pattern.cosinesReg.empty()
+	    && !pattern.clampedCosinesReg.empty()
+	    && !pattern.lightColor0Reg.empty()
+	    && !pattern.lightColor1Reg.empty()
+	    && !pattern.lightColor2Reg.empty()
+	    && !pattern.colorReg.empty()
+	    && !pattern.colorRawReg.empty()
+	    && !pattern.constantColorReg.empty()
+	    && !pattern.maxColorReg.empty();
+}
+
+void CodeGenerator::emitSceiSoftwarePipelineLoop( const SceiLoopPipelinePattern& p )
+{
+	const std::string in = p.inputReg;
+	const std::string out = p.outputReg;
+	const std::string last = p.lastInputReg;
+	const std::string vert = p.vertexReg;
+	const std::string normal = p.normalReg;
+	const std::string strip = p.stripAdcReg;
+	const std::string adc = p.newAdcReg;
+	const std::string x = p.xformedReg;
+	const std::string xQ = p.xformedQReg;
+	const std::string gs = p.gsReg;
+	const std::string texIn = p.texInputReg;
+	const std::string texOut = p.texOutputReg;
+	const std::string clip = p.clipReg;
+	const std::string cos = p.cosinesReg;
+	const std::string clamped = p.clampedCosinesReg;
+	const std::string color = p.colorReg;
+	const std::string colorRaw = p.colorRawReg;
+	const std::string vf00 = "VF00";
+	const std::string vi01 = "VI01";
+
+	m_codeLines.push_back(p.entryLabel + ":");
+	emitRawPairedLine("nop", "lq.xyz " + vert + ", " + offsetBase(0, in));
+	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"), "nop");
+	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"),
+	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"), "nop");
+	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), "nop");
+	emitRawPairedLine(p.lightDirMulaxOp + " ACC, " + p.lightDir0Reg + ", " + fieldArg(normal, "x"), "nop");
+	emitRawPairedLine(p.lightDirMaddayOp + " ACC, " + p.lightDir1Reg + ", " + fieldArg(normal, "y"), "nop");
+	emitRawPairedLine(p.lightDirMaddzOp + " " + cos + ", " + p.lightDir2Reg + ", " + fieldArg(normal, "z"),
+	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
+	emitRawPairedLine("max.xyz " + clamped + ", " + cos + ", " + vf00,
+	                  "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "ibeq " + in + ", " + last + ", " + p.epilogOneLabel);
+	emitRawPairedLine("mulq.xyz " + xQ + ", " + x + ", q",
+	                  "iaddiu " + out + ", " + out + ", 0");
+
+	m_codeLines.push_back(p.prologLabel + ":");
+	emitRawPairedLine(p.lightColorMulaxOp + " ACC, " + p.lightColor0Reg + ", " + fieldArg(clamped, "x"),
+	                  "lq.xyz " + vert + ", " + offsetBase(0, in));
+	emitRawPairedLine(p.lightColorMaddayOp + " ACC, " + p.lightColor1Reg + ", " + fieldArg(clamped, "y"), "nop");
+	emitRawPairedLine(p.lightColorMaddzOp + " " + colorRaw + ", " + p.lightColor2Reg + ", " + fieldArg(clamped, "z"), "nop");
+	emitRawPairedLine("mul.xyz " + clip + ", " + xQ + ", " + p.clipScalesReg, "nop");
+	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"),
+	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"), "nop");
+	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"), "nop");
+	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), "nop");
+	emitRawPairedLine(p.lightDirMulaxOp + " ACC, " + p.lightDir0Reg + ", " + fieldArg(normal, "x"), "nop");
+	emitRawPairedLine(p.lightDirMaddayOp + " ACC, " + p.lightDir1Reg + ", " + fieldArg(normal, "y"), "nop");
+	emitRawPairedLine(p.lightDirMaddzOp + " " + cos + ", " + p.lightDir2Reg + ", " + fieldArg(normal, "z"),
+	                  "lq.xyz " + texIn + ", " + offsetBase(-1, in));
+	emitRawPairedLine("clipw.xyz " + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"),
+	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
+	emitRawPairedLine("add.xyz " + gs + ", " + xQ + ", " + p.gsOffsetsReg,
+	                  "ilw.w " + strip + ", " + offsetBase(-3, in));
+	emitRawPairedLine("add.xyz " + color + ", " + colorRaw + ", " + p.constantColorReg,
+	                  "iaddiu " + out + ", " + out + ", 6");
+	emitRawPairedLine("max.xyz " + clamped + ", " + cos + ", " + vf00,
+	                  "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine("mulq.xyz " + texOut + ", " + texIn + ", q",
+	                  "fcand " + vi01 + ", " + p.clipImmediate);
+	emitRawPairedLine("ftoi4.xyz " + gs + ", " + gs,
+	                  "ior " + adc + ", " + vi01 + ", " + strip);
+	emitRawPairedLine("miniw.xyz " + color + ", " + color + ", " + fieldArg(p.maxColorReg, "w"),
+	                  "ibeq " + in + ", " + last + ", " + p.epilogTwoLabel);
+	emitRawPairedLine("mulq.xyz " + xQ + ", " + x + ", q",
+	                  "iaddiu " + adc + ", " + adc + ", " + p.adcImmediate);
+
+	m_codeLines.push_back(p.mainLabel + ":");
+	emitRawPairedLine(p.lightColorMulaxOp + " ACC, " + p.lightColor0Reg + ", " + fieldArg(clamped, "x"),
+	                  "lq.xyz " + vert + ", " + offsetBase(0, in));
+	emitRawPairedLine(p.lightColorMaddayOp + " ACC, " + p.lightColor1Reg + ", " + fieldArg(clamped, "y"),
+	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(p.lightColorMaddzOp + " " + colorRaw + ", " + p.lightColor2Reg + ", " + fieldArg(clamped, "z"),
+	                  "iaddiu " + out + ", " + out + ", 3");
+	emitRawPairedLine("mul.xyz " + clip + ", " + xQ + ", " + p.clipScalesReg,
+	                  "sq " + color + ", " + offsetBase(-8, out));
+	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"),
+	                  "sq.xyz " + texOut + ", " + offsetBase(-9, out));
+	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"),
+	                  "mfir.w " + gs + ", " + adc);
+	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"), "nop");
+	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), "nop");
+	emitRawPairedLine(p.lightDirMulaxOp + " ACC, " + p.lightDir0Reg + ", " + fieldArg(normal, "x"), "nop");
+	emitRawPairedLine(p.lightDirMaddayOp + " ACC, " + p.lightDir1Reg + ", " + fieldArg(normal, "y"),
+	                  "sq " + gs + ", " + offsetBase(-7, out));
+	emitRawPairedLine(p.lightDirMaddzOp + " " + cos + ", " + p.lightDir2Reg + ", " + fieldArg(normal, "z"),
+	                  "lq.xyz " + texIn + ", " + offsetBase(-1, in));
+	emitRawPairedLine("clipw.xyz " + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"),
+	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
+	emitRawPairedLine("add.xyz " + gs + ", " + xQ + ", " + p.gsOffsetsReg,
+	                  "ilw.w " + strip + ", " + offsetBase(-3, in));
+	emitRawPairedLine("add.xyz " + color + ", " + colorRaw + ", " + p.constantColorReg, "nop");
+	emitRawPairedLine("max.xyz " + clamped + ", " + cos + ", " + vf00,
+	                  "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine("mulq.xyz " + texOut + ", " + texIn + ", q",
+	                  "fcand " + vi01 + ", " + p.clipImmediate);
+	emitRawPairedLine("ftoi4.xyz " + gs + ", " + gs,
+	                  "ior " + adc + ", " + vi01 + ", " + strip);
+	emitRawPairedLine("miniw.xyz " + color + ", " + color + ", " + fieldArg(p.maxColorReg, "w"),
+	                  "ibne " + in + ", " + last + ", " + p.mainLabel);
+	emitRawPairedLine("mulq.xyz " + xQ + ", " + x + ", q",
+	                  "iaddiu " + adc + ", " + adc + ", " + p.adcImmediate);
+
+	m_codeLines.push_back(p.epilogTwoLabel + ":");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(p.lightColorMulaxOp + " ACC, " + p.lightColor0Reg + ", " + fieldArg(clamped, "x"),
+	                  "sq.xyz " + texOut + ", " + offsetBase(-6, out));
+	emitRawPairedLine(p.lightColorMaddayOp + " ACC, " + p.lightColor1Reg + ", " + fieldArg(clamped, "y"),
+	                  "mfir.w " + gs + ", " + adc);
+	emitRawPairedLine("mul.xyz " + clip + ", " + xQ + ", " + p.clipScalesReg,
+	                  "sq " + color + ", " + offsetBase(-5, out));
+	emitRawPairedLine(p.lightColorMaddzOp + " " + colorRaw + ", " + p.lightColor2Reg + ", " + fieldArg(clamped, "z"), "nop");
+	emitRawPairedLine("add.xyz " + gs + ", " + xQ + ", " + p.gsOffsetsReg,
+	                  "sq " + gs + ", " + offsetBase(-4, out));
+	emitRawPairedLine("clipw.xyz " + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"),
+	                  "lq.xyz " + texIn + ", " + offsetBase(-1, in));
+	emitRawPairedLine("add.xyz " + color + ", " + colorRaw + ", " + p.constantColorReg,
+	                  "ilw.w " + strip + ", " + offsetBase(-3, in));
+	emitRawPairedLine("mulq.xyz " + texOut + ", " + texIn + ", q",
+	                  "fcand " + vi01 + ", " + p.clipImmediate);
+	emitRawPairedLine("miniw.xyz " + color + ", " + color + ", " + fieldArg(p.maxColorReg, "w"),
+	                  "ior " + adc + ", " + vi01 + ", " + strip);
+	emitRawPairedLine("ftoi4.xyz " + gs + ", " + gs,
+	                  "iaddiu " + adc + ", " + adc + ", " + p.adcImmediate);
+	emitRawPairedLine("nop", "mfir.w " + gs + ", " + adc);
+	emitRawPairedLine("nop", "sq.xyz " + texOut + ", " + offsetBase(-3, out));
+	emitRawPairedLine("nop", "sq " + color + ", " + offsetBase(-2, out));
+	emitRawPairedLine("nop", "b " + p.exitLabel);
+	emitRawPairedLine("nop", "sq " + gs + ", " + offsetBase(-1, out));
+
+	m_codeLines.push_back(p.epilogOneLabel + ":");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(p.lightColorMulaxOp + " ACC, " + p.lightColor0Reg + ", " + fieldArg(clamped, "x"), "nop");
+	emitRawPairedLine("mul.xyz " + clip + ", " + xQ + ", " + p.clipScalesReg, "nop");
+	emitRawPairedLine(p.lightColorMaddayOp + " ACC, " + p.lightColor1Reg + ", " + fieldArg(clamped, "y"), "nop");
+	emitRawPairedLine(p.lightColorMaddzOp + " " + colorRaw + ", " + p.lightColor2Reg + ", " + fieldArg(clamped, "z"), "nop");
+	emitRawPairedLine("clipw.xyz " + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"),
+	                  "lq.xyz " + texIn + ", " + offsetBase(-1, in));
+	emitRawPairedLine("add.xyz " + gs + ", " + xQ + ", " + p.gsOffsetsReg,
+	                  "ilw.w " + strip + ", " + offsetBase(-3, in));
+	emitRawPairedLine("add.xyz " + color + ", " + colorRaw + ", " + p.constantColorReg, "nop");
+	emitRawPairedLine("mulq.xyz " + texOut + ", " + texIn + ", q",
+	                  "fcand " + vi01 + ", " + p.clipImmediate);
+	emitRawPairedLine("ftoi4.xyz " + gs + ", " + gs,
+	                  "ior " + adc + ", " + vi01 + ", " + strip);
+	emitRawPairedLine("miniw.xyz " + color + ", " + color + ", " + fieldArg(p.maxColorReg, "w"),
+	                  "iaddiu " + adc + ", " + adc + ", " + p.adcImmediate);
+	emitRawPairedLine("nop", "mfir.w " + gs + ", " + adc);
+	emitRawPairedLine("nop", "sq.xyz " + texOut + ", " + offsetBase(0, out));
+	emitRawPairedLine("nop", "sq " + color + ", " + offsetBase(1, out));
+	emitRawPairedLine("nop", "sq " + gs + ", " + offsetBase(2, out));
 
 	m_codeLines.push_back(p.exitLabel + ":");
 }
