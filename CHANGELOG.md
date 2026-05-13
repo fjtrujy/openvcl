@@ -41,6 +41,8 @@
   bypass notes.
 - Moved scheduler register-key, field-mask, Q/P, and implicit-resource checks
   onto `VuTokenResourceAccess`.
+- Moved scheduler memory/control classification for loads, stores, `xgkick`,
+  pre/post-increment, and branch barriers onto `VuTokenResourceAccess`.
 
 ## 0.3.3
 

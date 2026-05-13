@@ -974,32 +974,22 @@ namespace {
 		return false;
 	}
 
-	bool hasPreDecOrPostIncArgument( const Token& token )
-	{
-		const std::list<Token::Argument>& args = token.arguments();
-		for( std::list<Token::Argument>::const_iterator i = args.begin(); i != args.end(); ++i )
-		{
-			if( (*i).flags() & (Token::Argument::PREDEC | Token::Argument::POSTINC) )
-				return true;
-		}
-		return false;
-	}
-
 	bool isPlainMemoryStore( const Token& token )
 	{
-		if( !token.operand() || hasPreDecOrPostIncArgument(token) )
+		VuTokenResourceAccess access;
+		if( !buildVuTokenResourceAccess( token, access ) )
 			return false;
-		const std::string name = lowerName(token);
-		return name == "sq" || name == "sqd" || name == "sqi"
-		    || name == "isw" || name == "iswr";
+		return access.memoryKind == VU_MEMORY_STORE
+		    && (access.memoryFlags & (VU_MEMORY_FLAG_PREDEC | VU_MEMORY_FLAG_POSTINC)) == 0;
 	}
 
 	bool isPlainMemoryLoad( const Token& token )
 	{
-		if( !token.operand() || hasPreDecOrPostIncArgument(token) )
+		VuTokenResourceAccess access;
+		if( !buildVuTokenResourceAccess( token, access ) )
 			return false;
-		const std::string name = lowerName(token);
-		return name == "lq" || name == "ilw" || name == "ilwr";
+		return access.memoryKind == VU_MEMORY_LOAD
+		    && (access.memoryFlags & (VU_MEMORY_FLAG_PREDEC | VU_MEMORY_FLAG_POSTINC)) == 0;
 	}
 
 	bool memoryBaseRegisterKey( const Token& token, std::string& key )
@@ -1184,9 +1174,9 @@ namespace {
 
 	bool isXgkick( const Token& token )
 	{
-		if( !token.operand() )
-			return false;
-		return lowerName(token) == "xgkick";
+		VuTokenResourceAccess access;
+		return buildVuTokenResourceAccess( token, access )
+		    && access.memoryKind == VU_MEMORY_XGKICK;
 	}
 
 	bool hasMemoryOrControlSideEffect( const Token& token )
@@ -1196,17 +1186,15 @@ namespace {
 		if( token.flags() & Token::PREORDERED )
 			return true;
 
-		Operand::Unit unit = token.operand()->unit();
-		if( unit == Operand::BRU )
+		VuTokenResourceAccess access;
+		if( !buildVuTokenResourceAccess( token, access ) )
 			return true;
-
-		if( hasPreDecOrPostIncArgument(token) )
+		if( access.branchDelaySlots > 0 )
 			return true;
-
-		std::string name = lowerName(token);
-		return name == "sq" || name == "sqd" || name == "sqi"
-		    || name == "isw" || name == "iswr"
-		    || name == "xgkick";
+		if( access.memoryFlags & (VU_MEMORY_FLAG_PREDEC | VU_MEMORY_FLAG_POSTINC) )
+			return true;
+		return access.memoryKind == VU_MEMORY_STORE
+		    || access.memoryKind == VU_MEMORY_XGKICK;
 	}
 
 	bool computationCanMoveBeforePlainStore( const Token& moved, const Token& crossed )
