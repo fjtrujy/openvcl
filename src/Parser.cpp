@@ -11,6 +11,7 @@
 #include "Parser.h"
 #include "Error.h"
 #include "VsmCostAnalyzer.h"
+#include "VuInstructionInfo.h"
 
 #include <iostream>
 #include <fstream>
@@ -176,194 +177,12 @@ void Parser::setupOperands()
 
 	m_operands.push_back( Operand( ".global",				1, Operand::PREPROCESSOR, "imm" ) );
 
-	// VU Common instructions
+	// VU hardware instructions
 
-	m_operands.push_back( Operand( "NOP",						0, 0, "",	Operand::INVALID, 1, 4) );
-
-	// VU Upper Execution Path
-
-	const char* upper0 = "vf:dest:write,vf:dest,vf:bc";
-	const char* upper1 = "vf:dest:write,vf:dest,vf:dest";
-	const char* upper2 = "acc:dest:write,vf:dest,vf:bc";
-	const char* upper3 = "acc:dest:write,vf:dest,vf:dest";
-	const char* upper4 = "vf:dest:write,vf:dest";
-	const char* upper5 = "vf:dest:write,vf:dest,i";
-	const char* upper6 = "vf:dest:write,vf:dest,q";
-	const char* upper7 = "acc:dest:write,vf:dest,i";
-	const char* upper8 = "acc:dest:write,vf:dest,q";
-
-	m_operands.push_back( Operand( "ABS",						2, Operand::UPPER|Operand::DEST,			upper4,					Operand::FMAC, 1, 4		) );
-
-	m_operands.push_back( Operand( "ADD",						3, Operand::UPPER|Operand::DEST,			upper1,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "ADDi",					3, Operand::UPPER|Operand::DEST,			upper5,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "ADDq",					3, Operand::UPPER|Operand::DEST,			upper6,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "ADD",						3, Operand::UPPER|Operand::BROADCAST, upper0,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "ADDA",					3, Operand::UPPER|Operand::DEST,			upper3,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "ADDAi",					3, Operand::UPPER|Operand::DEST,			upper7,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "ADDAq",					3, Operand::UPPER|Operand::DEST,			upper8,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "ADDA",					3, Operand::UPPER|Operand::BROADCAST, upper2,					Operand::FMAC, 1, 4		) );
-
-	m_operands.push_back( Operand( "SUB",						3, Operand::UPPER|Operand::DEST,			upper1,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "SUBi",					3, Operand::UPPER|Operand::DEST,			upper5,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "SUBq",					3, Operand::UPPER|Operand::DEST,			upper6,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "SUB",						3, Operand::UPPER|Operand::BROADCAST,	upper0,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "SUBA",					3, Operand::UPPER|Operand::DEST,			upper3,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "SUBAi",					3, Operand::UPPER|Operand::DEST,			upper7,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "SUBAq",					3, Operand::UPPER|Operand::DEST,			upper8,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "SUBA",					3, Operand::UPPER|Operand::BROADCAST, upper2,					Operand::FMAC, 1, 4		) );
-
-	m_operands.push_back( Operand( "MUL",						3, Operand::UPPER|Operand::DEST,			upper1,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MULi",					3, Operand::UPPER|Operand::DEST,			upper5,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MULq",					3, Operand::UPPER|Operand::DEST,			upper6,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MUL",						3, Operand::UPPER|Operand::BROADCAST, upper0,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MULA",					3, Operand::UPPER|Operand::DEST,			upper3,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MULAi",					3, Operand::UPPER|Operand::DEST,			upper7,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MULAq",					3, Operand::UPPER|Operand::DEST,			upper8,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MULA",					3, Operand::UPPER|Operand::BROADCAST, upper2,					Operand::FMAC, 1, 4		) );
-
-	m_operands.push_back( Operand( "MADD",					3, Operand::UPPER|Operand::DEST,			upper1,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MADDi",					3, Operand::UPPER|Operand::DEST,			upper5,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MADDq",					3, Operand::UPPER|Operand::DEST,			upper6,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MADD",					3, Operand::UPPER|Operand::BROADCAST, upper0,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MADDA",					3, Operand::UPPER|Operand::DEST,			upper3,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MADDAi",				3, Operand::UPPER|Operand::DEST,			upper7,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MADDAq",				3, Operand::UPPER|Operand::DEST,			upper8,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MADDA",					3, Operand::UPPER|Operand::BROADCAST, upper2,					Operand::FMAC, 1, 4		) );
-
-	m_operands.push_back( Operand( "MSUB",					3, Operand::UPPER|Operand::DEST,			upper1,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MSUBi",					3, Operand::UPPER|Operand::DEST,			upper5,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MSUBq",					3, Operand::UPPER|Operand::DEST,			upper6,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MSUB",					3, Operand::UPPER|Operand::BROADCAST, upper0,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MSUBA",					3, Operand::UPPER|Operand::DEST,			upper3,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MSUBAi",				3, Operand::UPPER|Operand::DEST,			upper7,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MSUBAq",				3, Operand::UPPER|Operand::DEST,			upper8,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MSUBA",					3, Operand::UPPER|Operand::BROADCAST,	upper2,					Operand::FMAC, 1, 4		) );
-
-	m_operands.push_back( Operand( "MAX",						3, Operand::UPPER|Operand::DEST,			upper1,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MAXi",					3, Operand::UPPER|Operand::DEST,			upper5,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MAX",						3, Operand::UPPER|Operand::BROADCAST, upper0,					Operand::FMAC, 1, 4		) );
-
-	m_operands.push_back( Operand( "MINI",					3, Operand::UPPER|Operand::DEST,			upper1,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MINIi",					3, Operand::UPPER|Operand::DEST,			upper5,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "MINI",					3, Operand::UPPER|Operand::BROADCAST, upper0,					Operand::FMAC, 1, 4		) );
-
-	m_operands.push_back( Operand( "OPMULA",				3, Operand::UPPER|Operand::XYZ,				upper3,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "OPMSUB",				3, Operand::UPPER|Operand::XYZ,				upper1,					Operand::FMAC, 1, 4		) );
-
-	m_operands.push_back( Operand( "FTOI0",					2, Operand::UPPER|Operand::DEST,			upper4,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "FTOI4",					2, Operand::UPPER|Operand::DEST,			upper4,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "FTOI12",				2, Operand::UPPER|Operand::DEST,			upper4,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "FTOI15",				2, Operand::UPPER|Operand::DEST,			upper4,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "ITOF0",					2, Operand::UPPER|Operand::DEST,			upper4,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "ITOF4",					2, Operand::UPPER|Operand::DEST,			upper4,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "ITOF12",				2, Operand::UPPER|Operand::DEST,			upper4,					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "ITOF15",				2, Operand::UPPER|Operand::DEST,			upper4,					Operand::FMAC, 1, 4		) );
-
-	// TODO: complete templates for these ops
-	// CLIP's first VF operand is hardware-semantically a SOURCE that
-	// gets clipped against +-VF.w of the second operand; only the CLIP
-	// register itself is written.  Marking the first arg ':write' as
-	// the other FMAC ops do (where the first VF IS the destination)
-	// makes the register allocator treat clipw as starting a new
-	// lifetime for that alias, breaking the data-flow chain from the
-	// preceding mul that produces what clipw is supposed to read.
-	// Use ':dest' (field-aware) without ':write' so the allocator
-	// keeps the alias consistent between mul-of-product and the clipw
-	// that consumes it.
-	m_operands.push_back( Operand( "CLIP",					2, Operand::UPPER|Operand::XYZ,				"vf:dest,vf:wcomp",					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "CLIPw",					2, Operand::UPPER|Operand::XYZ,				"vf:dest,vf:wcomp",					Operand::FMAC, 1, 4		) );
-	m_operands.push_back( Operand( "CLIPLw",				2, Operand::UPPER|Operand::XYZ,				"vf:dest,vf:wcomp",					Operand::FMAC, 1, 4		) );
-
-	// VU Lower Execution Path
-
-	const char* lower0 = "vf:dest:write,vf:dest";
-	const char* lower1 = "vi:write,vi,vi";
-	const char* lower2 = "vi:write,vi,imm:evaluate";
-	const char* lower3 = "vi,imm:branch";
-	const char* lower4 = "p:write,vf";
-	const char* lower5 = "p:write,vf:flag";
-	const char* lower6 = "vi:write,imm:evaluate";
-	const char* lower7 = "vi:write,vi";
-
-	m_operands.push_back( Operand( "DIV",						3, Operand::LOWER,										"q:write,vf:flag,vf:flag",			Operand::FDIV, 7, 7		) );
-	m_operands.push_back( Operand( "SQRT",					2, Operand::LOWER,										"q:write,vf:flag",							Operand::FDIV, 7, 7		) );
-	m_operands.push_back( Operand( "RSQRT",					3, Operand::LOWER,										"q:write,vf:flag,vf:flag",			Operand::FDIV, 13, 13	) );
-	m_operands.push_back( Operand( "WAITQ",					0, Operand::LOWER, 										"",															Operand::FDIV, 1, 1		) );
-
-	m_operands.push_back( Operand( "IADD",					3, Operand::LOWER, 										lower1,													Operand::IALU, 1, 1		) );
-	m_operands.push_back( Operand( "IADDI",					3, Operand::LOWER, 										lower2,													Operand::IALU, 1, 1		) );
-	m_operands.push_back( Operand( "IADDIU",				3, Operand::LOWER, 										lower2,													Operand::IALU, 1, 1		) );
-	m_operands.push_back( Operand( "IAND",					3, Operand::LOWER, 										lower1,													Operand::IALU, 1, 1		) );
-	m_operands.push_back( Operand( "IOR",						3, Operand::LOWER, 										lower1,													Operand::IALU, 1, 1		) );
-	m_operands.push_back( Operand( "ISUB",					3, Operand::LOWER, 										lower1,													Operand::IALU, 1, 1		) );
-	m_operands.push_back( Operand( "ISUBIU",				3, Operand::LOWER, 										lower2,													Operand::IALU, 1, 1		) );
-
-	m_operands.push_back( Operand( "MOVE",					2, Operand::LOWER|Operand::DEST,			lower0,													Operand::INVALID, 1, 4) );
-	m_operands.push_back( Operand( "MFIR",					2, Operand::LOWER|Operand::DEST,			"vf:dest:write,vi",							Operand::INVALID, 1, 4) );
-	m_operands.push_back( Operand( "MTIR",					2, Operand::LOWER, 										"vi:write,vf:flag",							Operand::INVALID, 1, 1) );
-	m_operands.push_back( Operand( "MR32",					2, Operand::LOWER|Operand::DEST,			"vf:dest:write,vf:dest:rotate",	Operand::INVALID, 1, 4) );
-
-	m_operands.push_back( Operand( "LQ",						2, Operand::LOWER|Operand::DEST, 			"vf:dest:write,(vi):zero|imm(vi):evaluate",Operand::LSU, 1, 4		) );
-	m_operands.push_back( Operand( "LQD",						2, Operand::LOWER|Operand::DEST,			"vf:dest:write,(vi):predec",		Operand::LSU, 1, 4		) );
-	m_operands.push_back( Operand( "LQI",						2, Operand::LOWER|Operand::DEST,			"vf:dest:write,(vi):postinc",		Operand::LSU, 1, 4		) );
-	m_operands.push_back( Operand( "SQ",						2, Operand::LOWER|Operand::DEST, 			"vf:dest,(vi):zero|imm(vi):evaluate",		Operand::LSU, 1, 4		) );
-	m_operands.push_back( Operand( "SQD",						2, Operand::LOWER|Operand::DEST,			"vf:dest,(vi):predec",					Operand::LSU, 1, 4		) );
-	m_operands.push_back( Operand( "SQI",						2, Operand::LOWER|Operand::DEST,			"vf:dest,(vi):postinc",					Operand::LSU, 1, 4		) );
-	m_operands.push_back( Operand( "ILW",						2, Operand::LOWER|Operand::DEST,			"vi:write,(vi):zero:dest|imm(vi):evaluate:dest",Operand::LSU, 1, 4		) );
-	m_operands.push_back( Operand( "ISW",						2, Operand::LOWER|Operand::DEST,			"vi,(vi):zero:dest|imm(vi):evaluate:dest",Operand::LSU, 1, 4		) );
-	m_operands.push_back( Operand( "ILWR",					2, Operand::LOWER|Operand::DEST, 			"vi:write,(vi):dest",						Operand::LSU, 1, 4		) );
-	m_operands.push_back( Operand( "ISWR",					2, Operand::LOWER|Operand::DEST, 			"vi,(vi):dest",									Operand::LSU, 1, 4		) );
-
-	m_operands.push_back( Operand( "LOI",						1, Operand::LOWER|Operand::IWRITE,		"imm:evaluate:raw",							Operand::LSU,	1, 1		) );
-
-	m_operands.push_back( Operand( "RINIT",					2, Operand::LOWER, 										"r:write,vf:flag",							Operand::RANDU, 1, 1	) );
-	m_operands.push_back( Operand( "RGET",					2, Operand::LOWER|Operand::DEST, 			"vf:dest:write,r",							Operand::RANDU, 1, 4	) );
-	m_operands.push_back( Operand( "RNEXT",					2, Operand::LOWER|Operand::DEST,			"vf:dest:write,r",							Operand::RANDU, 1, 4	) );
-	m_operands.push_back( Operand( "RXOR",					2, Operand::LOWER,										"r:write,vf:flag",							Operand::RANDU, 1, 1	) );
-
-	m_operands.push_back( Operand( "FSAND",					2, Operand::LOWER,										lower6,													Operand::IALU, 1, 1		) );
-	m_operands.push_back( Operand( "FSEQ",					2, Operand::LOWER,										lower6,													Operand::IALU, 1, 1		) );
-	m_operands.push_back( Operand( "FSOR",					2, Operand::LOWER,										lower6,													Operand::IALU, 1, 1		) );
-	m_operands.push_back( Operand( "FSSET",					1, Operand::LOWER,										"imm:evaluate",													Operand::IALU, 1, 4		) );
-	m_operands.push_back( Operand( "FMAND",					2, Operand::LOWER,										lower7,													Operand::IALU, 1, 1		) );
-	m_operands.push_back( Operand( "FMEQ",					2, Operand::LOWER,										lower7,													Operand::IALU, 1, 1		) );
-	m_operands.push_back( Operand( "FMOR",					2, Operand::LOWER,										lower7,													Operand::IALU, 1, 1		) );
-	m_operands.push_back( Operand( "FCAND",					2, Operand::LOWER,										lower6,													Operand::IALU, 1, 1		) );
-	m_operands.push_back( Operand( "FCEQ",					2, Operand::LOWER,										lower6,													Operand::IALU, 1, 1		) );
-	m_operands.push_back( Operand( "FCOR",					2, Operand::LOWER,										lower6,													Operand::IALU, 1, 1		) );
-	m_operands.push_back( Operand( "FCSET",					1, Operand::LOWER,										"imm:evaluate",													Operand::IALU, 1, 4		) );
-	m_operands.push_back( Operand( "FCGET",					1, Operand::LOWER,										"vi:write",											Operand::IALU, 1, 1		) );
-
-	m_operands.push_back( Operand( "IBEQ",					3, Operand::LOWER|Operand::DYNAMIC,		"vi,vi,imm:branch",							Operand::BRU, 2, 2		) );
-	m_operands.push_back( Operand( "IBGEZ",					2, Operand::LOWER|Operand::DYNAMIC, 	lower3,													Operand::BRU, 2, 2		) );
-	m_operands.push_back( Operand( "IBGTZ",					2, Operand::LOWER|Operand::DYNAMIC,		lower3,													Operand::BRU, 2, 2		) );
-	m_operands.push_back( Operand( "IBLEZ",					2, Operand::LOWER|Operand::DYNAMIC,		lower3,													Operand::BRU, 2, 2		) );
-	m_operands.push_back( Operand( "IBLTZ",					2, Operand::LOWER|Operand::DYNAMIC,		lower3,													Operand::BRU, 2, 2		) );
-	m_operands.push_back( Operand( "IBNE",					3, Operand::LOWER|Operand::DYNAMIC,		"vi,vi,imm:branch",							Operand::BRU, 2, 2		) );
-	m_operands.push_back( Operand( "B",							1, Operand::LOWER,							 			"imm:branch",										Operand::BRU, 2, 2		) );
-	m_operands.push_back( Operand( "BAL",						2, Operand::LOWER,										"vi:write:address,imm:branch",	Operand::BRU, 2, 2		) );
-	m_operands.push_back( Operand( "JR",						1, Operand::LOWER,							 			"vi:branch",										Operand::BRU, 2, 2		) );
-	m_operands.push_back( Operand( "JALR",					2, Operand::LOWER,							 			"vi:write:address,vi:branch",		Operand::BRU, 2, 2		) );
-
-	m_operands.push_back( Operand( "MFP",						2, Operand::LOWER|Operand::DEST,			"vf:dest:write,p",							Operand::EFU, 1, 4		) );
-	m_operands.push_back( Operand( "WAITP",					0, Operand::LOWER,										"",															Operand::EFU, 1, 1		) );
-
-	m_operands.push_back( Operand( "ESADD",					2, Operand::LOWER,										lower4,													Operand::EFU, 10, 11	) );
-	m_operands.push_back( Operand( "ERSADD",				2, Operand::LOWER,										lower4,													Operand::EFU, 17, 18	) );
-	m_operands.push_back( Operand( "ELENG",					2, Operand::LOWER,										lower4,													Operand::EFU, 17, 18	) );
-	m_operands.push_back( Operand( "ERLENG",				2, Operand::LOWER,										lower4,													Operand::EFU, 23, 24	) );
-	m_operands.push_back( Operand( "EATANxy",				2, Operand::LOWER,										lower4,													Operand::EFU, 53, 54	) );
-	m_operands.push_back( Operand( "EATANxz",				2, Operand::LOWER,										lower4,													Operand::EFU, 53, 54	) );
-	m_operands.push_back( Operand( "ESUM",					2, Operand::LOWER,										lower4,													Operand::EFU, 11, 12	) );
-	m_operands.push_back( Operand( "ERCPR",					2, Operand::LOWER,										lower4,													Operand::EFU, 11, 12 	) );
-	m_operands.push_back( Operand( "ERSQRT",				2, Operand::LOWER,										lower5,													Operand::EFU, 17, 18	) );
-	m_operands.push_back( Operand( "ESIN",					2, Operand::LOWER,										lower5,													Operand::EFU, 28, 29	) );
-	m_operands.push_back( Operand( "EATAN",					2, Operand::LOWER,										lower5,													Operand::EFU, 53, 54	) );
-	m_operands.push_back( Operand( "EEXP",					2, Operand::LOWER,										lower5,													Operand::EFU, 43, 44	) );
-
-	m_operands.push_back( Operand( "XGKICK",				1, Operand::LOWER,										"vi",														Operand::INVALID, 1, 1) );
-	m_operands.push_back( Operand( "XTOP",					1, Operand::LOWER,										"vi:write",											Operand::INVALID, 1, 1) );
-	m_operands.push_back( Operand( "XITOP",					1, Operand::LOWER,										"vi:write",											Operand::INVALID, 1, 1) );
+	for( const VuInstructionInfo* info = allVuInstructionInfos(); info->mnemonic; ++info )
+	{
+		m_operands.push_back( Operand( info->operandName, info->arguments, info->operandFlags, info->operandPattern, info->operandUnit, info->throughput, info->latency ) );
+	}
 
 	// operand simplifications
 

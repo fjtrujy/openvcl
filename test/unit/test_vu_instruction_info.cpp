@@ -2,6 +2,19 @@
 
 #include "../../src/VuInstructionInfo.h"
 
+namespace
+{
+    const vcl::VuInstructionInfo* findOperandInfo(const char* name, unsigned int flags)
+    {
+        for (const vcl::VuInstructionInfo* info = vcl::allVuInstructionInfos(); info->mnemonic; ++info)
+        {
+            if (std::string(info->operandName) == name && info->operandFlags == flags)
+                return info;
+        }
+        return 0;
+    }
+}
+
 TEST_CASE("VuInstructionInfo: normalizes field and broadcast mnemonics")
 {
     CHECK(vcl::normalizeVuMnemonic("mulw.xyz") == "mul");
@@ -54,5 +67,68 @@ TEST_CASE("VuInstructionInfo: wait and branch metadata is explicit")
     CHECK(branch->unit == vcl::VU_EXEC_BRU);
     CHECK(branch->latency == 2);
     CHECK((branch->flags & vcl::VU_INSTR_BRANCH) != 0);
+    CHECK(branch->branchDelaySlots == 1);
 }
 
+TEST_CASE("VuInstructionInfo: iterator exposes parser metadata")
+{
+    unsigned int count = 0;
+    for (const vcl::VuInstructionInfo* info = vcl::allVuInstructionInfos(); info->mnemonic; ++info)
+    {
+        ++count;
+        CHECK(info->operandName != 0);
+        CHECK(info->operandPattern != 0);
+        CHECK(info->operandUnit != vcl::Operand::ENTER);
+        CHECK(info->operandUnit != vcl::Operand::EXIT);
+        CHECK((info->operandFlags & vcl::Operand::PREPROCESSOR) == 0);
+    }
+
+    CHECK(count > 80);
+}
+
+TEST_CASE("VuInstructionInfo: parser variants retain exact operand metadata")
+{
+    const vcl::VuInstructionInfo* add = findOperandInfo("ADD", vcl::Operand::UPPER | vcl::Operand::DEST);
+    REQUIRE(add != 0);
+    CHECK(std::string(add->operandPattern) == "vf:dest:write,vf:dest,vf:dest");
+    CHECK(add->operandUnit == vcl::Operand::FMAC);
+    CHECK(add->throughput == 1);
+    CHECK(add->latency == 4);
+
+    const vcl::VuInstructionInfo* addBroadcast = findOperandInfo("ADD", vcl::Operand::UPPER | vcl::Operand::BROADCAST);
+    REQUIRE(addBroadcast != 0);
+    CHECK(std::string(addBroadcast->operandPattern) == "vf:dest:write,vf:dest,vf:bc");
+
+    const vcl::VuInstructionInfo* clipw = vcl::findVuInstructionInfo("clipw");
+    REQUIRE(clipw != 0);
+    CHECK(std::string(clipw->operandPattern) == "vf:dest,vf:wcomp");
+    CHECK((clipw->implicitWrites & vcl::VU_RESOURCE_MAC) != 0);
+    CHECK((clipw->implicitWrites & vcl::VU_RESOURCE_CLIP) != 0);
+}
+
+TEST_CASE("VuInstructionInfo: memory, special register, and bypass metadata are explicit")
+{
+    const vcl::VuInstructionInfo* loi = vcl::findVuInstructionInfo("loi");
+    REQUIRE(loi != 0);
+    CHECK((loi->operandFlags & vcl::Operand::IWRITE) != 0);
+    CHECK((loi->implicitWrites & vcl::VU_RESOURCE_I) != 0);
+
+    const vcl::VuInstructionInfo* lqi = vcl::findVuInstructionInfo("lqi");
+    REQUIRE(lqi != 0);
+    CHECK(lqi->memoryKind == vcl::VU_MEMORY_LOAD);
+    CHECK((lqi->memoryFlags & vcl::VU_MEMORY_FLAG_POSTINC) != 0);
+
+    const vcl::VuInstructionInfo* sqd = vcl::findVuInstructionInfo("sqd");
+    REQUIRE(sqd != 0);
+    CHECK(sqd->memoryKind == vcl::VU_MEMORY_STORE);
+    CHECK((sqd->memoryFlags & vcl::VU_MEMORY_FLAG_PREDEC) != 0);
+
+    const vcl::VuInstructionInfo* xgkick = vcl::findVuInstructionInfo("xgkick");
+    REQUIRE(xgkick != 0);
+    CHECK(xgkick->memoryKind == vcl::VU_MEMORY_XGKICK);
+    CHECK((xgkick->flags & vcl::VU_INSTR_XGKICK) != 0);
+
+    const vcl::VuInstructionInfo* ftoi4 = vcl::findVuInstructionInfo("ftoi4");
+    REQUIRE(ftoi4 != 0);
+    CHECK((ftoi4->bypassFlags & vcl::VU_BYPASS_FTOI_TO_MTIR) != 0);
+}
