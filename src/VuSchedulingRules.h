@@ -42,6 +42,7 @@ void collectVuRegisterWriteKeys( const Token& token, std::list<std::string>& wri
 
 bool isVuZeroMoveFromVf00( const Token& token );
 bool vuTokenListReadsMac( const std::list<Token>& tokens );
+bool vuTokenListReadsClip( const std::list<Token>& tokens );
 
 bool isVuPlainMemoryStore( const Token& token );
 bool isVuPlainMemoryLoad( const Token& token );

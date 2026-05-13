@@ -134,6 +134,8 @@ Recently completed:
   row when a lower-pipe Q/P consumer is waiting.
 - Ready-set scheduling can ignore MAC flag WAW ordering when no token reads MAC,
   allowing independent FMAC chains to move more freely in MAC-dead shaders.
+- Ready-set scheduling uses the same dead-reader check for CLIP flags, so CLIP
+  WAW ordering stays only when a shader can observe CLIP state.
 - `--version` now reads from a shared source constant and has CLI regression
   coverage.
 - Alias live ranges are kept sorted as they are added, so intersection checks

@@ -140,6 +140,23 @@ TEST_CASE("VuSchedulerAnalysis: dependency graph can ignore dead MAC WAW edges")
     CHECK(!hasEdge(deadMacEdges, 0u, 1u, vcl::VU_DEPENDENCY_RESOURCE_WAW));
 }
 
+TEST_CASE("VuSchedulerAnalysis: dependency graph keeps CLIP WAW unless CLIP is dead")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("clipw.xyz vf01, vf02[w]"));
+    REQUIRE(program.parse("clipw.xyz vf03, vf04[w]"));
+
+    std::vector<vcl::VuBasicBlock> blocks = vcl::buildVuBasicBlocks(program.tokenizer.tokens());
+    REQUIRE(blocks.size() == 1u);
+
+    std::vector<vcl::VuDependencyEdge> macOnlyIgnored = vcl::buildVuDependencyGraph(blocks[0], vcl::VU_RESOURCE_MAC);
+    CHECK(hasEdge(macOnlyIgnored, 0u, 1u, vcl::VU_DEPENDENCY_RESOURCE_WAW));
+
+    std::vector<vcl::VuDependencyEdge> allFlagsIgnored = vcl::buildVuDependencyGraph(blocks[0], vcl::VU_RESOURCE_MAC | vcl::VU_RESOURCE_CLIP);
+    CHECK(!hasEdge(allFlagsIgnored, 0u, 1u, vcl::VU_DEPENDENCY_RESOURCE_WAW));
+}
+
 TEST_CASE("VuSchedulerAnalysis: dependency graph compares plain memory descriptors")
 {
     vcl::Error::ResetErrorCount();

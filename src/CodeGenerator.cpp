@@ -93,8 +93,13 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 	std::list<Token> workTokens = tokens;
 	coalesceAdjacentVuIntegerAdds(workTokens);
 	const bool macFlagsDead = !vuTokenListReadsMac(workTokens);
+	const bool clipFlagsDead = !vuTokenListReadsClip(workTokens);
 	{
-		const unsigned int ignoredImplicitWawResources = macFlagsDead ? VU_RESOURCE_MAC : VU_RESOURCE_NONE;
+		unsigned int ignoredImplicitWawResources = VU_RESOURCE_NONE;
+		if( macFlagsDead )
+			ignoredImplicitWawResources |= VU_RESOURCE_MAC;
+		if( clipFlagsDead )
+			ignoredImplicitWawResources |= VU_RESOURCE_CLIP;
 		std::list<Token> scheduledTokens = scheduleVuTokensReadySet(workTokens, ignoredImplicitWawResources);
 		workTokens.swap(scheduledTokens);
 	}

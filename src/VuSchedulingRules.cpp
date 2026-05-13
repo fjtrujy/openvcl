@@ -412,6 +412,16 @@ bool vuTokenListReadsMac( const std::list<Token>& tokens )
 	return false;
 }
 
+bool vuTokenListReadsClip( const std::list<Token>& tokens )
+{
+	for( std::list<Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i )
+	{
+		if( i->operand() && isVuClipReader(i->operand()->name()) )
+			return true;
+	}
+	return false;
+}
+
 bool isVuPlainMemoryStore( const Token& token )
 {
 	VuTokenResourceAccess access;

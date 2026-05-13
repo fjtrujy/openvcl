@@ -139,6 +139,22 @@ TEST_CASE("VuSchedulingRules: scheduler analysis gates are shared predicates")
     CHECK(vcl::isVuLowerPipe(program.token(1)));
 }
 
+TEST_CASE("VuSchedulingRules: flag-reader scans distinguish MAC and CLIP users")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram macProgram;
+    REQUIRE(macProgram.parse("mul.xy vf01, vf02, vf03"));
+    REQUIRE(macProgram.parse("fmand vi01, vi02"));
+    CHECK(vcl::vuTokenListReadsMac(macProgram.tokenizer.tokens()));
+    CHECK(!vcl::vuTokenListReadsClip(macProgram.tokenizer.tokens()));
+
+    ParsedProgram clipProgram;
+    REQUIRE(clipProgram.parse("clipw.xyz vf01, vf02[w]"));
+    REQUIRE(clipProgram.parse("fcand vi01, 0x3f"));
+    CHECK(!vcl::vuTokenListReadsMac(clipProgram.tokenizer.tokens()));
+    CHECK(vcl::vuTokenListReadsClip(clipProgram.tokenizer.tokens()));
+}
+
 TEST_CASE("VuSchedulingRules: pair resource checks reject hazards before code emission")
 {
     vcl::Error::ResetErrorCount();
