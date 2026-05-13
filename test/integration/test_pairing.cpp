@@ -449,6 +449,52 @@ TEST_CASE("Scheduling: conditional standalone branch keeps a pre-branch bubble")
     CHECK(branchLine == loiLine + 2);
 }
 
+TEST_CASE("Scheduling: pre-increment store can fill branch delay slot with adjusted offset")
+{
+    const std::string body =
+        "\tadd.xyzw vf01, vf00, vf00\n"
+        "\tiaddiu vi04, vi00, 9\n"
+        "\tiaddiu vi02, vi00, 15\n"
+        "\tsq vf01, 1(vi04)\n"
+        "\tiaddiu vi04, vi04, 3\n"
+        "\tibne vi04, vi02, done_lid\n"
+        "done_lid:\n";
+    std::string vsm = runEmit(body, "vsmPreIncrementStoreDelay");
+    REQUIRE(vsm.length() > 0);
+
+    int branchLine = lineIndex(vsm, "ibne");
+    int storeLine = lineIndex(vsm, "sq VF01, -2(VI04)");
+    int bumpLine = lineIndex(vsm, "iaddiu VI04, VI04, 3");
+    REQUIRE(branchLine >= 0);
+    REQUIRE(storeLine >= 0);
+    REQUIRE(bumpLine >= 0);
+    CHECK(bumpLine < branchLine);
+    CHECK(storeLine == branchLine + 1);
+}
+
+TEST_CASE("Scheduling: pre-increment store stays before branch when branch ignores increment")
+{
+    const std::string body =
+        "\tadd.xyzw vf01, vf00, vf00\n"
+        "\tiaddiu vi04, vi00, 9\n"
+        "\tiaddiu vi02, vi00, 15\n"
+        "\tiaddiu vi03, vi00, 3\n"
+        "\tsq vf01, 1(vi04)\n"
+        "\tiaddiu vi04, vi04, 3\n"
+        "\tibne vi03, vi02, done_lid\n"
+        "done_lid:\n";
+    std::string vsm = runEmit(body, "vsmNoPreIncrementStoreDelay");
+    REQUIRE(vsm.length() > 0);
+
+    int branchLine = lineIndex(vsm, "ibne");
+    int adjustedStoreLine = lineIndex(vsm, "sq VF01, -2(VI04)");
+    int originalStoreLine = lineIndex(vsm, "sq VF01, 1(VI04)");
+    REQUIRE(branchLine >= 0);
+    REQUIRE(originalStoreLine >= 0);
+    CHECK(adjustedStoreLine < 0);
+    CHECK(originalStoreLine < branchLine);
+}
+
 TEST_CASE("Scheduling: terminal unconditional branch omits unreachable auto-exit footer")
 {
     const std::string body =

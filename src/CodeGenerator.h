@@ -70,7 +70,10 @@ private:
 	void recordRegisterWrites( const Token& token, int issueCycle );
 	unsigned int ignoredImplicitWawResourcesForRemaining( std::list<Token>::const_iterator begin,
 	                                                       std::list<Token>::const_iterator end ) const;
+	void fillPreIncrementStoreBranchDelaySlots( std::list<Token>& tokens ) const;
 	void fillBranchDelaySlots( std::list<Token>& tokens ) const;
+	bool movePreIncrementStoreIntoBranchDelaySlot( std::list<Token>& tokens,
+	                                               std::list<Token>::iterator branch ) const;
 	bool canMoveIntoBranchDelaySlot( const Token& candidate, const Token& branch ) const;
 	bool nextTokenIsBranchDelayFiller( std::list<Token>::iterator token,
 	                                   std::list<Token>::iterator end ) const;

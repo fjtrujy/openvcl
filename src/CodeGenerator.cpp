@@ -58,6 +58,71 @@ namespace
 		}
 		return false;
 	}
+
+	bool evaluateIntegerExpression( const std::string& text, long& value )
+	{
+		Expression e;
+		e.setCustomOperators( Math::mathOperators() );
+		if( !e.process( text ) || !e.solve() )
+			return false;
+		value = static_cast<long>( e.result() );
+		return true;
+	}
+
+	bool integerSelfImmediateAdd( const Token& token, std::string& reg, long& immediate )
+	{
+		if( !token.operand() || lowerVuTokenName(token) != "iaddiu" )
+			return false;
+		if( token.flags() & (Token::PREORDERED | Token::E | Token::D | Token::T | Token::BRANCH_DELAY_FILLER) )
+			return false;
+
+		const std::list<Token::Argument>& args = token.arguments();
+		if( args.size() != 3 )
+			return false;
+
+		std::list<Token::Argument>::const_iterator dst = args.begin();
+		std::list<Token::Argument>::const_iterator src = dst;
+		++src;
+		std::list<Token::Argument>::const_iterator imm = src;
+		++imm;
+
+		if( dst->type() != Token::Argument::INTEGER_REGISTER
+		    || src->type() != Token::Argument::INTEGER_REGISTER
+		    || imm->type() != Token::Argument::IMMEDIATE )
+			return false;
+		if( !(dst->flags() & Token::Argument::WRITE) )
+			return false;
+
+		std::string srcReg;
+		if( !vuRegisterKey(*dst, reg) || !vuRegisterKey(*src, srcReg) || reg != srcReg )
+			return false;
+
+		return evaluateIntegerExpression( imm->immediate(), immediate );
+	}
+
+	bool adjustPlainStoreOffset( Token& store, const std::string& baseReg, long delta )
+	{
+		for( std::list<Token::Argument>::iterator i = store.arguments().begin(); i != store.arguments().end(); ++i )
+		{
+			if( i->type() != Token::Argument::INTEGER_REGISTER
+			    || !(i->flags() & Token::Argument::INDIRECT) )
+				continue;
+
+			std::string key;
+			if( !vuRegisterKey(*i, key) || key != baseReg )
+				continue;
+
+			long offset = 0;
+			if( !evaluateIntegerExpression( i->immediate(), offset ) )
+				return false;
+
+			std::stringstream s;
+			s << (offset + delta);
+			i->setImmediate( s.str() );
+			return true;
+		}
+		return false;
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -117,6 +182,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 
 	std::list<Token> workTokens = tokens;
 	coalesceAdjacentVuIntegerAdds(workTokens);
+	fillPreIncrementStoreBranchDelaySlots(workTokens);
 	const bool macFlagsDead = !vuTokenListReadsMac(workTokens);
 	std::list<Token> scheduledTokens = scheduleVuTokensReadySetWithFlagLiveness(workTokens);
 	workTokens.swap(scheduledTokens);
@@ -333,6 +399,11 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			std::list<Token>::iterator filler = k;
 			++filler;
 			padForReadHazards(token, NULL);
+			while( readHazardDelay(*filler, NULL) > 1 )
+			{
+				addNopLine();
+				m_currentCycle++;
+			}
 			emitBranchWithDelayFiller(token, *filler);
 			if( isVuTerminalUnconditionalBranch(token) )
 				exitWritten = true;
@@ -922,6 +993,9 @@ void CodeGenerator::fillBranchDelaySlots( std::list<Token>& tokens ) const
 		if( branchAccess.instructionFlags & (VU_INSTR_LINK_BRANCH | VU_INSTR_REGISTER_BRANCH) )
 			continue;
 
+		if( movePreIncrementStoreIntoBranchDelaySlot(tokens, branch) )
+			continue;
+
 		if( branch == tokens.begin() )
 			continue;
 		std::list<Token>::iterator candidate = branch;
@@ -936,6 +1010,90 @@ void CodeGenerator::fillBranchDelaySlots( std::list<Token>& tokens ) const
 		++afterBranch;
 		tokens.insert(afterBranch, filler);
 	}
+}
+
+void CodeGenerator::fillPreIncrementStoreBranchDelaySlots( std::list<Token>& tokens ) const
+{
+	for( std::list<Token>::iterator branch = tokens.begin(); branch != tokens.end(); ++branch )
+	{
+		if( vuTokenBranchDelaySlots(*branch) != 1 )
+			continue;
+		if( branch->flags() & (Token::PREORDERED | Token::E | Token::D | Token::T) )
+			continue;
+
+		VuTokenResourceAccess branchAccess;
+		if( !buildVuTokenResourceAccess(*branch, branchAccess) )
+			continue;
+		if( branchAccess.instructionFlags & (VU_INSTR_LINK_BRANCH | VU_INSTR_REGISTER_BRANCH) )
+			continue;
+
+		movePreIncrementStoreIntoBranchDelaySlot(tokens, branch);
+	}
+}
+
+bool CodeGenerator::movePreIncrementStoreIntoBranchDelaySlot( std::list<Token>& tokens,
+                                                              std::list<Token>::iterator branch ) const
+{
+	if( branch == tokens.begin() )
+		return false;
+	if( nextTokenIsBranchDelayFiller(branch, tokens.end()) )
+		return false;
+
+	std::list<Token>::iterator increment = branch;
+	--increment;
+	if( increment == tokens.begin() )
+		return false;
+	std::list<Token>::iterator store = increment;
+	--store;
+
+	if( store->label().length() != 0 || increment->label().length() != 0 )
+		return false;
+	if( store->flags() & (Token::PREORDERED | Token::E | Token::D | Token::T | Token::BRANCH_DELAY_FILLER) )
+		return false;
+	if( !isVuPlainMemoryStore(*store) )
+		return false;
+
+	std::string incrementReg;
+	long incrementAmount = 0;
+	if( !integerSelfImmediateAdd(*increment, incrementReg, incrementAmount) )
+		return false;
+	if( !vuTokenReadsRegister(*branch, incrementReg) )
+		return false;
+
+	VuTokenResourceAccess storeAccess;
+	if( !buildVuTokenResourceAccess(*store, storeAccess) )
+		return false;
+	if( !storeAccess.hasMemoryBase || !storeAccess.hasMemoryOffset )
+		return false;
+	if( storeAccess.memoryBaseRegister != incrementReg )
+		return false;
+	if( storeAccess.memoryFlags != VU_MEMORY_FLAG_NONE )
+		return false;
+	if( storeAccess.implicitWrites != VU_RESOURCE_NONE )
+		return false;
+
+	VuTokenResourceAccess incrementAccess;
+	VuTokenResourceAccess branchAccess;
+	if( !buildVuTokenResourceAccess(*increment, incrementAccess)
+	    || !buildVuTokenResourceAccess(*branch, branchAccess) )
+		return false;
+	if( incrementAccess.memoryKind != VU_MEMORY_NONE
+	    || incrementAccess.implicitReads != VU_RESOURCE_NONE
+	    || incrementAccess.implicitWrites != VU_RESOURCE_NONE )
+		return false;
+	if( branchAccess.instructionFlags & (VU_INSTR_LINK_BRANCH | VU_INSTR_REGISTER_BRANCH) )
+		return false;
+
+	Token filler = *store;
+	if( !adjustPlainStoreOffset(filler, incrementReg, -incrementAmount) )
+		return false;
+	filler.setFlags(filler.flags() | Token::BRANCH_DELAY_FILLER);
+
+	tokens.erase(store);
+	std::list<Token>::iterator afterBranch = branch;
+	++afterBranch;
+	tokens.insert(afterBranch, filler);
+	return true;
 }
 
 bool CodeGenerator::canMoveIntoBranchDelaySlot( const Token& candidate, const Token& branch ) const

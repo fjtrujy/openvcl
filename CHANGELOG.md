@@ -21,6 +21,8 @@
   - conservative branch-delay filling for independent integer instructions;
   - standalone branches omit the old extra pre-branch bubble after normal
     read-hazard padding is satisfied;
+  - pre-increment plain stores can fill branch delay slots by adjusting their
+    memory offset against the incremented base register;
   - deterministic alias allocation;
   - per-field VF readiness tracking;
   - disjoint VF field read/write pairing;
