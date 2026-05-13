@@ -21,6 +21,18 @@ namespace
         return haystack.find(needle) != std::string::npos;
     }
 
+    unsigned int countOccurrences(const std::string& haystack, const std::string& needle)
+    {
+        unsigned int count = 0;
+        std::string::size_type pos = 0;
+        while ((pos = haystack.find(needle, pos)) != std::string::npos)
+        {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    }
+
     int textMetric(const std::string& report, const std::string& name)
     {
         std::string key = name + ": ";
@@ -93,6 +105,13 @@ namespace
         args.push_back(loop);
         args.push_back(fixturePath(candidate));
         return ::test::run_openvcl(args, "");
+    }
+
+    ::test::RunResult runCostCompareListMarkdown(const std::string& manifest)
+    {
+        std::vector<std::string> args;
+        args.push_back("--cost-compare-list-markdown");
+        return ::test::run_openvcl(args, manifest);
     }
 
     ::test::RunResult runCostLoop(const std::string& fixture, const std::string& loop)
@@ -216,6 +235,27 @@ TEST_CASE("VSM cost CLI: Markdown comparison exposes loop-weighted totals")
     CHECK(contains(r.stdout_data, "baseline weighted static"));
     CHECK(contains(r.stdout_data, "candidate weighted estimated"));
     CHECK(contains(r.stdout_data, " | 20 | 2 | -18 | 20 | 2 | -18 | 0.10x |"));
+}
+
+TEST_CASE("VSM cost CLI: Markdown comparison list emits one table with multiple rows")
+{
+    const std::string manifest =
+        "# baseline candidate\n"
+        + fixturePath("simple_scheduled.vsm") + " " + fixturePath("sce_padded_columns.vsm") + "\n"
+        + fixturePath("sce_padded_columns.vsm") + " " + fixturePath("simple_scheduled.vsm") + "\n";
+
+    ::test::RunResult r = runCostCompareListMarkdown(manifest);
+    REQUIRE(r.exit_code == 0);
+    CHECK(countOccurrences(r.stdout_data, "| baseline | candidate | baseline static | candidate static | static delta |") == 1u);
+    CHECK(contains(r.stdout_data, "| " + fixturePath("simple_scheduled.vsm") + " | " + fixturePath("sce_padded_columns.vsm") + " | 5 | 2 | -3 |"));
+    CHECK(contains(r.stdout_data, "| " + fixturePath("sce_padded_columns.vsm") + " | " + fixturePath("simple_scheduled.vsm") + " | 2 | 5 | +3 |"));
+}
+
+TEST_CASE("VSM cost CLI: malformed Markdown comparison list is rejected")
+{
+    ::test::RunResult r = runCostCompareListMarkdown(fixturePath("simple_scheduled.vsm") + "\n");
+    CHECK(r.exit_code != 0);
+    CHECK(contains(r.stderr_data, "Invalid cost comparison list entry at line 1"));
 }
 
 TEST_CASE("VSM cost CLI: loop repeat weights static block cost")

@@ -92,6 +92,8 @@
   comparisons between a baseline and candidate, including signed deltas.
 - Added `--cost-compare-markdown` for direct side-by-side Markdown cost tables
   suitable for renderer comparison reports.
+- Added `--cost-compare-list-markdown` to read baseline/candidate VSM pairs
+  from a manifest and emit a single multi-row Markdown comparison table.
 - Markdown cost comparisons include loop-weighted static and estimated totals.
 - `--cost-loop-preset ps2gl` now recognizes SCE optimized
   `EXPL_...__MAIN_LOOP` labels when weighting and comparing reference VSMs.

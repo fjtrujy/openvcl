@@ -35,6 +35,26 @@ namespace vcl
 
 namespace
 {
+	std::string trimManifestText( const std::string& text )
+	{
+		std::string::size_type first = 0;
+		while( first < text.size() && (text[first] == ' ' || text[first] == '\t' || text[first] == '\r' || text[first] == '\n') )
+			++first;
+
+		std::string::size_type last = text.size();
+		while( last > first && (text[last - 1] == ' ' || text[last - 1] == '\t' || text[last - 1] == '\r' || text[last - 1] == '\n') )
+			--last;
+		return text.substr( first, last - first );
+	}
+
+	std::string stripManifestComment( const std::string& line )
+	{
+		std::string::size_type pos = line.find( '#' );
+		if( pos == std::string::npos )
+			return line;
+		return line.substr( 0, pos );
+	}
+
 	struct FlagName
 	{
 		unsigned int flag;
@@ -313,6 +333,8 @@ bool Parser::create( int argc, char* argv[] )
 		setState( SHOW_USAGE );
 	else if( m_cmdLine.dumpInstructionInfo() )
 		setState( DUMP_INSTRUCTION_INFO );
+	else if( m_cmdLine.compareVsmCostListMarkdown() )
+		setState( ANALYZE_VSM_COST_COMPARE_LIST );
 	else if( m_cmdLine.compareVsmCost() )
 		setState( ANALYZE_VSM_COST_COMPARE );
 	else if( m_cmdLine.analyzeVsmCost() )
@@ -347,6 +369,7 @@ bool Parser::run()
 		case DUMP_INSTRUCTION_INFO: return dumpInstructionInfo();
 		case ANALYZE_VSM_COST: return analyzeVsmCost();
 		case ANALYZE_VSM_COST_COMPARE: return analyzeVsmCostCompare();
+		case ANALYZE_VSM_COST_COMPARE_LIST: return analyzeVsmCostCompareList();
 		case READ_INPUT: return readInput();
 		case PREPROCESS: return preProcess();
 		case TOKENIZE: return tokenize();
@@ -679,6 +702,94 @@ bool Parser::analyzeVsmCostCompare()
 			VsmCostAnalyzer::writeComparisonMarkdown( std::cout, baselineAnalyzer, candidateAnalyzer );
 		else
 			VsmCostAnalyzer::writeComparisonText( std::cout, baselineAnalyzer, candidateAnalyzer );
+	}
+
+	setState( EXIT );
+	return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+bool Parser::analyzeVsmCostCompareList()
+{
+	std::ifstream manifestFile;
+	std::istream* manifest = &std::cin;
+	if( m_cmdLine.input().length() > 0 )
+	{
+		manifestFile.open( m_cmdLine.input().c_str() );
+		if( !manifestFile.good() )
+		{
+			Error::Display( Error( "Could not open cost comparison list" ) );
+			return false;
+		}
+		manifest = &manifestFile;
+	}
+
+	std::ofstream outputFile;
+	std::ostream* output = &std::cout;
+	if( m_cmdLine.output().length() > 0 )
+	{
+		outputFile.open( m_cmdLine.output().c_str() );
+		if( !outputFile.good() )
+		{
+			Error::Display( Error( "Could not open output file" ) );
+			return false;
+		}
+		output = &outputFile;
+	}
+
+	VsmCostAnalyzer::writeComparisonMarkdownHeader( *output );
+
+	std::string line;
+	unsigned int lineNumber = 0;
+	while( std::getline( *manifest, line ) )
+	{
+		++lineNumber;
+		const std::string stripped = trimManifestText( stripManifestComment( line ) );
+		if( stripped.empty() )
+			continue;
+
+		std::stringstream fields( stripped );
+		std::string baselinePath;
+		std::string candidatePath;
+		std::string extra;
+		if( !(fields >> baselinePath >> candidatePath) || (fields >> extra) )
+		{
+			std::stringstream message;
+			message << "Invalid cost comparison list entry at line " << lineNumber;
+			Error::Display( Error( message.str() ) );
+			return false;
+		}
+
+		VsmCostAnalyzer baselineAnalyzer;
+		VsmCostAnalyzer candidateAnalyzer;
+
+		std::ifstream baselineInput( baselinePath.c_str() );
+		if( !baselineInput.good() )
+		{
+			Error::Display( Error( "Could not open cost comparison baseline" ) );
+			return false;
+		}
+		if( !baselineAnalyzer.analyze( baselineInput, baselinePath ) )
+			return false;
+
+		std::ifstream candidateInput( candidatePath.c_str() );
+		if( !candidateInput.good() )
+		{
+			Error::Display( Error( "Could not open cost comparison candidate" ) );
+			return false;
+		}
+		if( !candidateAnalyzer.analyze( candidateInput, candidatePath ) )
+			return false;
+
+		const std::vector< std::pair<std::string, unsigned int> >& costLoops = m_cmdLine.costLoops();
+		for( std::vector< std::pair<std::string, unsigned int> >::const_iterator i = costLoops.begin(); i != costLoops.end(); ++i )
+		{
+			baselineAnalyzer.setBlockRepeat( i->first, i->second );
+			candidateAnalyzer.setBlockRepeat( i->first, i->second );
+		}
+
+		VsmCostAnalyzer::writeComparisonMarkdownRow( *output, baselineAnalyzer, candidateAnalyzer );
 	}
 
 	setState( EXIT );

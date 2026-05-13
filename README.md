@@ -100,6 +100,7 @@ Useful options:
 | `--cost-compare <baseline>` | compare scheduled `.vsm` cost against a baseline |
 | `--cost-compare-json <baseline>` | compare scheduled `.vsm` cost as JSON |
 | `--cost-compare-markdown <baseline>` | compare scheduled `.vsm` cost as a Markdown table |
+| `--cost-compare-list-markdown` | read baseline/candidate VSM pairs and emit one Markdown table |
 | `--dump-instruction-info` | print the VU instruction metadata table |
 | `--dump-instruction-info-json` | print the VU instruction metadata table as JSON |
 
@@ -151,6 +152,15 @@ Emit comparison output for scripts or Markdown reports:
 ./openvcl --cost-compare-json sce_reference.vsm openvcl_candidate.vsm
 ./openvcl --cost-compare-markdown sce_reference.vsm openvcl_candidate.vsm
 ```
+
+Emit one Markdown table for a set of VSM pairs:
+
+```sh
+./openvcl --cost-compare-list-markdown --cost-loop-preset ps2gl pairs.txt
+```
+
+`pairs.txt` contains whitespace-separated `baseline.vsm candidate.vsm` rows.
+Blank lines and `#` comments are ignored.
 
 The report includes:
 

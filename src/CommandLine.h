@@ -47,6 +47,7 @@ public:
 	bool compareVsmCost() const;
 	bool compareVsmCostJson() const;
 	bool compareVsmCostMarkdown() const;
+	bool compareVsmCostListMarkdown() const;
 	bool dumpInstructionInfo() const;
 	bool dumpInstructionInfoJson() const;
 	const std::vector< std::pair<std::string, unsigned int> >& costLoops() const;
@@ -111,6 +112,7 @@ private:
 		ANALYZE_VSM_COST_COMPARE,
 		ANALYZE_VSM_COST_COMPARE_JSON,
 		ANALYZE_VSM_COST_COMPARE_MARKDOWN,
+		ANALYZE_VSM_COST_COMPARE_LIST_MARKDOWN,
 		DUMP_INSTRUCTION_INFO,
 		DUMP_INSTRUCTION_INFO_JSON,
 
@@ -155,6 +157,7 @@ private:
 	bool m_compareVsmCost;
 	bool m_compareVsmCostJson;
 	bool m_compareVsmCostMarkdown;
+	bool m_compareVsmCostListMarkdown;
 	bool m_dumpInstructionInfo;
 	bool m_dumpInstructionInfoJson;
 	std::vector< std::pair<std::string, unsigned int> > m_costLoops;

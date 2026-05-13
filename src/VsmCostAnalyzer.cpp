@@ -1470,6 +1470,19 @@ bool VsmCostAnalyzer::writeComparisonJson( std::ostream& stream, const VsmCostAn
 
 bool VsmCostAnalyzer::writeComparisonMarkdown( std::ostream& stream, const VsmCostAnalyzer& baseline, const VsmCostAnalyzer& candidate )
 {
+	writeComparisonMarkdownHeader( stream );
+	return writeComparisonMarkdownRow( stream, baseline, candidate );
+}
+
+bool VsmCostAnalyzer::writeComparisonMarkdownHeader( std::ostream& stream )
+{
+	stream << "| baseline | candidate | baseline static | candidate static | static delta | baseline estimated | candidate estimated | estimated delta | estimated ratio | baseline weighted static | candidate weighted static | weighted static delta | baseline weighted estimated | candidate weighted estimated | weighted estimated delta | weighted estimated ratio | baseline issue stall | candidate issue stall | issue stall delta | baseline wait stall | candidate wait stall | wait stall delta | baseline paired | candidate paired | paired delta |" << std::endl;
+	stream << "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|" << std::endl;
+	return true;
+}
+
+bool VsmCostAnalyzer::writeComparisonMarkdownRow( std::ostream& stream, const VsmCostAnalyzer& baseline, const VsmCostAnalyzer& candidate )
+{
 	const Summary baselineSummary = baseline.summary();
 	const Summary candidateSummary = candidate.summary();
 	const long staticDelta = metricDelta( baselineSummary.staticCycles, candidateSummary.staticCycles );
@@ -1488,8 +1501,6 @@ bool VsmCostAnalyzer::writeComparisonMarkdown( std::ostream& stream, const VsmCo
 	                           : static_cast<double>( candidateSummary.weightedEstimatedTotalCycles )
 	                             / static_cast<double>( baselineSummary.weightedEstimatedTotalCycles );
 
-	stream << "| baseline | candidate | baseline static | candidate static | static delta | baseline estimated | candidate estimated | estimated delta | estimated ratio | baseline weighted static | candidate weighted static | weighted static delta | baseline weighted estimated | candidate weighted estimated | weighted estimated delta | weighted estimated ratio | baseline issue stall | candidate issue stall | issue stall delta | baseline wait stall | candidate wait stall | wait stall delta | baseline paired | candidate paired | paired delta |" << std::endl;
-	stream << "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|" << std::endl;
 	stream << "| " << markdownEscape( baselineSummary.input )
 	       << " | " << markdownEscape( candidateSummary.input )
 	       << " | " << baselineSummary.staticCycles

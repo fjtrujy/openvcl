@@ -66,6 +66,8 @@ public:
 	static bool writeComparisonText( std::ostream& stream, const VsmCostAnalyzer& baseline, const VsmCostAnalyzer& candidate );
 	static bool writeComparisonJson( std::ostream& stream, const VsmCostAnalyzer& baseline, const VsmCostAnalyzer& candidate );
 	static bool writeComparisonMarkdown( std::ostream& stream, const VsmCostAnalyzer& baseline, const VsmCostAnalyzer& candidate );
+	static bool writeComparisonMarkdownHeader( std::ostream& stream );
+	static bool writeComparisonMarkdownRow( std::ostream& stream, const VsmCostAnalyzer& baseline, const VsmCostAnalyzer& candidate );
 
 private:
 	enum Unit
