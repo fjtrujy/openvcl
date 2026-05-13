@@ -1443,6 +1443,8 @@ bool VsmCostAnalyzer::writeComparisonMarkdown( std::ostream& stream, const VsmCo
 	const Summary candidateSummary = candidate.summary();
 	const long staticDelta = metricDelta( baselineSummary.staticCycles, candidateSummary.staticCycles );
 	const long estimatedDelta = metricDelta( baselineSummary.estimatedTotalCycles, candidateSummary.estimatedTotalCycles );
+	const long weightedStaticDelta = metricDelta( baselineSummary.weightedStaticCycles, candidateSummary.weightedStaticCycles );
+	const long weightedEstimatedDelta = metricDelta( baselineSummary.weightedEstimatedTotalCycles, candidateSummary.weightedEstimatedTotalCycles );
 	const long issueStallDelta = metricDelta( baselineSummary.issueStallCycles, candidateSummary.issueStallCycles );
 	const long waitStallDelta = metricDelta( baselineSummary.waitStallCycles, candidateSummary.waitStallCycles );
 	const long pairedDelta = metricDelta( baselineSummary.pairedCycles, candidateSummary.pairedCycles );
@@ -1450,9 +1452,13 @@ bool VsmCostAnalyzer::writeComparisonMarkdown( std::ostream& stream, const VsmCo
 	                   ? 0.0
 	                   : static_cast<double>( candidateSummary.estimatedTotalCycles )
 	                     / static_cast<double>( baselineSummary.estimatedTotalCycles );
+	const double weightedRatio = baselineSummary.weightedEstimatedTotalCycles == 0
+	                           ? 0.0
+	                           : static_cast<double>( candidateSummary.weightedEstimatedTotalCycles )
+	                             / static_cast<double>( baselineSummary.weightedEstimatedTotalCycles );
 
-	stream << "| baseline | candidate | baseline static | candidate static | static delta | baseline estimated | candidate estimated | estimated delta | baseline issue stall | candidate issue stall | issue stall delta | baseline wait stall | candidate wait stall | wait stall delta | estimated ratio | baseline paired | candidate paired | paired delta |" << std::endl;
-	stream << "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|" << std::endl;
+	stream << "| baseline | candidate | baseline static | candidate static | static delta | baseline estimated | candidate estimated | estimated delta | estimated ratio | baseline weighted static | candidate weighted static | weighted static delta | baseline weighted estimated | candidate weighted estimated | weighted estimated delta | weighted estimated ratio | baseline issue stall | candidate issue stall | issue stall delta | baseline wait stall | candidate wait stall | wait stall delta | baseline paired | candidate paired | paired delta |" << std::endl;
+	stream << "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|" << std::endl;
 	stream << "| " << markdownEscape( baselineSummary.input )
 	       << " | " << markdownEscape( candidateSummary.input )
 	       << " | " << baselineSummary.staticCycles
@@ -1463,6 +1469,16 @@ bool VsmCostAnalyzer::writeComparisonMarkdown( std::ostream& stream, const VsmCo
 	       << " | " << candidateSummary.estimatedTotalCycles
 	       << " | ";
 	writeSignedMarkdownNumber( stream, estimatedDelta );
+	stream << " | " << std::fixed << std::setprecision(2) << ratio << "x"
+	       << " | " << baselineSummary.weightedStaticCycles
+	       << " | " << candidateSummary.weightedStaticCycles
+	       << " | ";
+	writeSignedMarkdownNumber( stream, weightedStaticDelta );
+	stream << " | " << baselineSummary.weightedEstimatedTotalCycles
+	       << " | " << candidateSummary.weightedEstimatedTotalCycles
+	       << " | ";
+	writeSignedMarkdownNumber( stream, weightedEstimatedDelta );
+	stream << " | " << std::fixed << std::setprecision(2) << weightedRatio << "x";
 	stream << " | " << baselineSummary.issueStallCycles
 	       << " | " << candidateSummary.issueStallCycles
 	       << " | ";
@@ -1471,8 +1487,7 @@ bool VsmCostAnalyzer::writeComparisonMarkdown( std::ostream& stream, const VsmCo
 	       << " | " << candidateSummary.waitStallCycles
 	       << " | ";
 	writeSignedMarkdownNumber( stream, waitStallDelta );
-	stream << " | " << std::fixed << std::setprecision(2) << ratio << "x"
-	       << " | " << baselineSummary.pairedCycles
+	stream << " | " << baselineSummary.pairedCycles
 	       << " | " << candidateSummary.pairedCycles
 	       << " | ";
 	writeSignedMarkdownNumber( stream, pairedDelta );

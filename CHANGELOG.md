@@ -66,6 +66,7 @@
   comparisons between a baseline and candidate, including signed deltas.
 - Added `--cost-compare-markdown` for direct side-by-side Markdown cost tables
   suitable for renderer comparison reports.
+- Markdown cost comparisons include loop-weighted static and estimated totals.
 - Extended cost comparison reports with top weighted block deltas for estimated
   cycles, idle slots, and wait stalls.
 - Added the first ready-set scheduler pass for straight-line arithmetic runs,

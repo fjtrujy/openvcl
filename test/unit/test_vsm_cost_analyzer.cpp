@@ -233,7 +233,9 @@ TEST_CASE("VsmCostAnalyzer inline: comparison exposes top block deltas")
     CHECK(contains(markdown.str(), "| baseline_inline.vsm | candidate_inline.vsm |"));
     CHECK(contains(markdown.str(), " | 4 | 4 | 0 |"));
     CHECK(contains(markdown.str(), " | 10 | 9 | -1 |"));
-    CHECK(contains(markdown.str(), " | 6 | 5 | -1 | 0.90x |"));
+    CHECK(contains(markdown.str(), " | 0.90x |"));
+    CHECK(contains(markdown.str(), " | 10 | 11 | +1 | 28 | 26 | -2 | 0.93x |"));
+    CHECK(contains(markdown.str(), " | 6 | 5 | -1 |"));
 }
 
 TEST_CASE("VsmCostAnalyzer fixture: SCE padded columns have precomputed cost")

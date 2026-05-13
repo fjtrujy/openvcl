@@ -152,6 +152,7 @@ The report includes:
 - static scheduled cycles;
 - estimated cycles including modeled FDIV/EFU producer issue stalls and
   explicit `waitq`/`waitp` stalls;
+- loop-weighted totals when `--cost-loop` or `--cost-loop-preset` is used;
 - upper/lower slot usage, paired cycles, NOP slots, and nop-only cycles;
 - per-label block costs;
 - weighted hot-block, idle-slot, estimated-cost, and wait-stall rankings;

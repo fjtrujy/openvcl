@@ -84,6 +84,17 @@ namespace
         return ::test::run_openvcl(args, "");
     }
 
+    ::test::RunResult runCostCompareMarkdownLoop(const std::string& baseline, const std::string& candidate, const std::string& loop)
+    {
+        std::vector<std::string> args;
+        args.push_back("--cost-compare-markdown");
+        args.push_back(fixturePath(baseline));
+        args.push_back("--cost-loop");
+        args.push_back(loop);
+        args.push_back(fixturePath(candidate));
+        return ::test::run_openvcl(args, "");
+    }
+
     ::test::RunResult runCostLoop(const std::string& fixture, const std::string& loop)
     {
         std::vector<std::string> args;
@@ -191,10 +202,20 @@ TEST_CASE("VSM cost CLI: Markdown comparison emits a report-table row")
     ::test::RunResult r = runCostCompareMarkdown("simple_scheduled.vsm", "sce_padded_columns.vsm");
     REQUIRE(r.exit_code == 0);
     CHECK(contains(r.stdout_data, "| baseline | candidate | baseline static | candidate static | static delta |"));
+    CHECK(contains(r.stdout_data, "baseline weighted estimated"));
     CHECK(contains(r.stdout_data, "| " + fixturePath("simple_scheduled.vsm") + " | " + fixturePath("sce_padded_columns.vsm") + " |"));
     CHECK(contains(r.stdout_data, " | 5 | 2 | -3 | 5 | 2 | -3 |"));
     CHECK(contains(r.stdout_data, " | 1 | 1 | 0 |"));
     CHECK(contains(r.stdout_data, " | 0.40x |"));
+}
+
+TEST_CASE("VSM cost CLI: Markdown comparison exposes loop-weighted totals")
+{
+    ::test::RunResult r = runCostCompareMarkdownLoop("simple_scheduled.vsm", "sce_padded_columns.vsm", "entry_lid=4");
+    REQUIRE(r.exit_code == 0);
+    CHECK(contains(r.stdout_data, "baseline weighted static"));
+    CHECK(contains(r.stdout_data, "candidate weighted estimated"));
+    CHECK(contains(r.stdout_data, " | 20 | 2 | -18 | 20 | 2 | -18 | 0.10x |"));
 }
 
 TEST_CASE("VSM cost CLI: loop repeat weights static block cost")
