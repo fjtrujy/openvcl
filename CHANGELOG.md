@@ -36,6 +36,9 @@
 - Expanded `VuInstructionInfo` into the canonical parser/cost metadata table,
   moved hardware operand construction onto it, and added
   `--dump-instruction-info` / `--dump-instruction-info-json`.
+- Added `VuTokenResourceAccess` as the table-driven descriptor layer for VF/VI
+  register fields, implicit resources, memory flags, branch delay slots, and
+  bypass notes.
 
 ## 0.3.3
 
