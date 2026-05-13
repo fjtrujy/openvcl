@@ -911,6 +911,7 @@ TEST_CASE("Software pipeline: safe ps2gl primitive transform loops keep SCE-size
 
     const Case cases[] =
     {
+        { "vsmGeneralNoSpecQuad", 47 },
         { "vsmGeneralNoSpecTri", 36 },
         { "vsmGeneralTri", 36 },
         { "vsmGeneralPVDiffTri", 36 },
@@ -924,6 +925,12 @@ TEST_CASE("Software pipeline: safe ps2gl primitive transform loops keep SCE-size
         CHECK(contains(vsm, "xform_loop_lid__ENTRY_POINT:"));
         CHECK(contains(vsm, "xform_loop_lid__MAIN_LOOP:"));
         CHECK(blockLineCount(vsm, "xform_loop_lid__MAIN_LOOP") == cases[i].expectedMainLines);
+        if (std::string(cases[i].name) == "vsmGeneralNoSpecQuad")
+        {
+            CHECK(contains(vsm, "xform_loop_lid__FALLBACK_SHORT:"));
+            CHECK(contains(vsm, "isubiu VI01, VI01, 384"));
+            CHECK(contains(vsm, "                    nop                             iadd VI08, VI07, VI00"));
+        }
     }
 }
 

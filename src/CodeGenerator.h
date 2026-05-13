@@ -128,6 +128,7 @@ private:
 	                                                     std::list<Token>::iterator& token );
 	void emitPs2glTriXformSoftwarePipelineLoop( bool pvDiff );
 	void emitPs2glQuadXformSoftwarePipelineLoop();
+	void emitPs2glQuadXformScalarFallbackLoop();
 	void emitPs2glPvDiffQuadXformSoftwarePipelineLoop();
 	void emitPs2glIndexedXformSoftwarePipelineLoop();
 	bool tryEmitDirLightSpecSoftwarePipelineLoop( std::list<Token>& tokens,
