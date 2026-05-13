@@ -744,6 +744,13 @@ std::string VsmCostAnalyzer::canonicalBlockLabel( const std::string& label )
 		return label;
 
 	const std::string canonical = prefix.substr( marker + sizeof(kVclMarker) - 1 );
+	if( canonical == "adcLoop_done_lid" )
+	{
+		if( prefix.find( "EXPL_vu1_fast_" ) != std::string::npos
+		    || prefix.find( "EXPL_vu1_fast_nolights_" ) != std::string::npos
+		    || prefix.find( "EXPL_vu1_scei_" ) != std::string::npos )
+			return "xform_loop_lid";
+	}
 	return canonical.empty() ? label : canonical;
 }
 

@@ -176,6 +176,25 @@ TEST_CASE("VsmCostAnalyzer inline: ps2gl preset labels match SCE optimized main 
     CHECK(contains(text.str(), "EXPL_vu1_general_quad_pp4_vcl_xform_loop_lid__MAIN_LOOP: cycles=2 repeat=4 weighted_cycles=8"));
 }
 
+TEST_CASE("VsmCostAnalyzer inline: fast-family SCE transform loops canonicalize to xform")
+{
+    const std::string source =
+        "\t.vu\n"
+        "EXPL_vu1_fast_nolights_pp4_vcl_adcLoop_done_lid__MAIN_LOOP:\n"
+        "                    add.xyz VF01, VF02, VF03        iaddiu VI01, VI00, 1\n"
+        "                    nop                             nop\n";
+
+    vcl::VsmCostAnalyzer analyzer;
+    REQUIRE(analyzeString(source, "sce_fast_loop_label_inline.vsm", analyzer));
+    analyzer.setBlockRepeat("xform_loop_lid", 4);
+
+    std::ostringstream text;
+    REQUIRE(analyzer.writeText(text));
+    CHECK(textMetric(text.str(), "static_cycles") == 2);
+    CHECK(textMetric(text.str(), "weighted_static_cycles") == 8);
+    CHECK(contains(text.str(), "EXPL_vu1_fast_nolights_pp4_vcl_adcLoop_done_lid__MAIN_LOOP: cycles=2 repeat=4 weighted_cycles=8"));
+}
+
 TEST_CASE("VsmCostAnalyzer fixture: summary exposes comparison metrics")
 {
     std::ifstream input(fixturePath("simple_scheduled.vsm").c_str());

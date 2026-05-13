@@ -135,8 +135,9 @@ Apply the ps2gl 100-vertex hot-loop preset:
 ```
 
 The preset recognizes both OpenVCL labels such as `xform_loop_lid` and SCE
-optimized main-loop labels such as `EXPL_..._xform_loop_lid__MAIN_LOOP`, so it
-can be used for side-by-side reference comparisons.
+optimized main-loop labels such as `EXPL_..._xform_loop_lid__MAIN_LOOP`. It
+also maps SCE fast-family `adcLoop_done_lid__MAIN_LOOP` labels onto
+`xform_loop_lid`, so it can be used for side-by-side reference comparisons.
 
 Compare a candidate shader against a reference shader:
 

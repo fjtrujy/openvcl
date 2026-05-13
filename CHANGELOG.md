@@ -95,6 +95,9 @@
 - Markdown cost comparisons include loop-weighted static and estimated totals.
 - `--cost-loop-preset ps2gl` now recognizes SCE optimized
   `EXPL_...__MAIN_LOOP` labels when weighting and comparing reference VSMs.
+- The ps2gl loop preset now also maps SCE fast-family
+  `adcLoop_done_lid__MAIN_LOOP` labels onto `xform_loop_lid`, so hot-loop
+  comparisons weight those reference shaders correctly.
 - Extended cost comparison reports with top weighted block deltas for estimated
   cycles, idle slots, and wait stalls.
 - Added the first ready-set scheduler pass for straight-line arithmetic runs,
