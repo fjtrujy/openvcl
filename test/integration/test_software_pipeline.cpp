@@ -274,6 +274,82 @@ namespace
             "\t--endexit\n";
     }
 
+    std::string linearXformPipelineSource()
+    {
+        return
+            "\t.init_vf_all\n"
+            "\t.init_vi_all\n"
+            "\t.name vsmGeneralLinear\n"
+            "\t--enter\n"
+            "\t--endenter\n"
+            "\tiaddiu vi03, vi00, 0\n"
+            "\tiaddiu vi04, vi00, 9\n"
+            "\tiaddiu vi02, vi00, 0\n"
+            "\tiaddiu vi05, vi00, 0\n"
+            "\tiaddiu vi06, vi00, 0\n"
+            "\tiaddiu vi13, vi00, 0\n"
+            "\tmove.xyzw vf01, vf00\n"
+            "\tmove.xyzw vf02, vf00\n"
+            "\tmove.xyzw vf03, vf00\n"
+            "\tmove.xyzw vf04, vf00\n"
+            "\tmove.xyzw vf05, vf00\n"
+            "\tmove.xyzw vf06, vf00\n"
+            "\tmove.xyzw vf07, vf00\n"
+            "\tmove.xyzw vf08, vf00\n"
+            "\tmove.xyzw vf09, vf00\n"
+            "\tmove.xyzw vf10, vf00\n"
+            "\tmove.xyzw vf11, vf00\n"
+            "\tmove.xyzw vf12, vf00\n"
+            "\tmove.xyzw vf13, vf00\n"
+            "\tmove.xyzw vf14, vf00\n"
+            "\tmove.xyzw vf15, vf00\n"
+            "\tmove.xyzw vf16, vf00\n"
+            "\tmove.xyzw vf17, vf00\n"
+            "\tmove.xyzw vf18, vf00\n"
+            "xform_loop_lid:\n"
+            "\t--LoopCS 1,3\n"
+            "\tlq.xyz vf11, 0(vi13)\n"
+            "\tmulax acc, vf01, vf11\n"
+            "\tmadday acc, vf02, vf11\n"
+            "\tmaddaz acc, vf03, vf11\n"
+            "\tmaddw vf12, vf04, vf00\n"
+            "\tdiv q, vf00w, vf12w\n"
+            "\tmulq.xyz vf12, vf12, q\n"
+            "\tadd.xyz vf13, vf12, vf05\n"
+            "\tftoi4.xyz vf13, vf13\n"
+            "\tilw.w vi07, 0(vi13)\n"
+            "\tsub.xyz vf14, vf09, vf12\n"
+            "\topmula.xyz acc, vf14, vf06\n"
+            "\topmsub.xyz vf15, vf06, vf14\n"
+            "\tfmand vi08, vi06\n"
+            "\tisub vi08, vi08, vi05\n"
+            "\tiand vi08, vi08, vi06\n"
+            "\tisub vi05, vi06, vi05\n"
+            "\tiand vi10, vi07, vi06\n"
+            "\tior vi05, vi05, vi10\n"
+            "\tmulw.xyz vf06, vf14, vf10w\n"
+            "\tmulw.xyz vf09, vf12, vf00w\n"
+            "\tmul.xyz vf16, vf12, vf07\n"
+            "\tclipw.xyz vf16, vf07w\n"
+            "\tfcand vi01, 0x003ffff\n"
+            "\tiand vi01, vi01, vi02\n"
+            "\tior vi09, vi01, vi08\n"
+            "\tior vi09, vi09, vi07\n"
+            "\tiaddiu vi09, vi09, 0x7fff\n"
+            "\tmfir.w vf13, vi09\n"
+            "\tsq vf13, 2(vi03)\n"
+            "\tsq.xyz vf08, 1(vi03)\n"
+            "\tlq.xyz vf17, 2(vi13)\n"
+            "\tmulq.xyz vf18, vf17, q\n"
+            "\tsq.xyz vf18, 0(vi03)\n"
+            "\tiaddiu vi13, vi13, 3\n"
+            "\tiaddiu vi03, vi03, 3\n"
+            "\tibne vi13, vi04, xform_loop_lid\n"
+            "done_lid:\n"
+            "\t--exit\n"
+            "\t--endexit\n";
+    }
+
     std::string dirLightNoSpecPipelineSource()
     {
         return
@@ -450,6 +526,41 @@ TEST_CASE("Software pipeline: final color loop keeps the original output registe
     CHECK(contains(vsm, "sq VF08, -8(VI03)"));
     CHECK(contains(vsm, "ftoi0.xyz VF08, VF24"));
     CHECK(!contains(vsm, "sq VF25, -8(VI03)"));
+}
+
+TEST_CASE("Software pipeline: linear transform loop emits a 22-cycle steady state")
+{
+    std::string vsm = runEmit(linearXformPipelineSource());
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(contains(vsm, "xform_loop_lid__ENTRY_POINT:"));
+    CHECK(contains(vsm, "xform_loop_lid__PRO1:"));
+    CHECK(contains(vsm, "xform_loop_lid__MAIN_LOOP:"));
+    CHECK(contains(vsm, "xform_loop_lid__EPI0:"));
+    CHECK(contains(vsm, "xform_loop_lid__EXIT_POINT:"));
+    CHECK(contains(vsm, "ibne VI13, VI04, xform_loop_lid__MAIN_LOOP"));
+    CHECK(contains(vsm, "lq.xyz VF18, -1(VI13)"));
+    CHECK(contains(vsm, "fcand VI01, 0x003ffff"));
+}
+
+TEST_CASE("Software pipeline: linear transform loop falls back when clip scratch aliases strip flip")
+{
+    std::string source = linearXformPipelineSource();
+    const std::string stripFlip = "\tiand vi10, vi07, vi06\n";
+    const std::string stripMerge = "\tior vi05, vi05, vi10\n";
+    std::string::size_type pos = source.find(stripFlip);
+    REQUIRE(pos != std::string::npos);
+    source.replace(pos, stripFlip.length(), "\tiand vi01, vi07, vi06\n");
+    pos = source.find(stripMerge);
+    REQUIRE(pos != std::string::npos);
+    source.replace(pos, stripMerge.length(), "\tior vi05, vi05, vi01\n");
+
+    std::string vsm = runEmit(source);
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(!contains(vsm, "xform_loop_lid__MAIN_LOOP:"));
+    CHECK(contains(vsm, "xform_loop_lid:"));
+    CHECK(contains(vsm, "iand VI01, VI07, VI06"));
 }
 
 TEST_CASE("Software pipeline: no-spec directional light loop emits an 8-cycle steady state")
