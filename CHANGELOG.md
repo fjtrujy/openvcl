@@ -49,6 +49,9 @@
   scheduler's plain memory alias checks onto them.
 - Added branch behavior flags for unconditional, link, and register branches,
   and moved branch-delay emission/pairing checks onto descriptor metadata.
+- Added `VuSchedulingRules` as the shared stateless rule layer for emittable
+  token checks, token movement, pair resource conflicts, Q/P and MAC/CLIP flag
+  predicates, branch-delay queries, and adjacent integer-add coalescing.
 - Added behavior-preserving scheduler analysis scaffolding for basic-block
   construction and descriptor-derived dependency edges.
 - Wired the scheduler analysis layer into code generation in preserve-order

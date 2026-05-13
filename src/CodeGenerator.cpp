@@ -19,7 +19,7 @@
 #include "Error.h"
 #include "Math.h"
 #include "VuSchedulerAnalysis.h"
-#include "VuTokenResourceAccess.h"
+#include "VuSchedulingRules.h"
 
 #include <iostream>
 #include <iomanip>
@@ -36,35 +36,6 @@ namespace vcl
 {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-// Forward declarations for the cycle-cooldown helpers used in
-// beginProcess() — their bodies live with the other emit-time helpers
-// further down in this file.
-static bool isMacReader( const std::string& name );
-static bool isClipReader( const std::string& name );
-static bool isClipw( const std::string& name );
-namespace
-{
-	bool containsKey( const std::list<std::string>& keys, const std::string& key );
-	std::string lowerName( const Token& token );
-	bool isXgkick( const Token& token );
-	bool isPlainMemoryStore( const Token& token );
-	bool isPlainMemoryLoad( const Token& token );
-	bool tokenReadsQ( const Token& token );
-	bool tokenReadsP( const Token& token );
-	bool tokenReadsRegister( const Token& token, const std::string& key );
-	bool tokenHasInstructionFlag( const Token& token, unsigned int flag );
-	unsigned int tokenBranchDelaySlots( const Token& token );
-	void collectRegisterReadKeys( const Token& token, std::list<std::string>& reads );
-	void collectRegisterWriteKeys( const Token& token, std::list<std::string>& writes );
-	bool hasImplicitPairDependency( const Token& earlier, const Token& later );
-	bool isMtir( const Token& token );
-	bool isFtoiConversion( const std::string& name );
-	bool isTerminalUnconditionalBranch( const Token& token );
-	bool isZeroMoveFromVf00( const Token& token );
-	bool tokenListReadsMac( const std::list<Token>& tokens );
-	void coalesceAdjacentIntegerAdds( std::list<Token>& tokens );
-}
 
 CodeGenerator::CodeGenerator()
 {
@@ -119,12 +90,12 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 	bool exitWritten = true;
 
 	std::list<Token> workTokens = tokens;
-	coalesceAdjacentIntegerAdds(workTokens);
+	coalesceAdjacentVuIntegerAdds(workTokens);
 	{
 		std::list<Token> scheduledTokens = scheduleVuTokensReadySet(workTokens);
 		workTokens.swap(scheduledTokens);
 	}
-	m_enableUpperZeroMoves = !tokenListReadsMac(workTokens);
+	m_enableUpperZeroMoves = !vuTokenListReadsMac(workTokens);
 
 	for( std::list<Token>::iterator k = workTokens.begin(); k != workTokens.end(); )
 	{
@@ -202,18 +173,18 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			{
 				if( (*p).label().length() != 0 )
 					break;
-				if( !isEmittableInstruction(*p) )
+				if( !isVuEmittableInstruction(*p) )
 					break;
-				if( !tokenRangeCanBeCrossed(*k, *p)
-				    && !isPlainMemoryStore(*p)
-				    && !tokenCanMoveBefore(*p, *k) )
+				if( !vuTokenRangeCanBeCrossed(*k, *p)
+				    && !isVuPlainMemoryStore(*p)
+				    && !vuTokenCanMoveBefore(*p, *k) )
 					continue;
 
 				bool canCross = true;
 				std::list<Token>::iterator c = k;
 				for( ; c != p; ++c )
 				{
-					if( !tokenCanMoveBefore(*p, *c) )
+					if( !vuTokenCanMoveBefore(*p, *c) )
 					{
 						canCross = false;
 						break;
@@ -236,11 +207,11 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				{
 					if( (*p).label().length() != 0 )
 						break;
-					if( !isEmittableInstruction(*p) )
+					if( !isVuEmittableInstruction(*p) )
 						break;
-					if( !tokenRangeCanBeCrossed(*k, *p)
-					    && !isPlainMemoryStore(*p)
-					    && !tokenCanMoveBefore(*p, *k) )
+					if( !vuTokenRangeCanBeCrossed(*k, *p)
+					    && !isVuPlainMemoryStore(*p)
+					    && !vuTokenCanMoveBefore(*p, *k) )
 						continue;
 					if( !tokensCanPair(*filler, *p) )
 						continue;
@@ -251,7 +222,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 					{
 						if( c == filler )
 							continue;
-						if( !tokenCanMoveBefore(*p, *c) )
+						if( !vuTokenCanMoveBefore(*p, *c) )
 						{
 							canCross = false;
 							break;
@@ -298,7 +269,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			{
 				if( (*p).label().length() != 0 )
 					break;
-				if( !isEmittableInstruction(*p) )
+				if( !isVuEmittableInstruction(*p) )
 					break;
 				const bool adjacentCandidate = (lookahead == 0);
 				const bool adjacentQpProducerPair =
@@ -309,20 +280,20 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				        || (*p).operand()->unit() == Operand::EFU);
 				const bool adjacentPlainStorePair =
 				    adjacentCandidate
-				    && (isPlainMemoryStore(token) || isPlainMemoryStore(*p));
+				    && (isVuPlainMemoryStore(token) || isVuPlainMemoryStore(*p));
 				const bool adjacentXgkickPair =
 				    adjacentCandidate
 				    && tokenIsUpperExecutionPath(token)
-				    && isXgkick(*p);
+				    && isVuXgkick(*p);
 				const bool adjacentBranchPair =
 				    adjacentCandidate
 				    && tokenIsUpperExecutionPath(token)
-				    && tokenBranchDelaySlots(*p) > 0;
+				    && vuTokenBranchDelaySlots(*p) > 0;
 				if( !adjacentQpProducerPair && !adjacentPlainStorePair && !adjacentXgkickPair
 				    && !adjacentBranchPair
-				    && !tokenRangeCanBeCrossed(*k, *p)
-				    && !isPlainMemoryStore(*p)
-				    && !tokenCanMoveBefore(*p, token) )
+				    && !vuTokenRangeCanBeCrossed(*k, *p)
+				    && !isVuPlainMemoryStore(*p)
+				    && !vuTokenCanMoveBefore(*p, token) )
 					continue;
 				if( tokensCanPair(token, *p) )
 				{
@@ -331,7 +302,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 					++c;
 					for( ; c != p; ++c )
 					{
-						if( !tokenCanMoveBefore(*p, *c) )
+						if( !vuTokenCanMoveBefore(*p, *c) )
 						{
 							canCross = false;
 							break;
@@ -347,7 +318,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				}
 			}
 
-			if( !foundPartner && tokenReadsQ(token) && tokenIsUpperExecutionPath(token) )
+			if( !foundPartner && vuTokenReadsQ(token) && tokenIsUpperExecutionPath(token) )
 			{
 				const int qGap = m_qReadyCycle - m_currentCycle;
 				const int needed = readHazardDelay(token, NULL);
@@ -364,7 +335,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			if( foundPartner )
 			{
 				emitPairedTokens(token, *partner);
-				if( isTerminalUnconditionalBranch(token) || isTerminalUnconditionalBranch(*partner) )
+				if( isVuTerminalUnconditionalBranch(token) || isVuTerminalUnconditionalBranch(*partner) )
 					exitWritten = true;
 				workTokens.erase(partnerIt);
 				++k;
@@ -373,7 +344,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 		}
 
 		emitSingleToken(token);
-		if( isTerminalUnconditionalBranch(token) )
+		if( isVuTerminalUnconditionalBranch(token) )
 			exitWritten = true;
 		++k;
 	}
@@ -451,7 +422,7 @@ void CodeGenerator::emitUpperWithWait( const Token& token, bool waitQ )
 	recordRegisterWrites(token, issueCycle);
 	if( token.operand()->unit() == Operand::FMAC )
 		m_lastFMACCycle = issueCycle;
-	if( isClipw(token.operand()->name()) )
+	if( isVuClipw(token.operand()->name()) )
 		m_lastClipwCycle = issueCycle;
 	m_currentCycle = issueCycle + 1;
 }
@@ -499,7 +470,7 @@ void CodeGenerator::emitSingleToken( const Token& token )
 		}
 	}
 
-	const unsigned int branchDelaySlots = tokenBranchDelaySlots( token );
+	const unsigned int branchDelaySlots = vuTokenBranchDelaySlots( token );
 	if( branchDelaySlots > 0 )
 	{
 		if( m_codeLines.empty() || m_codeLines.back() != std::string("                    nop                             nop") )
@@ -527,15 +498,15 @@ void CodeGenerator::emitSingleToken( const Token& token )
 	// downstream flag-readers can pad to the 4-cycle pipeline.
 	if( token.operand()->unit() == Operand::FMAC || emitsAsUpperZeroMove(token) )
 		m_lastFMACCycle = m_currentCycle - 1;
-	if( isClipw(token.operand()->name()) )
+	if( isVuClipw(token.operand()->name()) )
 		m_lastClipwCycle = m_currentCycle - 1;
 
 }
 
 void CodeGenerator::emitPairedTokens( const Token& a, const Token& b )
 {
-	const unsigned int aBranchDelaySlots = tokenBranchDelaySlots( a );
-	const unsigned int bBranchDelaySlots = tokenBranchDelaySlots( b );
+	const unsigned int aBranchDelaySlots = vuTokenBranchDelaySlots( a );
+	const unsigned int bBranchDelaySlots = vuTokenBranchDelaySlots( b );
 	const unsigned int branchDelaySlots = aBranchDelaySlots > bBranchDelaySlots ? aBranchDelaySlots : bBranchDelaySlots;
 	std::string pairedLine;
 	if( tokenIsLowerExecutionPath(a) )
@@ -551,7 +522,7 @@ void CodeGenerator::emitPairedTokens( const Token& a, const Token& b )
 	if( a.operand()->unit() == Operand::FMAC || b.operand()->unit() == Operand::FMAC
 	    || emitsAsUpperZeroMove(a) || emitsAsUpperZeroMove(b) )
 		m_lastFMACCycle = m_currentCycle;
-	if( isClipw(a.operand()->name()) || isClipw(b.operand()->name()) )
+	if( isVuClipw(a.operand()->name()) || isVuClipw(b.operand()->name()) )
 		m_lastClipwCycle = m_currentCycle;
 	m_currentCycle++;
 	for( unsigned int i = 0; i < branchDelaySlots; ++i )
@@ -563,7 +534,7 @@ void CodeGenerator::emitPairedTokens( const Token& a, const Token& b )
 
 bool CodeGenerator::emitsAsUpperZeroMove( const Token& token ) const
 {
-	return m_enableUpperZeroMoves && isZeroMoveFromVf00(token);
+	return m_enableUpperZeroMoves && isVuZeroMoveFromVf00(token);
 }
 
 bool CodeGenerator::tokenIsLowerExecutionPath( const Token& token ) const
@@ -580,91 +551,19 @@ bool CodeGenerator::tokenIsUpperExecutionPath( const Token& token ) const
 	return token.operand() && token.operand()->isUpperExecutionPath();
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-namespace
-{
-	bool registerKey( const Token::Argument& arg, std::string& key )
-	{
-		return vuRegisterKey( arg, key );
-	}
-
-	bool tokenTouchesImplicitResource( const Token& token, Token::Argument::Type type, bool write )
-	{
-		unsigned int resource = VU_RESOURCE_NONE;
-		switch( type )
-		{
-			case Token::Argument::I: resource = VU_RESOURCE_I; break;
-			case Token::Argument::Q: resource = VU_RESOURCE_Q; break;
-			case Token::Argument::P: resource = VU_RESOURCE_P; break;
-			case Token::Argument::R: resource = VU_RESOURCE_R; break;
-			case Token::Argument::ACCUMULATOR: resource = VU_RESOURCE_ACC; break;
-			default: return false;
-		}
-
-		VuTokenResourceAccess access;
-		if( !buildVuTokenResourceAccess( token, access ) )
-			return false;
-		return (write ? access.implicitWrites : access.implicitReads) & resource;
-	}
-
-	bool tokenHasInstructionFlag( const Token& token, unsigned int flag )
-	{
-		VuTokenResourceAccess access;
-		return buildVuTokenResourceAccess( token, access )
-		    && (access.instructionFlags & flag) != 0;
-	}
-
-	unsigned int tokenBranchDelaySlots( const Token& token )
-	{
-		VuTokenResourceAccess access;
-		if( !buildVuTokenResourceAccess( token, access ) )
-			return 0;
-		return access.branchDelaySlots;
-	}
-
-	bool tokenReadsQ( const Token& token )
-	{
-		return tokenTouchesImplicitResource(token, Token::Argument::Q, false);
-	}
-
-	bool tokenWritesQ( const Token& token )
-	{
-		return tokenTouchesImplicitResource(token, Token::Argument::Q, true);
-	}
-
-	bool tokenReadsP( const Token& token )
-	{
-		return tokenTouchesImplicitResource(token, Token::Argument::P, false);
-	}
-
-	bool tokenReadsRegister( const Token& token, const std::string& key )
-	{
-		std::list<std::string> reads;
-		collectRegisterReadKeys(token, reads);
-		return containsKey(reads, key);
-	}
-
-	bool tokenWritesP( const Token& token )
-	{
-		return tokenTouchesImplicitResource(token, Token::Argument::P, true);
-	}
-
-}
-
 int CodeGenerator::readHazardDelay( const Token& token, const Token* partner ) const
 {
 	std::list<std::string> reads;
-	collectRegisterReadKeys(token, reads);
+	collectVuRegisterReadKeys(token, reads);
 	if( partner )
-		collectRegisterReadKeys(*partner, reads);
+		collectVuRegisterReadKeys(*partner, reads);
 
-	bool readsQ = tokenReadsQ(token);
-	bool readsP = tokenReadsP(token);
+	bool readsQ = vuTokenReadsQ(token);
+	bool readsP = vuTokenReadsP(token);
 	if( partner )
 	{
-		readsQ = readsQ || tokenReadsQ(*partner);
-		readsP = readsP || tokenReadsP(*partner);
+		readsQ = readsQ || vuTokenReadsQ(*partner);
+		readsP = readsP || vuTokenReadsP(*partner);
 	}
 
 	int needed = 0;
@@ -676,9 +575,9 @@ int CodeGenerator::readHazardDelay( const Token& token, const Token* partner ) c
 		int readyCycle = ready->second;
 		std::map<std::string, std::string>::const_iterator producer = m_registerProducerMnemonic.find(*i);
 		if( producer != m_registerProducerMnemonic.end()
-		    && isFtoiConversion(producer->second)
-		    && ( (isMtir(token) && tokenReadsRegister(token, *i))
-		         || (partner && isMtir(*partner) && tokenReadsRegister(*partner, *i)) ) )
+		    && isVuFtoiConversion(producer->second)
+		    && ( (isVuMtir(token) && vuTokenReadsRegister(token, *i))
+		         || (partner && isVuMtir(*partner) && vuTokenReadsRegister(*partner, *i)) ) )
 			readyCycle -= 4;
 		const int gap = readyCycle - m_currentCycle;
 		if( gap > needed )
@@ -698,13 +597,13 @@ int CodeGenerator::readHazardDelay( const Token& token, const Token* partner ) c
 	}
 
 	const int flagCycle = m_currentCycle + needed;
-	bool readsMac = isMacReader(token.operand()->name());
-	bool readsClip = isClipReader(token.operand()->name());
+	bool readsMac = isVuMacReader(token.operand()->name());
+	bool readsClip = isVuClipReader(token.operand()->name());
 	if( partner && partner->operand() )
 	{
 		const std::string& name = partner->operand()->name();
-		readsMac = readsMac || isMacReader(name);
-		readsClip = readsClip || isClipReader(name);
+		readsMac = readsMac || isVuMacReader(name);
+		readsClip = readsClip || isVuClipReader(name);
 	}
 
 	int flagDelay = 0;
@@ -728,12 +627,12 @@ int CodeGenerator::readHazardDelay( const Token& token, const Token* partner ) c
 
 void CodeGenerator::padForReadHazards( const Token& token, const Token* partner )
 {
-	bool readsQ = tokenReadsQ(token);
-	bool readsP = tokenReadsP(token);
+	bool readsQ = vuTokenReadsQ(token);
+	bool readsP = vuTokenReadsP(token);
 	if( partner )
 	{
-		readsQ = readsQ || tokenReadsQ(*partner);
-		readsP = readsP || tokenReadsP(*partner);
+		readsQ = readsQ || vuTokenReadsQ(*partner);
+		readsP = readsP || vuTokenReadsP(*partner);
 	}
 
 	while( true )
@@ -767,15 +666,15 @@ void CodeGenerator::recordRegisterWrites( const Token& token, int issueCycle )
 
 	const int latency = token.operand()->latency();
 	std::list<std::string> writes;
-	collectRegisterWriteKeys(token, writes);
+	collectVuRegisterWriteKeys(token, writes);
 	for( std::list<std::string>::const_iterator i = writes.begin(); i != writes.end(); ++i )
 	{
 		m_registerReadyCycle[*i] = issueCycle + latency + 1;
-		m_registerProducerMnemonic[*i] = lowerName(token);
+		m_registerProducerMnemonic[*i] = lowerVuTokenName(token);
 	}
-	if( tokenWritesQ(token) )
+	if( vuTokenWritesQ(token) )
 		m_qReadyCycle = issueCycle + latency + 1;
-	if( tokenWritesP(token) )
+	if( vuTokenWritesP(token) )
 		m_pReadyCycle = issueCycle + latency + 1;
 }
 
@@ -791,456 +690,9 @@ void CodeGenerator::recordRegisterWrites( const Token& token, int issueCycle )
 // memory side effects, or register/resource dependencies.
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-bool CodeGenerator::isEmittableInstruction( const Token& t )
-{
-	// Mirrors the gating conditions in beginProcess() that decide whether
-	// a token reaches the instruction-emission code path.
-	if( !t.operand() )
-		return false;
-	if( t.flags() & Token::IGNORED )
-		return false;
-	if( !(t.flags() & Token::PROCESSED) && !(t.operand()->flags() & Operand::PREPROCESSOR) )
-		return false;
-	if( t.operand()->flags() & Operand::PREPROCESSOR )
-		return false;
-	if( t.operand()->flags() & Operand::FILTERED )
-		return false;
-	if( t.operand()->unit() == Operand::ENTER )
-		return false;
-	if( t.operand()->unit() == Operand::EXIT )
-		return false;
-	return true;
-}
-
-// Helper: identify the set of single-instance "implicit" resources
-// (ACC / Q / P / I / R / MAC flags / CLIP flags) touched by a token.
-// These resources have NO Alias and aren't routed through the register
-// allocator, so the scheduler consumes the table-driven descriptor.
-namespace {
-	void implicitResources( const Token& t, unsigned int& reads, unsigned int& writes )
-	{
-		VuTokenResourceAccess access;
-		if( buildVuTokenResourceAccess( t, access ) )
-		{
-			reads = access.implicitReads;
-			writes = access.implicitWrites;
-			return;
-		}
-
-		reads = VU_RESOURCE_NONE;
-		writes = VU_RESOURCE_NONE;
-	}
-
-	bool hasImplicitPairDependency( const Token& earlier, const Token& later )
-	{
-		unsigned int earlierReads = 0;
-		unsigned int earlierWrites = 0;
-		unsigned int laterReads = 0;
-		unsigned int laterWrites = 0;
-		implicitResources( earlier, earlierReads, earlierWrites );
-		implicitResources( later, laterReads, laterWrites );
-
-		if( earlierWrites & (laterReads | laterWrites) )
-			return true;
-
-		if( laterWrites & earlierWrites )
-			return true;
-
-		return (laterWrites & earlierReads) != 0;
-	}
-
-	bool containsKey( const std::list<std::string>& keys, const std::string& key )
-	{
-		for( std::list<std::string>::const_iterator i = keys.begin(); i != keys.end(); ++i )
-		{
-			if( *i == key )
-				return true;
-		}
-		return false;
-	}
-
-	bool intersectsKeys( const std::list<std::string>& a, const std::list<std::string>& b )
-	{
-		for( std::list<std::string>::const_iterator i = a.begin(); i != a.end(); ++i )
-		{
-			if( containsKey( b, *i ) )
-				return true;
-		}
-		return false;
-	}
-
-	void collectRegisterReadKeys( const Token& token, std::list<std::string>& reads )
-	{
-		VuTokenResourceAccess access;
-		if( !buildVuTokenResourceAccess( token, access ) )
-			return;
-		reads.insert( reads.end(), access.registerReads.begin(), access.registerReads.end() );
-	}
-
-	void collectRegisterWriteKeys( const Token& token, std::list<std::string>& writes )
-	{
-		VuTokenResourceAccess access;
-		if( !buildVuTokenResourceAccess( token, access ) )
-			return;
-		writes.insert( writes.end(), access.registerWrites.begin(), access.registerWrites.end() );
-	}
-
-	std::string lowerName( const Token& token )
-	{
-		std::string name;
-		if( token.operand() )
-			name = token.operand()->name();
-		for( std::string::iterator i = name.begin(); i != name.end(); ++i )
-		{
-			if( *i >= 'A' && *i <= 'Z' )
-				*i = char(*i - 'A' + 'a');
-		}
-		return name;
-	}
-
-	bool isMtir( const Token& token )
-	{
-		return lowerName(token) == "mtir";
-	}
-
-	bool isFtoiConversion( const std::string& name )
-	{
-		return name == "ftoi0" || name == "ftoi4"
-		    || name == "ftoi12" || name == "ftoi15";
-	}
-
-	bool isTerminalUnconditionalBranch( const Token& token )
-	{
-		return tokenHasInstructionFlag( token, VU_INSTR_UNCONDITIONAL_BRANCH )
-		    && !tokenHasInstructionFlag( token, VU_INSTR_LINK_BRANCH );
-	}
-
-	bool isZeroMoveFromVf00( const Token& token )
-	{
-		if( !token.operand() )
-			return false;
-		if( token.flags() & (Token::PREORDERED | Token::E | Token::D | Token::T) )
-			return false;
-		if( lowerName(token) != "move" )
-			return false;
-
-		unsigned int fields = token.fields();
-		if( fields == 0 || (fields & Token::W) )
-			return false;
-
-		const std::list<Token::Argument>& args = token.arguments();
-		if( args.size() != 2 )
-			return false;
-
-		std::list<Token::Argument>::const_iterator src = args.begin();
-		++src;
-		return src->type() == Token::Argument::FLOAT_REGISTER
-		    && src->content() == Token::Argument::REGISTER
-		    && src->regNumber() == 0
-		    && !(src->flags() & (Token::Argument::INDIRECT
-		                       | Token::Argument::PREDEC
-		                       | Token::Argument::POSTINC));
-	}
-
-	bool tokenListReadsMac( const std::list<Token>& tokens )
-	{
-		for( std::list<Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i )
-		{
-			if( i->operand() && isMacReader(i->operand()->name()) )
-				return true;
-		}
-		return false;
-	}
-
-	bool isPlainMemoryStore( const Token& token )
-	{
-		VuTokenResourceAccess access;
-		if( !buildVuTokenResourceAccess( token, access ) )
-			return false;
-		return access.memoryKind == VU_MEMORY_STORE
-		    && (access.memoryFlags & (VU_MEMORY_FLAG_PREDEC | VU_MEMORY_FLAG_POSTINC)) == 0;
-	}
-
-	bool isPlainMemoryLoad( const Token& token )
-	{
-		VuTokenResourceAccess access;
-		if( !buildVuTokenResourceAccess( token, access ) )
-			return false;
-		return access.memoryKind == VU_MEMORY_LOAD
-		    && (access.memoryFlags & (VU_MEMORY_FLAG_PREDEC | VU_MEMORY_FLAG_POSTINC)) == 0;
-	}
-
-	bool memoryBaseRegisterKey( const Token& token, std::string& key )
-	{
-		VuTokenResourceAccess access;
-		if( !buildVuTokenResourceAccess( token, access ) || !access.hasMemoryBase )
-			return false;
-		key = access.memoryBaseRegister;
-		return true;
-	}
-
-	bool memoryOffset( const Token& token, long& offset )
-	{
-		VuTokenResourceAccess access;
-		if( !buildVuTokenResourceAccess( token, access ) || !access.hasMemoryOffset )
-			return false;
-		offset = access.memoryOffset;
-		return true;
-	}
-
-	bool isIntegerImmediateAdd( const Token& token, std::string& dstReg, std::string& srcReg, long& immediate )
-	{
-		if( !token.operand() )
-			return false;
-		if( token.flags() & (Token::PREORDERED | Token::E | Token::D | Token::T) )
-			return false;
-
-		const std::string name = lowerName(token);
-		if( name != "iaddiu" )
-			return false;
-
-		const std::list<Token::Argument>& args = token.arguments();
-		if( args.size() != 3 )
-			return false;
-
-		std::list<Token::Argument>::const_iterator dst = args.begin();
-		std::list<Token::Argument>::const_iterator src = dst;
-		++src;
-		std::list<Token::Argument>::const_iterator imm = src;
-		++imm;
-
-		if( (*dst).type() != Token::Argument::INTEGER_REGISTER
-		    || (*src).type() != Token::Argument::INTEGER_REGISTER
-		    || (*imm).type() != Token::Argument::IMMEDIATE )
-			return false;
-		if( !((*dst).flags() & Token::Argument::WRITE) )
-			return false;
-
-		if( !registerKey(*dst, dstReg) || !registerKey(*src, srcReg) )
-			return false;
-
-		Expression e;
-		e.setCustomOperators( Math::mathOperators() );
-		if( !e.process( (*imm).immediate() ) || !e.solve() )
-			return false;
-
-		immediate = static_cast<long>(e.result());
-		return true;
-	}
-
-	bool isSelfIntegerImmediateAdd( const Token& token, std::string& reg, long& immediate )
-	{
-		if( token.label().length() != 0 )
-			return false;
-
-		std::string srcReg;
-		if( !isIntegerImmediateAdd(token, reg, srcReg, immediate) )
-			return false;
-		return reg == srcReg;
-	}
-
-	bool setIntegerImmediate( Token& token, long immediate )
-	{
-		std::list<Token::Argument>& args = token.arguments();
-		if( args.size() != 3 )
-			return false;
-		std::list<Token::Argument>::iterator i = args.begin();
-		++i;
-		++i;
-		std::stringstream s;
-		s << immediate;
-		(*i).setImmediate(s.str());
-		return true;
-	}
-
-	void coalesceAdjacentIntegerAdds( std::list<Token>& tokens )
-	{
-		for( std::list<Token>::iterator i = tokens.begin(); i != tokens.end(); )
-		{
-			std::list<Token>::iterator next = i;
-			++next;
-			if( next == tokens.end() )
-				break;
-
-			std::string dstReg;
-			std::string srcReg;
-			std::string nextReg;
-			long immediate = 0;
-			long nextImmediate = 0;
-			if( !isIntegerImmediateAdd(*i, dstReg, srcReg, immediate)
-			    || !isSelfIntegerImmediateAdd(*next, nextReg, nextImmediate)
-			    || dstReg != nextReg )
-			{
-				++i;
-				continue;
-			}
-
-			const long combined = immediate + nextImmediate;
-			if( combined < -32768 || combined > 32767 || combined == 0 )
-			{
-				++i;
-				continue;
-			}
-
-			if( setIntegerImmediate(*i, combined) )
-				tokens.erase(next);
-			else
-				++i;
-		}
-	}
-
-	bool plainMemoryAccessesAreDistinct( const Token& a, const Token& b )
-	{
-		std::string movedBase;
-		std::string crossedBase;
-		if( !memoryBaseRegisterKey(a, movedBase) || !memoryBaseRegisterKey(b, crossedBase) )
-			return false;
-
-		if( movedBase != crossedBase )
-			return true;
-
-		long movedOffset = 0;
-		long crossedOffset = 0;
-		if( !memoryOffset(a, movedOffset) || !memoryOffset(b, crossedOffset) )
-			return false;
-
-		return movedOffset != crossedOffset;
-	}
-
-	bool plainLoadCanMoveBeforePlainStore( const Token& moved, const Token& crossed )
-	{
-		if( !isPlainMemoryLoad(moved) || !isPlainMemoryStore(crossed) )
-			return false;
-
-		return plainMemoryAccessesAreDistinct(moved, crossed);
-	}
-
-	bool plainStoreCanMoveBeforePlainMemory( const Token& moved, const Token& crossed )
-	{
-		if( !isPlainMemoryStore(moved) )
-			return false;
-		if( !isPlainMemoryStore(crossed) && !isPlainMemoryLoad(crossed) )
-			return false;
-
-		return plainMemoryAccessesAreDistinct(moved, crossed);
-	}
-
-	bool hasMemoryOrControlSideEffect( const Token& token );
-
-	bool plainStoreCanMoveBeforeComputation( const Token& moved, const Token& crossed )
-	{
-		if( !isPlainMemoryStore(moved) )
-			return false;
-		return !hasMemoryOrControlSideEffect(crossed);
-	}
-
-	bool isXgkick( const Token& token )
-	{
-		VuTokenResourceAccess access;
-		return buildVuTokenResourceAccess( token, access )
-		    && access.memoryKind == VU_MEMORY_XGKICK;
-	}
-
-	bool hasMemoryOrControlSideEffect( const Token& token )
-	{
-		if( !token.operand() )
-			return true;
-		if( token.flags() & Token::PREORDERED )
-			return true;
-
-		VuTokenResourceAccess access;
-		if( !buildVuTokenResourceAccess( token, access ) )
-			return true;
-		if( access.branchDelaySlots > 0 )
-			return true;
-		if( access.memoryFlags & (VU_MEMORY_FLAG_PREDEC | VU_MEMORY_FLAG_POSTINC) )
-			return true;
-		return access.memoryKind == VU_MEMORY_STORE
-		    || access.memoryKind == VU_MEMORY_XGKICK;
-	}
-
-	bool computationCanMoveBeforePlainStore( const Token& moved, const Token& crossed )
-	{
-		if( !isPlainMemoryStore(crossed) )
-			return false;
-		if( isPlainMemoryLoad(moved) )
-			return false;
-		return !hasMemoryOrControlSideEffect(moved);
-	}
-	}
-
-bool CodeGenerator::hasDataDependency( const Token& a, const Token& b )
-{
-	VuTokenResourceAccess aAccess;
-	VuTokenResourceAccess bAccess;
-	if( !buildVuTokenResourceAccess( a, aAccess ) || !buildVuTokenResourceAccess( b, bAccess ) )
-		return false;
-
-	return intersectsKeys( aAccess.registerWrites, bAccess.registerReads )
-	    || intersectsKeys( aAccess.registerWrites, bAccess.registerWrites );
-}
-
-bool CodeGenerator::tokenCanMoveBefore( const Token& moved, const Token& crossed )
-{
-	if( hasMemoryOrControlSideEffect(moved) || hasMemoryOrControlSideEffect(crossed) )
-	{
-		if( !plainLoadCanMoveBeforePlainStore(moved, crossed)
-		    && !plainStoreCanMoveBeforePlainMemory(moved, crossed)
-		    && !plainStoreCanMoveBeforeComputation(moved, crossed)
-		    && !computationCanMoveBeforePlainStore(moved, crossed) )
-			return false;
-	}
-
-	unsigned int movedReadsImplicit = 0, movedWritesImplicit = 0;
-	unsigned int crossedReadsImplicit = 0, crossedWritesImplicit = 0;
-	implicitResources(moved, movedReadsImplicit, movedWritesImplicit);
-	implicitResources(crossed, crossedReadsImplicit, crossedWritesImplicit);
-	if( movedWritesImplicit & (crossedReadsImplicit | crossedWritesImplicit) )
-		return false;
-	if( crossedWritesImplicit & (movedReadsImplicit | movedWritesImplicit) )
-		return false;
-
-	if( hasDataDependency(moved, crossed) || hasDataDependency(crossed, moved) )
-		return false;
-
-	return true;
-}
-
-bool CodeGenerator::tokenRangeCanBeCrossed( const Token& first, const Token& last )
-{
-	return !hasMemoryOrControlSideEffect(first) && !hasMemoryOrControlSideEffect(last);
-}
-
-// Reads the MAC flag register, updated by every FMAC with 4-cycle latency.
-static bool isMacReader( const std::string& name )
-{
-	return name == "fmand" || name == "fmeq" || name == "fmor"
-	    || name == "fsand" || name == "fseq" || name == "fsor"
-	    || name == "FMAND" || name == "FMEQ" || name == "FMOR"
-	    || name == "FSAND" || name == "FSEQ" || name == "FSOR";
-}
-
-// Reads the CLIP flag register, updated by clipw only.
-static bool isClipReader( const std::string& name )
-{
-	return name == "fcand" || name == "fceq" || name == "fcor" || name == "fcget"
-	    || name == "FCAND" || name == "FCEQ" || name == "FCOR" || name == "FCGET";
-}
-
-// `clipw` (with any field suffix) is the only FMAC that writes the CLIP
-// register.  Match the family by prefix so clipw.xyz / CLIPw / etc. all hit.
-static bool isClipw( const std::string& name )
-{
-	if( name.size() < 5 )
-		return false;
-	return ( name.compare(0, 5, "clipw") == 0 )
-	    || ( name.compare(0, 5, "CLIPw") == 0 )
-	    || ( name.compare(0, 5, "CLIP" ) == 0 && (name[4] == 'w' || name[4] == 'W') );
-}
-
 bool CodeGenerator::tokensCanPair( const Token& a, const Token& b ) const
 {
-	if( !isEmittableInstruction(a) || !isEmittableInstruction(b) )
+	if( !isVuEmittableInstruction(a) || !isVuEmittableInstruction(b) )
 		return false;
 
 	// PREORDERED tokens (raw .vsm passthrough) must keep their
@@ -1252,47 +704,13 @@ bool CodeGenerator::tokensCanPair( const Token& a, const Token& b ) const
 	if( tokenIsLowerExecutionPath(a) == tokenIsLowerExecutionPath(b) )
 		return false;
 
-	// Keep dynamic control flow and explicit Q/P wait barriers out of the
-	// simple pairing pass.  FDIV/EFU producers can pair with independent
-	// upper-pipe work because their Q/P latency is tracked separately.
-	VuTokenResourceAccess aAccess;
-	VuTokenResourceAccess bAccess;
-	buildVuTokenResourceAccess( a, aAccess );
-	buildVuTokenResourceAccess( b, bAccess );
-	if( aAccess.branchDelaySlots > 0 )
-		return false;
-	if( bAccess.branchDelaySlots > 0
-	    && (bAccess.instructionFlags & (VU_INSTR_LINK_BRANCH | VU_INSTR_REGISTER_BRANCH)) )
-		return false;
-	if( (aAccess.instructionFlags & (VU_INSTR_WAIT_Q | VU_INSTR_WAIT_P))
-	    || (bAccess.instructionFlags & (VU_INSTR_WAIT_Q | VU_INSTR_WAIT_P)) )
-		return false;
-
 	// FMAC writes MAC with 4-cycle latency; clipw additionally writes
 	// CLIP.  Keep same-flag readers out of the pair.  A non-clip FMAC
 	// can still pair with a CLIP reader such as fcand once the previous
 	// clipw result is latency-ready.
 	bool aFMAC = (a.operand()->unit() == Operand::FMAC) || emitsAsUpperZeroMove(a);
 	bool bFMAC = (b.operand()->unit() == Operand::FMAC) || emitsAsUpperZeroMove(b);
-	if( aFMAC && isMacReader(b.operand()->name()) )
-		return false;
-	if( bFMAC && isMacReader(a.operand()->name()) )
-		return false;
-	if( isClipw(a.operand()->name()) && isClipReader(b.operand()->name()) )
-		return false;
-	if( isClipw(b.operand()->name()) && isClipReader(a.operand()->name()) )
-		return false;
-
-	if( hasImplicitPairDependency(a, b) )
-		return false;
-
-	// Data-flow conflict between the two.
-	if( hasDataDependency(a, b) )
-		return false;
-	if( hasDataDependency(b, a) )
-		return false;
-
-	return true;
+	return vuTokenPairResourcesAreIndependent(a, b, aFMAC, bFMAC);
 }
 
 std::string CodeGenerator::formatPairedLine( const Token& upper, const Token& lower )

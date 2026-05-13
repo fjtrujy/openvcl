@@ -70,12 +70,9 @@ private:
 	bool tokenIsUpperExecutionPath( const Token& token ) const;
 	std::string generateUpperZeroMoveInstruction( const Token& token );
 
-	// Dual-pipe pairing helpers.  See CodeGenerator.cpp for the contract.
-	static bool isEmittableInstruction( const Token& t );
+	// Dual-pipe pairing helpers.  Stateless legality rules live in
+	// VuSchedulingRules; CodeGenerator only supplies emission-specific state.
 	bool tokensCanPair( const Token& a, const Token& b ) const;
-	static bool tokenCanMoveBefore( const Token& moved, const Token& crossed );
-	static bool tokenRangeCanBeCrossed( const Token& first, const Token& last );
-	static bool hasDataDependency( const Token& a, const Token& b );
 	std::string formatPairedLine( const Token& upper, const Token& lower );
 
 	std::list<std::string> m_codeLines;

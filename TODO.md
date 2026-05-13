@@ -52,8 +52,9 @@ The table should describe:
 
 Remaining table work:
 
-- migrate scheduler dependency/resource checks onto table-driven read/write
-  descriptors;
+- move the remaining emission-time cycle/latency state into an explicit
+  scheduler plan when the real list scheduler starts replacing lookahead
+  heuristics;
 - improve exact memory aliasing beyond base register and constant offset;
 - improve branch metadata beyond delay/unconditional/link/register flags when
   delay-slot filling starts.
@@ -105,6 +106,10 @@ Recently completed:
 - CodeGenerator register conflict checks now consume
   `VuTokenResourceAccess` read/write descriptors instead of duplicating
   argument-level field-mask logic.
+- Stateless scheduling legality rules now live in `VuSchedulingRules`, covering
+  emittable tokens, movement checks, pair resource conflicts, Q/P and flag
+  predicates, branch delays, and adjacent integer-add coalescing. `CodeGenerator`
+  keeps the emission cycle state.
 
 ## Correctness Guardrails
 
