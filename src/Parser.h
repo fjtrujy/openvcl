@@ -41,6 +41,7 @@ public:
 
 		READ_INPUT,
 		ANALYZE_VSM_COST,
+		DUMP_INSTRUCTION_INFO,
 		PREPROCESS,
 		TOKENIZE,
 		ALLOCATE_REGISTERS,
@@ -82,6 +83,7 @@ private:
 	bool showVersion();
 	bool showUsage();
 	bool analyzeVsmCost();
+	bool dumpInstructionInfo();
 	bool readInput();
 	bool preProcess();
 	bool tokenize();

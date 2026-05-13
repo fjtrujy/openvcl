@@ -40,6 +40,8 @@ CommandLine::CommandLine()
 	m_showRegisterInfo = false;
 	m_analyzeVsmCost = false;
 	m_analyzeVsmCostJson = false;
+	m_dumpInstructionInfo = false;
+	m_dumpInstructionInfoJson = false;
 
 	m_gasp = "gasp";
 	m_cpp = "cpp";
@@ -75,6 +77,8 @@ CommandLine::CommandLine()
 	m_options.push_back(Option('\0',"cost",ANALYZE_VSM_COST,false));
 	m_options.push_back(Option('\0',"cost-json",ANALYZE_VSM_COST_JSON,false));
 	m_options.push_back(Option('\0',"cost-loop",ANALYZE_VSM_COST_LOOP,true));
+	m_options.push_back(Option('\0',"dump-instruction-info",DUMP_INSTRUCTION_INFO,false));
+	m_options.push_back(Option('\0',"dump-instruction-info-json",DUMP_INSTRUCTION_INFO_JSON,false));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -173,6 +177,8 @@ bool CommandLine::parse( int argc, char* argv[] )
 				case SHOW_REGISTER_INFO: m_showRegisterInfo = true; break;
 				case ANALYZE_VSM_COST: m_analyzeVsmCost = true; break;
 				case ANALYZE_VSM_COST_JSON: m_analyzeVsmCost = true; m_analyzeVsmCostJson = true; break;
+				case DUMP_INSTRUCTION_INFO: m_dumpInstructionInfo = true; break;
+				case DUMP_INSTRUCTION_INFO_JSON: m_dumpInstructionInfo = true; m_dumpInstructionInfoJson = true; break;
 				case ANALYZE_VSM_COST_LOOP:
 				{
 					std::string::size_type separator = argument.find('=');
@@ -242,6 +248,8 @@ void CommandLine::showUsage( std::ostream& stream )
 	stream << "  --cost             Analyze scheduled .vsm cost instead of compiling VCL." << std::endl;
 	stream << "  --cost-json        Analyze scheduled .vsm cost and emit JSON." << std::endl;
 	stream << "  --cost-loop L=N    Weight block/label L by N iterations in cost reports." << std::endl;
+	stream << "  --dump-instruction-info       Print the VU instruction metadata table." << std::endl;
+	stream << "  --dump-instruction-info-json  Print the VU instruction metadata table as JSON." << std::endl;
 
 	stream << std::endl << "  If no input or output file are specified, standard I/O will be used instead." << std::endl;
 

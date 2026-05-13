@@ -52,13 +52,12 @@ The table should describe:
 
 Remaining table work:
 
-- migrate parser operand construction from local `Operand(...)` literals onto
-  `VuInstructionInfo`;
 - migrate scheduler dependency/resource checks onto table-driven read/write
   descriptors;
-- add memory descriptors and branch delay-slot descriptors;
-- expose the table through `--dump-instruction-info` and
-  `--dump-instruction-info-json`.
+- add richer memory descriptors: base register, constant offset, and exact
+  aliasing information;
+- replace branch handling with the branch delay-slot descriptors already in
+  `VuInstructionInfo`.
 
 The desired user-facing shape is an inspectable table:
 

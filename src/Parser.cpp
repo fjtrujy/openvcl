@@ -32,6 +32,246 @@
 namespace vcl
 {
 
+namespace
+{
+	struct FlagName
+	{
+		unsigned int flag;
+		const char* name;
+	};
+
+	const FlagName kOperandFlags[] =
+	{
+		{ Operand::UPPER, "upper" },
+		{ Operand::LOWER, "lower" },
+		{ Operand::DEST, "dest" },
+		{ Operand::BROADCAST, "broadcast" },
+		{ Operand::XYZ, "xyz" },
+		{ Operand::MULTI, "multi" },
+		{ Operand::DYNAMIC, "dynamic" },
+		{ Operand::IWRITE, "iwrite" },
+		{ Operand::FILTERED, "filtered" },
+		{ 0, 0 }
+	};
+
+	const FlagName kInstructionFlags[] =
+	{
+		{ VU_INSTR_BRANCH, "branch" },
+		{ VU_INSTR_WAIT_Q, "wait_q" },
+		{ VU_INSTR_WAIT_P, "wait_p" },
+		{ VU_INSTR_WRITES_Q, "writes_q" },
+		{ VU_INSTR_WRITES_P, "writes_p" },
+		{ VU_INSTR_WRITES_I, "writes_i" },
+		{ VU_INSTR_XGKICK, "xgkick" },
+		{ 0, 0 }
+	};
+
+	const FlagName kResourceFlags[] =
+	{
+		{ VU_RESOURCE_ACC, "acc" },
+		{ VU_RESOURCE_I, "i" },
+		{ VU_RESOURCE_Q, "q" },
+		{ VU_RESOURCE_P, "p" },
+		{ VU_RESOURCE_R, "r" },
+		{ VU_RESOURCE_MAC, "mac" },
+		{ VU_RESOURCE_CLIP, "clip" },
+		{ 0, 0 }
+	};
+
+	const FlagName kMemoryFlags[] =
+	{
+		{ VU_MEMORY_FLAG_PREDEC, "predec" },
+		{ VU_MEMORY_FLAG_POSTINC, "postinc" },
+		{ 0, 0 }
+	};
+
+	const FlagName kBypassFlags[] =
+	{
+		{ VU_BYPASS_FTOI_TO_MTIR, "ftoi_to_mtir" },
+		{ 0, 0 }
+	};
+
+	const char* pipeName( VuPipelineSlot pipe )
+	{
+		switch( pipe )
+		{
+			case VU_PIPE_NOP: return "nop";
+			case VU_PIPE_UPPER: return "upper";
+			case VU_PIPE_LOWER: return "lower";
+			default: return "unknown";
+		}
+	}
+
+	const char* executionUnitName( VuExecutionUnit unit )
+	{
+		switch( unit )
+		{
+			case VU_EXEC_NOP: return "nop";
+			case VU_EXEC_FMAC: return "fmac";
+			case VU_EXEC_FDIV: return "fdiv";
+			case VU_EXEC_LSU: return "lsu";
+			case VU_EXEC_IALU: return "ialu";
+			case VU_EXEC_BRU: return "bru";
+			case VU_EXEC_RANDU: return "randu";
+			case VU_EXEC_EFU: return "efu";
+			default: return "unknown";
+		}
+	}
+
+	const char* operandUnitName( Operand::Unit unit )
+	{
+		switch( unit )
+		{
+			case Operand::INVALID: return "invalid";
+			case Operand::ENTER: return "enter";
+			case Operand::EXIT: return "exit";
+			case Operand::FMAC: return "fmac";
+			case Operand::FDIV: return "fdiv";
+			case Operand::LSU: return "lsu";
+			case Operand::IALU: return "ialu";
+			case Operand::BRU: return "bru";
+			case Operand::RANDU: return "randu";
+			case Operand::EFU: return "efu";
+			default: return "unknown";
+		}
+	}
+
+	const char* memoryKindName( VuMemoryKind kind )
+	{
+		switch( kind )
+		{
+			case VU_MEMORY_NONE: return "none";
+			case VU_MEMORY_LOAD: return "load";
+			case VU_MEMORY_STORE: return "store";
+			case VU_MEMORY_XGKICK: return "xgkick";
+			default: return "unknown";
+		}
+	}
+
+	void writeFlagListText( std::ostream& stream, unsigned int flags, const FlagName* names )
+	{
+		bool wrote = false;
+		for( const FlagName* i = names; i->name; ++i )
+		{
+			if( (flags & i->flag) == i->flag )
+			{
+				if( wrote )
+					stream << "|";
+				stream << i->name;
+				wrote = true;
+			}
+		}
+		if( !wrote )
+			stream << "-";
+	}
+
+	void writeJsonString( std::ostream& stream, const char* text )
+	{
+		stream << "\"";
+		if( text )
+		{
+			for( const char* i = text; *i; ++i )
+			{
+				switch( *i )
+				{
+					case '\\': stream << "\\\\"; break;
+					case '"': stream << "\\\""; break;
+					case '\n': stream << "\\n"; break;
+					case '\r': stream << "\\r"; break;
+					case '\t': stream << "\\t"; break;
+					default: stream << *i; break;
+				}
+			}
+		}
+		stream << "\"";
+	}
+
+	void writeFlagArrayJson( std::ostream& stream, unsigned int flags, const FlagName* names )
+	{
+		stream << "[";
+		bool wrote = false;
+		for( const FlagName* i = names; i->name; ++i )
+		{
+			if( (flags & i->flag) == i->flag )
+			{
+				if( wrote )
+					stream << ", ";
+				writeJsonString( stream, i->name );
+				wrote = true;
+			}
+		}
+		stream << "]";
+	}
+
+	void writeInstructionInfoText( std::ostream& stream )
+	{
+		stream << "OpenVCL VU instruction metadata" << std::endl;
+		for( const VuInstructionInfo* info = allVuInstructionInfos(); info->mnemonic; ++info )
+		{
+			stream << info->mnemonic
+			       << " pipe=" << pipeName( info->pipe )
+			       << " unit=" << executionUnitName( info->unit )
+			       << " throughput=" << info->throughput
+			       << " latency=" << info->latency
+			       << " operand=" << info->operandName
+			       << " args=" << info->arguments
+			       << " parser_unit=" << operandUnitName( info->operandUnit )
+			       << " parser_flags=";
+			writeFlagListText( stream, info->operandFlags, kOperandFlags );
+			stream << " pattern=\"" << info->operandPattern << "\""
+			       << " flags=";
+			writeFlagListText( stream, info->flags, kInstructionFlags );
+			stream << " reads=";
+			writeFlagListText( stream, info->implicitReads, kResourceFlags );
+			stream << " writes=";
+			writeFlagListText( stream, info->implicitWrites, kResourceFlags );
+			stream << " memory=" << memoryKindName( info->memoryKind )
+			       << " memory_flags=";
+			writeFlagListText( stream, info->memoryFlags, kMemoryFlags );
+			stream << " branch_delay=" << info->branchDelaySlots
+			       << " bypass=";
+			writeFlagListText( stream, info->bypassFlags, kBypassFlags );
+			stream << std::endl;
+		}
+	}
+
+	void writeInstructionInfoJson( std::ostream& stream )
+	{
+		stream << "{\n  \"instructions\": [\n";
+		for( const VuInstructionInfo* info = allVuInstructionInfos(); info->mnemonic; ++info )
+		{
+			if( info != allVuInstructionInfos() )
+				stream << ",\n";
+			stream << "    {\n";
+			stream << "      \"mnemonic\": "; writeJsonString( stream, info->mnemonic ); stream << ",\n";
+			stream << "      \"pipe\": "; writeJsonString( stream, pipeName( info->pipe ) ); stream << ",\n";
+			stream << "      \"unit\": "; writeJsonString( stream, executionUnitName( info->unit ) ); stream << ",\n";
+			stream << "      \"throughput\": " << info->throughput << ",\n";
+			stream << "      \"latency\": " << info->latency << ",\n";
+			stream << "      \"operand\": {\n";
+			stream << "        \"name\": "; writeJsonString( stream, info->operandName ); stream << ",\n";
+			stream << "        \"arguments\": " << info->arguments << ",\n";
+			stream << "        \"unit\": "; writeJsonString( stream, operandUnitName( info->operandUnit ) ); stream << ",\n";
+			stream << "        \"flags\": "; writeFlagArrayJson( stream, info->operandFlags, kOperandFlags ); stream << ",\n";
+			stream << "        \"pattern\": "; writeJsonString( stream, info->operandPattern ); stream << "\n";
+			stream << "      },\n";
+			stream << "      \"flags\": "; writeFlagArrayJson( stream, info->flags, kInstructionFlags ); stream << ",\n";
+			stream << "      \"resources\": {\n";
+			stream << "        \"implicit_reads\": "; writeFlagArrayJson( stream, info->implicitReads, kResourceFlags ); stream << ",\n";
+			stream << "        \"implicit_writes\": "; writeFlagArrayJson( stream, info->implicitWrites, kResourceFlags ); stream << "\n";
+			stream << "      },\n";
+			stream << "      \"memory\": {\n";
+			stream << "        \"kind\": "; writeJsonString( stream, memoryKindName( info->memoryKind ) ); stream << ",\n";
+			stream << "        \"flags\": "; writeFlagArrayJson( stream, info->memoryFlags, kMemoryFlags ); stream << "\n";
+			stream << "      },\n";
+			stream << "      \"branch_delay_slots\": " << info->branchDelaySlots << ",\n";
+			stream << "      \"bypass\": "; writeFlagArrayJson( stream, info->bypassFlags, kBypassFlags ); stream << "\n";
+			stream << "    }";
+		}
+		stream << "\n  ]\n}" << std::endl;
+	}
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 Parser::Parser()
@@ -67,6 +307,8 @@ bool Parser::create( int argc, char* argv[] )
 		setState( SHOW_VERSION );
 	else if( m_cmdLine.showUsage() )
 		setState( SHOW_USAGE );
+	else if( m_cmdLine.dumpInstructionInfo() )
+		setState( DUMP_INSTRUCTION_INFO );
 	else if( m_cmdLine.analyzeVsmCost() )
 		setState( ANALYZE_VSM_COST );
 	else
@@ -96,6 +338,7 @@ bool Parser::run()
 	{
 		case SHOW_VERSION: return showVersion();
 		case SHOW_USAGE: return showUsage();
+		case DUMP_INSTRUCTION_INFO: return dumpInstructionInfo();
 		case ANALYZE_VSM_COST: return analyzeVsmCost();
 		case READ_INPUT: return readInput();
 		case PREPROCESS: return preProcess();
@@ -357,6 +600,36 @@ bool Parser::analyzeVsmCost()
 			analyzer.writeJson( std::cout );
 		else
 			analyzer.writeText( std::cout );
+	}
+
+	setState( EXIT );
+	return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+bool Parser::dumpInstructionInfo()
+{
+	if( m_cmdLine.output().length() > 0 )
+	{
+		std::ofstream output( m_cmdLine.output().c_str() );
+		if( !output.good() )
+		{
+			Error::Display( Error( "Could not open output file" ) );
+			return false;
+		}
+
+		if( m_cmdLine.dumpInstructionInfoJson() )
+			writeInstructionInfoJson( output );
+		else
+			writeInstructionInfoText( output );
+	}
+	else
+	{
+		if( m_cmdLine.dumpInstructionInfoJson() )
+			writeInstructionInfoJson( std::cout );
+		else
+			writeInstructionInfoText( std::cout );
 	}
 
 	setState( EXIT );

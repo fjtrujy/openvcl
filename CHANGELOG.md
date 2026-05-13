@@ -33,6 +33,9 @@
 - Introduced `VuInstructionInfo` as the first shared VU instruction metadata
   table and moved cost-analyzer opcode classification, latency, throughput,
   and Q/P producer checks onto it.
+- Expanded `VuInstructionInfo` into the canonical parser/cost metadata table,
+  moved hardware operand construction onto it, and added
+  `--dump-instruction-info` / `--dump-instruction-info-json`.
 
 ## 0.3.3
 

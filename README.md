@@ -93,6 +93,8 @@ Useful options:
 | `--cpp <name>` | run a specific C preprocessor |
 | `--bthres <n>` | dynamic branch visit threshold |
 | `--show-reg-alloc` | print register allocation information |
+| `--dump-instruction-info` | print the VU instruction metadata table |
+| `--dump-instruction-info-json` | print the VU instruction metadata table as JSON |
 
 `-M`, `-P`, and `-Z` are accepted for VCL command-line compatibility.
 
@@ -129,6 +131,25 @@ The report includes:
 - weighted hot-block, idle-slot, estimated-cost, and wait-stall rankings;
 - unknown-instruction and slot-mismatch checks.
 
+## Instruction Metadata
+
+OpenVCL exposes its shared VU instruction table for scheduling and tooling
+work. The text form is useful while inspecting opcodes:
+
+```sh
+./openvcl --dump-instruction-info
+```
+
+The JSON form is intended for scripts and regression tests:
+
+```sh
+./openvcl --dump-instruction-info-json
+```
+
+Each row includes the mnemonic, pipe, execution unit, throughput, latency,
+parser operand pattern, implicit resources, memory flags, branch-delay slots,
+and special bypass notes.
+
 ## Scheduler Status
 
 OpenVCL now performs conservative VU scheduling rather than only emitting
@@ -144,10 +165,10 @@ VCL `-d`-style output. Current work includes:
 - static cost reporting used to compare OpenVCL output with SCE/reference VSM.
 
 The current refactor is consolidating instruction facts into one canonical VU
-instruction metadata table. `src/VuInstructionInfo.*` is now the first shared
-source for cost-analysis opcode classification, latency, throughput, and Q/P
-producer flags. The scheduler and parser should migrate onto the same table so
-resource and barrier rules are not duplicated across the codebase.
+instruction metadata table. `src/VuInstructionInfo.*` now feeds parser operand
+construction and cost-analysis opcode classification. The scheduler should
+migrate onto the same table so resource and barrier rules are not duplicated
+across the codebase.
 
 See [TODO.md](TODO.md) for the active roadmap.
 
