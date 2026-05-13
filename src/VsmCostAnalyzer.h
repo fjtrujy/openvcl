@@ -172,6 +172,7 @@ private:
 	void recordCycle( const Slot& upper, const Slot& lower );
 	unsigned int blockRepeat( const Block& block ) const;
 	bool blockIsAffineLoop( const Block& block ) const;
+	bool blockIsAffineFallback( const Block& block ) const;
 	AffineCost affineCost() const;
 	std::vector<WeightedBlock> weightedBlocksByCycles() const;
 	std::vector<WeightedBlock> weightedBlocksByEstimatedCycles() const;
@@ -192,6 +193,7 @@ private:
 	                                const Block& block,
 	                                const std::string& canonicalLabel,
 	                                bool affineLoop,
+	                                bool affineFallback,
 	                                unsigned int repeat );
 	static void writeJsonWeightedBlock( std::ostream& stream, const WeightedBlock& block );
 	static bool writeComparisonBlocksText( std::ostream& stream, const std::vector<BlockComparison>& comparisons );

@@ -657,6 +657,11 @@ bool VsmCostAnalyzer::blockIsAffineLoop( const Block& block ) const
 	return false;
 }
 
+bool VsmCostAnalyzer::blockIsAffineFallback( const Block& block ) const
+{
+	return block.label.find( "__FALLBACK" ) != std::string::npos;
+}
+
 unsigned int VsmCostAnalyzer::estimatedBlockCycles( const Block& block )
 {
 	return block.cycles + block.issueStallCycles + block.waitqStallCycles + block.waitpStallCycles;
@@ -671,7 +676,11 @@ VsmCostAnalyzer::AffineCost VsmCostAnalyzer::affineCost() const
 		if( i->cycles == 0 )
 			continue;
 
-		if( blockIsAffineLoop(*i) )
+		if( blockIsAffineFallback(*i) )
+		{
+			continue;
+		}
+		else if( blockIsAffineLoop(*i) )
 		{
 			result.staticLoopCycles += i->cycles;
 			result.estimatedLoopCycles += estimatedBlockCycles(*i);
@@ -924,14 +933,16 @@ void VsmCostAnalyzer::writeJsonLabelCost( std::ostream& stream,
                                           const Block& block,
                                           const std::string& canonicalLabel,
                                           bool affineLoop,
+                                          bool affineFallback,
                                           unsigned int repeat )
 {
 	const unsigned int waitStallCycles = block.waitqStallCycles + block.waitpStallCycles;
 	const unsigned int estimatedCycles = estimatedBlockCycles( block );
+	const bool affineBase = !affineLoop && !affineFallback;
 
 	stream << "{"
 	       << "\"canonical_label\": \"" << jsonEscape( canonicalLabel ) << "\", "
-	       << "\"affine_role\": \"" << (affineLoop ? "loop" : "base") << "\", "
+	       << "\"affine_role\": \"" << (affineLoop ? "loop" : (affineFallback ? "fallback" : "base")) << "\", "
 	       << "\"repeat\": " << repeat << ", "
 	       << "\"static_cycles\": " << block.cycles << ", "
 	       << "\"estimated_cycles\": " << estimatedCycles << ", "
@@ -952,9 +963,9 @@ void VsmCostAnalyzer::writeJsonLabelCost( std::ostream& stream,
 	       << "\"waitq_stall_cycles\": " << block.waitqStallCycles << ", "
 	       << "\"waitp_stall_cycles\": " << block.waitpStallCycles << ", "
 	       << "\"affine\": {"
-	       << "\"static_base_cycles\": " << (affineLoop ? 0 : block.cycles) << ", "
+	       << "\"static_base_cycles\": " << (affineBase ? block.cycles : 0) << ", "
 	       << "\"static_loop_cycles\": " << (affineLoop ? block.cycles : 0) << ", "
-	       << "\"estimated_base_cycles\": " << (affineLoop ? 0 : estimatedCycles) << ", "
+	       << "\"estimated_base_cycles\": " << (affineBase ? estimatedCycles : 0) << ", "
 	       << "\"estimated_loop_cycles\": " << (affineLoop ? estimatedCycles : 0)
 	       << "}"
 	       << "}";
@@ -1472,7 +1483,8 @@ bool VsmCostAnalyzer::writeJson( std::ostream& stream ) const
 			stream << "," << std::endl;
 		first = false;
 		stream << "    \"" << jsonEscape( i->label ) << "\": ";
-		writeJsonLabelCost( stream, *i, canonicalBlockLabel( i->label ), blockIsAffineLoop(*i), blockRepeat(*i) );
+		writeJsonLabelCost( stream, *i, canonicalBlockLabel( i->label ),
+		                     blockIsAffineLoop(*i), blockIsAffineFallback(*i), blockRepeat(*i) );
 	}
 	stream << std::endl << "  }," << std::endl;
 	stream << "  \"blocks\": [" << std::endl;

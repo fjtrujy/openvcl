@@ -216,6 +216,41 @@ TEST_CASE("VsmCostAnalyzer inline: affine cost separates setup, loop, and teardo
     CHECK(contains(json.str(), "\"done_lid\": {\"canonical_label\": \"done_lid\", \"affine_role\": \"base\", \"repeat\": 1, \"static_cycles\": 1"));
 }
 
+TEST_CASE("VsmCostAnalyzer inline: affine cost excludes generated short-loop fallbacks")
+{
+    const std::string source =
+        "\t.vu\n"
+        "init_lid:\n"
+        "                    nop                             iaddiu VI01, VI00, 1\n"
+        "loop_lid__MAIN_LOOP:\n"
+        "                    add.xyz VF01, VF02, VF03        iaddiu VI01, VI01, -1\n"
+        "loop_lid__FALLBACK1:\n"
+        "                    nop                             isubiu VI01, VI01, 1\n"
+        "loop_lid__SCALAR_FALLBACK:\n"
+        "                    nop                             sq.xyz VF01, 0(VI02)\n"
+        "done_lid:\n"
+        "                    nop                             xgkick VI01\n";
+
+    vcl::VsmCostAnalyzer analyzer;
+    REQUIRE(analyzeString(source, "affine_fallback_inline.vsm", analyzer));
+    analyzer.setBlockRepeat("loop_lid__MAIN_LOOP", 10);
+
+    std::ostringstream text;
+    REQUIRE(analyzer.writeText(text));
+    CHECK(textMetric(text.str(), "static_cycles") == 5);
+    CHECK(textMetric(text.str(), "affine_static_base_cycles") == 3);
+    CHECK(textMetric(text.str(), "affine_static_loop_cycles") == 1);
+    CHECK(textMetric(text.str(), "affine_estimated_base_cycles") == 3);
+    CHECK(textMetric(text.str(), "affine_estimated_loop_cycles") == 1);
+    CHECK(contains(text.str(), "affine_estimated_cycles: 3 + 1n"));
+
+    std::ostringstream json;
+    REQUIRE(analyzer.writeJson(json));
+    CHECK(contains(json.str(), "\"loop_lid__FALLBACK1\": {\"canonical_label\": \"loop_lid__FALLBACK1\", \"affine_role\": \"fallback\""));
+    CHECK(contains(json.str(), "\"loop_lid__SCALAR_FALLBACK\": {\"canonical_label\": \"loop_lid__SCALAR_FALLBACK\", \"affine_role\": \"base\""));
+    CHECK(contains(json.str(), "\"affine\": {\"static_base_cycles\": 0, \"static_loop_cycles\": 0, \"estimated_base_cycles\": 0, \"estimated_loop_cycles\": 0}"));
+}
+
 TEST_CASE("VsmCostAnalyzer inline: ps2gl preset labels match SCE optimized main loops")
 {
     const std::string source =
