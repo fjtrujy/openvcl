@@ -100,7 +100,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 		m_ignoredImplicitWawResources |= VU_RESOURCE_MAC;
 	if( clipFlagsDead )
 		m_ignoredImplicitWawResources |= VU_RESOURCE_CLIP;
-	std::list<Token> scheduledTokens = scheduleVuTokensReadySet(workTokens, m_ignoredImplicitWawResources);
+	std::list<Token> scheduledTokens = scheduleVuTokensReadySetWithFlagLiveness(workTokens);
 	workTokens.swap(scheduledTokens);
 	m_enableUpperZeroMoves = macFlagsDead;
 

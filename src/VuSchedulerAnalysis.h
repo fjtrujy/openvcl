@@ -51,6 +51,7 @@ std::vector<VuDependencyEdge> buildVuDependencyGraph( const VuBasicBlock& block,
 std::list<Token> scheduleVuTokensPreservingOrder( const std::list<Token>& tokens );
 std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens,
                                            unsigned int ignoredImplicitWawResources = 0 );
+std::list<Token> scheduleVuTokensReadySetWithFlagLiveness( const std::list<Token>& tokens );
 
 }
 

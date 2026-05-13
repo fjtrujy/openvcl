@@ -187,6 +187,28 @@ namespace
 
 		appendReadyScheduledSegment( segment, scheduled, ignoredImplicitWawResources );
 	}
+
+	bool tokenReadsMac( const Token& token )
+	{
+		return token.operand() && isVuMacReader( token.operand()->name() );
+	}
+
+	bool tokenReadsClip( const Token& token )
+	{
+		return token.operand() && isVuClipReader( token.operand()->name() );
+	}
+
+	unsigned int ignoredFlagWawMaskForIndex( unsigned int index,
+	                                         int lastMacReader,
+	                                         int lastClipReader )
+	{
+		unsigned int mask = VU_RESOURCE_NONE;
+		if( lastMacReader < 0 || index > static_cast<unsigned int>( lastMacReader ) )
+			mask |= VU_RESOURCE_MAC;
+		if( lastClipReader < 0 || index > static_cast<unsigned int>( lastClipReader ) )
+			mask |= VU_RESOURCE_CLIP;
+		return mask;
+	}
 }
 
 VuBasicBlock::VuBasicBlock()
@@ -315,6 +337,62 @@ std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens,
 
 	for( std::vector<VuBasicBlock>::const_iterator block = blocks.begin(); block != blocks.end(); ++block )
 		appendReadyScheduledBlock( *block, scheduled, ignoredImplicitWawResources );
+
+	return scheduled;
+}
+
+std::list<Token> scheduleVuTokensReadySetWithFlagLiveness( const std::list<Token>& tokens )
+{
+	int lastMacReader = -1;
+	int lastClipReader = -1;
+	unsigned int index = 0;
+	for( std::list<Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i, ++index )
+	{
+		if( tokenReadsMac( *i ) )
+			lastMacReader = static_cast<int>( index );
+		if( tokenReadsClip( *i ) )
+			lastClipReader = static_cast<int>( index );
+	}
+
+	std::list<Token> scheduled;
+	std::list<Token> segment;
+	unsigned int segmentMask = VU_RESOURCE_NONE;
+	bool haveSegment = false;
+	index = 0;
+
+	for( std::list<Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i, ++index )
+	{
+		const unsigned int tokenMask = ignoredFlagWawMaskForIndex( index, lastMacReader, lastClipReader );
+		if( haveSegment && tokenMask != segmentMask )
+		{
+			std::list<Token> scheduledSegment = scheduleVuTokensReadySet( segment, segmentMask );
+			scheduled.insert( scheduled.end(), scheduledSegment.begin(), scheduledSegment.end() );
+			segment.clear();
+			haveSegment = false;
+		}
+
+		if( !haveSegment )
+		{
+			segmentMask = tokenMask;
+			haveSegment = true;
+		}
+		segment.push_back( *i );
+
+		if( index == static_cast<unsigned int>( lastMacReader )
+		    || index == static_cast<unsigned int>( lastClipReader ) )
+		{
+			std::list<Token> scheduledSegment = scheduleVuTokensReadySet( segment, segmentMask );
+			scheduled.insert( scheduled.end(), scheduledSegment.begin(), scheduledSegment.end() );
+			segment.clear();
+			haveSegment = false;
+		}
+	}
+
+	if( haveSegment )
+	{
+		std::list<Token> scheduledSegment = scheduleVuTokensReadySet( segment, segmentMask );
+		scheduled.insert( scheduled.end(), scheduledSegment.begin(), scheduledSegment.end() );
+	}
 
 	return scheduled;
 }

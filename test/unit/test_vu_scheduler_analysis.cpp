@@ -385,6 +385,46 @@ TEST_CASE("VuSchedulerAnalysis: ready-set scheduler keeps same-address loads beh
     CHECK(vcl::normalizeVuMnemonic(i->name()) == "mul");
 }
 
+TEST_CASE("VuSchedulerAnalysis: flag liveness keeps MAC WAW before the last reader")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("ftoi0.xy vf10, vf00"));
+    REQUIRE(program.parse("mul.xy vf11, vf10, vf00"));
+    REQUIRE(program.parse("fmand vi01, vi02"));
+
+    std::list<vcl::Token> scheduled = vcl::scheduleVuTokensReadySetWithFlagLiveness(program.tokenizer.tokens());
+    REQUIRE(scheduled.size() == program.tokenizer.tokens().size());
+
+    std::list<vcl::Token>::const_iterator i = scheduled.begin();
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "add");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "ftoi0");
+}
+
+TEST_CASE("VuSchedulerAnalysis: flag liveness ignores MAC WAW after the last reader")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("fmand vi01, vi02"));
+    REQUIRE(program.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("ftoi0.xy vf10, vf00"));
+    REQUIRE(program.parse("mul.xy vf11, vf10, vf00"));
+
+    std::list<vcl::Token> scheduled = vcl::scheduleVuTokensReadySetWithFlagLiveness(program.tokenizer.tokens());
+    REQUIRE(scheduled.size() == program.tokenizer.tokens().size());
+
+    std::list<vcl::Token>::const_iterator i = scheduled.begin();
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "fmand");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "ftoi0");
+}
+
 TEST_CASE("VuSchedulerAnalysis: ready-set scheduler can move Q producers before independent plain stores")
 {
     vcl::Error::ResetErrorCount();

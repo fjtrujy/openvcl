@@ -75,6 +75,10 @@
 - Reused the same dead MAC/CLIP WAW mask in CodeGenerator latency-gap filling
   and pairing lookahead, improving the ps2gl pure-OpenVCL aggregate by another
   28 static and 32 estimated cycles.
+- Let ready-set scheduling ignore MAC/CLIP WAW edges after the final matching
+  flag reader in the token stream, improving the ps2gl pure-OpenVCL aggregate
+  by another 480 static and 510 estimated cycles while preserving conservative
+  ordering before readers.
 - Added behavior-preserving scheduler analysis scaffolding for basic-block
   construction and descriptor-derived dependency edges.
 - Wired the scheduler analysis layer into code generation in preserve-order
