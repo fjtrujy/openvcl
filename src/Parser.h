@@ -41,6 +41,7 @@ public:
 
 		READ_INPUT,
 		ANALYZE_VSM_COST,
+		ANALYZE_VSM_COST_COMPARE,
 		DUMP_INSTRUCTION_INFO,
 		PREPROCESS,
 		TOKENIZE,
@@ -83,6 +84,7 @@ private:
 	bool showVersion();
 	bool showUsage();
 	bool analyzeVsmCost();
+	bool analyzeVsmCostCompare();
 	bool dumpInstructionInfo();
 	bool readInput();
 	bool preProcess();

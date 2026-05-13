@@ -44,9 +44,12 @@ public:
 	bool showRegisterInfo() const;
 	bool analyzeVsmCost() const;
 	bool analyzeVsmCostJson() const;
+	bool compareVsmCost() const;
+	bool compareVsmCostJson() const;
 	bool dumpInstructionInfo() const;
 	bool dumpInstructionInfoJson() const;
 	const std::vector< std::pair<std::string, unsigned int> >& costLoops() const;
+	const std::string& costCompareBaseline() const;
 
 	void setRunGasp( bool runGasp );
 	bool runGasp() const;
@@ -103,6 +106,8 @@ private:
 		ANALYZE_VSM_COST,
 		ANALYZE_VSM_COST_JSON,
 		ANALYZE_VSM_COST_LOOP,
+		ANALYZE_VSM_COST_COMPARE,
+		ANALYZE_VSM_COST_COMPARE_JSON,
 		DUMP_INSTRUCTION_INFO,
 		DUMP_INSTRUCTION_INFO_JSON,
 
@@ -144,9 +149,12 @@ private:
 	bool m_showRegisterInfo;
 	bool m_analyzeVsmCost;
 	bool m_analyzeVsmCostJson;
+	bool m_compareVsmCost;
+	bool m_compareVsmCostJson;
 	bool m_dumpInstructionInfo;
 	bool m_dumpInstructionInfoJson;
 	std::vector< std::pair<std::string, unsigned int> > m_costLoops;
+	std::string m_costCompareBaseline;
 
 	unsigned int m_threshold;
 	unsigned int m_timeout;

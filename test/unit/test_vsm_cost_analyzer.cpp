@@ -151,6 +151,29 @@ TEST_CASE("VsmCostAnalyzer fixture: block repeats expose weighted cost")
     CHECK(contains(json.str(), "\"top_weighted_idle_blocks\""));
 }
 
+TEST_CASE("VsmCostAnalyzer fixture: summary exposes comparison metrics")
+{
+    std::ifstream input(fixturePath("simple_scheduled.vsm").c_str());
+    REQUIRE(input.good());
+
+    vcl::VsmCostAnalyzer analyzer;
+    REQUIRE(analyzer.analyze(input, "simple_scheduled.vsm"));
+    analyzer.setBlockRepeat("entry_lid", 4);
+
+    vcl::VsmCostAnalyzer::Summary summary = analyzer.summary();
+    CHECK(summary.input == "simple_scheduled.vsm");
+    CHECK(summary.staticCycles == 5);
+    CHECK(summary.estimatedTotalCycles == 5);
+    CHECK(summary.weightedStaticCycles == 20);
+    CHECK(summary.weightedEstimatedTotalCycles == 20);
+    CHECK(summary.weightedInstructions == 20);
+    CHECK(summary.weightedPairedCycles == 4);
+    CHECK(summary.weightedNopSlots == 20);
+    CHECK(summary.instructions == 5);
+    CHECK(summary.pairedCycles == 1);
+    CHECK(summary.nopSlots == 5);
+}
+
 TEST_CASE("VsmCostAnalyzer fixture: SCE padded columns have precomputed cost")
 {
     std::string report = analyzeTextFile("sce_padded_columns.vsm");

@@ -18,13 +18,53 @@ namespace vcl
 class VsmCostAnalyzer
 {
 public:
+	struct Summary
+	{
+		Summary();
+
+		std::string input;
+		unsigned int staticCycles;
+		unsigned int estimatedTotalCycles;
+		unsigned int issueStallCycles;
+		unsigned int fdivIssueStallCycles;
+		unsigned int efuIssueStallCycles;
+		unsigned int waitStallCycles;
+		unsigned int waitqStallCycles;
+		unsigned int waitpStallCycles;
+		unsigned int weightedStaticCycles;
+		unsigned int weightedEstimatedTotalCycles;
+		unsigned int weightedIssueStallCycles;
+		unsigned int weightedFdivIssueStallCycles;
+		unsigned int weightedEfuIssueStallCycles;
+		unsigned int weightedWaitStallCycles;
+		unsigned int weightedWaitqStallCycles;
+		unsigned int weightedWaitpStallCycles;
+		unsigned int weightedInstructions;
+		unsigned int weightedPairedCycles;
+		unsigned int weightedNopOnlyCycles;
+		unsigned int weightedNopSlots;
+		unsigned int instructions;
+		unsigned int upperInstructions;
+		unsigned int lowerInstructions;
+		unsigned int pairedCycles;
+		unsigned int nopOnlyCycles;
+		unsigned int nopSlots;
+		unsigned int operationLatencyCycles;
+		unsigned int longLatencyOps;
+		unsigned int longLatencyCycles;
+		unsigned int maxOpLatency;
+	};
+
 	VsmCostAnalyzer();
 
 	bool analyze( std::istream& stream, const std::string& inputName );
 	void setBlockRepeat( const std::string& label, unsigned int repeat );
+	Summary summary() const;
 
 	bool writeText( std::ostream& stream ) const;
 	bool writeJson( std::ostream& stream ) const;
+	static bool writeComparisonText( std::ostream& stream, const VsmCostAnalyzer& baseline, const VsmCostAnalyzer& candidate );
+	static bool writeComparisonJson( std::ostream& stream, const VsmCostAnalyzer& baseline, const VsmCostAnalyzer& candidate );
 
 private:
 	enum Unit

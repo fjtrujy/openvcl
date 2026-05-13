@@ -57,6 +57,24 @@ namespace
         return ::test::run_openvcl(args, "");
     }
 
+    ::test::RunResult runCostCompare(const std::string& baseline, const std::string& candidate)
+    {
+        std::vector<std::string> args;
+        args.push_back("--cost-compare");
+        args.push_back(fixturePath(baseline));
+        args.push_back(fixturePath(candidate));
+        return ::test::run_openvcl(args, "");
+    }
+
+    ::test::RunResult runCostCompareJson(const std::string& baseline, const std::string& candidate)
+    {
+        std::vector<std::string> args;
+        args.push_back("--cost-compare-json");
+        args.push_back(fixturePath(baseline));
+        args.push_back(fixturePath(candidate));
+        return ::test::run_openvcl(args, "");
+    }
+
     ::test::RunResult runCostLoop(const std::string& fixture, const std::string& loop)
     {
         std::vector<std::string> args;
@@ -112,6 +130,30 @@ TEST_CASE("VSM cost CLI: JSON fixture report is suitable for comparisons")
     CHECK(jsonMetric(r.stdout_data, "long_latency_cycles") == 7);
     CHECK(contains(r.stdout_data, "\"label\": \"entry_lid\""));
     CHECK(contains(r.stdout_data, "\"nop_slots\": 5"));
+}
+
+TEST_CASE("VSM cost CLI: comparison reports baseline, candidate, and deltas")
+{
+    ::test::RunResult r = runCostCompare("simple_scheduled.vsm", "sce_padded_columns.vsm");
+    REQUIRE(r.exit_code == 0);
+    CHECK(contains(r.stdout_data, "VSM cost comparison"));
+    CHECK(contains(r.stdout_data, "baseline: " + fixturePath("simple_scheduled.vsm")));
+    CHECK(contains(r.stdout_data, "candidate: " + fixturePath("sce_padded_columns.vsm")));
+    CHECK(contains(r.stdout_data, "static_cycles: baseline=5 candidate=2 delta=-3"));
+    CHECK(contains(r.stdout_data, "estimated_total_cycles: baseline=5 candidate=2 delta=-3"));
+    CHECK(contains(r.stdout_data, "instructions: baseline=5 candidate=3 delta=-2"));
+    CHECK(contains(r.stdout_data, "nop_slots: baseline=5 candidate=1 delta=-4"));
+}
+
+TEST_CASE("VSM cost CLI: JSON comparison is suitable for scheduler before-after reports")
+{
+    ::test::RunResult r = runCostCompareJson("simple_scheduled.vsm", "sce_padded_columns.vsm");
+    REQUIRE(r.exit_code == 0);
+    CHECK(contains(r.stdout_data, "\"baseline\": {\"input\": \"" + fixturePath("simple_scheduled.vsm") + "\""));
+    CHECK(contains(r.stdout_data, "\"candidate\": {\"input\": \"" + fixturePath("sce_padded_columns.vsm") + "\""));
+    CHECK(contains(r.stdout_data, "\"delta\": {\"static_cycles\": -3"));
+    CHECK(contains(r.stdout_data, "\"estimated_total_cycles\": -3"));
+    CHECK(contains(r.stdout_data, "\"nop_slots\": -4"));
 }
 
 TEST_CASE("VSM cost CLI: loop repeat weights static block cost")

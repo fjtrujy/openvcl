@@ -51,6 +51,8 @@
   construction and descriptor-derived dependency edges.
 - Wired the scheduler analysis layer into code generation in preserve-order
   mode, establishing the production hook for ready-set scheduling.
+- Added `--cost-compare` and `--cost-compare-json` for side-by-side VSM cost
+  comparisons between a baseline and candidate, including signed deltas.
 
 ## 0.3.3
 

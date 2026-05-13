@@ -312,6 +312,8 @@ bool Parser::create( int argc, char* argv[] )
 		setState( SHOW_USAGE );
 	else if( m_cmdLine.dumpInstructionInfo() )
 		setState( DUMP_INSTRUCTION_INFO );
+	else if( m_cmdLine.compareVsmCost() )
+		setState( ANALYZE_VSM_COST_COMPARE );
 	else if( m_cmdLine.analyzeVsmCost() )
 		setState( ANALYZE_VSM_COST );
 	else
@@ -343,6 +345,7 @@ bool Parser::run()
 		case SHOW_USAGE: return showUsage();
 		case DUMP_INSTRUCTION_INFO: return dumpInstructionInfo();
 		case ANALYZE_VSM_COST: return analyzeVsmCost();
+		case ANALYZE_VSM_COST_COMPARE: return analyzeVsmCostCompare();
 		case READ_INPUT: return readInput();
 		case PREPROCESS: return preProcess();
 		case TOKENIZE: return tokenize();
@@ -603,6 +606,74 @@ bool Parser::analyzeVsmCost()
 			analyzer.writeJson( std::cout );
 		else
 			analyzer.writeText( std::cout );
+	}
+
+	setState( EXIT );
+	return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+bool Parser::analyzeVsmCostCompare()
+{
+	VsmCostAnalyzer baselineAnalyzer;
+	VsmCostAnalyzer candidateAnalyzer;
+
+	std::ifstream baselineInput( m_cmdLine.costCompareBaseline().c_str() );
+	if( !baselineInput.good() )
+	{
+		Error::Display( Error( "Could not open cost comparison baseline" ) );
+		return false;
+	}
+
+	if( !baselineAnalyzer.analyze( baselineInput, m_cmdLine.costCompareBaseline() ) )
+		return false;
+
+	if( m_cmdLine.input().length() > 0 )
+	{
+		std::ifstream candidateInput( m_cmdLine.input().c_str() );
+		if( !candidateInput.good() )
+		{
+			Error::Display( Error( "Could not open input" ) );
+			return false;
+		}
+
+		if( !candidateAnalyzer.analyze( candidateInput, m_cmdLine.input() ) )
+			return false;
+	}
+	else
+	{
+		if( !candidateAnalyzer.analyze( std::cin, "stdin" ) )
+			return false;
+	}
+
+	const std::vector< std::pair<std::string, unsigned int> >& costLoops = m_cmdLine.costLoops();
+	for( std::vector< std::pair<std::string, unsigned int> >::const_iterator i = costLoops.begin(); i != costLoops.end(); ++i )
+	{
+		baselineAnalyzer.setBlockRepeat( i->first, i->second );
+		candidateAnalyzer.setBlockRepeat( i->first, i->second );
+	}
+
+	if( m_cmdLine.output().length() > 0 )
+	{
+		std::ofstream output( m_cmdLine.output().c_str() );
+		if( !output.good() )
+		{
+			Error::Display( Error( "Could not open output file" ) );
+			return false;
+		}
+
+		if( m_cmdLine.compareVsmCostJson() )
+			VsmCostAnalyzer::writeComparisonJson( output, baselineAnalyzer, candidateAnalyzer );
+		else
+			VsmCostAnalyzer::writeComparisonText( output, baselineAnalyzer, candidateAnalyzer );
+	}
+	else
+	{
+		if( m_cmdLine.compareVsmCostJson() )
+			VsmCostAnalyzer::writeComparisonJson( std::cout, baselineAnalyzer, candidateAnalyzer );
+		else
+			VsmCostAnalyzer::writeComparisonText( std::cout, baselineAnalyzer, candidateAnalyzer );
 	}
 
 	setState( EXIT );

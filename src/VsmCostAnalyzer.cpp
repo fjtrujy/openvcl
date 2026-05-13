@@ -18,6 +18,47 @@ namespace vcl
 
 namespace
 {
+	struct SummaryMetric
+	{
+		const char* name;
+		unsigned int VsmCostAnalyzer::Summary::* value;
+	};
+
+	const SummaryMetric kComparisonMetrics[] =
+	{
+		{ "static_cycles", &VsmCostAnalyzer::Summary::staticCycles },
+		{ "estimated_total_cycles", &VsmCostAnalyzer::Summary::estimatedTotalCycles },
+		{ "issue_stall_cycles", &VsmCostAnalyzer::Summary::issueStallCycles },
+		{ "fdiv_issue_stall_cycles", &VsmCostAnalyzer::Summary::fdivIssueStallCycles },
+		{ "efu_issue_stall_cycles", &VsmCostAnalyzer::Summary::efuIssueStallCycles },
+		{ "wait_stall_cycles", &VsmCostAnalyzer::Summary::waitStallCycles },
+		{ "waitq_stall_cycles", &VsmCostAnalyzer::Summary::waitqStallCycles },
+		{ "waitp_stall_cycles", &VsmCostAnalyzer::Summary::waitpStallCycles },
+		{ "weighted_static_cycles", &VsmCostAnalyzer::Summary::weightedStaticCycles },
+		{ "weighted_estimated_total_cycles", &VsmCostAnalyzer::Summary::weightedEstimatedTotalCycles },
+		{ "weighted_issue_stall_cycles", &VsmCostAnalyzer::Summary::weightedIssueStallCycles },
+		{ "weighted_fdiv_issue_stall_cycles", &VsmCostAnalyzer::Summary::weightedFdivIssueStallCycles },
+		{ "weighted_efu_issue_stall_cycles", &VsmCostAnalyzer::Summary::weightedEfuIssueStallCycles },
+		{ "weighted_wait_stall_cycles", &VsmCostAnalyzer::Summary::weightedWaitStallCycles },
+		{ "weighted_waitq_stall_cycles", &VsmCostAnalyzer::Summary::weightedWaitqStallCycles },
+		{ "weighted_waitp_stall_cycles", &VsmCostAnalyzer::Summary::weightedWaitpStallCycles },
+		{ "weighted_instructions", &VsmCostAnalyzer::Summary::weightedInstructions },
+		{ "weighted_paired_cycles", &VsmCostAnalyzer::Summary::weightedPairedCycles },
+		{ "weighted_nop_only_cycles", &VsmCostAnalyzer::Summary::weightedNopOnlyCycles },
+		{ "weighted_nop_slots", &VsmCostAnalyzer::Summary::weightedNopSlots },
+		{ "instructions", &VsmCostAnalyzer::Summary::instructions },
+		{ "upper_instructions", &VsmCostAnalyzer::Summary::upperInstructions },
+		{ "lower_instructions", &VsmCostAnalyzer::Summary::lowerInstructions },
+		{ "paired_cycles", &VsmCostAnalyzer::Summary::pairedCycles },
+		{ "nop_only_cycles", &VsmCostAnalyzer::Summary::nopOnlyCycles },
+		{ "nop_slots", &VsmCostAnalyzer::Summary::nopSlots },
+		{ "operation_latency_cycles", &VsmCostAnalyzer::Summary::operationLatencyCycles },
+		{ "long_latency_ops", &VsmCostAnalyzer::Summary::longLatencyOps },
+		{ "long_latency_cycles", &VsmCostAnalyzer::Summary::longLatencyCycles },
+		{ "max_op_latency", &VsmCostAnalyzer::Summary::maxOpLatency },
+		{ 0, 0 }
+	};
+
 	bool isSpace( char c )
 	{
 		return c == ' ' || c == '\t' || c == '\r' || c == '\n';
@@ -29,6 +70,71 @@ namespace
 		    || c == '_' || c == '.' || c == '[' || c == ']';
 	}
 
+	long metricDelta( unsigned int baseline, unsigned int candidate )
+	{
+		return static_cast<long>( candidate ) - static_cast<long>( baseline );
+	}
+
+	std::string comparisonJsonEscape( const std::string& text )
+	{
+		std::ostringstream stream;
+		for( std::string::const_iterator i = text.begin(); i != text.end(); ++i )
+		{
+			switch( *i )
+			{
+				case '\\': stream << "\\\\"; break;
+				case '"': stream << "\\\""; break;
+				case '\n': stream << "\\n"; break;
+				case '\r': stream << "\\r"; break;
+				case '\t': stream << "\\t"; break;
+				default: stream << *i; break;
+			}
+		}
+		return stream.str();
+	}
+
+	void writeSummaryJson( std::ostream& stream, const VsmCostAnalyzer::Summary& summary )
+	{
+		stream << "{";
+		stream << "\"input\": \"" << comparisonJsonEscape( summary.input ) << "\"";
+		for( const SummaryMetric* i = kComparisonMetrics; i->name; ++i )
+			stream << ", \"" << i->name << "\": " << summary.*(i->value);
+		stream << "}";
+	}
+}
+
+VsmCostAnalyzer::Summary::Summary()
+{
+	staticCycles = 0;
+	estimatedTotalCycles = 0;
+	issueStallCycles = 0;
+	fdivIssueStallCycles = 0;
+	efuIssueStallCycles = 0;
+	waitStallCycles = 0;
+	waitqStallCycles = 0;
+	waitpStallCycles = 0;
+	weightedStaticCycles = 0;
+	weightedEstimatedTotalCycles = 0;
+	weightedIssueStallCycles = 0;
+	weightedFdivIssueStallCycles = 0;
+	weightedEfuIssueStallCycles = 0;
+	weightedWaitStallCycles = 0;
+	weightedWaitqStallCycles = 0;
+	weightedWaitpStallCycles = 0;
+	weightedInstructions = 0;
+	weightedPairedCycles = 0;
+	weightedNopOnlyCycles = 0;
+	weightedNopSlots = 0;
+	instructions = 0;
+	upperInstructions = 0;
+	lowerInstructions = 0;
+	pairedCycles = 0;
+	nopOnlyCycles = 0;
+	nopSlots = 0;
+	operationLatencyCycles = 0;
+	longLatencyOps = 0;
+	longLatencyCycles = 0;
+	maxOpLatency = 0;
 }
 
 VsmCostAnalyzer::Slot::Slot()
@@ -117,6 +223,53 @@ void VsmCostAnalyzer::setBlockRepeat( const std::string& label, unsigned int rep
 	if( label.empty() || repeat == 0 )
 		return;
 	m_blockRepeats[label] = repeat;
+}
+
+VsmCostAnalyzer::Summary VsmCostAnalyzer::summary() const
+{
+	Summary result;
+
+	result.input = m_inputName;
+	result.staticCycles = m_staticCycles;
+	result.estimatedTotalCycles = m_estimatedCycles;
+	result.issueStallCycles = m_issueStallCycles;
+	result.fdivIssueStallCycles = m_fdivIssueStallCycles;
+	result.efuIssueStallCycles = m_efuIssueStallCycles;
+	result.waitqStallCycles = m_waitqStallCycles;
+	result.waitpStallCycles = m_waitpStallCycles;
+	result.waitStallCycles = result.waitqStallCycles + result.waitpStallCycles;
+	result.instructions = m_upperInstructions + m_lowerInstructions;
+	result.upperInstructions = m_upperInstructions;
+	result.lowerInstructions = m_lowerInstructions;
+	result.pairedCycles = m_pairedCycles;
+	result.nopOnlyCycles = m_nopOnlyCycles;
+	result.nopSlots = m_nopSlots;
+	result.operationLatencyCycles = m_operationLatencyCycles;
+	result.longLatencyOps = m_longLatencyOps;
+	result.longLatencyCycles = m_longLatencyCycles;
+	result.maxOpLatency = m_maxOpLatency;
+
+	for( std::vector<Block>::const_iterator i = m_blocks.begin(); i != m_blocks.end(); ++i )
+	{
+		if( i->cycles == 0 )
+			continue;
+		const unsigned int repeat = blockRepeat(*i);
+		result.weightedStaticCycles += i->cycles * repeat;
+		result.weightedInstructions += (i->upperInstructions + i->lowerInstructions) * repeat;
+		result.weightedPairedCycles += i->pairedCycles * repeat;
+		result.weightedNopOnlyCycles += i->nopOnlyCycles * repeat;
+		result.weightedNopSlots += i->nopSlots * repeat;
+		result.weightedIssueStallCycles += i->issueStallCycles * repeat;
+		result.weightedFdivIssueStallCycles += i->fdivIssueStallCycles * repeat;
+		result.weightedEfuIssueStallCycles += i->efuIssueStallCycles * repeat;
+		result.weightedWaitqStallCycles += i->waitqStallCycles * repeat;
+		result.weightedWaitpStallCycles += i->waitpStallCycles * repeat;
+	}
+
+	result.weightedWaitStallCycles = result.weightedWaitqStallCycles + result.weightedWaitpStallCycles;
+	result.weightedEstimatedTotalCycles = result.weightedStaticCycles + result.weightedIssueStallCycles + result.weightedWaitStallCycles;
+
+	return result;
 }
 
 bool VsmCostAnalyzer::analyze( std::istream& stream, const std::string& inputName )
@@ -949,6 +1102,60 @@ bool VsmCostAnalyzer::writeJson( std::ostream& stream ) const
 	}
 
 	stream << std::endl << "  ]" << std::endl;
+	stream << "}" << std::endl;
+	return true;
+}
+
+bool VsmCostAnalyzer::writeComparisonText( std::ostream& stream, const VsmCostAnalyzer& baseline, const VsmCostAnalyzer& candidate )
+{
+	const Summary baselineSummary = baseline.summary();
+	const Summary candidateSummary = candidate.summary();
+
+	stream << "VSM cost comparison" << std::endl;
+	stream << "baseline: " << baselineSummary.input << std::endl;
+	stream << "candidate: " << candidateSummary.input << std::endl;
+	stream << "metrics:" << std::endl;
+
+	for( const SummaryMetric* i = kComparisonMetrics; i->name; ++i )
+	{
+		const unsigned int baselineValue = baselineSummary.*(i->value);
+		const unsigned int candidateValue = candidateSummary.*(i->value);
+		stream << "  " << i->name
+		       << ": baseline=" << baselineValue
+		       << " candidate=" << candidateValue
+		       << " delta=" << metricDelta( baselineValue, candidateValue )
+		       << std::endl;
+	}
+
+	return true;
+}
+
+bool VsmCostAnalyzer::writeComparisonJson( std::ostream& stream, const VsmCostAnalyzer& baseline, const VsmCostAnalyzer& candidate )
+{
+	const Summary baselineSummary = baseline.summary();
+	const Summary candidateSummary = candidate.summary();
+
+	stream << "{" << std::endl;
+	stream << "  \"baseline\": ";
+	writeSummaryJson( stream, baselineSummary );
+	stream << "," << std::endl;
+	stream << "  \"candidate\": ";
+	writeSummaryJson( stream, candidateSummary );
+	stream << "," << std::endl;
+	stream << "  \"delta\": {";
+
+	bool first = true;
+	for( const SummaryMetric* i = kComparisonMetrics; i->name; ++i )
+	{
+		if( !first )
+			stream << ", ";
+		first = false;
+		const unsigned int baselineValue = baselineSummary.*(i->value);
+		const unsigned int candidateValue = candidateSummary.*(i->value);
+		stream << "\"" << i->name << "\": " << metricDelta( baselineValue, candidateValue );
+	}
+
+	stream << "}" << std::endl;
 	stream << "}" << std::endl;
 	return true;
 }
