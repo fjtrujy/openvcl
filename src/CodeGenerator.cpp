@@ -18,6 +18,7 @@
 #include "Expression.h"
 #include "Error.h"
 #include "Math.h"
+#include "VuTokenResourceAccess.h"
 
 #include <iostream>
 #include <iomanip>
@@ -559,40 +560,26 @@ namespace
 {
 	bool registerKey( const Token::Argument& arg, std::string& key )
 	{
-		if( arg.type() != Token::Argument::FLOAT_REGISTER
-		    && arg.type() != Token::Argument::INTEGER_REGISTER )
-			return false;
-
-		if( arg.content() == Token::Argument::ALIAS )
-		{
-			Dependency* dependency = arg.dependency();
-			if( dependency && dependency->alias()
-			    && dependency->alias()->allocatedRegister() )
-			{
-				key = dependency->alias()->allocatedRegister()->name();
-				return true;
-			}
-		}
-
-		std::stringstream s;
-		s << ((arg.type() == Token::Argument::FLOAT_REGISTER) ? "VF" : "VI")
-		  << std::setw(2) << std::setfill('0') << arg.regNumber();
-		key = s.str();
-		return true;
+		return vuRegisterKey( arg, key );
 	}
 
 	bool tokenTouchesImplicitResource( const Token& token, Token::Argument::Type type, bool write )
 	{
-		const std::list<Token::Argument>& args = token.arguments();
-		for( std::list<Token::Argument>::const_iterator i = args.begin(); i != args.end(); ++i )
+		unsigned int resource = VU_RESOURCE_NONE;
+		switch( type )
 		{
-			if( (*i).type() != type )
-				continue;
-			const bool isWrite = ((*i).flags() & Token::Argument::WRITE) != 0;
-			if( isWrite == write )
-				return true;
+			case Token::Argument::I: resource = VU_RESOURCE_I; break;
+			case Token::Argument::Q: resource = VU_RESOURCE_Q; break;
+			case Token::Argument::P: resource = VU_RESOURCE_P; break;
+			case Token::Argument::R: resource = VU_RESOURCE_R; break;
+			case Token::Argument::ACCUMULATOR: resource = VU_RESOURCE_ACC; break;
+			default: return false;
 		}
-		return false;
+
+		VuTokenResourceAccess access;
+		if( !buildVuTokenResourceAccess( token, access ) )
+			return false;
+		return (write ? access.implicitWrites : access.implicitReads) & resource;
 	}
 
 	bool tokenReadsQ( const Token& token )
@@ -785,65 +772,22 @@ bool CodeGenerator::isEmittableInstruction( const Token& t )
 }
 
 // Helper: identify the set of single-instance "implicit" resources
-// (ACC / Q / P / I / R / MAC flags / CLIP flags) touched by a token,
-// distinguishing reads and writes.  These resources have NO Alias and aren't
-// routed through the register allocator, so the only way to spot conflicts is
-// by inspecting the operand template, flags, and mnemonic.
-//
-// Returns two bitmasks, indexed by the bits below.
+// (ACC / Q / P / I / R / MAC flags / CLIP flags) touched by a token.
+// These resources have NO Alias and aren't routed through the register
+// allocator, so the scheduler consumes the table-driven descriptor.
 namespace {
-	enum ResourceBit {
-		RES_ACC = 1 << 0,
-		RES_Q   = 1 << 1,
-		RES_P   = 1 << 2,
-		RES_I   = 1 << 3,
-		RES_R   = 1 << 4,
-		RES_MAC = 1 << 5,
-		RES_CLIP = 1 << 6
-	};
-
 	void implicitResources( const Token& t, unsigned int& reads, unsigned int& writes )
 	{
-		reads = 0;
-		writes = 0;
-		if( !t.operand() )
-			return;
-
-		// Per-Argument single-instance resource touches.
-		const std::list<Token::Argument>& args = t.arguments();
-		for( std::list<Token::Argument>::const_iterator i = args.begin(); i != args.end(); ++i )
+		VuTokenResourceAccess access;
+		if( buildVuTokenResourceAccess( t, access ) )
 		{
-			unsigned int bit = 0;
-			switch( (*i).type() )
-			{
-				case Token::Argument::ACCUMULATOR: bit = RES_ACC; break;
-				case Token::Argument::Q:           bit = RES_Q;   break;
-				case Token::Argument::P:           bit = RES_P;   break;
-				case Token::Argument::I:           bit = RES_I;   break;
-				case Token::Argument::R:           bit = RES_R;   break;
-				default: continue;
-			}
-			if( (*i).flags() & Token::Argument::WRITE )
-				writes |= bit;
-			else
-				reads |= bit;
+			reads = access.implicitReads;
+			writes = access.implicitWrites;
+			return;
 		}
 
-		// Operand-level implicit writes that aren't reflected by any
-		// Argument flag.  LOI's destination is the I register, signalled
-		// only by Operand::IWRITE.
-		if( t.operand()->flags() & Operand::IWRITE )
-			writes |= RES_I;
-
-		const std::string& name = t.operand()->name();
-		if( t.operand()->unit() == Operand::FMAC )
-			writes |= RES_MAC;
-		if( isClipw(name) )
-			writes |= RES_CLIP;
-		if( isMacReader(name) )
-			reads |= RES_MAC;
-		if( isClipReader(name) )
-			reads |= RES_CLIP;
+		reads = VU_RESOURCE_NONE;
+		writes = VU_RESOURCE_NONE;
 	}
 
 	bool hasImplicitPairDependency( const Token& earlier, const Token& later )
@@ -876,31 +820,12 @@ namespace {
 
 	unsigned int writeFieldMask( const Token& token, const Token::Argument& arg )
 	{
-		if( arg.type() != Token::Argument::FLOAT_REGISTER )
-			return Token::X | Token::Y | Token::Z | Token::W;
-
-		unsigned int fields = token.fields();
-		if( fields == 0 )
-			fields = arg.fields();
-		if( fields == 0 )
-			fields = Token::X | Token::Y | Token::Z | Token::W;
-		return fields;
+		return vuWriteFieldMask( token, arg );
 	}
 
 	unsigned int readFieldMask( const Token& token, const Token::Argument& arg )
 	{
-		if( arg.type() != Token::Argument::FLOAT_REGISTER )
-			return Token::X | Token::Y | Token::Z | Token::W;
-
-		if( (arg.flags() & Token::Argument::BROADCAST) && token.broadcast() )
-			return token.broadcast();
-
-		unsigned int fields = arg.fields();
-		if( fields == 0 )
-			fields = token.fields();
-		if( fields == 0 )
-			fields = Token::X | Token::Y | Token::Z | Token::W;
-		return fields;
+		return vuReadFieldMask( token, arg );
 	}
 
 	bool disjointFloatWrites( const Token& a, const Token::Argument& aArg,
@@ -966,55 +891,20 @@ namespace {
 		return false;
 	}
 
-	void appendFieldKeys( const std::string& base, unsigned int fields, std::list<std::string>& keys )
-	{
-		static const char* names = "xyzw";
-		if( fields == 0 )
-			fields = Token::X | Token::Y | Token::Z | Token::W;
-		for( unsigned int i = 0; i < 4; ++i )
-		{
-			if( fields & (1 << i) )
-			{
-				std::string key = base;
-				key += ".";
-				key += names[i];
-				keys.push_back(key);
-			}
-		}
-	}
-
 	void collectRegisterReadKeys( const Token& token, std::list<std::string>& reads )
 	{
-		const std::list<Token::Argument>& args = token.arguments();
-		for( std::list<Token::Argument>::const_iterator i = args.begin(); i != args.end(); ++i )
-		{
-			if( (*i).flags() & Token::Argument::WRITE )
-				continue;
-			std::string key;
-			if( !registerKey(*i, key) )
-				continue;
-			if( (*i).type() == Token::Argument::FLOAT_REGISTER )
-				appendFieldKeys(key, readFieldMask(token, *i), reads);
-			else
-				reads.push_back(key);
-		}
+		VuTokenResourceAccess access;
+		if( !buildVuTokenResourceAccess( token, access ) )
+			return;
+		reads.insert( reads.end(), access.registerReads.begin(), access.registerReads.end() );
 	}
 
 	void collectRegisterWriteKeys( const Token& token, std::list<std::string>& writes )
 	{
-		const std::list<Token::Argument>& args = token.arguments();
-		for( std::list<Token::Argument>::const_iterator i = args.begin(); i != args.end(); ++i )
-		{
-			if( !((*i).flags() & Token::Argument::WRITE) )
-				continue;
-			std::string key;
-			if( !registerKey(*i, key) )
-				continue;
-			if( (*i).type() == Token::Argument::FLOAT_REGISTER )
-				appendFieldKeys(key, writeFieldMask(token, *i), writes);
-			else
-				writes.push_back(key);
-		}
+		VuTokenResourceAccess access;
+		if( !buildVuTokenResourceAccess( token, access ) )
+			return;
+		writes.insert( writes.end(), access.registerWrites.begin(), access.registerWrites.end() );
 	}
 
 	std::string lowerName( const Token& token )

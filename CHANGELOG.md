@@ -39,6 +39,8 @@
 - Added `VuTokenResourceAccess` as the table-driven descriptor layer for VF/VI
   register fields, implicit resources, memory flags, branch delay slots, and
   bypass notes.
+- Moved scheduler register-key, field-mask, Q/P, and implicit-resource checks
+  onto `VuTokenResourceAccess`.
 
 ## 0.3.3
 
