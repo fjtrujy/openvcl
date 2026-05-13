@@ -124,6 +124,23 @@ JSON report:
 ./openvcl --cost-json shader.vsm
 ```
 
+The JSON report includes `label_order` and `cost_by_label` so tools can read a
+shader by its VSM labels instead of reverse-engineering the raw block list:
+
+```json
+{
+  "label_order": ["init_lid", "xform_loop_lid", "done_lid"],
+  "cost_by_label": {
+    "xform_loop_lid": {
+      "affine_role": "loop",
+      "static_cycles": 25,
+      "estimated_cycles": 25,
+      "weighted_estimated_cycles": 2500
+    }
+  }
+}
+```
+
 Weight hot blocks by expected loop iterations:
 
 ```sh
@@ -164,6 +181,10 @@ Emit comparison output for scripts or Markdown reports:
 ./openvcl --cost-compare-json sce_reference.vsm openvcl_candidate.vsm
 ./openvcl --cost-compare-markdown sce_reference.vsm openvcl_candidate.vsm
 ```
+
+The comparison JSON also includes `label_comparisons`, keyed by canonical label
+matching where possible, so SCE optimized loop labels such as
+`EXPL_...__MAIN_LOOP` can be compared with their OpenVCL source labels.
 
 Emit one Markdown table for a set of VSM pairs:
 

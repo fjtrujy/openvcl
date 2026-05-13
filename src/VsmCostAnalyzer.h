@@ -188,6 +188,12 @@ private:
 	static bool estimatedBlockComparisonGreater( const BlockComparison& a, const BlockComparison& b );
 	static bool idleBlockComparisonGreater( const BlockComparison& a, const BlockComparison& b );
 	static bool waitBlockComparisonGreater( const BlockComparison& a, const BlockComparison& b );
+	static void writeJsonLabelCost( std::ostream& stream,
+	                                const Block& block,
+	                                const std::string& canonicalLabel,
+	                                bool affineLoop,
+	                                unsigned int repeat );
+	static void writeJsonWeightedBlock( std::ostream& stream, const WeightedBlock& block );
 	static bool writeComparisonBlocksText( std::ostream& stream, const std::vector<BlockComparison>& comparisons );
 	static bool writeComparisonBlocksJson( std::ostream& stream, const std::vector<BlockComparison>& comparisons );
 

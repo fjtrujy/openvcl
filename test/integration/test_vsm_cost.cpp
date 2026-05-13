@@ -193,6 +193,9 @@ TEST_CASE("VSM cost CLI: JSON fixture report is suitable for comparisons")
     CHECK(jsonMetric(r.stdout_data, "paired_cycles") == 1);
     CHECK(jsonMetric(r.stdout_data, "operation_latency_cycles") == 12);
     CHECK(jsonMetric(r.stdout_data, "long_latency_cycles") == 7);
+    CHECK(contains(r.stdout_data, "\"label_order\": [\"entry_lid\"]"));
+    CHECK(contains(r.stdout_data, "\"cost_by_label\""));
+    CHECK(contains(r.stdout_data, "\"entry_lid\": {\"canonical_label\": \"entry_lid\", \"affine_role\": \"base\""));
     CHECK(contains(r.stdout_data, "\"label\": \"entry_lid\""));
     CHECK(contains(r.stdout_data, "\"nop_slots\": 5"));
 }
@@ -228,6 +231,9 @@ TEST_CASE("VSM cost CLI: JSON comparison is suitable for scheduler before-after 
     CHECK(contains(r.stdout_data, "\"nop_slots\": -4"));
     CHECK(contains(r.stdout_data, "\"top_weighted_estimated_blocks\""));
     CHECK(contains(r.stdout_data, "\"label\": \"entry_lid\", \"baseline_weighted_estimated_cycles\": 5, \"candidate_weighted_estimated_cycles\": 0, \"delta_weighted_estimated_cycles\": -5"));
+    CHECK(contains(r.stdout_data, "\"label_comparisons\""));
+    CHECK(contains(r.stdout_data, "\"label\": \"entry_lid\", \"baseline\": {\"label\": \"entry_lid\""));
+    CHECK(contains(r.stdout_data, "\"candidate\": {\"label\": \"entry_lid\""));
     CHECK(contains(r.stdout_data, "\"top_weighted_idle_blocks\""));
     CHECK(contains(r.stdout_data, "\"label\": \"entry_lid\", \"baseline_weighted_nop_slots\": 5, \"candidate_weighted_nop_slots\": 0, \"delta_weighted_nop_slots\": -5"));
     CHECK(contains(r.stdout_data, "\"top_weighted_wait_blocks\""));
@@ -360,6 +366,10 @@ TEST_CASE("VSM cost CLI: affine loop cost reports setup plus per-vertex term")
     CHECK(jsonMetric(json.stdout_data, "affine_estimated_base_cycles") == 2);
     CHECK(jsonMetric(json.stdout_data, "affine_estimated_loop_cycles") == 1);
     CHECK(contains(json.stdout_data, "\"affine_estimated_cycles\": \"2 + 1n\""));
+    CHECK(contains(json.stdout_data, "\"label_order\": [\"init_lid\", \"loop_lid\", \"done_lid\"]"));
+    CHECK(contains(json.stdout_data, "\"init_lid\": {\"canonical_label\": \"init_lid\", \"affine_role\": \"base\", \"repeat\": 1, \"static_cycles\": 1"));
+    CHECK(contains(json.stdout_data, "\"loop_lid\": {\"canonical_label\": \"loop_lid\", \"affine_role\": \"loop\", \"repeat\": 10, \"static_cycles\": 1"));
+    CHECK(contains(json.stdout_data, "\"done_lid\": {\"canonical_label\": \"done_lid\", \"affine_role\": \"base\", \"repeat\": 1, \"static_cycles\": 1"));
 }
 
 TEST_CASE("VSM cost CLI: ps2gl loop preset weights known hot labels")

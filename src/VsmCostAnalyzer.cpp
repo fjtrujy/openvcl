@@ -894,6 +894,64 @@ bool VsmCostAnalyzer::waitBlockComparisonGreater( const BlockComparison& a, cons
 	return a.label < b.label;
 }
 
+void VsmCostAnalyzer::writeJsonLabelCost( std::ostream& stream,
+                                          const Block& block,
+                                          const std::string& canonicalLabel,
+                                          bool affineLoop,
+                                          unsigned int repeat )
+{
+	const unsigned int waitStallCycles = block.waitqStallCycles + block.waitpStallCycles;
+	const unsigned int estimatedCycles = estimatedBlockCycles( block );
+
+	stream << "{"
+	       << "\"canonical_label\": \"" << jsonEscape( canonicalLabel ) << "\", "
+	       << "\"affine_role\": \"" << (affineLoop ? "loop" : "base") << "\", "
+	       << "\"repeat\": " << repeat << ", "
+	       << "\"static_cycles\": " << block.cycles << ", "
+	       << "\"estimated_cycles\": " << estimatedCycles << ", "
+	       << "\"weighted_static_cycles\": " << (block.cycles * repeat) << ", "
+	       << "\"weighted_estimated_cycles\": " << (estimatedCycles * repeat) << ", "
+	       << "\"instructions\": " << (block.upperInstructions + block.lowerInstructions) << ", "
+	       << "\"upper_instructions\": " << block.upperInstructions << ", "
+	       << "\"lower_instructions\": " << block.lowerInstructions << ", "
+	       << "\"paired_cycles\": " << block.pairedCycles << ", "
+	       << "\"single_upper_cycles\": " << block.singleUpperCycles << ", "
+	       << "\"single_lower_cycles\": " << block.singleLowerCycles << ", "
+	       << "\"nop_only_cycles\": " << block.nopOnlyCycles << ", "
+	       << "\"nop_slots\": " << block.nopSlots << ", "
+	       << "\"issue_stall_cycles\": " << block.issueStallCycles << ", "
+	       << "\"fdiv_issue_stall_cycles\": " << block.fdivIssueStallCycles << ", "
+	       << "\"efu_issue_stall_cycles\": " << block.efuIssueStallCycles << ", "
+	       << "\"wait_stall_cycles\": " << waitStallCycles << ", "
+	       << "\"waitq_stall_cycles\": " << block.waitqStallCycles << ", "
+	       << "\"waitp_stall_cycles\": " << block.waitpStallCycles << ", "
+	       << "\"affine\": {"
+	       << "\"static_base_cycles\": " << (affineLoop ? 0 : block.cycles) << ", "
+	       << "\"static_loop_cycles\": " << (affineLoop ? block.cycles : 0) << ", "
+	       << "\"estimated_base_cycles\": " << (affineLoop ? 0 : estimatedCycles) << ", "
+	       << "\"estimated_loop_cycles\": " << (affineLoop ? estimatedCycles : 0)
+	       << "}"
+	       << "}";
+}
+
+void VsmCostAnalyzer::writeJsonWeightedBlock( std::ostream& stream, const WeightedBlock& block )
+{
+	stream << "{"
+	       << "\"label\": \"" << comparisonJsonEscape( block.label ) << "\", "
+	       << "\"static_cycles\": " << block.cycles << ", "
+	       << "\"estimated_cycles\": " << block.estimatedCycles << ", "
+	       << "\"repeat\": " << block.repeat << ", "
+	       << "\"weighted_static_cycles\": " << block.weightedCycles << ", "
+	       << "\"weighted_estimated_cycles\": " << block.weightedEstimatedCycles << ", "
+	       << "\"nop_slots\": " << block.nopSlots << ", "
+	       << "\"weighted_nop_slots\": " << block.weightedNopSlots << ", "
+	       << "\"wait_stall_cycles\": " << block.waitStallCycles << ", "
+	       << "\"weighted_wait_stall_cycles\": " << block.weightedWaitStallCycles << ", "
+	       << "\"issue_stall_cycles\": " << block.issueStallCycles << ", "
+	       << "\"weighted_issue_stall_cycles\": " << block.weightedIssueStallCycles
+	       << "}";
+}
+
 bool VsmCostAnalyzer::writeComparisonBlocksText( std::ostream& stream, const std::vector<BlockComparison>& comparisons )
 {
 	std::vector<BlockComparison> sorted = comparisons;
@@ -970,6 +1028,26 @@ bool VsmCostAnalyzer::writeComparisonBlocksJson( std::ostream& stream, const std
 	unsigned int topCount = 0;
 
 	stream << "," << std::endl;
+	stream << "  \"label_comparisons\": [" << std::endl;
+	for( std::vector<BlockComparison>::const_iterator i = comparisons.begin(); i != comparisons.end(); ++i )
+	{
+		if( i != comparisons.begin() )
+			stream << "," << std::endl;
+		stream << "    {"
+		       << "\"label\": \"" << comparisonJsonEscape( i->label ) << "\", "
+		       << "\"baseline\": ";
+		writeJsonWeightedBlock( stream, i->baseline );
+		stream << ", \"candidate\": ";
+		writeJsonWeightedBlock( stream, i->candidate );
+		stream << ", \"delta\": {"
+		       << "\"weighted_estimated_cycles\": " << i->weightedEstimatedCyclesDelta << ", "
+		       << "\"weighted_nop_slots\": " << i->weightedNopSlotsDelta << ", "
+		       << "\"weighted_wait_stall_cycles\": " << i->weightedWaitStallCyclesDelta
+		       << "}"
+		       << "}";
+	}
+
+	stream << std::endl << "  ]," << std::endl;
 	stream << "  \"top_weighted_estimated_blocks\": [" << std::endl;
 	std::sort( sorted.begin(), sorted.end(), estimatedBlockComparisonGreater );
 	for( std::vector<BlockComparison>::const_iterator i = sorted.begin(); i != sorted.end() && topCount < 8; ++i )
@@ -1346,9 +1424,34 @@ bool VsmCostAnalyzer::writeJson( std::ostream& stream ) const
 	stream << "  \"unknown_instructions\": " << m_unknownInstructions << "," << std::endl;
 	stream << "  \"slot_mismatches\": " << m_slotMismatches << "," << std::endl;
 	stream << "  \"ignored_lines\": " << m_ignoredLines << "," << std::endl;
+	stream << "  \"label_order\": [";
+	bool first = true;
+	for( std::vector<Block>::const_iterator i = m_blocks.begin(); i != m_blocks.end(); ++i )
+	{
+		if( i->cycles == 0 )
+			continue;
+		if( !first )
+			stream << ", ";
+		first = false;
+		stream << "\"" << jsonEscape( i->label ) << "\"";
+	}
+	stream << "]," << std::endl;
+	stream << "  \"cost_by_label\": {" << std::endl;
+	first = true;
+	for( std::vector<Block>::const_iterator i = m_blocks.begin(); i != m_blocks.end(); ++i )
+	{
+		if( i->cycles == 0 )
+			continue;
+		if( !first )
+			stream << "," << std::endl;
+		first = false;
+		stream << "    \"" << jsonEscape( i->label ) << "\": ";
+		writeJsonLabelCost( stream, *i, canonicalBlockLabel( i->label ), blockIsAffineLoop(*i), blockRepeat(*i) );
+	}
+	stream << std::endl << "  }," << std::endl;
 	stream << "  \"blocks\": [" << std::endl;
 
-	bool first = true;
+	first = true;
 	for( std::vector<Block>::const_iterator i = m_blocks.begin(); i != m_blocks.end(); ++i )
 	{
 		if( i->cycles == 0 )

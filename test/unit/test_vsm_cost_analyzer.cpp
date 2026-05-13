@@ -115,6 +115,9 @@ TEST_CASE("VsmCostAnalyzer fixture: JSON exposes the same precomputed cost")
     CHECK(jsonMetric(report, "paired_cycles") == 1);
     CHECK(jsonMetric(report, "operation_latency_cycles") == 12);
     CHECK(jsonMetric(report, "long_latency_cycles") == 7);
+    CHECK(contains(report, "\"label_order\": [\"entry_lid\"]"));
+    CHECK(contains(report, "\"cost_by_label\""));
+    CHECK(contains(report, "\"entry_lid\": {\"canonical_label\": \"entry_lid\", \"affine_role\": \"base\""));
     CHECK(contains(report, "\"label\": \"entry_lid\""));
     CHECK(contains(report, "\"nop_slots\": 5"));
 }
@@ -161,6 +164,9 @@ TEST_CASE("VsmCostAnalyzer fixture: block repeats expose weighted cost")
     CHECK(jsonMetric(json.str(), "affine_estimated_loop_cycles") == 5);
     CHECK(contains(json.str(), "\"affine_static_cycles\": \"0 + 5n\""));
     CHECK(contains(json.str(), "\"affine_estimated_cycles\": \"0 + 5n\""));
+    CHECK(contains(json.str(), "\"label_order\": [\"entry_lid\"]"));
+    CHECK(contains(json.str(), "\"entry_lid\": {\"canonical_label\": \"entry_lid\", \"affine_role\": \"loop\", \"repeat\": 4"));
+    CHECK(contains(json.str(), "\"affine\": {\"static_base_cycles\": 0, \"static_loop_cycles\": 5, \"estimated_base_cycles\": 0, \"estimated_loop_cycles\": 5}"));
     CHECK(contains(json.str(), "\"repeat\": 4"));
     CHECK(contains(json.str(), "\"weighted_cycles\": 20"));
     CHECK(contains(json.str(), "\"weighted_nop_slots\": 20"));
@@ -204,6 +210,10 @@ TEST_CASE("VsmCostAnalyzer inline: affine cost separates setup, loop, and teardo
     CHECK(jsonMetric(json.str(), "affine_estimated_base_cycles") == 2);
     CHECK(jsonMetric(json.str(), "affine_estimated_loop_cycles") == 1);
     CHECK(contains(json.str(), "\"affine_estimated_cycles\": \"2 + 1n\""));
+    CHECK(contains(json.str(), "\"label_order\": [\"init_lid\", \"loop_lid\", \"done_lid\"]"));
+    CHECK(contains(json.str(), "\"init_lid\": {\"canonical_label\": \"init_lid\", \"affine_role\": \"base\", \"repeat\": 1, \"static_cycles\": 1"));
+    CHECK(contains(json.str(), "\"loop_lid\": {\"canonical_label\": \"loop_lid\", \"affine_role\": \"loop\", \"repeat\": 10, \"static_cycles\": 1"));
+    CHECK(contains(json.str(), "\"done_lid\": {\"canonical_label\": \"done_lid\", \"affine_role\": \"base\", \"repeat\": 1, \"static_cycles\": 1"));
 }
 
 TEST_CASE("VsmCostAnalyzer inline: ps2gl preset labels match SCE optimized main loops")
@@ -299,7 +309,10 @@ TEST_CASE("VsmCostAnalyzer inline: SCE main loop labels compare against OpenVCL 
 
     std::ostringstream json;
     REQUIRE(vcl::VsmCostAnalyzer::writeComparisonJson(json, baseline, candidate));
+    CHECK(contains(json.str(), "\"label_comparisons\""));
     CHECK(contains(json.str(), "\"label\": \"xform_loop_lid\", \"baseline_weighted_estimated_cycles\": 3, \"candidate_weighted_estimated_cycles\": 6, \"delta_weighted_estimated_cycles\": 3"));
+    CHECK(contains(json.str(), "\"label\": \"xform_loop_lid\", \"baseline\": {\"label\": \"EXPL_vu1_general_quad_pp4_vcl_xform_loop_lid__MAIN_LOOP\""));
+    CHECK(contains(json.str(), "\"candidate\": {\"label\": \"xform_loop_lid\""));
 }
 
 TEST_CASE("VsmCostAnalyzer inline: comparison exposes top block deltas")
