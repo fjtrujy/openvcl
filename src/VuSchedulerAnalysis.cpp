@@ -64,7 +64,7 @@ namespace
 			score -= 100;
 
 		if( candidate < priority.size() )
-			score -= static_cast<int>( priority[candidate] * 10 );
+			score -= static_cast<int>( priority[candidate] * 20 );
 
 		return score;
 	}

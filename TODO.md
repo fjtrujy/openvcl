@@ -10,8 +10,8 @@ correctness fix, is:
 
 | metric | SCE/reference | OpenVCL | delta |
 |---|---:|---:|---:|
-| static scheduled cycles | 6308 | 5647 | -661 |
-| estimated cycles | 6820 | 6368 | -452 |
+| static scheduled cycles | 6308 | 5643 | -665 |
+| estimated cycles | 6820 | 6364 | -456 |
 
 `estimated cycles` includes modeled FDIV/EFU producer issue stalls and explicit
 `waitq`/`waitp` stalls. The numbers are static VSM estimates, not measured
