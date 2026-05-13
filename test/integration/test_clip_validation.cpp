@@ -1,6 +1,6 @@
 // Regression test: CLIP rejects an obviously malformed operand
 //
-// openvcl/TODO previously documented that CLIP operands were present
+// TODO.md previously documented that CLIP operands were present
 // but not properly validated.  In practice the parser was already
 // emitting "Invalid argument" diagnostics for them; the missing piece
 // was Error::HasErrors() bubbling up into the exit code so callers

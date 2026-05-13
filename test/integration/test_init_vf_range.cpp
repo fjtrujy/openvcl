@@ -1,6 +1,6 @@
 // Regression test: .init_vf with a register range is accepted
 //
-// openvcl/TODO previously documented that .init_vf with "vf01-vf04"
+// TODO.md previously documented that .init_vf with "vf01-vf04"
 // errored out because the tokenizer didn't understand the 'range'
 // modifier.  The range modifier is now implemented end-to-end:
 // extractRegister parses "vfXX-vfYY", stores it as a Content::RANGE

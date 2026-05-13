@@ -11,8 +11,8 @@ re-derive the input pattern from a 600-line preprocessed `.vcl`.
 
 ## quad_adc_bug.vcl
 
-Reproduces the surface of the ps2gl GL_QUADS rendering bug filed
-in openvcl/TODO and tracked at memory/project_quad_bug_investigation_notes.md.
+Historical minimal repro for the ps2gl GL_QUADS rendering bug that was
+formerly tracked in [TODO.md](../../TODO.md).
 
 What it exercises:
 
@@ -38,7 +38,7 @@ Confirmed via PCSX2 memory inspection at `0x1100D420` and
 `0x1100D450` (the v3 / v4 position quadwords in the GIF DMA chain);
 see /tmp/vu1_trace/SMOKING_GUN.md.
 
-## Open questions for next investigator
+## Historical investigation questions
 
 1. Is `fcand` returning non-zero because openvcl's clipw chain
    actually produces non-zero clip flags for in-frustum vertices?

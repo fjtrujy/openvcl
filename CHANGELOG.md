@@ -1,4 +1,37 @@
-0.3.3:
+## Unreleased
+
+- Renamed root documentation files to Markdown: `README.md`, `TODO.md`, and
+  `CHANGELOG.md`.
+- Added VSM cost analysis modes:
+  - `--cost` for human-readable reports;
+  - `--cost-json` for machine-readable reports;
+  - `--cost-loop <label>=<count>` for loop-weighted block analysis.
+- Cost reports now include static cycles, estimated cycles, FDIV/EFU producer
+  issue stalls, explicit `waitq`/`waitp` stalls, slot usage, paired cycles,
+  NOP slots, per-label block costs, and weighted hot-block rankings.
+- Added regression fixtures and unit/integration tests for cost analysis.
+- Added conservative VU scheduling improvements used by ps2gl:
+  - upper/lower pairing lookahead;
+  - latency-gap filling;
+  - deferred Q/P waits;
+  - Q-consuming FMAC pairing with deferred `waitq`;
+  - safe plain-store and selected memory movement;
+  - branch-padding reuse;
+  - deterministic alias allocation;
+  - per-field VF readiness tracking;
+  - disjoint VF field read/write pairing;
+  - terminal-branch auto-exit suppression.
+- Fixed several scheduler correctness bugs found through ps2gl/PCSX2 testing:
+  - unsafe `loi` pairing with FMAC instructions that read `I`;
+  - implicit broadcast reads, such as `mulw.xyz ..., VFw`, now depend on the
+    broadcast component instead of the destination `.xyz` mask;
+  - Q/P producer and consumer accounting now treats `mfp` as a P consumer, not
+    a new P producer.
+- Added focused regression tests for the new scheduling hazards.
+- Established the next architecture direction: one canonical VU instruction
+  metadata table shared by the scheduler and cost analyzer.
+
+## 0.3.3
 
 	- Unified error-reporting into a separate class, and changed error
     display to a more standard appearance.
@@ -25,7 +58,7 @@
   - Fixed a inconsistency in the argument-extraction.
   - Added a library of math-routines for use with LOI.
 
-0.3.2:
+## 0.3.2
 
   - It's now possible to branch between code-blocks with branch-tracking
     intact. This will allow sharing subroutines between blocks.
@@ -45,13 +78,13 @@
     where GAS would complain when the immediate was omitted.
   - Added minimal extraction of memory-groups.
 
-0.3.1:
+## 0.3.1
 
   - Fixed issue with branching to a subroutine from separate locations,
     which caused the branch to be aborted and ignoring any code that
     followed the BAL.
 
-0.3:
+## 0.3
 
   - Refactored register-allocator, the new version now supports
     independent ranges for register-aliases and a more flexible
@@ -70,7 +103,7 @@
   - Added removal of dead code.
   - Added support for --cont tag.
 
-0.2.1:
+## 0.2.1
 
   - Unified a lot of operand templates to reduce chance of error.
   - Added simplifications for SUBA, MULA, MADDA and MSUBA.
@@ -82,7 +115,7 @@
   - BAL and JALR lacked the write-modifier on the register that
     contains the return address, fixed.
 
-0.2:
+## 0.2
 
   - Implemented first iteration of the dynamic branch-tracking
     register allocator.
@@ -99,7 +132,7 @@
   - Register numbers are now allowed to be variable in size.
   - Added support for C++-style comments.
 
-0.1.1:
+## 0.1.1
 
   - Fixed issues with OPMULA and OPMSUB, dvp-as required that the
     generated arguments contained valid(xyz) fields.
@@ -113,6 +146,6 @@
   - Made the register extraction code stricter against syntax issues
 		(e.g. 'iaddiu temp1, vi00dontcare, 1' compiled without errors)
 
-0.1:
+## 0.1
 
   - Initial release
