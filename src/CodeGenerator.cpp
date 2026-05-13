@@ -165,6 +165,52 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 		if( token.label().length() == 0 && readHazardDelay(token, NULL) > 0 )
 		{
 			enum { FillerLookaheadLimit = 96 };
+			const bool waitsForQ = vuTokenReadsQ(token);
+			const bool waitsForP = vuTokenReadsP(token);
+			const int qGap = waitsForQ ? (m_qReadyCycle - m_currentCycle) : 0;
+			const int pGap = waitsForP ? (m_pReadyCycle - m_currentCycle) : 0;
+			if( tokenIsLowerExecutionPath(token) && (qGap > 1 || pGap > 1) )
+			{
+				const bool waitQ = qGap >= pGap;
+				const int waitGap = waitQ ? qGap : pGap;
+				std::list<Token>::iterator waitFiller = workTokens.end();
+				std::list<Token>::iterator p = k;
+				++p;
+				unsigned int lookahead = 0;
+				for( ; p != workTokens.end() && lookahead < FillerLookaheadLimit; ++p, ++lookahead )
+				{
+					if( (*p).label().length() != 0 )
+						break;
+					if( !isVuEmittableInstruction(*p) )
+						break;
+					if( !tokenIsUpperExecutionPath(*p) )
+						continue;
+
+					bool canCross = true;
+					std::list<Token>::iterator c = k;
+					for( ; c != p; ++c )
+					{
+						if( !vuTokenCanMoveBefore(*p, *c) )
+						{
+							canCross = false;
+							break;
+						}
+					}
+					if( canCross && readHazardDelay(*p, NULL) <= waitGap )
+					{
+						waitFiller = p;
+						break;
+					}
+				}
+
+				if( waitFiller != workTokens.end() )
+				{
+					emitUpperWithWait(*waitFiller, waitQ);
+					workTokens.erase(waitFiller);
+					continue;
+				}
+			}
+
 			std::list<Token>::iterator filler = workTokens.end();
 			std::list<Token>::iterator p = k;
 			++p;

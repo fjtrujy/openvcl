@@ -64,6 +64,9 @@
   producer chains are chosen ahead of unrelated short work.
 - Weighted ready-set dependency-chain priority by instruction latency, improving
   the ps2gl pure-OpenVCL aggregate by 2 static and 2 estimated cycles.
+- Added deferred-wait pairing for independent upper-pipe work above lower-pipe
+  Q/P consumers, allowing a movable upper instruction to share the `waitq` or
+  `waitp` row.
 - Added behavior-preserving scheduler analysis scaffolding for basic-block
   construction and descriptor-derived dependency edges.
 - Wired the scheduler analysis layer into code generation in preserve-order

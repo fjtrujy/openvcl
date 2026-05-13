@@ -649,6 +649,25 @@ TEST_CASE("Scheduling: independent FDIV producer can fill a register-latency gap
     CHECK(divLine < mulqLine);
 }
 
+TEST_CASE("Scheduling: independent upper op can pair with deferred waitp")
+{
+    const std::string body =
+        "\tesadd p, vf00\n"
+        "\t--barrier\n"
+        "\tmfp.w vf01, p\n"
+        "\tadd.xyz vf02, vf00, vf00\n";
+    std::string vsm = runEmit(body, "vsmScheduleUpperWaitpFiller");
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(linePairsSubstrings(vsm, "add.xyz", "waitp"));
+
+    int addLine = lineIndex(vsm, "add.xyz");
+    int mfpLine = lineIndex(vsm, "mfp.w");
+    REQUIRE(addLine >= 0);
+    REQUIRE(mfpLine >= 0);
+    CHECK(addLine < mfpLine);
+}
+
 TEST_CASE("Scheduling: distant ready op fills current register-latency wait")
 {
     // The first several candidates also read the pending load result, so they

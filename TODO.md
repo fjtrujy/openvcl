@@ -130,6 +130,8 @@ Recently completed:
   short work, starting producer chains earlier in hot renderer blocks.
 - Ready-set dependency priorities now include instruction latency, starting
   costlier producer chains earlier when dependencies permit it.
+- Independent upper-pipe work can now pair with a deferred `waitq`/`waitp`
+  row when a lower-pipe Q/P consumer is waiting.
 - `--version` now reads from a shared source constant and has CLI regression
   coverage.
 - Alias live ranges are kept sorted as they are added, so intersection checks
