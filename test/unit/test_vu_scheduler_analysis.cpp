@@ -122,3 +122,27 @@ TEST_CASE("VuSchedulerAnalysis: dependency graph uses register and resource desc
     CHECK(hasEdge(edges, 3u, 4u, vcl::VU_DEPENDENCY_REGISTER_RAW));
     CHECK(hasEdge(edges, 4u, 5u, vcl::VU_DEPENDENCY_MEMORY));
 }
+
+TEST_CASE("VuSchedulerAnalysis: preserve-order scheduler keeps block order intact")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("entry:"));
+    REQUIRE(program.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("ibne vi01, vi02, next"));
+    REQUIRE(program.parse("mul.xy vf04, vf05, vf06"));
+    REQUIRE(program.parse("next:"));
+    REQUIRE(program.parse("xgkick vi01"));
+
+    std::list<vcl::Token> scheduled = vcl::scheduleVuTokensPreservingOrder(program.tokenizer.tokens());
+    REQUIRE(scheduled.size() == program.tokenizer.tokens().size());
+
+    std::list<vcl::Token>::const_iterator a = program.tokenizer.tokens().begin();
+    std::list<vcl::Token>::const_iterator b = scheduled.begin();
+    for (; a != program.tokenizer.tokens().end(); ++a, ++b)
+    {
+        CHECK(a->name() == b->name());
+        CHECK(a->label() == b->label());
+        CHECK(a->arguments().size() == b->arguments().size());
+    }
+}

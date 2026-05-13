@@ -172,4 +172,18 @@ std::vector<VuDependencyEdge> buildVuDependencyGraph( const VuBasicBlock& block 
 	return edges;
 }
 
+std::list<Token> scheduleVuTokensPreservingOrder( const std::list<Token>& tokens )
+{
+	std::list<Token> scheduled;
+	std::vector<VuBasicBlock> blocks = buildVuBasicBlocks( tokens );
+
+	for( std::vector<VuBasicBlock>::const_iterator block = blocks.begin(); block != blocks.end(); ++block )
+	{
+		for( std::vector<const Token*>::const_iterator token = block->tokens.begin(); token != block->tokens.end(); ++token )
+			scheduled.push_back( **token );
+	}
+
+	return scheduled;
+}
+
 }

@@ -18,6 +18,7 @@
 #include "Expression.h"
 #include "Error.h"
 #include "Math.h"
+#include "VuSchedulerAnalysis.h"
 #include "VuTokenResourceAccess.h"
 
 #include <iostream>
@@ -119,6 +120,10 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 
 	std::list<Token> workTokens = tokens;
 	coalesceAdjacentIntegerAdds(workTokens);
+	{
+		std::list<Token> scheduledTokens = scheduleVuTokensPreservingOrder(workTokens);
+		workTokens.swap(scheduledTokens);
+	}
 	m_enableUpperZeroMoves = !tokenListReadsMac(workTokens);
 
 	for( std::list<Token>::iterator k = workTokens.begin(); k != workTokens.end(); )

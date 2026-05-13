@@ -49,6 +49,8 @@
   and moved branch-delay emission/pairing checks onto descriptor metadata.
 - Added behavior-preserving scheduler analysis scaffolding for basic-block
   construction and descriptor-derived dependency edges.
+- Wired the scheduler analysis layer into code generation in preserve-order
+  mode, establishing the production hook for ready-set scheduling.
 
 ## 0.3.3
 
