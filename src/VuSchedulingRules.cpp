@@ -251,6 +251,8 @@ bool isVuEmittableInstruction( const Token& token )
 		return false;
 	if( token.flags() & Token::IGNORED )
 		return false;
+	if( token.flags() & Token::BRANCH_DELAY_FILLER )
+		return false;
 	if( !(token.flags() & Token::PROCESSED) && !(token.operand()->flags() & Operand::PREPROCESSOR) )
 		return false;
 	if( token.operand()->flags() & Operand::PREPROCESSOR )

@@ -133,7 +133,8 @@ public:
 		D						= 0x00000004, // [D]
 		T						= 0x00000008,	// [T]
 		IGNORED			= 0x00000010,	// ignored by the code-generator
-		PROCESSED		= 0x00000020	// has been processed by the register allocator
+		PROCESSED		= 0x00000020,	// has been processed by the register allocator
+		BRANCH_DELAY_FILLER	= 0x00000040	// moved into the previous branch delay slot
 	};
 
 	enum Modifier

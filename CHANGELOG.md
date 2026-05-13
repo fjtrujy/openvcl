@@ -18,6 +18,7 @@
   - Q-consuming FMAC pairing with deferred `waitq`;
   - safe plain-store and selected memory movement;
   - branch-padding reuse;
+  - conservative branch-delay filling for independent integer instructions;
   - deterministic alias allocation;
   - per-field VF readiness tracking;
   - disjoint VF field read/write pairing;

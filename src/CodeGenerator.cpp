@@ -21,6 +21,7 @@
 #include "VuSchedulerAnalysis.h"
 #include "VuSchedulingRules.h"
 #include "VuInstructionInfo.h"
+#include "VuTokenResourceAccess.h"
 
 #include <iostream>
 #include <iomanip>
@@ -35,6 +36,29 @@
 
 namespace vcl
 {
+
+namespace
+{
+	bool containsKey( const std::list<std::string>& keys, const std::string& key )
+	{
+		for( std::list<std::string>::const_iterator i = keys.begin(); i != keys.end(); ++i )
+		{
+			if( *i == key )
+				return true;
+		}
+		return false;
+	}
+
+	bool intersectsKeys( const std::list<std::string>& a, const std::list<std::string>& b )
+	{
+		for( std::list<std::string>::const_iterator i = a.begin(); i != a.end(); ++i )
+		{
+			if( containsKey( b, *i ) )
+				return true;
+		}
+		return false;
+	}
+}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -98,6 +122,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 	workTokens.swap(scheduledTokens);
 	m_enableUpperZeroMoves = macFlagsDead;
 	m_ignoredImplicitWawResources = VU_RESOURCE_NONE;
+	fillBranchDelaySlots(workTokens);
 
 	for( std::list<Token>::iterator k = workTokens.begin(); k != workTokens.end(); )
 	{
@@ -160,6 +185,12 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 		else exitWritten = false;
 
 		if( (token.operand()->flags()&Operand::FILTERED) )
+		{
+			++k;
+			continue;
+		}
+
+		if( token.flags() & Token::BRANCH_DELAY_FILLER )
 		{
 			++k;
 			continue;
@@ -297,6 +328,19 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			}
 		}
 
+		if( vuTokenBranchDelaySlots(token) == 1 && nextTokenIsBranchDelayFiller(k, workTokens.end()) )
+		{
+			std::list<Token>::iterator filler = k;
+			++filler;
+			padForReadHazards(token, NULL);
+			emitBranchWithDelayFiller(token, *filler);
+			if( isVuTerminalUnconditionalBranch(token) )
+				exitWritten = true;
+			workTokens.erase(filler);
+			++k;
+			continue;
+		}
+
 		// --- DUAL-PIPE PAIRING ---
 		// Look ahead within the current straight-line instruction run for
 		// an opposite-pipe partner.  The first implementation only paired
@@ -319,6 +363,8 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				if( (*p).label().length() != 0 )
 					break;
 				if( !isVuEmittableInstruction(*p) )
+					break;
+				if( vuTokenBranchDelaySlots(*p) > 0 && nextTokenIsBranchDelayFiller(p, workTokens.end()) )
 					break;
 				const bool adjacentCandidate = (lookahead == 0);
 				const bool adjacentQpProducerPair =
@@ -552,6 +598,91 @@ void CodeGenerator::emitSingleToken( const Token& token )
 
 }
 
+void CodeGenerator::emitBranchWithDelayFiller( const Token& branch, const Token& filler )
+{
+	std::string branchInstruction = generateInstruction(branch);
+	std::string branchLine = "";
+	std::string fillerInstruction = generateInstruction(filler);
+	std::string fillerLine = "";
+	const int instructionLength = 32;
+
+	if( emitSource() )
+	{
+		std::stringstream s;
+		s << " ; Line " << branch.line().number() << ": " << branch.line().content();
+		m_codeLines.push_back( s.str() );
+	}
+
+	for(int d = 0; d < 20; d++)
+		branchLine += " ";
+
+	if(tokenIsLowerExecutionPath(branch))
+	{
+		branchLine += "nop";
+		for(int d = 0; d < instructionLength-3; d++)
+			branchLine += " ";
+		branchLine += branchInstruction;
+	}
+	else
+	{
+		branchLine += branchInstruction;
+		if( !branch.operand()->isPreprocessor() )
+		{
+			if( (instructionLength-int(branchInstruction.length())) <= 0 )
+				branchLine += " ";
+			for(int d = 0; d < instructionLength-int(branchInstruction.length()); d++)
+				branchLine += " ";
+			branchLine += "nop";
+		}
+	}
+
+	if( m_codeLines.empty() || m_codeLines.back() != std::string("                    nop                             nop") )
+	{
+		addNopLine();
+		m_currentCycle++;
+	}
+	m_codeLines.push_back(branchLine);
+	m_currentCycle++;
+
+	if( emitSource() )
+	{
+		std::stringstream s;
+		s << " ; Line " << filler.line().number() << ": " << filler.line().content();
+		m_codeLines.push_back( s.str() );
+	}
+
+	for(int d = 0; d < 20; d++)
+		fillerLine += " ";
+
+	if(tokenIsLowerExecutionPath(filler))
+	{
+		fillerLine += "nop";
+		for(int d = 0; d < instructionLength-3; d++)
+			fillerLine += " ";
+		fillerLine += fillerInstruction;
+	}
+	else
+	{
+		fillerLine += fillerInstruction;
+		if( !filler.operand()->isPreprocessor() )
+		{
+			if( (instructionLength-int(fillerInstruction.length())) <= 0 )
+				fillerLine += " ";
+			for(int d = 0; d < instructionLength-int(fillerInstruction.length()); d++)
+				fillerLine += " ";
+			fillerLine += "nop";
+		}
+	}
+
+	m_codeLines.push_back(fillerLine);
+	recordRegisterWrites(filler, m_currentCycle);
+	if( filler.operand()->unit() == Operand::FMAC || emitsAsUpperZeroMove(filler) )
+		m_lastFMACCycle = m_currentCycle;
+	if( isVuClipw(filler.operand()->name()) )
+		m_lastClipwCycle = m_currentCycle;
+	m_currentCycle++;
+}
+
 void CodeGenerator::emitPairedTokens( const Token& a, const Token& b )
 {
 	const unsigned int aBranchDelaySlots = vuTokenBranchDelaySlots( a );
@@ -748,6 +879,97 @@ unsigned int CodeGenerator::ignoredImplicitWawResourcesForRemaining( std::list<T
 	if( !readsClip )
 		mask |= VU_RESOURCE_CLIP;
 	return mask;
+}
+
+void CodeGenerator::fillBranchDelaySlots( std::list<Token>& tokens ) const
+{
+	for( std::list<Token>::iterator branch = tokens.begin(); branch != tokens.end(); ++branch )
+	{
+		if( vuTokenBranchDelaySlots(*branch) != 1 )
+			continue;
+		if( branch->flags() & (Token::PREORDERED | Token::E | Token::D | Token::T) )
+			continue;
+
+		VuTokenResourceAccess branchAccess;
+		if( !buildVuTokenResourceAccess(*branch, branchAccess) )
+			continue;
+		if( branchAccess.instructionFlags & (VU_INSTR_LINK_BRANCH | VU_INSTR_REGISTER_BRANCH) )
+			continue;
+
+		if( branch == tokens.begin() )
+			continue;
+		std::list<Token>::iterator candidate = branch;
+		--candidate;
+		if( !canMoveIntoBranchDelaySlot(*candidate, *branch) )
+			continue;
+
+		Token filler = *candidate;
+		filler.setFlags(filler.flags() | Token::BRANCH_DELAY_FILLER);
+		tokens.erase(candidate);
+		std::list<Token>::iterator afterBranch = branch;
+		++afterBranch;
+		tokens.insert(afterBranch, filler);
+	}
+}
+
+bool CodeGenerator::canMoveIntoBranchDelaySlot( const Token& candidate, const Token& branch ) const
+{
+	if( candidate.label().length() != 0 )
+		return false;
+	if( candidate.flags() & (Token::PREORDERED | Token::E | Token::D | Token::T | Token::BRANCH_DELAY_FILLER) )
+		return false;
+	if( !isVuEmittableInstruction(candidate) )
+		return false;
+	if( vuTokenBranchDelaySlots(candidate) > 0 )
+		return false;
+	if( !candidate.operand() || candidate.operand()->unit() != Operand::IALU )
+		return false;
+	if( candidate.operand()->latency() > 1 )
+		return false;
+
+	VuTokenResourceAccess candidateAccess;
+	VuTokenResourceAccess branchAccess;
+	if( !buildVuTokenResourceAccess(candidate, candidateAccess)
+	    || !buildVuTokenResourceAccess(branch, branchAccess) )
+		return false;
+
+	if( candidateAccess.memoryKind != VU_MEMORY_NONE
+	    || candidateAccess.memoryFlags != VU_MEMORY_FLAG_NONE )
+		return false;
+	if( candidateAccess.branchDelaySlots > 0 )
+		return false;
+	if( candidateAccess.instructionFlags & (VU_INSTR_BRANCH
+	                                      | VU_INSTR_WAIT_Q
+	                                      | VU_INSTR_WAIT_P
+	                                      | VU_INSTR_WRITES_Q
+	                                      | VU_INSTR_WRITES_P
+	                                      | VU_INSTR_XGKICK) )
+		return false;
+	if( candidateAccess.implicitReads != VU_RESOURCE_NONE
+	    || candidateAccess.implicitWrites != VU_RESOURCE_NONE )
+		return false;
+
+	if( intersectsKeys(candidateAccess.registerWrites, branchAccess.registerReads)
+	    || intersectsKeys(candidateAccess.registerWrites, branchAccess.registerWrites)
+	    || intersectsKeys(candidateAccess.registerReads, branchAccess.registerWrites) )
+		return false;
+
+	if( candidateAccess.implicitWrites & (branchAccess.implicitReads | branchAccess.implicitWrites) )
+		return false;
+	if( branchAccess.implicitWrites & (candidateAccess.implicitReads | candidateAccess.implicitWrites) )
+		return false;
+
+	return true;
+}
+
+bool CodeGenerator::nextTokenIsBranchDelayFiller( std::list<Token>::iterator token,
+                                                  std::list<Token>::iterator end ) const
+{
+	if( token == end )
+		return false;
+	std::list<Token>::iterator next = token;
+	++next;
+	return next != end && (next->flags() & Token::BRANCH_DELAY_FILLER) != 0;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

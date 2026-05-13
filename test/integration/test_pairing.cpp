@@ -382,6 +382,41 @@ TEST_CASE("Pairing: branch does not pull upper instruction from after control fl
     CHECK(!linePairsSubstrings(vsm, "add.xyz", "b done_lid"));
 }
 
+TEST_CASE("Scheduling: independent integer op fills previous branch delay slot")
+{
+    const std::string body =
+        "\tiaddiu vi01, vi00, 1\n"
+        "\tiaddiu vi02, vi00, 2\n"
+        "\tiaddiu vi03, vi00, 3\n"
+        "\tibne vi01, vi02, done_lid\n"
+        "done_lid:\n";
+    std::string vsm = runEmit(body, "vsmIntegerBranchDelayFiller");
+    REQUIRE(vsm.length() > 0);
+
+    int branchLine = lineIndex(vsm, "ibne");
+    int bumpLine = lineIndex(vsm, "iaddiu VI03");
+    REQUIRE(branchLine >= 0);
+    REQUIRE(bumpLine >= 0);
+    CHECK(bumpLine == branchLine + 1);
+}
+
+TEST_CASE("Scheduling: branch delay filler cannot write branch condition")
+{
+    const std::string body =
+        "\tiaddiu vi02, vi00, 2\n"
+        "\tiaddiu vi01, vi00, 1\n"
+        "\tibne vi01, vi02, done_lid\n"
+        "done_lid:\n";
+    std::string vsm = runEmit(body, "vsmNoConditionBranchDelayFiller");
+    REQUIRE(vsm.length() > 0);
+
+    int bumpLine = lineIndex(vsm, "iaddiu VI01");
+    int branchLine = lineIndex(vsm, "ibne");
+    REQUIRE(bumpLine >= 0);
+    REQUIRE(branchLine >= 0);
+    CHECK(bumpLine < branchLine);
+}
+
 TEST_CASE("Scheduling: terminal unconditional branch omits unreachable auto-exit footer")
 {
     const std::string body =

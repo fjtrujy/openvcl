@@ -61,12 +61,17 @@ private:
 	void emitWaitP();
 	void emitUpperWithWait( const Token& token, bool waitQ );
 	void emitSingleToken( const Token& token );
+	void emitBranchWithDelayFiller( const Token& branch, const Token& filler );
 	void emitPairedTokens( const Token& a, const Token& b );
 	int readHazardDelay( const Token& token, const Token* partner ) const;
 	void padForReadHazards( const Token& token, const Token* partner );
 	void recordRegisterWrites( const Token& token, int issueCycle );
 	unsigned int ignoredImplicitWawResourcesForRemaining( std::list<Token>::const_iterator begin,
 	                                                       std::list<Token>::const_iterator end ) const;
+	void fillBranchDelaySlots( std::list<Token>& tokens ) const;
+	bool canMoveIntoBranchDelaySlot( const Token& candidate, const Token& branch ) const;
+	bool nextTokenIsBranchDelayFiller( std::list<Token>::iterator token,
+	                                   std::list<Token>::iterator end ) const;
 	bool emitsAsUpperZeroMove( const Token& token ) const;
 	bool tokenIsLowerExecutionPath( const Token& token ) const;
 	bool tokenIsUpperExecutionPath( const Token& token ) const;
