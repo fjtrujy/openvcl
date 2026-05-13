@@ -289,6 +289,24 @@ TEST_CASE("VuSchedulerAnalysis: ready-set scheduler prefers longer dependency ch
     CHECK(i->arguments().begin()->regNumber() == 6u);
 }
 
+TEST_CASE("VuSchedulerAnalysis: ready-set scheduler weights dependency chains by latency")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("iaddiu vi10, vi00, 1"));
+    REQUIRE(program.parse("iaddiu vi11, vi10, 1"));
+    REQUIRE(program.parse("iaddiu vi12, vi11, 1"));
+    REQUIRE(program.parse("ftoi0.xy vf01, vf00"));
+    REQUIRE(program.parse("add.xy vf02, vf01, vf00"));
+
+    std::list<vcl::Token> scheduled = vcl::scheduleVuTokensReadySet(program.tokenizer.tokens());
+    REQUIRE(scheduled.size() == program.tokenizer.tokens().size());
+
+    std::list<vcl::Token>::const_iterator i = scheduled.begin();
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "ftoi0");
+}
+
 TEST_CASE("VuSchedulerAnalysis: ready-set scheduler moves distinct-address loads before stores")
 {
     vcl::Error::ResetErrorCount();

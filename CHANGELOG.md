@@ -62,6 +62,8 @@
   register and constant offset, allowing distinct loads/stores to reorder.
 - Added dependency-chain priority to the ready-set scheduler so critical
   producer chains are chosen ahead of unrelated short work.
+- Weighted ready-set dependency-chain priority by instruction latency, improving
+  the ps2gl pure-OpenVCL aggregate by 2 static and 2 estimated cycles.
 - Added behavior-preserving scheduler analysis scaffolding for basic-block
   construction and descriptor-derived dependency edges.
 - Wired the scheduler analysis layer into code generation in preserve-order

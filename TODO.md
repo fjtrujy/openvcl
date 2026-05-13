@@ -10,8 +10,8 @@ correctness fix, is:
 
 | metric | SCE/reference | OpenVCL | delta |
 |---|---:|---:|---:|
-| static scheduled cycles | 6308 | 5643 | -665 |
-| estimated cycles | 6820 | 6364 | -456 |
+| static scheduled cycles | 6308 | 5641 | -667 |
+| estimated cycles | 6820 | 6362 | -458 |
 
 `estimated cycles` includes modeled FDIV/EFU producer issue stalls and explicit
 `waitq`/`waitp` stalls. The numbers are static VSM estimates, not measured
@@ -128,6 +128,8 @@ Recently completed:
   distinct plain loads and stores can move independently.
 - Ready-set scheduling now prefers longer dependency chains over unrelated
   short work, starting producer chains earlier in hot renderer blocks.
+- Ready-set dependency priorities now include instruction latency, starting
+  costlier producer chains earlier when dependencies permit it.
 - `--version` now reads from a shared source constant and has CLI regression
   coverage.
 - Alias live ranges are kept sorted as they are added, so intersection checks

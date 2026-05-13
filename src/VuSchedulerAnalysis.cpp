@@ -77,11 +77,14 @@ namespace
 		for( unsigned int reverse = block.tokens.size(); reverse > 0; --reverse )
 		{
 			const unsigned int i = reverse - 1;
-			unsigned int best = 1;
+			unsigned int cost = 1;
+			if( block.tokens[i]->operand() && block.tokens[i]->operand()->latency() > cost )
+				cost = block.tokens[i]->operand()->latency();
+			unsigned int best = cost;
 			for( std::vector<unsigned int>::const_iterator edge = outgoing[i].begin(); edge != outgoing[i].end(); ++edge )
 			{
-				if( *edge < priority.size() && priority[*edge] + 1 > best )
-					best = priority[*edge] + 1;
+				if( *edge < priority.size() && priority[*edge] + cost > best )
+					best = priority[*edge] + cost;
 			}
 			priority[i] = best;
 		}
