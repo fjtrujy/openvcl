@@ -219,10 +219,15 @@ Current ps2gl pure-OpenVCL aggregate cost baseline:
 |---|---:|---:|---:|
 | static scheduled cycles | 6308 | 4995 | -1313 |
 | estimated cycles | 6820 | 5725 | -1095 |
+| ps2gl-loop weighted static cycles | 100358 | 307638 | +207280 |
+| ps2gl-loop weighted estimated cycles | 100870 | 361927 | +261057 |
 
 `estimated cycles` includes modeled FDIV/EFU producer issue stalls and
 explicit `waitq`/`waitp` stalls. These are static VSM estimates, not measured
-runtime per draw call.
+runtime per draw call. The loop-weighted rows apply `--cost-loop-preset ps2gl`
+to the 13 matched ps2gl renderer pairs; they better expose the remaining
+hot-loop gap caused by SCE/reference prolog/main/epilog software-pipelined
+loops versus OpenVCL's current single-iteration scheduling.
 
 ## Roadmap
 
