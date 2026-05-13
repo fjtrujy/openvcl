@@ -90,6 +90,14 @@ private:
 	bool tokenIsLowerExecutionPath( const Token& token ) const;
 	bool tokenIsUpperExecutionPath( const Token& token ) const;
 	std::string generateUpperZeroMoveInstruction( const Token& token );
+	struct FastNoLightsLoopPipelinePattern;
+	bool tryEmitFastNoLightsSoftwarePipelineLoop( std::list<Token>& tokens,
+	                                              std::list<Token>::iterator& token );
+	bool collectFastNoLightsLoopPipelinePattern( std::list<Token>::iterator begin,
+	                                             std::list<Token>::iterator end,
+	                                             FastNoLightsLoopPipelinePattern& pattern );
+	void emitFastNoLightsSoftwarePipelineLoop( const FastNoLightsLoopPipelinePattern& pattern );
+	void emitRawPairedLine( const std::string& upper, const std::string& lower );
 
 	// Dual-pipe pairing helpers.  Stateless legality rules live in
 	// VuSchedulingRules; CodeGenerator only supplies emission-specific state.

@@ -402,6 +402,21 @@ TEST_CASE("VSM cost CLI: ps2gl loop preset weights SCE optimized main-loop label
     CHECK(contains(r.stdout_data, "EXPL_vu1_general_quad_pp4_vcl_xform_loop_lid__MAIN_LOOP: cycles=2 repeat=100 weighted_cycles=200"));
 }
 
+TEST_CASE("VSM cost CLI: ps2gl loop preset weights OpenVCL software-pipelined main loops")
+{
+    const std::string source =
+        "\t.vu\n"
+        "xform_loop_lid__MAIN_LOOP:\n"
+        "                    add.xyz VF01, VF02, VF03        iaddiu VI01, VI00, 1\n"
+        "                    nop                             nop\n";
+
+    ::test::RunResult r = runCostLoopPresetStdin(source, "ps2gl");
+    REQUIRE(r.exit_code == 0);
+    CHECK(textMetric(r.stdout_data, "static_cycles") == 2);
+    CHECK(textMetric(r.stdout_data, "weighted_static_cycles") == 200);
+    CHECK(contains(r.stdout_data, "xform_loop_lid__MAIN_LOOP: cycles=2 repeat=100 weighted_cycles=200"));
+}
+
 TEST_CASE("VSM cost CLI: ps2gl loop preset weights SCE fast-family transform loops")
 {
     const std::string source =

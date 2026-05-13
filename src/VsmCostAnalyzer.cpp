@@ -804,7 +804,15 @@ std::string VsmCostAnalyzer::canonicalBlockLabel( const std::string& label )
 	const std::string prefix = label.substr( 0, suffix );
 	const std::string::size_type marker = prefix.rfind( kVclMarker );
 	if( marker == std::string::npos )
+	{
+		static const char kOpenVclXformLoop[] = "xform_loop_lid";
+		if( prefix.size() >= sizeof(kOpenVclXformLoop) - 1
+		    && prefix.compare(prefix.size() - (sizeof(kOpenVclXformLoop) - 1),
+		                      sizeof(kOpenVclXformLoop) - 1,
+		                      kOpenVclXformLoop) == 0 )
+			return "xform_loop_lid";
 		return label;
+	}
 
 	const std::string canonical = prefix.substr( marker + sizeof(kVclMarker) - 1 );
 	if( canonical == "adcLoop_done_lid" )
