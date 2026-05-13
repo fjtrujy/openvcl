@@ -314,7 +314,12 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				    adjacentCandidate
 				    && tokenIsUpperExecutionPath(token)
 				    && isXgkick(*p);
+				const bool adjacentBranchPair =
+				    adjacentCandidate
+				    && tokenIsUpperExecutionPath(token)
+				    && tokenBranchDelaySlots(*p) > 0;
 				if( !adjacentQpProducerPair && !adjacentPlainStorePair && !adjacentXgkickPair
+				    && !adjacentBranchPair
 				    && !tokenRangeCanBeCrossed(*k, *p)
 				    && !isPlainMemoryStore(*p)
 				    && !tokenCanMoveBefore(*p, token) )
@@ -359,6 +364,8 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			if( foundPartner )
 			{
 				emitPairedTokens(token, *partner);
+				if( isTerminalUnconditionalBranch(token) || isTerminalUnconditionalBranch(*partner) )
+					exitWritten = true;
 				workTokens.erase(partnerIt);
 				++k;
 				continue;
@@ -527,6 +534,9 @@ void CodeGenerator::emitSingleToken( const Token& token )
 
 void CodeGenerator::emitPairedTokens( const Token& a, const Token& b )
 {
+	const unsigned int aBranchDelaySlots = tokenBranchDelaySlots( a );
+	const unsigned int bBranchDelaySlots = tokenBranchDelaySlots( b );
+	const unsigned int branchDelaySlots = aBranchDelaySlots > bBranchDelaySlots ? aBranchDelaySlots : bBranchDelaySlots;
 	std::string pairedLine;
 	if( tokenIsLowerExecutionPath(a) )
 		pairedLine = formatPairedLine(b, a);
@@ -544,6 +554,11 @@ void CodeGenerator::emitPairedTokens( const Token& a, const Token& b )
 	if( isClipw(a.operand()->name()) || isClipw(b.operand()->name()) )
 		m_lastClipwCycle = m_currentCycle;
 	m_currentCycle++;
+	for( unsigned int i = 0; i < branchDelaySlots; ++i )
+	{
+		addNopLine();
+		m_currentCycle++;
+	}
 }
 
 bool CodeGenerator::emitsAsUpperZeroMove( const Token& token ) const
@@ -1351,7 +1366,10 @@ bool CodeGenerator::tokensCanPair( const Token& a, const Token& b ) const
 	VuTokenResourceAccess bAccess;
 	buildVuTokenResourceAccess( a, aAccess );
 	buildVuTokenResourceAccess( b, bAccess );
-	if( aAccess.branchDelaySlots > 0 || bAccess.branchDelaySlots > 0 )
+	if( aAccess.branchDelaySlots > 0 )
+		return false;
+	if( bAccess.branchDelaySlots > 0
+	    && (bAccess.instructionFlags & (VU_INSTR_LINK_BRANCH | VU_INSTR_REGISTER_BRANCH)) )
 		return false;
 	if( (aAccess.instructionFlags & (VU_INSTR_WAIT_Q | VU_INSTR_WAIT_P))
 	    || (bAccess.instructionFlags & (VU_INSTR_WAIT_Q | VU_INSTR_WAIT_P)) )

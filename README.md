@@ -161,6 +161,7 @@ VCL `-d`-style output. Current work includes:
 - Q/P, I, MAC, CLIP, ACC, VF/VI, and per-field VF dependency checks;
 - safe movement around selected plain loads/stores;
 - branch padding reuse when an existing pure `nop/nop` cycle is available;
+- adjacent upper/direct-branch pairing while preserving branch delay slots;
 - deterministic alias allocation for reproducible VSM output;
 - static cost reporting used to compare OpenVCL output with SCE/reference VSM.
 

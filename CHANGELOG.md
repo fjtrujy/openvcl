@@ -60,6 +60,8 @@
   branches, and explicit barriers fixed.
 - Extended the ready-set scheduler to pull plain loads earlier in straight-line
   blocks so their latency can overlap independent arithmetic.
+- Added conservative adjacent upper/direct-branch pairing, preserving the
+  branch delay slot and avoiding branch hoists across control flow.
 
 ## 0.3.3
 

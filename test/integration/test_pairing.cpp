@@ -321,6 +321,31 @@ TEST_CASE("Scheduling: branch emission reuses existing hazard nop before branch"
     CHECK(branchLine - loadLine == 5);
 }
 
+TEST_CASE("Pairing: adjacent upper instruction can pair with following direct branch")
+{
+    const std::string body =
+        "\tadd.xyz vf01, vf00, vf00\n"
+        "\tb done_lid\n"
+        "done_lid:\n";
+    std::string vsm = runEmit(body, "vsmPairUpperWithBranch");
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(linePairsSubstrings(vsm, "add.xyz", "b done_lid"));
+    CHECK(countSubstrings(vsm, "nop                             nop") >= 1);
+}
+
+TEST_CASE("Pairing: branch does not pull upper instruction from after control flow")
+{
+    const std::string body =
+        "\tb done_lid\n"
+        "\tadd.xyz vf01, vf00, vf00\n"
+        "done_lid:\n";
+    std::string vsm = runEmit(body, "vsmBranchDoesNotPullUpper");
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(!linePairsSubstrings(vsm, "add.xyz", "b done_lid"));
+}
+
 TEST_CASE("Scheduling: terminal unconditional branch omits unreachable auto-exit footer")
 {
     const std::string body =

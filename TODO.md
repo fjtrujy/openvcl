@@ -99,6 +99,9 @@ Recently completed:
   - `top_weighted_estimated_blocks`;
   - `top_weighted_idle_blocks`;
   - `top_weighted_wait_blocks`.
+- Direct branches can now pair with an adjacent preceding upper-pipe
+  instruction while still emitting their delay slot. Broader branch-delay
+  filling remains intentionally pending.
 
 ## Correctness Guardrails
 
