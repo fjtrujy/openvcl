@@ -48,10 +48,12 @@ public:
 	bool compareVsmCostJson() const;
 	bool compareVsmCostMarkdown() const;
 	bool compareVsmCostListMarkdown() const;
+	bool compareVsmCostListCheck() const;
 	bool dumpInstructionInfo() const;
 	bool dumpInstructionInfoJson() const;
 	const std::vector< std::pair<std::string, unsigned int> >& costLoops() const;
 	const std::string& costCompareBaseline() const;
+	const std::string& costCompareListCheckMetric() const;
 
 	void setRunGasp( bool runGasp );
 	bool runGasp() const;
@@ -113,6 +115,7 @@ private:
 		ANALYZE_VSM_COST_COMPARE_JSON,
 		ANALYZE_VSM_COST_COMPARE_MARKDOWN,
 		ANALYZE_VSM_COST_COMPARE_LIST_MARKDOWN,
+		ANALYZE_VSM_COST_COMPARE_LIST_CHECK,
 		DUMP_INSTRUCTION_INFO,
 		DUMP_INSTRUCTION_INFO_JSON,
 
@@ -158,10 +161,12 @@ private:
 	bool m_compareVsmCostJson;
 	bool m_compareVsmCostMarkdown;
 	bool m_compareVsmCostListMarkdown;
+	bool m_compareVsmCostListCheck;
 	bool m_dumpInstructionInfo;
 	bool m_dumpInstructionInfoJson;
 	std::vector< std::pair<std::string, unsigned int> > m_costLoops;
 	std::string m_costCompareBaseline;
+	std::string m_costCompareListCheckMetric;
 
 	unsigned int m_threshold;
 	unsigned int m_timeout;

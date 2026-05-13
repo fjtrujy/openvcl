@@ -67,6 +67,7 @@ CommandLine::CommandLine()
 	m_compareVsmCostJson = false;
 	m_compareVsmCostMarkdown = false;
 	m_compareVsmCostListMarkdown = false;
+	m_compareVsmCostListCheck = false;
 	m_dumpInstructionInfo = false;
 	m_dumpInstructionInfoJson = false;
 
@@ -109,6 +110,7 @@ CommandLine::CommandLine()
 	m_options.push_back(Option('\0',"cost-compare-json",ANALYZE_VSM_COST_COMPARE_JSON,true));
 	m_options.push_back(Option('\0',"cost-compare-markdown",ANALYZE_VSM_COST_COMPARE_MARKDOWN,true));
 	m_options.push_back(Option('\0',"cost-compare-list-markdown",ANALYZE_VSM_COST_COMPARE_LIST_MARKDOWN,false));
+	m_options.push_back(Option('\0',"cost-compare-list-check",ANALYZE_VSM_COST_COMPARE_LIST_CHECK,true));
 	m_options.push_back(Option('\0',"dump-instruction-info",DUMP_INSTRUCTION_INFO,false));
 	m_options.push_back(Option('\0',"dump-instruction-info-json",DUMP_INSTRUCTION_INFO_JSON,false));
 }
@@ -213,6 +215,7 @@ bool CommandLine::parse( int argc, char* argv[] )
 				case ANALYZE_VSM_COST_COMPARE_JSON: m_compareVsmCost = true; m_compareVsmCostJson = true; m_compareVsmCostMarkdown = false; m_costCompareBaseline = argument; break;
 				case ANALYZE_VSM_COST_COMPARE_MARKDOWN: m_compareVsmCost = true; m_compareVsmCostJson = false; m_compareVsmCostMarkdown = true; m_costCompareBaseline = argument; break;
 				case ANALYZE_VSM_COST_COMPARE_LIST_MARKDOWN: m_compareVsmCostListMarkdown = true; break;
+				case ANALYZE_VSM_COST_COMPARE_LIST_CHECK: m_compareVsmCostListCheck = true; m_costCompareListCheckMetric = argument; break;
 				case DUMP_INSTRUCTION_INFO: m_dumpInstructionInfo = true; break;
 				case DUMP_INSTRUCTION_INFO_JSON: m_dumpInstructionInfo = true; m_dumpInstructionInfoJson = true; break;
 				case ANALYZE_VSM_COST_LOOP:
@@ -294,6 +297,7 @@ void CommandLine::showUsage( std::ostream& stream )
 	stream << "  --cost-compare-json <baseline>  Compare input .vsm cost against baseline as JSON." << std::endl;
 	stream << "  --cost-compare-markdown <baseline>  Compare input .vsm cost against baseline as Markdown." << std::endl;
 	stream << "  --cost-compare-list-markdown  Read baseline/candidate pairs and emit a Markdown table." << std::endl;
+	stream << "  --cost-compare-list-check <metric>  Fail when any listed candidate exceeds its baseline." << std::endl;
 	stream << "  --dump-instruction-info       Print the VU instruction metadata table." << std::endl;
 	stream << "  --dump-instruction-info-json  Print the VU instruction metadata table as JSON." << std::endl;
 

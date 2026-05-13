@@ -55,6 +55,33 @@ namespace
 		return line.substr( 0, pos );
 	}
 
+	bool costCompareMetricValue( const VsmCostAnalyzer::Summary& summary,
+	                             const std::string& metric,
+	                             unsigned int& value )
+	{
+		if( metric == "static" || metric == "static_cycles" )
+		{
+			value = summary.staticCycles;
+			return true;
+		}
+		if( metric == "estimated" || metric == "estimated_total_cycles" )
+		{
+			value = summary.estimatedTotalCycles;
+			return true;
+		}
+		if( metric == "weighted-static" || metric == "weighted_static_cycles" )
+		{
+			value = summary.weightedStaticCycles;
+			return true;
+		}
+		if( metric == "weighted-estimated" || metric == "weighted_estimated_total_cycles" )
+		{
+			value = summary.weightedEstimatedTotalCycles;
+			return true;
+		}
+		return false;
+	}
+
 	struct FlagName
 	{
 		unsigned int flag;
@@ -333,7 +360,7 @@ bool Parser::create( int argc, char* argv[] )
 		setState( SHOW_USAGE );
 	else if( m_cmdLine.dumpInstructionInfo() )
 		setState( DUMP_INSTRUCTION_INFO );
-	else if( m_cmdLine.compareVsmCostListMarkdown() )
+	else if( m_cmdLine.compareVsmCostListMarkdown() || m_cmdLine.compareVsmCostListCheck() )
 		setState( ANALYZE_VSM_COST_COMPARE_LIST );
 	else if( m_cmdLine.compareVsmCost() )
 		setState( ANALYZE_VSM_COST_COMPARE );
@@ -712,6 +739,18 @@ bool Parser::analyzeVsmCostCompare()
 
 bool Parser::analyzeVsmCostCompareList()
 {
+	const bool writeMarkdown = m_cmdLine.compareVsmCostListMarkdown();
+	const bool checkMetric = m_cmdLine.compareVsmCostListCheck();
+	unsigned int ignoredMetricValue = 0;
+	if( checkMetric
+	    && !costCompareMetricValue( VsmCostAnalyzer::Summary(),
+	                                m_cmdLine.costCompareListCheckMetric(),
+	                                ignoredMetricValue ) )
+	{
+		Error::Display( Error( "Unknown cost comparison check metric" ) );
+		return false;
+	}
+
 	std::ifstream manifestFile;
 	std::istream* manifest = &std::cin;
 	if( m_cmdLine.input().length() > 0 )
@@ -738,10 +777,12 @@ bool Parser::analyzeVsmCostCompareList()
 		output = &outputFile;
 	}
 
-	VsmCostAnalyzer::writeComparisonMarkdownHeader( *output );
+	if( writeMarkdown )
+		VsmCostAnalyzer::writeComparisonMarkdownHeader( *output );
 
 	std::string line;
 	unsigned int lineNumber = 0;
+	unsigned int failedPairs = 0;
 	while( std::getline( *manifest, line ) )
 	{
 		++lineNumber;
@@ -789,7 +830,34 @@ bool Parser::analyzeVsmCostCompareList()
 			candidateAnalyzer.setBlockRepeat( i->first, i->second );
 		}
 
-		VsmCostAnalyzer::writeComparisonMarkdownRow( *output, baselineAnalyzer, candidateAnalyzer );
+		if( writeMarkdown )
+			VsmCostAnalyzer::writeComparisonMarkdownRow( *output, baselineAnalyzer, candidateAnalyzer );
+
+		if( checkMetric )
+		{
+			unsigned int baselineValue = 0;
+			unsigned int candidateValue = 0;
+			costCompareMetricValue( baselineAnalyzer.summary(), m_cmdLine.costCompareListCheckMetric(), baselineValue );
+			costCompareMetricValue( candidateAnalyzer.summary(), m_cmdLine.costCompareListCheckMetric(), candidateValue );
+			if( candidateValue > baselineValue )
+			{
+				++failedPairs;
+				std::cerr << "Cost check failed for " << candidatePath
+				          << " against " << baselinePath
+				          << " metric=" << m_cmdLine.costCompareListCheckMetric()
+				          << " baseline=" << baselineValue
+				          << " candidate=" << candidateValue
+				          << std::endl;
+			}
+		}
+	}
+
+	if( failedPairs > 0 )
+	{
+		std::stringstream message;
+		message << "Cost comparison list check failed for " << failedPairs << " shader pair(s)";
+		Error::Display( Error( message.str() ) );
+		return false;
 	}
 
 	setState( EXIT );

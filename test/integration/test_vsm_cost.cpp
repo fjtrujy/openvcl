@@ -114,6 +114,14 @@ namespace
         return ::test::run_openvcl(args, manifest);
     }
 
+    ::test::RunResult runCostCompareListCheck(const std::string& metric, const std::string& manifest)
+    {
+        std::vector<std::string> args;
+        args.push_back("--cost-compare-list-check");
+        args.push_back(metric);
+        return ::test::run_openvcl(args, manifest);
+    }
+
     ::test::RunResult runCostLoop(const std::string& fixture, const std::string& loop)
     {
         std::vector<std::string> args;
@@ -256,6 +264,35 @@ TEST_CASE("VSM cost CLI: malformed Markdown comparison list is rejected")
     ::test::RunResult r = runCostCompareListMarkdown(fixturePath("simple_scheduled.vsm") + "\n");
     CHECK(r.exit_code != 0);
     CHECK(contains(r.stderr_data, "Invalid cost comparison list entry at line 1"));
+}
+
+TEST_CASE("VSM cost CLI: comparison list check passes each row independently")
+{
+    const std::string manifest =
+        fixturePath("simple_scheduled.vsm") + " " + fixturePath("sce_padded_columns.vsm") + "\n";
+
+    ::test::RunResult r = runCostCompareListCheck("estimated", manifest);
+    CHECK(r.exit_code == 0);
+    CHECK(r.stderr_data.empty());
+}
+
+TEST_CASE("VSM cost CLI: comparison list check rejects slower candidates")
+{
+    const std::string manifest =
+        fixturePath("sce_padded_columns.vsm") + " " + fixturePath("simple_scheduled.vsm") + "\n";
+
+    ::test::RunResult r = runCostCompareListCheck("estimated", manifest);
+    CHECK(r.exit_code != 0);
+    CHECK(contains(r.stderr_data, "Cost check failed for " + fixturePath("simple_scheduled.vsm")));
+    CHECK(contains(r.stderr_data, "metric=estimated baseline=2 candidate=5"));
+    CHECK(contains(r.stderr_data, "Cost comparison list check failed for 1 shader pair(s)"));
+}
+
+TEST_CASE("VSM cost CLI: comparison list check rejects unknown metrics")
+{
+    ::test::RunResult r = runCostCompareListCheck("aggregate-magic", "");
+    CHECK(r.exit_code != 0);
+    CHECK(contains(r.stderr_data, "Unknown cost comparison check metric"));
 }
 
 TEST_CASE("VSM cost CLI: loop repeat weights static block cost")

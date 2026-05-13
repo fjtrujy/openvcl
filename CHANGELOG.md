@@ -94,6 +94,8 @@
   suitable for renderer comparison reports.
 - Added `--cost-compare-list-markdown` to read baseline/candidate VSM pairs
   from a manifest and emit a single multi-row Markdown comparison table.
+- Added `--cost-compare-list-check <metric>` to fail a VSM pair manifest when
+  any individual candidate exceeds its matching baseline for a selected metric.
 - Markdown cost comparisons include loop-weighted static and estimated totals.
 - `--cost-loop-preset ps2gl` now recognizes SCE optimized
   `EXPL_...__MAIN_LOOP` labels when weighting and comparing reference VSMs.

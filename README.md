@@ -101,6 +101,7 @@ Useful options:
 | `--cost-compare-json <baseline>` | compare scheduled `.vsm` cost as JSON |
 | `--cost-compare-markdown <baseline>` | compare scheduled `.vsm` cost as a Markdown table |
 | `--cost-compare-list-markdown` | read baseline/candidate VSM pairs and emit one Markdown table |
+| `--cost-compare-list-check <metric>` | fail if any listed candidate is slower than its baseline |
 | `--dump-instruction-info` | print the VU instruction metadata table |
 | `--dump-instruction-info-json` | print the VU instruction metadata table as JSON |
 
@@ -161,6 +162,16 @@ Emit one Markdown table for a set of VSM pairs:
 
 `pairs.txt` contains whitespace-separated `baseline.vsm candidate.vsm` rows.
 Blank lines and `#` comments are ignored.
+
+Fail when any listed candidate is slower than its own baseline:
+
+```sh
+./openvcl --cost-compare-list-check weighted-estimated --cost-loop-preset ps2gl pairs.txt
+```
+
+Supported check metrics are `static`, `estimated`, `weighted-static`, and
+`weighted-estimated`. This check is per row: an OpenVCL shader only passes when
+that specific shader is equal to or faster than its matching SCE/reference VSM.
 
 The report includes:
 
@@ -228,6 +239,10 @@ runtime per draw call. The loop-weighted rows apply `--cost-loop-preset ps2gl`
 to the 13 matched ps2gl renderer pairs; they better expose the remaining
 hot-loop gap caused by SCE/reference prolog/main/epilog software-pipelined
 loops versus OpenVCL's current single-iteration scheduling.
+
+The performance target is per shader, not aggregate. A scheduler change is only
+complete when every matched ps2gl OpenVCL VSM is equal to or faster than its
+matching SCE/reference VSM for the selected static and estimated metrics.
 
 ## Roadmap
 
