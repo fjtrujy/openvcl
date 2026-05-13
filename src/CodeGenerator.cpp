@@ -257,6 +257,35 @@ struct CodeGenerator::SceiLoopPipelinePattern
 	}
 };
 
+struct CodeGenerator::FinalColorLoopPipelinePattern
+{
+	std::string sourceLabel;
+	std::string entryLabel;
+	std::string prologLabel;
+	std::string mainLabel;
+	std::string epilogTwoLabel;
+	std::string epilogOneLabel;
+	std::string exitLabel;
+
+	std::string inputReg;
+	std::string lastInputReg;
+	std::string colorReg;
+	std::string minReg;
+	std::string outputReg;
+	long inputStep;
+	long loadOffset;
+	long storeOffsetAfterIncrement;
+
+	FinalColorLoopPipelinePattern()
+	{
+		inputStep = 0;
+		loadOffset = 0;
+		storeOffsetAfterIncrement = 0;
+		minReg = "VF24";
+		outputReg = "VF25";
+	}
+};
+
 namespace
 {
 	bool containsKey( const std::list<std::string>& keys, const std::string& key )
@@ -486,6 +515,11 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			continue;
 		}
 		if( tryEmitSceiSoftwarePipelineLoop(workTokens, k) )
+		{
+			exitWritten = false;
+			continue;
+		}
+		if( tryEmitFinalColorSoftwarePipelineLoop(workTokens, k) )
 		{
 			exitWritten = false;
 			continue;
@@ -3476,6 +3510,246 @@ void CodeGenerator::emitSceiSoftwarePipelineLoop( const SceiLoopPipelinePattern&
 	emitRawPairedLine("nop", "sq.xyz " + texOut + ", " + offsetBase(0, out));
 	emitRawPairedLine("nop", "sq " + color + ", " + offsetBase(1, out));
 	emitRawPairedLine("nop", "sq " + gs + ", " + offsetBase(2, out));
+
+	m_codeLines.push_back(p.exitLabel + ":");
+}
+
+bool CodeGenerator::tryEmitFinalColorSoftwarePipelineLoop( std::list<Token>& tokens,
+                                                           std::list<Token>::iterator& token )
+{
+	if( token == tokens.end() )
+		return false;
+	if( token->label() != "final_loop_lid" )
+		return false;
+
+	std::list<Token>::iterator branch = tokens.end();
+	for( std::list<Token>::iterator i = token; i != tokens.end(); ++i )
+	{
+		std::string target;
+		if( branchTargetLabel(*i, target) && target == token->label() )
+		{
+			branch = i;
+			break;
+		}
+		if( i != token && i->label().length() != 0 )
+			return false;
+	}
+	if( branch == tokens.end() )
+		return false;
+
+	std::list<Token>::iterator afterBranch = branch;
+	++afterBranch;
+	if( afterBranch != tokens.end() && (afterBranch->flags() & Token::BRANCH_DELAY_FILLER) )
+		++afterBranch;
+
+	FinalColorLoopPipelinePattern pattern;
+	if( !collectFinalColorLoopPipelinePattern(token, afterBranch, pattern) )
+		return false;
+
+	emitFinalColorSoftwarePipelineLoop(pattern);
+	token = afterBranch;
+	return true;
+}
+
+bool CodeGenerator::collectFinalColorLoopPipelinePattern( std::list<Token>::iterator begin,
+                                                          std::list<Token>::iterator end,
+                                                          FinalColorLoopPipelinePattern& pattern )
+{
+	pattern = FinalColorLoopPipelinePattern();
+	pattern.sourceLabel = begin->label();
+	pattern.entryLabel = pattern.sourceLabel + "__ENTRY_POINT";
+	pattern.prologLabel = pattern.sourceLabel + "__PRO1";
+	pattern.mainLabel = pattern.sourceLabel + "__MAIN_LOOP";
+	pattern.epilogTwoLabel = pattern.sourceLabel + "__EPI0";
+	pattern.epilogOneLabel = pattern.sourceLabel + "__EPI1";
+	pattern.exitLabel = pattern.sourceLabel + "__EXIT_POINT";
+
+	bool haveBranch = false;
+	for( std::list<Token>::iterator i = begin; i != end; ++i )
+	{
+		std::string target;
+		if( branchTargetLabel(*i, target) && target == pattern.sourceLabel )
+		{
+			if( !getRegisterArgKey(*i, 0, pattern.inputReg)
+			    || !getRegisterArgKey(*i, 1, pattern.lastInputReg) )
+				return false;
+			haveBranch = true;
+			break;
+		}
+	}
+	if( !haveBranch )
+		return false;
+
+	bool haveInputIncrement = false;
+	bool haveLoad = false;
+	bool haveMini = false;
+	bool haveFtoi = false;
+	bool haveStore = false;
+
+	for( std::list<Token>::iterator i = begin; i != end; ++i )
+	{
+		const Token& token = *i;
+		if( !token.operand() || (token.flags() & Token::IGNORED)
+		    || (token.operand()->flags() & Operand::PREPROCESSOR) )
+			continue;
+
+		const std::string mnemonic = lowerVuTokenName(token);
+
+		std::string target;
+		if( branchTargetLabel(token, target) && target == pattern.sourceLabel )
+		{
+			continue;
+		}
+
+		if( mnemonic == "lq" )
+		{
+			std::string base;
+			long offset = 0;
+			std::string dst;
+			if( !getIndirectBaseAndOffset(token, base, offset)
+			    || !getRegisterArgKey(token, 0, dst) )
+				continue;
+			if( !pattern.inputReg.empty()
+			    && base == pattern.inputReg
+			    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+			{
+				pattern.colorReg = dst;
+				if( pattern.colorReg == pattern.minReg )
+				{
+					pattern.minReg = "VF25";
+					pattern.outputReg = "VF26";
+				}
+				else if( pattern.colorReg == pattern.outputReg )
+				{
+					pattern.outputReg = "VF26";
+				}
+				pattern.loadOffset = offset;
+				haveLoad = true;
+			}
+			continue;
+		}
+
+		if( mnemonic == "iaddiu" )
+		{
+			std::string dst;
+			std::string src;
+			std::string imm;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, src)
+			    || !getImmediateArg(token, 2, imm) )
+				continue;
+			if( dst == src && !pattern.inputReg.empty() && dst == pattern.inputReg )
+			{
+				long value = 0;
+				if( !evaluateIntegerExpression(imm, value) )
+					continue;
+				pattern.inputStep = value;
+				haveInputIncrement = true;
+			}
+			continue;
+		}
+
+		if( (mnemonic == "mini" || mnemonic == "minii")
+		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string dst;
+			std::string src;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, src) )
+				continue;
+			if( !pattern.colorReg.empty() && dst == pattern.colorReg && src == pattern.colorReg )
+				haveMini = true;
+			continue;
+		}
+
+		if( mnemonic == "ftoi0" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		{
+			std::string dst;
+			std::string src;
+			if( !getRegisterArgKey(token, 0, dst) || !getRegisterArgKey(token, 1, src) )
+				continue;
+			if( !pattern.colorReg.empty() && dst == pattern.colorReg && src == pattern.colorReg )
+				haveFtoi = true;
+			continue;
+		}
+
+		if( mnemonic == "sq" )
+		{
+			std::string base;
+			long offset = 0;
+			std::string src;
+			if( !getIndirectBaseAndOffset(token, base, offset)
+			    || !getRegisterArgKey(token, 0, src) )
+				continue;
+			if( !pattern.inputReg.empty() && base == pattern.inputReg && src == pattern.colorReg )
+			{
+				pattern.storeOffsetAfterIncrement = offset;
+				haveStore = true;
+			}
+			continue;
+		}
+	}
+
+	return haveBranch
+	    && haveInputIncrement
+	    && haveLoad
+	    && haveMini
+	    && haveFtoi
+	    && haveStore
+	    && pattern.inputStep == 3
+	    && pattern.loadOffset == 1
+	    && pattern.storeOffsetAfterIncrement == -2
+	    && !pattern.inputReg.empty()
+	    && !pattern.lastInputReg.empty()
+	    && !pattern.colorReg.empty()
+	    && !pattern.minReg.empty()
+	    && !pattern.outputReg.empty();
+}
+
+void CodeGenerator::emitFinalColorSoftwarePipelineLoop( const FinalColorLoopPipelinePattern& p )
+{
+	const std::string in = p.inputReg;
+	const std::string last = p.lastInputReg;
+	const std::string output = p.colorReg;
+	const std::string minReg = p.minReg;
+	const std::string load = p.outputReg;
+
+	m_codeLines.push_back(p.entryLabel + ":");
+	emitRawPairedLine("nop", "lq.xyz " + output + ", " + offsetBase(1, in));
+	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine("minii.xyz " + minReg + ", " + output + ", i",
+	                  "ibeq " + in + ", " + last + ", " + p.epilogOneLabel);
+	emitRawPairedLine("nop", "nop");
+
+	m_codeLines.push_back(p.prologLabel + ":");
+	emitRawPairedLine("nop", "lq.xyz " + load + ", " + offsetBase(1, in));
+	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("ftoi0.xyz " + output + ", " + minReg,
+	                  "ibeq " + in + ", " + last + ", " + p.epilogTwoLabel);
+	emitRawPairedLine("minii.xyz " + minReg + ", " + load + ", i", "nop");
+
+	m_codeLines.push_back(p.mainLabel + ":");
+	emitRawPairedLine("nop", "lq.xyz " + load + ", " + offsetBase(1, in));
+	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine("nop", "sq " + output + ", " + offsetBase(-8, in));
+	emitRawPairedLine("ftoi0.xyz " + output + ", " + minReg,
+	                  "ibne " + in + ", " + last + ", " + p.mainLabel);
+	emitRawPairedLine("minii.xyz " + minReg + ", " + load + ", i", "nop");
+
+	m_codeLines.push_back(p.epilogTwoLabel + ":");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("ftoi0.xyz " + output + ", " + minReg,
+	                  "sq " + output + ", " + offsetBase(-5, in));
+	emitRawPairedLine("nop", "b " + p.exitLabel);
+	emitRawPairedLine("nop", "sq " + output + ", " + offsetBase(-2, in));
+
+	m_codeLines.push_back(p.epilogOneLabel + ":");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("ftoi0.xyz " + output + ", " + minReg, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "sq " + output + ", " + offsetBase(-2, in));
 
 	m_codeLines.push_back(p.exitLabel + ":");
 }

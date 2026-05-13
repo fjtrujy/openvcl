@@ -248,6 +248,31 @@ namespace
             "\t--exit\n"
             "\t--endexit\n";
     }
+
+    std::string finalColorPipelineSource()
+    {
+        return
+            "\t.init_vf_all\n"
+            "\t.init_vi_all\n"
+            "\t.name vsmFinalColor\n"
+            "\t--enter\n"
+            "\t--endenter\n"
+            "\tiaddiu vi02, vi00, 9\n"
+            "\tiaddiu vi03, vi00, 0\n"
+            "\tmove.xyzw vf08, vf00\n"
+            "\tloi 255.0\n"
+            "final_loop_lid:\n"
+            "\t--LoopCS 1,3\n"
+            "\tlq.xyz vf08, 1(vi03)\n"
+            "\tminii.xyz vf08, vf08, i\n"
+            "\tftoi0.xyz vf08, vf08\n"
+            "\tsq vf08, 1(vi03)\n"
+            "\tiaddiu vi03, vi03, 3\n"
+            "\tibne vi03, vi02, final_loop_lid\n"
+            "done_lid:\n"
+            "\t--exit\n"
+            "\t--endexit\n";
+    }
 }
 
 TEST_CASE("Software pipeline: fast_nolights transform loop emits a 12-cycle steady state")
@@ -293,4 +318,21 @@ TEST_CASE("Software pipeline: SCEI transform loop emits a 19-cycle steady state"
     CHECK(contains(vsm, "ibne VI03, VI05, xform_loop_lid__MAIN_LOOP"));
     CHECK(contains(vsm, "clipw.xyz VF18xyz, VF08w        div q, VF00w, VF10w"));
     CHECK(contains(vsm, "mulq.xyz VF24, VF10, q          iaddiu VI07, VI07, 0x7fff"));
+}
+
+TEST_CASE("Software pipeline: final color loop keeps the original output register w lane")
+{
+    std::string vsm = runEmit(finalColorPipelineSource());
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(contains(vsm, "final_loop_lid__ENTRY_POINT:"));
+    CHECK(contains(vsm, "final_loop_lid__PRO1:"));
+    CHECK(contains(vsm, "final_loop_lid__MAIN_LOOP:"));
+    CHECK(contains(vsm, "final_loop_lid__EPI0:"));
+    CHECK(contains(vsm, "final_loop_lid__EPI1:"));
+    CHECK(contains(vsm, "ibne VI03, VI02, final_loop_lid__MAIN_LOOP"));
+    CHECK(contains(vsm, "lq.xyz VF25, 1(VI03)"));
+    CHECK(contains(vsm, "sq VF08, -8(VI03)"));
+    CHECK(contains(vsm, "ftoi0.xyz VF08, VF24"));
+    CHECK(!contains(vsm, "sq VF25, -8(VI03)"));
 }

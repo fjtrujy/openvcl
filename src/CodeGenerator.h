@@ -93,6 +93,7 @@ private:
 	struct FastNoLightsLoopPipelinePattern;
 	struct FastLitLoopPipelinePattern;
 	struct SceiLoopPipelinePattern;
+	struct FinalColorLoopPipelinePattern;
 	bool tryEmitFastNoLightsSoftwarePipelineLoop( std::list<Token>& tokens,
 	                                              std::list<Token>::iterator& token );
 	bool collectFastNoLightsLoopPipelinePattern( std::list<Token>::iterator begin,
@@ -111,6 +112,12 @@ private:
 	                                     std::list<Token>::iterator end,
 	                                     SceiLoopPipelinePattern& pattern );
 	void emitSceiSoftwarePipelineLoop( const SceiLoopPipelinePattern& pattern );
+	bool tryEmitFinalColorSoftwarePipelineLoop( std::list<Token>& tokens,
+	                                            std::list<Token>::iterator& token );
+	bool collectFinalColorLoopPipelinePattern( std::list<Token>::iterator begin,
+	                                           std::list<Token>::iterator end,
+	                                           FinalColorLoopPipelinePattern& pattern );
+	void emitFinalColorSoftwarePipelineLoop( const FinalColorLoopPipelinePattern& pattern );
 	void emitRawPairedLine( const std::string& upper, const std::string& lower );
 
 	// Dual-pipe pairing helpers.  Stateless legality rules live in

@@ -806,11 +806,17 @@ std::string VsmCostAnalyzer::canonicalBlockLabel( const std::string& label )
 	if( marker == std::string::npos )
 	{
 		static const char kOpenVclXformLoop[] = "xform_loop_lid";
+		static const char kOpenVclFinalLoop[] = "final_loop_lid";
 		if( prefix.size() >= sizeof(kOpenVclXformLoop) - 1
 		    && prefix.compare(prefix.size() - (sizeof(kOpenVclXformLoop) - 1),
 		                      sizeof(kOpenVclXformLoop) - 1,
 		                      kOpenVclXformLoop) == 0 )
 			return "xform_loop_lid";
+		if( prefix.size() >= sizeof(kOpenVclFinalLoop) - 1
+		    && prefix.compare(prefix.size() - (sizeof(kOpenVclFinalLoop) - 1),
+		                      sizeof(kOpenVclFinalLoop) - 1,
+		                      kOpenVclFinalLoop) == 0 )
+			return "final_loop_lid";
 		return label;
 	}
 
