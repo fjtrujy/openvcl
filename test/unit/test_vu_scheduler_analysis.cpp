@@ -24,6 +24,7 @@ namespace
         ops.push_back(vcl::Operand("--endenter", 0, vcl::Operand::PREPROCESSOR | vcl::Operand::FILTERED, "", vcl::Operand::ENTER));
         ops.push_back(vcl::Operand("--exit", 0, vcl::Operand::PREPROCESSOR | vcl::Operand::FILTERED, "", vcl::Operand::EXIT));
         ops.push_back(vcl::Operand("--endexit", 0, vcl::Operand::PREPROCESSOR | vcl::Operand::FILTERED, "", vcl::Operand::EXIT));
+        ops.push_back(vcl::Operand("--LoopCS", 2, vcl::Operand::PREPROCESSOR | vcl::Operand::FILTERED, "imm:integer,imm:integer"));
 
         for (const vcl::VuInstructionInfo* info = vcl::allVuInstructionInfos(); info->mnemonic; ++info)
         {
@@ -121,6 +122,58 @@ TEST_CASE("VuSchedulerAnalysis: dependency graph uses register and resource desc
     CHECK(hasEdge(edges, 2u, 3u, vcl::VU_DEPENDENCY_RESOURCE_RAW));
     CHECK(hasEdge(edges, 3u, 4u, vcl::VU_DEPENDENCY_REGISTER_RAW));
     CHECK(hasEdge(edges, 4u, 5u, vcl::VU_DEPENDENCY_MEMORY));
+}
+
+TEST_CASE("VuSchedulerAnalysis: loop candidates find LoopCS back-edge loops")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("setup_lid:"));
+    REQUIRE(program.parse("iaddiu vi01, vi00, 0"));
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 3"));
+    REQUIRE(program.parse("lq.xyz vf01, 0(vi02)"));
+    REQUIRE(program.parse("iaddiu vi02, vi02, 3"));
+    REQUIRE(program.parse("ibne vi02, vi03, loop_lid"));
+    REQUIRE(program.parse("done_lid:"));
+    REQUIRE(program.parse("xgkick vi04"));
+
+    std::vector<vcl::VuLoopCandidate> loops = vcl::findVuLoopCandidates(program.tokenizer.tokens());
+    REQUIRE(loops.size() == 1u);
+    CHECK(loops[0].label == "loop_lid");
+    CHECK(loops[0].labelTokenIndex == 2u);
+    CHECK(loops[0].branchTokenIndex == 6u);
+    CHECK(loops[0].firstBodyTokenIndex == 2u);
+    CHECK(loops[0].lastBodyTokenIndex == 6u);
+    CHECK(loops[0].hasLoopDirective);
+    CHECK(loops[0].simpleCountedLoop);
+    REQUIRE(loops[0].branchToken != NULL);
+    CHECK(vcl::normalizeVuMnemonic(loops[0].branchToken->name()) == "ibne");
+    REQUIRE(loops[0].bodyTokens.size() == 5u);
+    CHECK(loops[0].bodyTokens.front()->label() == "loop_lid");
+    CHECK(vcl::normalizeVuMnemonic(loops[0].bodyTokens.back()->name()) == "ibne");
+}
+
+TEST_CASE("VuSchedulerAnalysis: loop candidates ignore forward branches and mark unconditional loops")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("entry_lid:"));
+    REQUIRE(program.parse("ibne vi01, vi02, done_lid"));
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 3"));
+    REQUIRE(program.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("b loop_lid"));
+    REQUIRE(program.parse("done_lid:"));
+    REQUIRE(program.parse("xgkick vi04"));
+
+    std::vector<vcl::VuLoopCandidate> loops = vcl::findVuLoopCandidates(program.tokenizer.tokens());
+    REQUIRE(loops.size() == 1u);
+    CHECK(loops[0].label == "loop_lid");
+    CHECK(loops[0].hasLoopDirective);
+    CHECK(!loops[0].simpleCountedLoop);
+    REQUIRE(loops[0].branchToken != NULL);
+    CHECK(vcl::normalizeVuMnemonic(loops[0].branchToken->name()) == "b");
 }
 
 TEST_CASE("VuSchedulerAnalysis: dependency graph keeps ACC multiply-add chains ordered")

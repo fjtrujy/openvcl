@@ -45,9 +45,25 @@ struct VuDependencyEdge
 	VuDependencyKind kind;
 };
 
+struct VuLoopCandidate
+{
+	VuLoopCandidate();
+
+	std::string label;
+	unsigned int labelTokenIndex;
+	unsigned int branchTokenIndex;
+	unsigned int firstBodyTokenIndex;
+	unsigned int lastBodyTokenIndex;
+	bool hasLoopDirective;
+	bool simpleCountedLoop;
+	std::vector<const Token*> bodyTokens;
+	const Token* branchToken;
+};
+
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens );
 std::vector<VuDependencyEdge> buildVuDependencyGraph( const VuBasicBlock& block,
                                                       unsigned int ignoredImplicitWawResources = 0 );
+std::vector<VuLoopCandidate> findVuLoopCandidates( const std::list<Token>& tokens );
 std::list<Token> scheduleVuTokensPreservingOrder( const std::list<Token>& tokens );
 std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens,
                                            unsigned int ignoredImplicitWawResources = 0 );

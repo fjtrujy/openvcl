@@ -3,6 +3,7 @@
 #include "VuSchedulingRules.h"
 #include "VuTokenResourceAccess.h"
 
+#include <map>
 #include <string>
 
 namespace vcl
@@ -209,6 +210,38 @@ namespace
 			mask |= VU_RESOURCE_CLIP;
 		return mask;
 	}
+
+	bool branchTargetLabel( const Token& token, std::string& label )
+	{
+		if( !token.operand() || token.operand()->unit() != Operand::BRU )
+			return false;
+
+		for( std::list<Token::Argument>::const_iterator i = token.arguments().begin(); i != token.arguments().end(); ++i )
+		{
+			if( ((*i).flags() & Token::Argument::BRANCH)
+			    && (*i).type() == Token::Argument::IMMEDIATE
+			    && (*i).immediate().length() != 0 )
+			{
+				label = (*i).immediate();
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	bool tokenIsLoopDirective( const Token& token )
+	{
+		return token.operand() && token.operand()->name() == "--LoopCS";
+	}
+
+	bool loopTargetHasDirective( const std::vector<const Token*>& tokens, unsigned int labelIndex )
+	{
+		if( labelIndex < tokens.size() && tokenIsLoopDirective( *tokens[labelIndex] ) )
+			return true;
+		const unsigned int next = labelIndex + 1;
+		return next < tokens.size() && tokenIsLoopDirective( *tokens[next] );
+	}
 }
 
 VuBasicBlock::VuBasicBlock()
@@ -229,6 +262,17 @@ VuDependencyEdge::VuDependencyEdge( unsigned int beforeToken, unsigned int after
 	before = beforeToken;
 	after = afterToken;
 	kind = dependencyKind;
+}
+
+VuLoopCandidate::VuLoopCandidate()
+{
+	labelTokenIndex = 0;
+	branchTokenIndex = 0;
+	firstBodyTokenIndex = 0;
+	lastBodyTokenIndex = 0;
+	hasLoopDirective = false;
+	simpleCountedLoop = false;
+	branchToken = NULL;
 }
 
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens )
@@ -313,6 +357,52 @@ std::vector<VuDependencyEdge> buildVuDependencyGraph( const VuBasicBlock& block,
 	}
 
 	return edges;
+}
+
+std::vector<VuLoopCandidate> findVuLoopCandidates( const std::list<Token>& tokens )
+{
+	std::vector<const Token*> indexedTokens;
+	std::map<std::string, unsigned int> labels;
+	unsigned int index = 0;
+
+	for( std::list<Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i, ++index )
+	{
+		indexedTokens.push_back( &*i );
+		if( (*i).label().length() != 0 )
+			labels[(*i).label()] = index;
+	}
+
+	std::vector<VuLoopCandidate> result;
+	for( unsigned int branchIndex = 0; branchIndex < indexedTokens.size(); ++branchIndex )
+	{
+		const Token& token = *indexedTokens[branchIndex];
+		std::string label;
+		if( !branchTargetLabel( token, label ) )
+			continue;
+
+		std::map<std::string, unsigned int>::const_iterator target = labels.find( label );
+		if( target == labels.end() || target->second >= branchIndex )
+			continue;
+
+		VuLoopCandidate candidate;
+		candidate.label = label;
+		candidate.labelTokenIndex = target->second;
+		candidate.branchTokenIndex = branchIndex;
+		candidate.firstBodyTokenIndex = target->second;
+		candidate.lastBodyTokenIndex = branchIndex;
+		candidate.hasLoopDirective = loopTargetHasDirective( indexedTokens, target->second );
+		candidate.simpleCountedLoop = candidate.hasLoopDirective
+		                           && !isVuTerminalUnconditionalBranch( token )
+		                           && vuTokenBranchDelaySlots( token ) > 0;
+		candidate.branchToken = &token;
+
+		for( unsigned int body = candidate.firstBodyTokenIndex; body <= candidate.lastBodyTokenIndex; ++body )
+			candidate.bodyTokens.push_back( indexedTokens[body] );
+
+		result.push_back( candidate );
+	}
+
+	return result;
 }
 
 std::list<Token> scheduleVuTokensPreservingOrder( const std::list<Token>& tokens )
