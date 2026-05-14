@@ -42,6 +42,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: `--dump-schedule-info` and `--dump-schedule-info-json` expose those issue slots for tooling and tests.
    - Done: ready-scheduler issue-slot pairs are now tagged in the scheduled token stream and honored by codegen before the older lookahead pairing fallback.
    - Done: ready-set scheduling now tracks register/Q/P/MAC/CLIP readiness while choosing from the ready set, so independent work is preferred over consumers that would immediately need latency padding.
+   - Done: code emission and scheduler analysis now share one `VuLatencyTracker` for readiness and bypass math instead of maintaining duplicate hazard models.
 
 6. **Implement Generic Loop Analysis** - done
    - Detect induction registers, loop-carried dependencies, loads/stores, branch targets, and loop bodies.

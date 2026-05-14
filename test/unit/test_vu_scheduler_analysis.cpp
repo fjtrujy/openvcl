@@ -7,6 +7,7 @@
 #include "../../src/Token.h"
 #include "../../src/Tokenizer.h"
 #include "../../src/VuInstructionInfo.h"
+#include "../../src/VuLatencyTracker.h"
 #include "../../src/VuSchedulerAnalysis.h"
 #include "../../src/VuTokenResourceAccess.h"
 
@@ -902,6 +903,39 @@ TEST_CASE("VuSchedulerAnalysis: preserve-order scheduler keeps block order intac
         CHECK(a->label() == b->label());
         CHECK(a->arguments().size() == b->arguments().size());
     }
+}
+
+TEST_CASE("VuLatencyTracker: shared readiness model tracks registers Q and bypasses")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("mul.xy vf04, vf01, vf05"));
+    REQUIRE(program.parse("div q, vf06[w], vf07[w]"));
+    REQUIRE(program.parse("mulq.xy vf08, vf09, q"));
+    REQUIRE(program.parse("ftoi0.xy vf10, vf00"));
+    REQUIRE(program.parse("mtir vi01, vf10[x]"));
+
+    std::vector<const vcl::Token*> tokens;
+    for (std::list<vcl::Token>::const_iterator i = program.tokenizer.tokens().begin();
+         i != program.tokenizer.tokens().end(); ++i)
+        tokens.push_back(&*i);
+    REQUIRE(tokens.size() == 6u);
+
+    vcl::VuLatencyTracker tracker;
+    tracker.recordWrites(*tokens[0], 0);
+    CHECK(tracker.readHazardDelay(*tokens[1], NULL, 1) > 0);
+    CHECK(tracker.readHazardDelay(*tokens[1], NULL, 5) == 0);
+
+    tracker.reset();
+    tracker.recordWrites(*tokens[2], 0);
+    CHECK(tracker.qReadyCycle() == 8);
+    CHECK(tracker.readHazardDelay(*tokens[3], NULL, 1) > 0);
+    CHECK(tracker.readHazardDelay(*tokens[3], NULL, 8) == 0);
+
+    tracker.reset();
+    tracker.recordWrites(*tokens[4], 0);
+    CHECK(tracker.readHazardDelay(*tokens[5], NULL, 1) == 0);
 }
 
 TEST_CASE("VuSchedulerAnalysis: ready-set scheduler pulls long Q producers forward")

@@ -41,6 +41,7 @@ set(OPENVCL_LIB_SOURCES
     ${OPENVCL_ROOT}/src/RegisterAllocator.cpp
     ${OPENVCL_ROOT}/src/Token.cpp
     ${OPENVCL_ROOT}/src/Tokenizer.cpp
+    ${OPENVCL_ROOT}/src/VuLatencyTracker.cpp
     ${OPENVCL_ROOT}/src/VuSchedulerAnalysis.cpp
     ${OPENVCL_ROOT}/src/VuSchedulingRules.cpp
     ${OPENVCL_ROOT}/src/VuInstructionInfo.cpp

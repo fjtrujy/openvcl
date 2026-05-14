@@ -944,12 +944,6 @@ CodeGenerator::CodeGenerator()
 	m_genericSoftwarePipelining = false;
 	m_enableUpperZeroMoves = false;
 	m_ignoredImplicitWawResources = VU_RESOURCE_NONE;
-	// Sentinels < 0 by more than FMAC latency so the first flag-reader
-	// in the program doesn't trip the cooldown.
-	m_lastFMACCycle   = -10;
-	m_lastClipwCycle  = -10;
-	m_qReadyCycle     = -10;
-	m_pReadyCycle     = -10;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1092,8 +1086,8 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			enum { FillerLookaheadLimit = 96 };
 			const bool waitsForQ = vuTokenReadsQ(token);
 			const bool waitsForP = vuTokenReadsP(token);
-			const int qGap = waitsForQ ? (m_qReadyCycle - m_currentCycle) : 0;
-			const int pGap = waitsForP ? (m_pReadyCycle - m_currentCycle) : 0;
+			const int qGap = waitsForQ ? (m_latencyTracker.qReadyCycle() - m_currentCycle) : 0;
+			const int pGap = waitsForP ? (m_latencyTracker.pReadyCycle() - m_currentCycle) : 0;
 			if( tokenIsLowerExecutionPath(token) && (qGap > 1 || pGap > 1) )
 			{
 				const bool waitQ = qGap >= pGap;
@@ -1331,7 +1325,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 
 			if( !foundPartner && vuTokenReadsQ(token) && tokenIsUpperExecutionPath(token) )
 			{
-				const int qGap = m_qReadyCycle - m_currentCycle;
+				const int qGap = m_latencyTracker.qReadyCycle() - m_currentCycle;
 				const int needed = readHazardDelay(token, NULL);
 				if( qGap > 1 && qGap >= needed )
 				{
@@ -1402,14 +1396,16 @@ void CodeGenerator::emitWaitQ()
 {
 	const int nextCycle = m_currentCycle + 1;
 	m_codeLines.push_back( formatRawPairedInstructionLine( vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITQ) ) );
-	m_currentCycle = (m_qReadyCycle > nextCycle) ? m_qReadyCycle : nextCycle;
+	const int qReadyCycle = m_latencyTracker.qReadyCycle();
+	m_currentCycle = (qReadyCycle > nextCycle) ? qReadyCycle : nextCycle;
 }
 
 void CodeGenerator::emitWaitP()
 {
 	const int nextCycle = m_currentCycle + 1;
 	m_codeLines.push_back( formatRawPairedInstructionLine( vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITP) ) );
-	m_currentCycle = (m_pReadyCycle > nextCycle) ? m_pReadyCycle : nextCycle;
+	const int pReadyCycle = m_latencyTracker.pReadyCycle();
+	m_currentCycle = (pReadyCycle > nextCycle) ? pReadyCycle : nextCycle;
 }
 
 void CodeGenerator::emitUpperWithWait( const Token& token, bool waitQ )
@@ -1427,14 +1423,10 @@ void CodeGenerator::emitUpperWithWait( const Token& token, bool waitQ )
 		outputLine += " ";
 	outputLine += waitQ ? vuInstr(VU_OP_WAITQ) : vuInstr(VU_OP_WAITP);
 
-	const int readyCycle = waitQ ? m_qReadyCycle : m_pReadyCycle;
+	const int readyCycle = waitQ ? m_latencyTracker.qReadyCycle() : m_latencyTracker.pReadyCycle();
 	const int issueCycle = (readyCycle > m_currentCycle) ? readyCycle : m_currentCycle;
 	m_codeLines.push_back(outputLine);
 	recordRegisterWrites(token, issueCycle);
-	if( token.operand()->unit() == Operand::FMAC )
-		m_lastFMACCycle = issueCycle;
-	if( isVuClipw(token.operand()->name()) )
-		m_lastClipwCycle = issueCycle;
 	m_currentCycle = issueCycle + 1;
 }
 
@@ -1532,13 +1524,6 @@ void CodeGenerator::emitSingleToken( const Token& token )
 		recordRegisterWrites(token, issueCycle);
 	}
 
-	// Remember this cycle as the most recent FMAC / clipw so
-	// downstream flag-readers can pad to the 4-cycle pipeline.
-	if( token.operand()->unit() == Operand::FMAC || emitsAsUpperZeroMove(token) )
-		m_lastFMACCycle = m_currentCycle - 1;
-	if( isVuClipw(token.operand()->name()) )
-		m_lastClipwCycle = m_currentCycle - 1;
-
 }
 
 void CodeGenerator::emitBranchWithDelayFiller( const Token& branch, const Token& filler )
@@ -1615,10 +1600,6 @@ void CodeGenerator::emitBranchWithDelayFiller( const Token& branch, const Token&
 
 	m_codeLines.push_back(fillerLine);
 	recordRegisterWrites(filler, m_currentCycle);
-	if( filler.operand()->unit() == Operand::FMAC || emitsAsUpperZeroMove(filler) )
-		m_lastFMACCycle = m_currentCycle;
-	if( isVuClipw(filler.operand()->name()) )
-		m_lastClipwCycle = m_currentCycle;
 	m_currentCycle++;
 }
 
@@ -1638,15 +1619,8 @@ void CodeGenerator::emitPairedTokens( const Token& a, const Token& b )
 		padForBranchPreBubble(b);
 	m_codeLines.push_back(pairedLine);
 
-	// Either side of the pair could be the FMAC / clipw we need to remember
-	// for downstream flag-reader cooldowns.
 	recordRegisterWrites(a, m_currentCycle);
 	recordRegisterWrites(b, m_currentCycle);
-	if( a.operand()->unit() == Operand::FMAC || b.operand()->unit() == Operand::FMAC
-	    || emitsAsUpperZeroMove(a) || emitsAsUpperZeroMove(b) )
-		m_lastFMACCycle = m_currentCycle;
-	if( isVuClipw(a.operand()->name()) || isVuClipw(b.operand()->name()) )
-		m_lastClipwCycle = m_currentCycle;
 	m_currentCycle++;
 	for( unsigned int i = 0; i < branchDelaySlots; ++i )
 	{
@@ -1677,81 +1651,7 @@ bool CodeGenerator::tokenIsUpperExecutionPath( const Token& token ) const
 
 int CodeGenerator::readHazardDelay( const Token& token, const Token* partner ) const
 {
-	std::list<std::string> reads;
-	collectVuRegisterReadKeys(token, reads);
-	if( partner )
-		collectVuRegisterReadKeys(*partner, reads);
-
-	bool readsQ = vuTokenReadsQ(token);
-	bool readsP = vuTokenReadsP(token);
-	if( partner )
-	{
-		readsQ = readsQ || vuTokenReadsQ(*partner);
-		readsP = readsP || vuTokenReadsP(*partner);
-	}
-
-	int needed = 0;
-	for( std::list<std::string>::const_iterator i = reads.begin(); i != reads.end(); ++i )
-	{
-		std::map<std::string, int>::const_iterator ready = m_registerReadyCycle.find(*i);
-		if( ready == m_registerReadyCycle.end() )
-			continue;
-		int readyCycle = ready->second;
-		std::map<std::string, std::string>::const_iterator producer = m_registerProducerMnemonic.find(*i);
-		if( producer != m_registerProducerMnemonic.end()
-		    && isVuFtoiConversion(producer->second)
-		    && ( (isVuMtir(token) && vuTokenReadsRegister(token, *i))
-		         || (partner && isVuMtir(*partner) && vuTokenReadsRegister(*partner, *i)) ) )
-			readyCycle -= 4;
-		if( producer != m_registerProducerMnemonic.end()
-		    && isVuLoadToFtoiBypassProducer(producer->second)
-		    && ( (isVuFtoiConversion(lowerVuTokenName(token)) && vuTokenReadsRegister(token, *i))
-		         || (partner && isVuFtoiConversion(lowerVuTokenName(*partner)) && vuTokenReadsRegister(*partner, *i)) ) )
-			readyCycle -= 4;
-		const int gap = readyCycle - m_currentCycle;
-		if( gap > needed )
-			needed = gap;
-	}
-	if( readsQ )
-	{
-		const int gap = m_qReadyCycle - m_currentCycle;
-		if( gap > needed )
-			needed = gap;
-	}
-	if( readsP )
-	{
-		const int gap = m_pReadyCycle - m_currentCycle;
-		if( gap > needed )
-			needed = gap;
-	}
-
-	const int flagCycle = m_currentCycle + needed;
-	bool readsMac = isVuMacReader(token.operand()->name());
-	bool readsClip = isVuClipReader(token.operand()->name());
-	if( partner && partner->operand() )
-	{
-		const std::string& name = partner->operand()->name();
-		readsMac = readsMac || isVuMacReader(name);
-		readsClip = readsClip || isVuClipReader(name);
-	}
-
-	int flagDelay = 0;
-	if( readsMac )
-	{
-		const int gap = flagCycle - m_lastFMACCycle;
-		if( 4 - gap > flagDelay )
-			flagDelay = 4 - gap;
-	}
-	if( readsClip )
-	{
-		const int gap = flagCycle - m_lastClipwCycle;
-		if( 4 - gap > flagDelay )
-			flagDelay = 4 - gap;
-	}
-	if( flagDelay > 0 )
-		needed += flagDelay;
-
-	return needed;
+	return m_latencyTracker.readHazardDelay( token, partner, m_currentCycle );
 }
 
 void CodeGenerator::padForReadHazards( const Token& token, const Token* partner )
@@ -1770,8 +1670,8 @@ void CodeGenerator::padForReadHazards( const Token& token, const Token* partner 
 		if( needed <= 0 )
 			break;
 
-		const int qGap = readsQ ? (m_qReadyCycle - m_currentCycle) : 0;
-		const int pGap = readsP ? (m_pReadyCycle - m_currentCycle) : 0;
+		const int qGap = readsQ ? (m_latencyTracker.qReadyCycle() - m_currentCycle) : 0;
+		const int pGap = readsP ? (m_latencyTracker.pReadyCycle() - m_currentCycle) : 0;
 		if( qGap > 1 && qGap >= pGap )
 		{
 			emitWaitQ();
@@ -1790,21 +1690,7 @@ void CodeGenerator::padForReadHazards( const Token& token, const Token* partner 
 
 void CodeGenerator::recordRegisterWrites( const Token& token, int issueCycle )
 {
-	if( !token.operand() || token.operand()->latency() <= 1 )
-		return;
-
-	const int latency = token.operand()->latency();
-	std::list<std::string> writes;
-	collectVuRegisterWriteKeys(token, writes);
-	for( std::list<std::string>::const_iterator i = writes.begin(); i != writes.end(); ++i )
-	{
-		m_registerReadyCycle[*i] = issueCycle + latency + 1;
-		m_registerProducerMnemonic[*i] = lowerVuTokenName(token);
-	}
-	if( vuTokenWritesQ(token) )
-		m_qReadyCycle = issueCycle + latency + 1;
-	if( vuTokenWritesP(token) )
-		m_pReadyCycle = issueCycle + latency + 1;
+	m_latencyTracker.recordWrites( token, issueCycle, emitsAsUpperZeroMove( token ) );
 }
 
 unsigned int CodeGenerator::ignoredImplicitWawResourcesForRemaining( std::list<Token>::const_iterator begin,
