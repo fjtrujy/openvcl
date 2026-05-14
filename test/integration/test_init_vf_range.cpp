@@ -36,6 +36,7 @@ TEST_CASE("openvcl: .init_vf with a register range is accepted")
 
     CHECK(r.exit_code == 0);
     CHECK(r.stderr_data.find("Invalid argument") == std::string::npos);
+    CHECK(r.stdout_data.find(".vu") != std::string::npos);
 }
 
 TEST_CASE("openvcl: .init_vf rejects an inverted register range")

@@ -1940,6 +1940,9 @@ bool Parser::generateCode()
 
 bool Parser::writeOutput()
 {
+	if( m_cmdLine.output() == "-" )
+		return writeOutputStream( std::cout );
+
 	if( m_cmdLine.output().length() > 0 )
 	{
 		std::ofstream stream( m_cmdLine.output().c_str() );

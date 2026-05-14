@@ -53,6 +53,8 @@
 - Strict schedule-slot emission now preserves explicit branch-delay fillers
   after a scheduled upper+branch pair, so the scheduler can model paired loop
   branches without dropping the delay-slot instruction.
+- `openvcl -o -` now writes compiled VSM output to stdout instead of creating
+  a literal file named `-`.
 - Added regression fixtures and unit/integration tests for cost analysis.
 - Added conservative VU scheduling improvements used by ps2gl:
   - upper/lower pairing lookahead;
