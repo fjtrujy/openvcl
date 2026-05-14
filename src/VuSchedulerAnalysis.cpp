@@ -124,18 +124,40 @@ namespace
 		return (access.implicitWrites & VU_RESOURCE_MAC) != 0;
 	}
 
+	bool tokenSchedulesAsUpper( const Token& token, unsigned int ignoredImplicitWawResources )
+	{
+		if( (ignoredImplicitWawResources & VU_RESOURCE_MAC) && isVuZeroMoveFromVf00( token ) )
+			return true;
+		return !isVuLowerPipe( token );
+	}
+
+	bool tokenSchedulesAsLower( const Token& token, unsigned int ignoredImplicitWawResources )
+	{
+		return !tokenSchedulesAsUpper( token, ignoredImplicitWawResources ) && isVuLowerPipe( token );
+	}
+
+	bool tokenWritesMacForPair( const Token& token, unsigned int ignoredImplicitWawResources )
+	{
+		if( tokenSchedulesAsUpper( token, ignoredImplicitWawResources ) && isVuZeroMoveFromVf00( token ) )
+			return true;
+		return tokenWritesMacForPair( token );
+	}
+
 	unsigned int chooseReadyPairPartner( unsigned int primary,
 	                                     const VuBasicBlock& block,
 	                                     const std::vector<unsigned int>& incoming,
 	                                     const std::vector<bool>& emitted,
 	                                     const std::vector<unsigned int>& priority,
 	                                     const VuLatencyTracker& latencyTracker,
+	                                     unsigned int ignoredImplicitWawResources,
 	                                     unsigned int currentCycle )
 	{
 		unsigned int best = static_cast<unsigned int>( block.tokens.size() );
 		int bestScore = 0;
-		const bool primaryIsLower = isVuLowerPipe( *block.tokens[primary] );
-		const bool primaryWritesMac = tokenWritesMacForPair( *block.tokens[primary] );
+		const bool primaryIsLower = tokenSchedulesAsLower( *block.tokens[primary],
+		                                                   ignoredImplicitWawResources );
+		const bool primaryWritesMac = tokenWritesMacForPair( *block.tokens[primary],
+		                                                     ignoredImplicitWawResources );
 		const int primaryDelay =
 		    latencyTracker.readHazardDelay( *block.tokens[primary], NULL, static_cast<int>( currentCycle ) );
 
@@ -143,12 +165,14 @@ namespace
 		{
 			if( i == primary || emitted[i] || incoming[i] != 0 )
 				continue;
-			if( isVuLowerPipe( *block.tokens[i] ) == primaryIsLower )
+			if( tokenSchedulesAsLower( *block.tokens[i],
+			                           ignoredImplicitWawResources ) == primaryIsLower )
 				continue;
 			if( !vuTokenPairResourcesAreIndependent( *block.tokens[primary],
 			                                         *block.tokens[i],
 			                                         primaryWritesMac,
-			                                         tokenWritesMacForPair( *block.tokens[i] ) ) )
+			                                         tokenWritesMacForPair( *block.tokens[i],
+			                                                               ignoredImplicitWawResources ) ) )
 				continue;
 			if( latencyTracker.readHazardDelay( *block.tokens[primary],
 			                                    block.tokens[i],
@@ -191,7 +215,8 @@ namespace
 	VuScheduledIssueSlot makeIssueSlot( const Token* first,
 	                                    const Token* second,
 	                                    unsigned int issueCycle = 0,
-	                                    unsigned int cycleCount = 1 )
+	                                    unsigned int cycleCount = 1,
+	                                    unsigned int ignoredImplicitWawResources = VU_RESOURCE_NONE )
 	{
 		VuScheduledIssueSlot slot;
 		slot.firstToken = first;
@@ -203,7 +228,7 @@ namespace
 
 		if( first )
 		{
-			if( isVuLowerPipe( *first ) )
+			if( tokenSchedulesAsLower( *first, ignoredImplicitWawResources ) )
 				slot.lowerToken = first;
 			else
 				slot.upperToken = first;
@@ -211,7 +236,7 @@ namespace
 
 		if( second )
 		{
-			if( isVuLowerPipe( *second ) )
+			if( tokenSchedulesAsLower( *second, ignoredImplicitWawResources ) )
 				slot.lowerToken = second;
 			else
 				slot.upperToken = second;
@@ -227,6 +252,43 @@ namespace
 		VuScheduledIssueSlot slot = makeIssueSlot( NULL, NULL, issueCycle, cycleCount );
 		slot.paddingKind = paddingKind;
 		return slot;
+	}
+
+	VuScheduledIssueSlot makeUpperWaitIssueSlot( const Token* upper,
+	                                             VuScheduledPaddingKind paddingKind,
+	                                             unsigned int issueCycle,
+	                                             unsigned int cycleCount,
+	                                             unsigned int ignoredImplicitWawResources )
+	{
+		VuScheduledIssueSlot slot =
+			makeIssueSlot( upper, NULL, issueCycle, cycleCount, ignoredImplicitWawResources );
+		slot.paddingKind = paddingKind;
+		return slot;
+	}
+
+	unsigned int waitPaddingCycleCount( VuScheduledPaddingKind paddingKind,
+	                                    const VuLatencyTracker& latencyTracker,
+	                                    unsigned int currentCycle )
+	{
+		if( paddingKind == VU_SCHEDULED_PADDING_WAITQ )
+		{
+			const int readyCycle = latencyTracker.qReadyCycle();
+			const unsigned int nextCycle = static_cast<unsigned int>(
+				readyCycle > static_cast<int>( currentCycle + 1 )
+				? readyCycle
+				: static_cast<int>( currentCycle + 1 ) );
+			return nextCycle - currentCycle;
+		}
+		if( paddingKind == VU_SCHEDULED_PADDING_WAITP )
+		{
+			const int readyCycle = latencyTracker.pReadyCycle();
+			const unsigned int nextCycle = static_cast<unsigned int>(
+				readyCycle > static_cast<int>( currentCycle + 1 )
+				? readyCycle
+				: static_cast<int>( currentCycle + 1 ) );
+			return nextCycle - currentCycle;
+		}
+		return 1;
 	}
 
 	void appendReadHazardPaddingSlots( std::vector<VuScheduledIssueSlot>& slots,
@@ -246,25 +308,8 @@ namespace
 				                                     partner,
 				                                     latencyTracker,
 				                                     static_cast<int>( currentCycle ) );
-			unsigned int paddingCycleCount = 1;
-			if( paddingKind == VU_SCHEDULED_PADDING_WAITQ )
-			{
-				const int readyCycle = latencyTracker.qReadyCycle();
-				const unsigned int nextCycle = static_cast<unsigned int>(
-					readyCycle > static_cast<int>( currentCycle + 1 )
-					? readyCycle
-					: static_cast<int>( currentCycle + 1 ) );
-				paddingCycleCount = nextCycle - currentCycle;
-			}
-			else if( paddingKind == VU_SCHEDULED_PADDING_WAITP )
-			{
-				const int readyCycle = latencyTracker.pReadyCycle();
-				const unsigned int nextCycle = static_cast<unsigned int>(
-					readyCycle > static_cast<int>( currentCycle + 1 )
-					? readyCycle
-					: static_cast<int>( currentCycle + 1 ) );
-				paddingCycleCount = nextCycle - currentCycle;
-			}
+			const unsigned int paddingCycleCount =
+				waitPaddingCycleCount( paddingKind, latencyTracker, currentCycle );
 			slots.push_back( makePaddingIssueSlot( paddingKind,
 			                                       currentCycle - blockStartCycle,
 			                                       paddingCycleCount ) );
@@ -329,7 +374,9 @@ namespace
 		return true;
 	}
 
-	bool tokenCanPairWithBarrierTail( const Token& previous, const Token& barrier )
+	bool tokenCanPairWithBarrierTail( const Token& previous,
+	                                  const Token& barrier,
+	                                  unsigned int ignoredImplicitWawResources )
 	{
 		if( !tokenCanEnterBarrierTailPair( previous ) || !tokenCanEnterBarrierTailPair( barrier ) )
 			return false;
@@ -337,7 +384,8 @@ namespace
 			return false;
 		if( !isVuXgkick( barrier ) && vuTokenBranchDelaySlots( barrier ) == 0 )
 			return false;
-		if( isVuLowerPipe( previous ) == isVuLowerPipe( barrier ) )
+		if( tokenSchedulesAsLower( previous, ignoredImplicitWawResources )
+		    == tokenSchedulesAsLower( barrier, ignoredImplicitWawResources ) )
 			return false;
 
 		VuTokenResourceAccess previousAccess;
@@ -370,8 +418,60 @@ namespace
 		return true;
 	}
 
-	bool tryPairBarrierWithPreviousSlot( std::vector<VuScheduledIssueSlot>& slots,
-	                                     const Token& barrier )
+	bool tokenCanPairWithFlagReaderTail( const Token& previous,
+	                                     const Token& tail,
+	                                     unsigned int ignoredImplicitWawResources )
+	{
+		if( !tokenCanEnterBarrierTailPair( previous ) || !tokenCanEnterBarrierTailPair( tail ) )
+			return false;
+		if( tail.label().length() != 0 )
+			return false;
+		if( tokenSchedulesAsLower( previous, ignoredImplicitWawResources )
+		    == tokenSchedulesAsLower( tail, ignoredImplicitWawResources ) )
+			return false;
+
+		VuTokenResourceAccess previousAccess;
+		VuTokenResourceAccess tailAccess;
+		if( !buildVuTokenResourceAccess( previous, previousAccess )
+		    || !buildVuTokenResourceAccess( tail, tailAccess ) )
+			return false;
+		if( (tailAccess.implicitReads & (VU_RESOURCE_MAC | VU_RESOURCE_CLIP)) == 0 )
+			return false;
+		if( previousAccess.memoryKind != VU_MEMORY_NONE || tailAccess.memoryKind != VU_MEMORY_NONE )
+			return false;
+		if( previousAccess.branchDelaySlots > 0 || tailAccess.branchDelaySlots > 0 )
+			return false;
+		if( (previousAccess.instructionFlags & (VU_INSTR_WAIT_Q | VU_INSTR_WAIT_P))
+		    || (tailAccess.instructionFlags & (VU_INSTR_WAIT_Q | VU_INSTR_WAIT_P)) )
+			return false;
+
+		const unsigned int previousReadsImplicit = previousAccess.implicitReads;
+		const unsigned int previousWritesImplicit = previousAccess.implicitWrites;
+		const unsigned int tailReadsImplicit = tailAccess.implicitReads;
+		const unsigned int tailWritesImplicit = tailAccess.implicitWrites;
+		if( previousWritesImplicit & (tailReadsImplicit | tailWritesImplicit) )
+			return false;
+		if( tailWritesImplicit & (previousReadsImplicit | previousWritesImplicit) )
+			return false;
+
+		if( vuTokensHaveDataDependency( previous, tail )
+		    || vuTokensHaveDataDependency( tail, previous ) )
+			return false;
+
+		return true;
+	}
+
+	bool tokenCanPairWithPreviousTail( const Token& previous,
+	                                   const Token& tail,
+	                                   unsigned int ignoredImplicitWawResources )
+	{
+		return tokenCanPairWithBarrierTail( previous, tail, ignoredImplicitWawResources )
+		    || tokenCanPairWithFlagReaderTail( previous, tail, ignoredImplicitWawResources );
+	}
+
+	bool tryPairTailWithPreviousSlot( std::vector<VuScheduledIssueSlot>& slots,
+	                                  const Token& tail,
+	                                  unsigned int ignoredImplicitWawResources )
 	{
 		if( slots.empty() )
 			return false;
@@ -381,15 +481,84 @@ namespace
 			return false;
 		if( !previousSlot.firstToken || previousSlot.secondToken )
 			return false;
-		if( !tokenCanPairWithBarrierTail( *previousSlot.firstToken, barrier ) )
+		if( !tokenCanPairWithPreviousTail( *previousSlot.firstToken,
+		                                   tail,
+		                                   ignoredImplicitWawResources ) )
 			return false;
 
-		previousSlot.secondToken = &barrier;
-		if( isVuLowerPipe( barrier ) )
-			previousSlot.lowerToken = &barrier;
+		previousSlot.secondToken = &tail;
+		if( tokenSchedulesAsLower( tail, ignoredImplicitWawResources ) )
+			previousSlot.lowerToken = &tail;
 		else
-			previousSlot.upperToken = &barrier;
+			previousSlot.upperToken = &tail;
 		return true;
+	}
+
+	bool selectUpperWaitFiller( const VuBasicBlock& block,
+	                            const std::vector<unsigned int>& incoming,
+	                            const std::vector<bool>& emitted,
+	                            const std::vector<unsigned int>& priority,
+	                            const VuLatencyTracker& latencyTracker,
+	                            unsigned int ignoredImplicitWawResources,
+	                            unsigned int currentCycle,
+	                            unsigned int& waitToken,
+	                            unsigned int& upperToken,
+	                            VuScheduledPaddingKind& paddingKind )
+	{
+		waitToken = static_cast<unsigned int>( block.tokens.size() );
+		upperToken = static_cast<unsigned int>( block.tokens.size() );
+		paddingKind = VU_SCHEDULED_PADDING_NONE;
+		int bestScore = 0;
+
+		for( unsigned int wait = 0; wait < block.tokens.size(); ++wait )
+		{
+			if( emitted[wait] || incoming[wait] != 0 )
+				continue;
+			if( !tokenSchedulesAsLower( *block.tokens[wait], ignoredImplicitWawResources ) )
+				continue;
+			if( latencyTracker.readHazardDelay( *block.tokens[wait],
+			                                    NULL,
+			                                    static_cast<int>( currentCycle ) ) <= 0 )
+				continue;
+
+			const VuScheduledPaddingKind waitKind =
+				vuScheduledPaddingKindForReadHazard( *block.tokens[wait],
+				                                     NULL,
+				                                     latencyTracker,
+				                                     static_cast<int>( currentCycle ) );
+			if( waitKind != VU_SCHEDULED_PADDING_WAITQ
+			    && waitKind != VU_SCHEDULED_PADDING_WAITP )
+				continue;
+
+			for( unsigned int upper = 0; upper < block.tokens.size(); ++upper )
+			{
+				if( upper == wait || emitted[upper] || incoming[upper] != 0 )
+					continue;
+				if( !tokenSchedulesAsUpper( *block.tokens[upper], ignoredImplicitWawResources ) )
+					continue;
+				if( latencyTracker.readHazardDelay( *block.tokens[upper],
+				                                    NULL,
+				                                    static_cast<int>( currentCycle ) ) > 0 )
+					continue;
+
+				const int score = readyCandidateScore( upper,
+				                                       false,
+				                                       false,
+				                                       block,
+				                                       priority,
+				                                       latencyTracker,
+				                                       currentCycle );
+				if( upperToken == block.tokens.size() || score < bestScore )
+				{
+					waitToken = wait;
+					upperToken = upper;
+					paddingKind = waitKind;
+					bestScore = score;
+				}
+			}
+		}
+
+		return upperToken < block.tokens.size();
 	}
 
 	std::vector<VuScheduledIssueSlot> scheduleReadySegmentIssueSlots( const std::vector<const Token*>& segment,
@@ -409,7 +578,11 @@ namespace
 				                              latencyTracker,
 				                              blockStartCycle,
 				                              currentCycle );
-				slots.push_back( makeIssueSlot( *i, NULL, currentCycle - blockStartCycle ) );
+				slots.push_back( makeIssueSlot( *i,
+				                                NULL,
+				                                currentCycle - blockStartCycle,
+				                                1,
+				                                ignoredImplicitWawResources ) );
 				latencyTracker.recordWrites( **i, static_cast<int>( currentCycle ) );
 				++currentCycle;
 			}
@@ -440,6 +613,36 @@ namespace
 
 		while( emittedCount < block.tokens.size() )
 		{
+			unsigned int waitToken = static_cast<unsigned int>( block.tokens.size() );
+			unsigned int waitUpper = static_cast<unsigned int>( block.tokens.size() );
+			VuScheduledPaddingKind waitPaddingKind = VU_SCHEDULED_PADDING_NONE;
+			if( selectUpperWaitFiller( block,
+			                           incoming,
+			                           emitted,
+			                           priority,
+			                           latencyTracker,
+			                           ignoredImplicitWawResources,
+			                           currentCycle,
+			                           waitToken,
+			                           waitUpper,
+			                           waitPaddingKind ) )
+			{
+				(void)waitToken;
+				const unsigned int waitCycles =
+					waitPaddingCycleCount( waitPaddingKind, latencyTracker, currentCycle );
+				slots.push_back( makeUpperWaitIssueSlot( block.tokens[waitUpper],
+				                                         waitPaddingKind,
+				                                         currentCycle - blockStartCycle,
+				                                         waitCycles + 1,
+				                                         ignoredImplicitWawResources ) );
+				const unsigned int issueCycle = currentCycle + waitCycles;
+				markReadyTokenScheduled( waitUpper, incoming, outgoing, emitted, emittedCount );
+				latencyTracker.recordWrites( *block.tokens[waitUpper], static_cast<int>( issueCycle ) );
+				currentCycle = issueCycle + 1;
+				haveLastPipe = false;
+				continue;
+			}
+
 			unsigned int best = static_cast<unsigned int>( block.tokens.size() );
 			int bestScore = 0;
 
@@ -467,7 +670,11 @@ namespace
 				for( unsigned int i = 0; i < block.tokens.size(); ++i )
 				{
 					if( !emitted[i] )
-						slots.push_back( makeIssueSlot( block.tokens[i], NULL ) );
+						slots.push_back( makeIssueSlot( block.tokens[i],
+						                                NULL,
+						                                0,
+						                                1,
+						                                ignoredImplicitWawResources ) );
 				}
 				return slots;
 			}
@@ -478,8 +685,38 @@ namespace
 			                                                     emitted,
 			                                                     priority,
 			                                                     latencyTracker,
+			                                                     ignoredImplicitWawResources,
 			                                                     currentCycle );
 			const Token* partnerToken = partner < block.tokens.size() ? block.tokens[partner] : NULL;
+			const int bestDelay =
+				latencyTracker.readHazardDelay( *block.tokens[best],
+				                                NULL,
+				                                static_cast<int>( currentCycle ) );
+			const VuScheduledPaddingKind bestPaddingKind =
+				vuScheduledPaddingKindForReadHazard( *block.tokens[best],
+				                                     NULL,
+				                                     latencyTracker,
+				                                     static_cast<int>( currentCycle ) );
+			if( bestDelay > 0
+			    && tokenSchedulesAsUpper( *block.tokens[best], ignoredImplicitWawResources )
+			    && (bestPaddingKind == VU_SCHEDULED_PADDING_WAITQ
+			        || bestPaddingKind == VU_SCHEDULED_PADDING_WAITP) )
+			{
+				const unsigned int waitCycles =
+					waitPaddingCycleCount( bestPaddingKind, latencyTracker, currentCycle );
+				slots.push_back( makeUpperWaitIssueSlot( block.tokens[best],
+				                                         bestPaddingKind,
+				                                         currentCycle - blockStartCycle,
+				                                         waitCycles + 1,
+				                                         ignoredImplicitWawResources ) );
+				const unsigned int issueCycle = currentCycle + waitCycles;
+				markReadyTokenScheduled( best, incoming, outgoing, emitted, emittedCount );
+				latencyTracker.recordWrites( *block.tokens[best], static_cast<int>( issueCycle ) );
+				currentCycle = issueCycle + 1;
+				haveLastPipe = false;
+				continue;
+			}
+
 			appendReadHazardPaddingSlots( slots,
 			                              *block.tokens[best],
 			                              partnerToken,
@@ -488,7 +725,9 @@ namespace
 			                              currentCycle );
 			slots.push_back( makeIssueSlot( block.tokens[best],
 			                                partnerToken,
-			                                currentCycle - blockStartCycle ) );
+			                                currentCycle - blockStartCycle,
+			                                1,
+			                                ignoredImplicitWawResources ) );
 
 			markReadyTokenScheduled( best, incoming, outgoing, emitted, emittedCount );
 			latencyTracker.recordWrites( *block.tokens[best], static_cast<int>( currentCycle ) );
@@ -501,7 +740,8 @@ namespace
 			else
 			{
 				haveLastPipe = true;
-				lastWasLower = isVuLowerPipe( *block.tokens[best] );
+				lastWasLower = tokenSchedulesAsLower( *block.tokens[best],
+				                                      ignoredImplicitWawResources );
 			}
 			++currentCycle;
 		}
@@ -667,7 +907,10 @@ namespace
 			{
 				const unsigned int pairedCycle = blockStartCycle + slots.back().issueCycle;
 				if( latencyTracker.readHazardDelay( token, NULL, static_cast<int>( pairedCycle ) ) <= 0 )
-					pairedWithPreviousSlot = tryPairBarrierWithPreviousSlot( slots, token );
+					pairedWithPreviousSlot =
+						tryPairTailWithPreviousSlot( slots,
+						                             token,
+						                             slots.back().ignoredImplicitWawResources );
 			}
 			if( !pairedWithPreviousSlot )
 			{
@@ -677,7 +920,11 @@ namespace
 				                              latencyTracker,
 				                              blockStartCycle,
 				                              currentCycle );
-				slots.push_back( makeIssueSlot( &token, NULL, currentCycle - blockStartCycle ) );
+				slots.push_back( makeIssueSlot( &token,
+				                                NULL,
+				                                currentCycle - blockStartCycle,
+				                                1,
+				                                VU_RESOURCE_NONE ) );
 				latencyTracker.recordWrites( token, static_cast<int>( currentCycle ) );
 				++currentCycle;
 			}
@@ -2006,7 +2253,10 @@ namespace
 			{
 				const unsigned int pairedCycle = blockStartCycle + slots.back().issueCycle;
 				if( latencyTracker.readHazardDelay( **i, NULL, static_cast<int>( pairedCycle ) ) <= 0 )
-					pairedWithPreviousSlot = tryPairBarrierWithPreviousSlot( slots, **i );
+					pairedWithPreviousSlot =
+						tryPairTailWithPreviousSlot( slots,
+						                             **i,
+						                             ignoredImplicitWawResources );
 			}
 			if( !pairedWithPreviousSlot )
 			{
@@ -2016,7 +2266,11 @@ namespace
 				                              latencyTracker,
 				                              blockStartCycle,
 				                              currentCycle );
-				slots.push_back( makeIssueSlot( *i, NULL, currentCycle - blockStartCycle ) );
+				slots.push_back( makeIssueSlot( *i,
+				                                NULL,
+				                                currentCycle - blockStartCycle,
+				                                1,
+				                                ignoredImplicitWawResources ) );
 				latencyTracker.recordWrites( **i, static_cast<int>( currentCycle ) );
 				++currentCycle;
 			}

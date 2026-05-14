@@ -999,6 +999,19 @@ TEST_CASE("Software pipeline: strict schedule slots preserve scheduled branch pa
     CHECK(countSubstrings(vsm, "div q, VF00w, VF00w") == 2);
 }
 
+TEST_CASE("Software pipeline: generic default uses typed schedule-slot emission")
+{
+    std::vector<std::string> args;
+    args.push_back("--strict-schedule-slots");
+
+    std::string generic = runEmit(simpleGenericSingleQPipelineSource());
+    std::string strict = runEmitWithExtraArgs(simpleGenericSingleQPipelineSource(), args);
+    REQUIRE(generic.length() > 0);
+    REQUIRE(strict.length() > 0);
+
+    CHECK(generic == strict);
+}
+
 TEST_CASE("Software pipeline: generic path emits adjusted memory prefetches")
 {
     std::vector<std::string> args;

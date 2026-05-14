@@ -1267,14 +1267,13 @@ TEST_CASE("VuSchedulerAnalysis: ready issue slots classify Q and P wait padding"
     std::vector<vcl::VuBasicBlock> qBlocks = vcl::buildVuBasicBlocks(qProgram.tokenizer.tokens());
     REQUIRE(qBlocks.size() == 1u);
     std::vector<vcl::VuScheduledIssueSlot> qSlots = vcl::scheduleVuBasicBlockReadyIssueSlots(qBlocks[0]);
-    REQUIRE(qSlots.size() == 3u);
-    CHECK(qSlots[1].padding);
+    REQUIRE(qSlots.size() == 2u);
+    CHECK(!qSlots[1].padding);
     CHECK(qSlots[1].paddingKind == vcl::VU_SCHEDULED_PADDING_WAITQ);
     CHECK(qSlots[1].issueCycle == 1u);
-    CHECK(qSlots[1].cycleCount == 7u);
-    REQUIRE(qSlots[2].firstToken != NULL);
-    CHECK(qSlots[2].issueCycle == 8u);
-    CHECK(vcl::normalizeVuMnemonic(qSlots[2].firstToken->name()) == "mulq");
+    CHECK(qSlots[1].cycleCount == 8u);
+    REQUIRE(qSlots[1].upperToken != NULL);
+    CHECK(vcl::normalizeVuMnemonic(qSlots[1].upperToken->name()) == "mulq");
 
     vcl::Error::ResetErrorCount();
     ParsedProgram pProgram;
@@ -1898,4 +1897,48 @@ TEST_CASE("VuSchedulerAnalysis: latency-blocked Q consumers do not outrank ready
     CHECK(names[2] == "lq");
     CHECK(names[3] == "iaddiu");
     CHECK(names[4] == "mulq");
+}
+
+TEST_CASE("VuSchedulerAnalysis: wait slots can carry the waiting upper instruction")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("div q, vf01[w], vf02[w]"));
+    REQUIRE(program.parse("mulq.xy vf03, vf04, q"));
+
+    vcl::VuScheduledProgram scheduled =
+        vcl::scheduleVuProgramReadyIssueSlotsWithFlagLiveness(program.tokenizer.tokens());
+    REQUIRE(scheduled.blocks.size() == 1u);
+    REQUIRE(scheduled.blocks[0].issueSlots.size() >= 2u);
+
+    const vcl::VuScheduledIssueSlot& waitSlot = scheduled.blocks[0].issueSlots[1];
+    REQUIRE(waitSlot.upperToken != NULL);
+    CHECK(vcl::normalizeVuMnemonic(waitSlot.upperToken->name()) == "mulq");
+    CHECK(waitSlot.paddingKind == vcl::VU_SCHEDULED_PADDING_WAITQ);
+    CHECK(waitSlot.cycleCount > 1u);
+}
+
+TEST_CASE("VuSchedulerAnalysis: wait slots can carry independent upper work")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("esadd p, vf00"));
+    REQUIRE(program.parse("--barrier"));
+    REQUIRE(program.parse("mfp.w vf01, p"));
+    REQUIRE(program.parse("add.xyz vf02, vf00, vf00"));
+
+    vcl::VuScheduledProgram scheduled =
+        vcl::scheduleVuProgramReadyIssueSlotsWithFlagLiveness(program.tokenizer.tokens());
+    REQUIRE(scheduled.blocks.size() >= 2u);
+    REQUIRE(scheduled.blocks[1].issueSlots.size() >= 2u);
+
+    const vcl::VuScheduledIssueSlot& waitSlot = scheduled.blocks[1].issueSlots[0];
+    REQUIRE(waitSlot.upperToken != NULL);
+    CHECK(vcl::normalizeVuMnemonic(waitSlot.upperToken->name()) == "add");
+    CHECK(waitSlot.paddingKind == vcl::VU_SCHEDULED_PADDING_WAITP);
+    CHECK(waitSlot.cycleCount > 1u);
+
+    const vcl::VuScheduledIssueSlot& mfpSlot = scheduled.blocks[1].issueSlots[1];
+    REQUIRE(mfpSlot.lowerToken != NULL);
+    CHECK(vcl::normalizeVuMnemonic(mfpSlot.lowerToken->name()) == "mfp");
 }

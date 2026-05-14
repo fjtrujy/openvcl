@@ -64,6 +64,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: strict schedule-slot emission now consumes the typed scheduled-program model directly, including explicit `nop`, `waitq`, and `waitp` padding slots across label/basic-block boundaries.
    - Done: strict schedule-slot emission now tracks terminal unconditional branches, avoiding unreachable generated exit footers in the direct typed-emission path.
    - Done: strict schedule-slot validation against ps2gl/PCSX2 exposed ordinary `lq` load-use latency as one cycle longer than the previous model; the shared latency table now pads VF consumers while preserving the load-to-`ftoi` bypass.
+   - Done: generic codegen now emits directly from the typed scheduler by default; the older textual lookahead emitter remains only behind opt-in known-loop reference optimizations.
 
 6. **Implement Generic Loop Analysis** - done
    - Detect induction registers, loop-carried dependencies, loads/stores, branch targets, and loop bodies.

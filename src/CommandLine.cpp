@@ -333,7 +333,7 @@ void CommandLine::showUsage( std::ostream& stream )
 	stream << "  --disable-known-loop-optimizations  Kept for compatibility; generic compilation is the default." << std::endl;
 	stream << "  --enable-generic-software-pipelining  Enable generic software-pipeline rewrites. (Default)" << std::endl;
 	stream << "  --disable-generic-software-pipelining  Disable generic software-pipeline rewrites." << std::endl;
-	stream << "  --strict-schedule-slots  Emit from scheduler-selected pairs without legacy lookahead fallbacks." << std::endl;
+	stream << "  --strict-schedule-slots  Emit from scheduler-selected pairs without legacy lookahead fallbacks. (Default for generic codegen)" << std::endl;
 
 	stream << std::endl << "  If no input or output file are specified, standard I/O will be used instead." << std::endl;
 

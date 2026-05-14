@@ -1000,7 +1000,8 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 	m_enableUpperZeroMoves = macFlagsDead;
 	m_ignoredImplicitWawResources = VU_RESOURCE_NONE;
 
-	if( m_strictScheduleSlots )
+	const bool emitTypedScheduleDirectly = m_strictScheduleSlots || !m_knownLoopOptimizations;
+	if( emitTypedScheduleDirectly )
 	{
 		fillBranchDelaySlots(workTokens);
 		fillDeadFallthroughBranchDelaySlots(workTokens);
@@ -1844,6 +1845,16 @@ bool CodeGenerator::emitStrictScheduledProgram( const std::list<Token>& tokens, 
 
 		bool firstEmits = first && prepareStrictScheduledToken(*first, exitWritten, false);
 		bool secondEmits = second && prepareStrictScheduledToken(*second, exitWritten, false);
+		if( (slot.paddingKind == VU_SCHEDULED_PADDING_WAITQ
+		     || slot.paddingKind == VU_SCHEDULED_PADDING_WAITP)
+		    && firstEmits
+		    && !secondEmits
+		    && first
+		    && tokenIsUpperExecutionPath(*first) )
+		{
+			emitUpperWithWait(*first, slot.paddingKind == VU_SCHEDULED_PADDING_WAITQ);
+			continue;
+		}
 		const Token* branch = branchTokenInScheduledSlot(slot);
 		const Token* delayFiller = NULL;
 		unsigned int delayFillerSlot = i + 1;
