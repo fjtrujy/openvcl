@@ -904,19 +904,22 @@ namespace
 
 	void writeScheduleInfoText( std::ostream& stream, const std::list<Token>& tokens )
 	{
-		const std::vector<VuBasicBlock> blocks = buildVuBasicBlocks( tokens );
-		const std::vector< std::vector<VuScheduledIssueSlot> > blockSlots =
-			scheduleVuBasicBlocksReadyIssueSlotsWithFlagLiveness( tokens );
+		const VuScheduledProgram program =
+			scheduleVuProgramReadyIssueSlotsWithFlagLiveness( tokens );
 		const std::map<const Token*, unsigned int> tokenIndices = buildTokenIndexMap( tokens );
 
 		stream << "OpenVCL VU ready scheduler issue slots" << std::endl;
-		for( unsigned int blockIndex = 0; blockIndex < blocks.size(); ++blockIndex )
+		stream << "program_cycle_count=" << program.cycleCount << std::endl;
+		for( unsigned int blockIndex = 0; blockIndex < program.blocks.size(); ++blockIndex )
 		{
-			const VuBasicBlock& block = blocks[blockIndex];
-			const std::vector<VuScheduledIssueSlot>& slots = blockSlots[blockIndex];
+			const VuScheduledBasicBlock& scheduledBlock = program.blocks[blockIndex];
+			const VuBasicBlock& block = scheduledBlock.block;
+			const std::vector<VuScheduledIssueSlot>& slots = scheduledBlock.issueSlots;
 			stream << "block " << blockIndex
 			       << " first_token=" << block.firstTokenIndex
 			       << " terminator=" << basicBlockTerminatorKindName( block.terminatorKind )
+			       << " first_issue_cycle=" << scheduledBlock.firstIssueCycle
+			       << " cycle_count=" << scheduledBlock.cycleCount
 			       << " slots=" << slots.size()
 			       << std::endl;
 			for( unsigned int slotIndex = 0; slotIndex < slots.size(); ++slotIndex )
@@ -924,6 +927,7 @@ namespace
 				const VuScheduledIssueSlot& slot = slots[slotIndex];
 				stream << "  slot " << slotIndex
 				       << " issue_cycle=" << slot.issueCycle
+				       << " program_issue_cycle=" << (scheduledBlock.firstIssueCycle + slot.issueCycle)
 				       << " cycle_count=" << slot.cycleCount
 				       << " first=";
 				writeScheduleTokenText( stream, tokenIndices, slot.firstToken );
@@ -944,22 +948,25 @@ namespace
 
 	void writeScheduleInfoJson( std::ostream& stream, const std::list<Token>& tokens )
 	{
-		const std::vector<VuBasicBlock> blocks = buildVuBasicBlocks( tokens );
-		const std::vector< std::vector<VuScheduledIssueSlot> > blockSlots =
-			scheduleVuBasicBlocksReadyIssueSlotsWithFlagLiveness( tokens );
+		const VuScheduledProgram program =
+			scheduleVuProgramReadyIssueSlotsWithFlagLiveness( tokens );
 		const std::map<const Token*, unsigned int> tokenIndices = buildTokenIndexMap( tokens );
 
-		stream << "{\n  \"scheduled_blocks\": [\n";
-		for( unsigned int blockIndex = 0; blockIndex < blocks.size(); ++blockIndex )
+		stream << "{\n  \"program_cycle_count\": " << program.cycleCount << ",\n";
+		stream << "  \"scheduled_blocks\": [\n";
+		for( unsigned int blockIndex = 0; blockIndex < program.blocks.size(); ++blockIndex )
 		{
-			const VuBasicBlock& block = blocks[blockIndex];
-			const std::vector<VuScheduledIssueSlot>& slots = blockSlots[blockIndex];
+			const VuScheduledBasicBlock& scheduledBlock = program.blocks[blockIndex];
+			const VuBasicBlock& block = scheduledBlock.block;
+			const std::vector<VuScheduledIssueSlot>& slots = scheduledBlock.issueSlots;
 			if( blockIndex != 0 )
 				stream << ",\n";
 			stream << "    {\n";
 			stream << "      \"block_index\": " << blockIndex << ",\n";
 			stream << "      \"first_token_index\": " << block.firstTokenIndex << ",\n";
 			stream << "      \"terminator\": "; writeJsonString( stream, basicBlockTerminatorKindName( block.terminatorKind ) ); stream << ",\n";
+			stream << "      \"first_issue_cycle\": " << scheduledBlock.firstIssueCycle << ",\n";
+			stream << "      \"cycle_count\": " << scheduledBlock.cycleCount << ",\n";
 			stream << "      \"issue_slots\": [\n";
 			for( unsigned int slotIndex = 0; slotIndex < slots.size(); ++slotIndex )
 			{
@@ -969,6 +976,7 @@ namespace
 				stream << "        {\n";
 				stream << "          \"slot_index\": " << slotIndex << ",\n";
 				stream << "          \"issue_cycle\": " << slot.issueCycle << ",\n";
+				stream << "          \"program_issue_cycle\": " << (scheduledBlock.firstIssueCycle + slot.issueCycle) << ",\n";
 				stream << "          \"cycle_count\": " << slot.cycleCount << ",\n";
 				stream << "          \"first_token_index\": "; writeNullableTokenIndexJson( stream, tokenIndices, slot.firstToken ); stream << ",\n";
 				stream << "          \"second_token_index\": "; writeNullableTokenIndexJson( stream, tokenIndices, slot.secondToken ); stream << ",\n";

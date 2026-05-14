@@ -114,6 +114,24 @@ struct VuScheduledIssueSlot
 	unsigned int cycleCount;
 };
 
+struct VuScheduledBasicBlock
+{
+	VuScheduledBasicBlock();
+
+	VuBasicBlock block;
+	std::vector<VuScheduledIssueSlot> issueSlots;
+	unsigned int firstIssueCycle;
+	unsigned int cycleCount;
+};
+
+struct VuScheduledProgram
+{
+	VuScheduledProgram();
+
+	std::vector<VuScheduledBasicBlock> blocks;
+	unsigned int cycleCount;
+};
+
 struct VuLoopCandidate
 {
 	VuLoopCandidate();
@@ -243,6 +261,7 @@ std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlots( const VuB
                                                                        unsigned int ignoredImplicitWawResources = 0 );
 std::vector< std::vector<VuScheduledIssueSlot> > scheduleVuBasicBlocksReadyIssueSlotsWithFlagLiveness(
     const std::list<Token>& tokens );
+VuScheduledProgram scheduleVuProgramReadyIssueSlotsWithFlagLiveness( const std::list<Token>& tokens );
 unsigned int vuIgnoredFlagWawResourcesForRemaining( std::list<Token>::const_iterator begin,
                                                     std::list<Token>::const_iterator end );
 VuScheduledPaddingKind vuScheduledPaddingKindForReadHazard( const Token& token,

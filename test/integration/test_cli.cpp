@@ -197,11 +197,12 @@ TEST_CASE("CLI: schedule text dump exposes ready-set issue slots")
     REQUIRE(r.exit_code == 0);
     CHECK(r.stderr_data.empty());
     CHECK(contains(r.stdout_data, "OpenVCL VU ready scheduler issue slots"));
-    CHECK(contains(r.stdout_data, "block 0 first_token=0 terminator=none slots=6"));
-    CHECK(contains(r.stdout_data, "slot 0 issue_cycle=0 cycle_count=1 first=0:add second=2:iaddiu upper=0:add lower=2:iaddiu padding=no padding_kind=none"));
-    CHECK(contains(r.stdout_data, "slot 1 issue_cycle=1 cycle_count=1 first=- second=- upper=- lower=- padding=yes padding_kind=nop"));
+    CHECK(contains(r.stdout_data, "program_cycle_count=6"));
+    CHECK(contains(r.stdout_data, "block 0 first_token=0 terminator=none first_issue_cycle=0 cycle_count=6 slots=6"));
+    CHECK(contains(r.stdout_data, "slot 0 issue_cycle=0 program_issue_cycle=0 cycle_count=1 first=0:add second=2:iaddiu upper=0:add lower=2:iaddiu padding=no padding_kind=none"));
+    CHECK(contains(r.stdout_data, "slot 1 issue_cycle=1 program_issue_cycle=1 cycle_count=1 first=- second=- upper=- lower=- padding=yes padding_kind=nop"));
     CHECK(contains(r.stdout_data, "ignored_waw_resources=mac|clip"));
-    CHECK(contains(r.stdout_data, "slot 5 issue_cycle=5 cycle_count=1 first=1:mul second=- upper=1:mul lower=- padding=no padding_kind=none"));
+    CHECK(contains(r.stdout_data, "slot 5 issue_cycle=5 program_issue_cycle=5 cycle_count=1 first=1:mul second=- upper=1:mul lower=- padding=no padding_kind=none"));
 }
 
 TEST_CASE("CLI: schedule text dump honors generic software-pipeline rewrites")
@@ -228,10 +229,13 @@ TEST_CASE("CLI: schedule JSON dump is stable enough for generic emission tooling
     ::test::RunResult r = ::test::run_openvcl(args, scheduleInput());
     REQUIRE(r.exit_code == 0);
     CHECK(r.stderr_data.empty());
+    CHECK(contains(r.stdout_data, "\"program_cycle_count\": 6"));
     CHECK(contains(r.stdout_data, "\"scheduled_blocks\": ["));
     CHECK(contains(r.stdout_data, "\"block_index\": 0"));
     CHECK(contains(r.stdout_data, "\"first_token_index\": 0"));
     CHECK(contains(r.stdout_data, "\"terminator\": \"none\""));
+    CHECK(contains(r.stdout_data, "\"first_issue_cycle\": 0"));
+    CHECK(contains(r.stdout_data, "\"program_issue_cycle\": 0"));
     CHECK(contains(r.stdout_data, "\"issue_cycle\": 0"));
     CHECK(contains(r.stdout_data, "\"cycle_count\": 1"));
     CHECK(contains(r.stdout_data, "\"second_token_index\": 2"));

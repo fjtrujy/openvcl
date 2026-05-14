@@ -1647,9 +1647,9 @@ VuDependencyEdge::VuDependencyEdge( unsigned int beforeToken, unsigned int after
 	kind = dependencyKind;
 }
 
-	VuScheduledIssueSlot::VuScheduledIssueSlot()
-	{
-		firstToken = NULL;
+VuScheduledIssueSlot::VuScheduledIssueSlot()
+{
+	firstToken = NULL;
 		secondToken = NULL;
 		upperToken = NULL;
 		lowerToken = NULL;
@@ -1657,8 +1657,19 @@ VuDependencyEdge::VuDependencyEdge( unsigned int beforeToken, unsigned int after
 		paddingKind = VU_SCHEDULED_PADDING_NONE;
 		ignoredImplicitWawResources = VU_RESOURCE_NONE;
 		issueCycle = 0;
-		cycleCount = 1;
-	}
+	cycleCount = 1;
+}
+
+VuScheduledBasicBlock::VuScheduledBasicBlock()
+{
+	firstIssueCycle = 0;
+	cycleCount = 0;
+}
+
+VuScheduledProgram::VuScheduledProgram()
+{
+	cycleCount = 0;
+}
 
 VuLoopCandidate::VuLoopCandidate()
 {
@@ -1856,13 +1867,35 @@ std::vector< std::vector<VuScheduledIssueSlot> > scheduleVuBasicBlocksReadyIssue
     const std::list<Token>& tokens )
 {
 	std::vector< std::vector<VuScheduledIssueSlot> > result;
+	const VuScheduledProgram program = scheduleVuProgramReadyIssueSlotsWithFlagLiveness( tokens );
+
+	for( std::vector<VuScheduledBasicBlock>::const_iterator block = program.blocks.begin();
+	     block != program.blocks.end(); ++block )
+		result.push_back( block->issueSlots );
+
+	return result;
+}
+
+VuScheduledProgram scheduleVuProgramReadyIssueSlotsWithFlagLiveness( const std::list<Token>& tokens )
+{
+	VuScheduledProgram program;
 	const std::vector<VuBasicBlock> blocks = buildVuBasicBlocks( tokens );
 	const VuFlagLiveness liveness = analyzeFlagLiveness( tokens );
 
 	for( std::vector<VuBasicBlock>::const_iterator block = blocks.begin(); block != blocks.end(); ++block )
-		result.push_back( scheduleVuBasicBlockReadyIssueSlotsWithFlagLiveness( *block, liveness ) );
+	{
+		VuScheduledBasicBlock scheduledBlock;
+		scheduledBlock.block = *block;
+		scheduledBlock.firstIssueCycle = program.cycleCount;
+		scheduledBlock.issueSlots = scheduleVuBasicBlockReadyIssueSlotsWithFlagLiveness( *block, liveness );
+		for( std::vector<VuScheduledIssueSlot>::const_iterator slot = scheduledBlock.issueSlots.begin();
+		     slot != scheduledBlock.issueSlots.end(); ++slot )
+			scheduledBlock.cycleCount += slot->cycleCount;
+		program.cycleCount += scheduledBlock.cycleCount;
+		program.blocks.push_back( scheduledBlock );
+	}
 
-	return result;
+	return program;
 }
 
 unsigned int vuIgnoredFlagWawResourcesForRemaining( std::list<Token>::const_iterator begin,

@@ -32,6 +32,9 @@
 - Loop-pipeline text and JSON dumps now expose when an ordinary suffix
   instruction blocks moving the next-iteration Q producer into the branch
   delay slot.
+- Ready-scheduler analysis now has a typed `VuScheduledProgram` wrapper with
+  block-level cycle ranges, and schedule dumps expose program-relative issue
+  cycles.
 - Added regression fixtures and unit/integration tests for cost analysis.
 - Added conservative VU scheduling improvements used by ps2gl:
   - upper/lower pairing lookahead;

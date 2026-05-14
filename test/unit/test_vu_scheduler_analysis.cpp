@@ -1582,6 +1582,28 @@ TEST_CASE("VuSchedulerAnalysis: flag-liveness issue slots match ready-set schedu
     CHECK((blockSlots[0][1].ignoredImplicitWawResources & vcl::VU_RESOURCE_CLIP) != 0u);
 }
 
+TEST_CASE("VuSchedulerAnalysis: scheduled program exposes block cycle ranges")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("entry_lid:"));
+    REQUIRE(program.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("mul.xy vf04, vf01, vf05"));
+    REQUIRE(program.parse("next_lid:"));
+    REQUIRE(program.parse("iaddiu vi01, vi00, 1"));
+
+    vcl::VuScheduledProgram scheduled =
+        vcl::scheduleVuProgramReadyIssueSlotsWithFlagLiveness(program.tokenizer.tokens());
+    REQUIRE(scheduled.blocks.size() == 2u);
+    CHECK(scheduled.blocks[0].block.firstTokenIndex == 0u);
+    CHECK(scheduled.blocks[0].firstIssueCycle == 0u);
+    CHECK(scheduled.blocks[0].cycleCount == 7u);
+    CHECK(scheduled.blocks[1].block.firstTokenIndex == 3u);
+    CHECK(scheduled.blocks[1].firstIssueCycle == 7u);
+    CHECK(scheduled.blocks[1].cycleCount == 2u);
+    CHECK(scheduled.cycleCount == 9u);
+}
+
 TEST_CASE("VuSchedulerAnalysis: remaining flag WAW helper reports dead MAC and CLIP flags")
 {
     vcl::Error::ResetErrorCount();
