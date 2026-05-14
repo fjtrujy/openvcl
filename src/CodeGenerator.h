@@ -93,6 +93,8 @@ private:
 	bool tokenIsLowerExecutionPath( const Token& token ) const;
 	bool tokenIsUpperExecutionPath( const Token& token ) const;
 	std::string generateUpperZeroMoveInstruction( const Token& token );
+	bool tryEmitKnownLoopOptimization( std::list<Token>& tokens,
+	                                   std::list<Token>::iterator& token );
 	struct FastNoLightsLoopPipelinePattern;
 	struct FastLitLoopPipelinePattern;
 	struct SceiLoopPipelinePattern;

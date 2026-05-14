@@ -14,7 +14,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
 1. **Classify Codegen Paths** - started
    - Separate generic emission, generic scheduling helpers, and known-loop optimizations.
    - Done: add a switch to disable known-loop optimizations so the generic compiler path can be tested directly.
-   - Document known-loop emitters as transitional ps2gl-oriented optimizations.
+   - Done: document known-loop emitters as transitional ps2gl-oriented optimizations in the code wrapper.
 
 2. **Protect Generic Correctness** - started
    - Done: add tests that compile representative shaders with known-loop optimizations disabled.

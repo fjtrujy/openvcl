@@ -996,58 +996,10 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 	{
 		m_ignoredImplicitWawResources = ignoredImplicitWawResourcesForRemaining(k, workTokens.end());
 
-		if( m_knownLoopOptimizations )
+		if( tryEmitKnownLoopOptimization(workTokens, k) )
 		{
-			if( tryEmitFastNoLightsSoftwarePipelineLoop(workTokens, k) )
-			{
-				exitWritten = false;
-				continue;
-			}
-			if( tryEmitFastLitSoftwarePipelineLoop(workTokens, k) )
-			{
-				exitWritten = false;
-				continue;
-			}
-			if( tryEmitSceiSoftwarePipelineLoop(workTokens, k) )
-			{
-				exitWritten = false;
-				continue;
-			}
-			if( tryEmitPs2glPrimitiveXformSoftwarePipelineLoop(workTokens, k) )
-			{
-				exitWritten = false;
-				continue;
-			}
-			if( tryEmitLinearXformSoftwarePipelineLoop(workTokens, k) )
-			{
-				exitWritten = false;
-				continue;
-			}
-			if( tryEmitDirLightSpecSoftwarePipelineLoop(workTokens, k) )
-			{
-				exitWritten = false;
-				continue;
-			}
-			if( tryEmitDirLightNoSpecSoftwarePipelineLoop(workTokens, k) )
-			{
-				exitWritten = false;
-				continue;
-			}
-			if( tryEmitPtLightSpecSoftwarePipelineLoop(workTokens, k) )
-			{
-				exitWritten = false;
-				continue;
-			}
-			if( tryEmitPtLightNoSpecSoftwarePipelineLoop(workTokens, k) )
-			{
-				exitWritten = false;
-				continue;
-			}
-			if( tryEmitFinalColorSoftwarePipelineLoop(workTokens, k) )
-			{
-				exitWritten = false;
-				continue;
-			}
+			exitWritten = false;
+			continue;
 		}
 
 		Token token = *k;
@@ -2219,6 +2171,27 @@ bool CodeGenerator::writesAreDeadFromTarget( const std::list<std::string>& write
 			return true;
 	}
 	return true;
+}
+
+bool CodeGenerator::tryEmitKnownLoopOptimization( std::list<Token>& tokens,
+                                                  std::list<Token>::iterator& token )
+{
+	if( !m_knownLoopOptimizations )
+		return false;
+
+	// Transitional fast paths for known ps2gl loop shapes.  They are kept as
+	// performance references while generic scheduling/software-pipelining grows
+	// enough to replace them.
+	return tryEmitFastNoLightsSoftwarePipelineLoop(tokens, token)
+	    || tryEmitFastLitSoftwarePipelineLoop(tokens, token)
+	    || tryEmitSceiSoftwarePipelineLoop(tokens, token)
+	    || tryEmitPs2glPrimitiveXformSoftwarePipelineLoop(tokens, token)
+	    || tryEmitLinearXformSoftwarePipelineLoop(tokens, token)
+	    || tryEmitDirLightSpecSoftwarePipelineLoop(tokens, token)
+	    || tryEmitDirLightNoSpecSoftwarePipelineLoop(tokens, token)
+	    || tryEmitPtLightSpecSoftwarePipelineLoop(tokens, token)
+	    || tryEmitPtLightNoSpecSoftwarePipelineLoop(tokens, token)
+	    || tryEmitFinalColorSoftwarePipelineLoop(tokens, token);
 }
 
 bool CodeGenerator::tryEmitFastNoLightsSoftwarePipelineLoop( std::list<Token>& tokens,
