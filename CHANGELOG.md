@@ -55,6 +55,9 @@
 - Strict schedule-slot emission now preserves explicit branch-delay fillers
   after a scheduled upper+branch pair, so the scheduler can model paired loop
   branches without dropping the delay-slot instruction.
+- Typed schedule-program dumps now carry Q/P/register latency state across
+  label and basic-block boundaries, while legacy token flattening remains
+  block-local until direct padding-aware emission is ready.
 - `openvcl -o -` now writes compiled VSM output to stdout instead of creating
   a literal file named `-`.
 - Added regression fixtures and unit/integration tests for cost analysis.

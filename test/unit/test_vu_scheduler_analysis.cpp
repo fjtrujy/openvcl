@@ -1739,6 +1739,25 @@ TEST_CASE("VuSchedulerAnalysis: scheduled program exposes block cycle ranges")
     CHECK(scheduled.blocks[1].issueSlots[0].firstTokenIndex == 3u);
 }
 
+TEST_CASE("VuSchedulerAnalysis: scheduled program carries Q latency across label blocks")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("div q, vf01[w], vf02[w]"));
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("mulq.xy vf03, vf04, q"));
+
+    vcl::VuScheduledProgram scheduled =
+        vcl::scheduleVuProgramReadyIssueSlotsWithFlagLiveness(program.tokenizer.tokens());
+    REQUIRE(scheduled.blocks.size() == 2u);
+    REQUIRE(scheduled.blocks[1].issueSlots.size() >= 3u);
+    CHECK(scheduled.blocks[1].issueSlots[0].firstTokenIndex == 1u);
+    CHECK(scheduled.blocks[1].issueSlots[1].padding);
+    CHECK(scheduled.blocks[1].issueSlots[1].paddingKind == vcl::VU_SCHEDULED_PADDING_WAITQ);
+    REQUIRE(scheduled.blocks[1].issueSlots[2].firstToken != NULL);
+    CHECK(vcl::normalizeVuMnemonic(scheduled.blocks[1].issueSlots[2].firstToken->name()) == "mulq");
+}
+
 TEST_CASE("VuSchedulerAnalysis: scheduled program flattens to scheduled token order")
 {
     vcl::Error::ResetErrorCount();

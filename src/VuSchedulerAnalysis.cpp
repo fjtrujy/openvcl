@@ -229,6 +229,52 @@ namespace
 		return slot;
 	}
 
+	void appendReadHazardPaddingSlots( std::vector<VuScheduledIssueSlot>& slots,
+	                                   const Token& token,
+	                                   const Token* partner,
+	                                   VuLatencyTracker& latencyTracker,
+	                                   unsigned int blockStartCycle,
+	                                   unsigned int& currentCycle )
+	{
+		int issueDelay = latencyTracker.readHazardDelay( token,
+		                                                 partner,
+		                                                 static_cast<int>( currentCycle ) );
+		while( issueDelay > 0 )
+		{
+			const VuScheduledPaddingKind paddingKind =
+				vuScheduledPaddingKindForReadHazard( token,
+				                                     partner,
+				                                     latencyTracker,
+				                                     static_cast<int>( currentCycle ) );
+			unsigned int paddingCycleCount = 1;
+			if( paddingKind == VU_SCHEDULED_PADDING_WAITQ )
+			{
+				const int readyCycle = latencyTracker.qReadyCycle();
+				const unsigned int nextCycle = static_cast<unsigned int>(
+					readyCycle > static_cast<int>( currentCycle + 1 )
+					? readyCycle
+					: static_cast<int>( currentCycle + 1 ) );
+				paddingCycleCount = nextCycle - currentCycle;
+			}
+			else if( paddingKind == VU_SCHEDULED_PADDING_WAITP )
+			{
+				const int readyCycle = latencyTracker.pReadyCycle();
+				const unsigned int nextCycle = static_cast<unsigned int>(
+					readyCycle > static_cast<int>( currentCycle + 1 )
+					? readyCycle
+					: static_cast<int>( currentCycle + 1 ) );
+				paddingCycleCount = nextCycle - currentCycle;
+			}
+			slots.push_back( makePaddingIssueSlot( paddingKind,
+			                                       currentCycle - blockStartCycle,
+			                                       paddingCycleCount ) );
+			currentCycle += paddingCycleCount;
+			issueDelay = latencyTracker.readHazardDelay( token,
+			                                             partner,
+			                                             static_cast<int>( currentCycle ) );
+		}
+	}
+
 	void assignIgnoredImplicitWawResources( std::vector<VuScheduledIssueSlot>& slots,
 	                                        unsigned int ignoredImplicitWawResources )
 	{
@@ -347,14 +393,26 @@ namespace
 	}
 
 	std::vector<VuScheduledIssueSlot> scheduleReadySegmentIssueSlots( const std::vector<const Token*>& segment,
-	                                                                  unsigned int ignoredImplicitWawResources )
+	                                                                  unsigned int ignoredImplicitWawResources,
+	                                                                  VuLatencyTracker& latencyTracker,
+	                                                                  unsigned int blockStartCycle,
+	                                                                  unsigned int& currentCycle )
 	{
 		std::vector<VuScheduledIssueSlot> slots;
 		if( segment.size() < 2 )
 		{
-			unsigned int issueCycle = 0;
 			for( std::vector<const Token*>::const_iterator i = segment.begin(); i != segment.end(); ++i )
-				slots.push_back( makeIssueSlot( *i, NULL, issueCycle++ ) );
+			{
+				appendReadHazardPaddingSlots( slots,
+				                              **i,
+				                              NULL,
+				                              latencyTracker,
+				                              blockStartCycle,
+				                              currentCycle );
+				slots.push_back( makeIssueSlot( *i, NULL, currentCycle - blockStartCycle ) );
+				latencyTracker.recordWrites( **i, static_cast<int>( currentCycle ) );
+				++currentCycle;
+			}
 			assignIgnoredImplicitWawResources( slots, ignoredImplicitWawResources );
 			return slots;
 		}
@@ -377,10 +435,8 @@ namespace
 		const std::vector<unsigned int> priority = buildDependencyPriorities( block, outgoing );
 		std::vector<bool> emitted( block.tokens.size(), false );
 		unsigned int emittedCount = 0;
-		VuLatencyTracker latencyTracker;
 		bool haveLastPipe = false;
 		bool lastWasLower = false;
-		unsigned int currentCycle = 0;
 
 		while( emittedCount < block.tokens.size() )
 		{
@@ -424,44 +480,15 @@ namespace
 			                                                     latencyTracker,
 			                                                     currentCycle );
 			const Token* partnerToken = partner < block.tokens.size() ? block.tokens[partner] : NULL;
-			int issueDelay = latencyTracker.readHazardDelay( *block.tokens[best],
-			                                                 partnerToken,
-			                                                 static_cast<int>( currentCycle ) );
-			while( issueDelay > 0 )
-			{
-				const VuScheduledPaddingKind paddingKind =
-					vuScheduledPaddingKindForReadHazard( *block.tokens[best],
-					                                     partnerToken,
-					                                     latencyTracker,
-					                                     static_cast<int>( currentCycle ) );
-				unsigned int paddingCycleCount = 1;
-				if( paddingKind == VU_SCHEDULED_PADDING_WAITQ )
-				{
-					const int readyCycle = latencyTracker.qReadyCycle();
-					const unsigned int nextCycle = static_cast<unsigned int>(
-						readyCycle > static_cast<int>( currentCycle + 1 )
-						? readyCycle
-						: static_cast<int>( currentCycle + 1 ) );
-					paddingCycleCount = nextCycle - currentCycle;
-				}
-				else if( paddingKind == VU_SCHEDULED_PADDING_WAITP )
-				{
-					const int readyCycle = latencyTracker.pReadyCycle();
-					const unsigned int nextCycle = static_cast<unsigned int>(
-						readyCycle > static_cast<int>( currentCycle + 1 )
-						? readyCycle
-						: static_cast<int>( currentCycle + 1 ) );
-					paddingCycleCount = nextCycle - currentCycle;
-				}
-				slots.push_back( makePaddingIssueSlot( paddingKind, currentCycle, paddingCycleCount ) );
-				currentCycle += paddingCycleCount;
-				issueDelay = latencyTracker.readHazardDelay( *block.tokens[best],
-				                                             partnerToken,
-				                                             static_cast<int>( currentCycle ) );
-			}
+			appendReadHazardPaddingSlots( slots,
+			                              *block.tokens[best],
+			                              partnerToken,
+			                              latencyTracker,
+			                              blockStartCycle,
+			                              currentCycle );
 			slots.push_back( makeIssueSlot( block.tokens[best],
 			                                partnerToken,
-			                                currentCycle ) );
+			                                currentCycle - blockStartCycle ) );
 
 			markReadyTokenScheduled( best, incoming, outgoing, emitted, emittedCount );
 			latencyTracker.recordWrites( *block.tokens[best], static_cast<int>( currentCycle ) );
@@ -556,21 +583,31 @@ namespace
 
 	void appendReadyScheduledSegmentSlots( const std::vector<const Token*>& segment,
 	                                       std::vector<VuScheduledIssueSlot>& slots,
-	                                       unsigned int ignoredImplicitWawResources )
+	                                       unsigned int ignoredImplicitWawResources,
+	                                       VuLatencyTracker& latencyTracker,
+	                                       unsigned int blockStartCycle,
+	                                       unsigned int& currentCycle )
 	{
 		std::vector<VuScheduledIssueSlot> segmentSlots =
-			scheduleReadySegmentIssueSlots( segment, ignoredImplicitWawResources );
+			scheduleReadySegmentIssueSlots( segment,
+			                                ignoredImplicitWawResources,
+			                                latencyTracker,
+			                                blockStartCycle,
+			                                currentCycle );
 		slots.insert( slots.end(), segmentSlots.begin(), segmentSlots.end() );
 	}
 
 	std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlotsWithFlagLiveness(
 	    const VuBasicBlock& block,
-	    const VuFlagLiveness& liveness )
+	    const VuFlagLiveness& liveness,
+	    VuLatencyTracker& latencyTracker,
+	    unsigned int blockStartCycle )
 	{
 		std::vector<VuScheduledIssueSlot> slots;
 		std::vector<const Token*> segment;
 		unsigned int segmentMask = VU_RESOURCE_NONE;
 		bool haveSegment = false;
+		unsigned int currentCycle = blockStartCycle;
 
 		for( unsigned int offset = 0; offset < block.tokens.size(); ++offset )
 		{
@@ -584,7 +621,12 @@ namespace
 					                            liveness.lastClipReader );
 				if( haveSegment && tokenMask != segmentMask )
 				{
-					appendReadyScheduledSegmentSlots( segment, slots, segmentMask );
+					appendReadyScheduledSegmentSlots( segment,
+					                                 slots,
+					                                 segmentMask,
+					                                 latencyTracker,
+					                                 blockStartCycle,
+					                                 currentCycle );
 					segment.clear();
 					haveSegment = false;
 				}
@@ -600,28 +642,45 @@ namespace
 				if( tokenIndex == static_cast<unsigned int>( liveness.lastMacReader )
 				    || tokenIndex == static_cast<unsigned int>( liveness.lastClipReader ) )
 				{
-					appendReadyScheduledSegmentSlots( segment, slots, segmentMask );
+					appendReadyScheduledSegmentSlots( segment,
+					                                 slots,
+					                                 segmentMask,
+					                                 latencyTracker,
+					                                 blockStartCycle,
+					                                 currentCycle );
 					segment.clear();
 					haveSegment = false;
 				}
 				continue;
 			}
 
-			appendReadyScheduledSegmentSlots( segment, slots, segmentMask );
+			appendReadyScheduledSegmentSlots( segment,
+			                                 slots,
+			                                 segmentMask,
+			                                 latencyTracker,
+			                                 blockStartCycle,
+			                                 currentCycle );
 			segment.clear();
 			haveSegment = false;
 			if( !tryPairBarrierWithPreviousSlot( slots, token ) )
-				slots.push_back( makeIssueSlot( &token, NULL ) );
+			{
+				slots.push_back( makeIssueSlot( &token, NULL, currentCycle - blockStartCycle ) );
+				latencyTracker.recordWrites( token, static_cast<int>( currentCycle ) );
+				++currentCycle;
+			}
+			else if( !slots.empty() )
+			{
+				const unsigned int pairedCycle = blockStartCycle + slots.back().issueCycle;
+				latencyTracker.recordWrites( token, static_cast<int>( pairedCycle ) );
+			}
 		}
 
-		appendReadyScheduledSegmentSlots( segment, slots, segmentMask );
-
-		unsigned int issueCycle = 0;
-		for( std::vector<VuScheduledIssueSlot>::iterator slot = slots.begin(); slot != slots.end(); ++slot )
-		{
-			slot->issueCycle = issueCycle;
-			issueCycle += slot->cycleCount;
-		}
+		appendReadyScheduledSegmentSlots( segment,
+		                                 slots,
+		                                 segmentMask,
+		                                 latencyTracker,
+		                                 blockStartCycle,
+		                                 currentCycle );
 
 		assignScheduledIssueSlotTokenIndices( block, slots );
 		return slots;
@@ -1901,64 +1960,119 @@ std::vector<VuDependencyEdge> buildVuDependencyGraph( const VuBasicBlock& block,
 	return edges;
 }
 
-std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlots( const VuBasicBlock& block,
-                                                                       unsigned int ignoredImplicitWawResources )
+namespace
 {
-	std::vector<VuScheduledIssueSlot> slots;
-	std::vector<const Token*> segment;
-
-	for( std::vector<const Token*>::const_iterator i = block.tokens.begin(); i != block.tokens.end(); ++i )
+	std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlotsWithLatency(
+	    const VuBasicBlock& block,
+	    unsigned int ignoredImplicitWawResources,
+	    VuLatencyTracker& latencyTracker,
+	    unsigned int blockStartCycle )
 	{
-		if( isVuReadyScheduleCandidate( **i ) )
+		std::vector<VuScheduledIssueSlot> slots;
+		std::vector<const Token*> segment;
+		unsigned int currentCycle = blockStartCycle;
+
+		for( std::vector<const Token*>::const_iterator i = block.tokens.begin(); i != block.tokens.end(); ++i )
 		{
-			segment.push_back( *i );
-			continue;
+			if( isVuReadyScheduleCandidate( **i ) )
+			{
+				segment.push_back( *i );
+				continue;
+			}
+
+			std::vector<VuScheduledIssueSlot> segmentSlots =
+				scheduleReadySegmentIssueSlots( segment,
+				                                ignoredImplicitWawResources,
+				                                latencyTracker,
+				                                blockStartCycle,
+				                                currentCycle );
+			slots.insert( slots.end(), segmentSlots.begin(), segmentSlots.end() );
+			segment.clear();
+			if( !tryPairBarrierWithPreviousSlot( slots, **i ) )
+			{
+				slots.push_back( makeIssueSlot( *i, NULL, currentCycle - blockStartCycle ) );
+				latencyTracker.recordWrites( **i, static_cast<int>( currentCycle ) );
+				++currentCycle;
+			}
+			else if( !slots.empty() )
+			{
+				const unsigned int pairedCycle = blockStartCycle + slots.back().issueCycle;
+				latencyTracker.recordWrites( **i, static_cast<int>( pairedCycle ) );
+			}
 		}
 
 		std::vector<VuScheduledIssueSlot> segmentSlots =
-			scheduleReadySegmentIssueSlots( segment, ignoredImplicitWawResources );
+			scheduleReadySegmentIssueSlots( segment,
+			                                ignoredImplicitWawResources,
+			                                latencyTracker,
+			                                blockStartCycle,
+			                                currentCycle );
 		slots.insert( slots.end(), segmentSlots.begin(), segmentSlots.end() );
-		segment.clear();
-		if( !tryPairBarrierWithPreviousSlot( slots, **i ) )
-			slots.push_back( makeIssueSlot( *i, NULL ) );
+
+		assignScheduledIssueSlotTokenIndices( block, slots );
+		return slots;
 	}
+}
 
-	std::vector<VuScheduledIssueSlot> segmentSlots =
-		scheduleReadySegmentIssueSlots( segment, ignoredImplicitWawResources );
-	slots.insert( slots.end(), segmentSlots.begin(), segmentSlots.end() );
+std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlots( const VuBasicBlock& block,
+                                                                       unsigned int ignoredImplicitWawResources )
+{
+	VuLatencyTracker latencyTracker;
+	return scheduleVuBasicBlockReadyIssueSlotsWithLatency( block,
+	                                                       ignoredImplicitWawResources,
+	                                                       latencyTracker,
+	                                                       0 );
+}
 
-	unsigned int issueCycle = 0;
-	for( std::vector<VuScheduledIssueSlot>::iterator slot = slots.begin(); slot != slots.end(); ++slot )
+namespace
+{
+	VuScheduledProgram scheduleVuProgramReadyIssueSlotsInternal( const std::list<Token>& tokens,
+	                                                             unsigned int ignoredImplicitWawResources,
+	                                                             bool carryLatencyAcrossBlocks )
 	{
-		slot->issueCycle = issueCycle;
-		issueCycle += slot->cycleCount;
-	}
+		VuScheduledProgram program;
+		const std::vector<VuBasicBlock> blocks = buildVuBasicBlocks( tokens );
+		VuLatencyTracker programLatencyTracker;
 
-	assignScheduledIssueSlotTokenIndices( block, slots );
-	return slots;
+		for( std::vector<VuBasicBlock>::const_iterator block = blocks.begin(); block != blocks.end(); ++block )
+		{
+			VuScheduledBasicBlock scheduledBlock;
+			scheduledBlock.block = *block;
+			scheduledBlock.firstIssueCycle = program.cycleCount;
+			if( carryLatencyAcrossBlocks )
+			{
+				scheduledBlock.issueSlots =
+					scheduleVuBasicBlockReadyIssueSlotsWithLatency( *block,
+					                                                ignoredImplicitWawResources,
+					                                                programLatencyTracker,
+					                                                program.cycleCount );
+			}
+			else
+			{
+				VuLatencyTracker blockLatencyTracker;
+				scheduledBlock.issueSlots =
+					scheduleVuBasicBlockReadyIssueSlotsWithLatency( *block,
+					                                                ignoredImplicitWawResources,
+					                                                blockLatencyTracker,
+					                                                program.cycleCount );
+			}
+			for( std::vector<VuScheduledIssueSlot>::const_iterator slot = scheduledBlock.issueSlots.begin();
+			     slot != scheduledBlock.issueSlots.end(); ++slot )
+				scheduledBlock.cycleCount += slot->cycleCount;
+			program.cycleCount += scheduledBlock.cycleCount;
+			program.blocks.push_back( scheduledBlock );
+		}
+
+		return program;
+	}
 }
 
 VuScheduledProgram scheduleVuProgramReadyIssueSlots( const std::list<Token>& tokens,
                                                      unsigned int ignoredImplicitWawResources )
 {
-	VuScheduledProgram program;
-	const std::vector<VuBasicBlock> blocks = buildVuBasicBlocks( tokens );
-
-	for( std::vector<VuBasicBlock>::const_iterator block = blocks.begin(); block != blocks.end(); ++block )
-	{
-		VuScheduledBasicBlock scheduledBlock;
-		scheduledBlock.block = *block;
-		scheduledBlock.firstIssueCycle = program.cycleCount;
-		scheduledBlock.issueSlots = scheduleVuBasicBlockReadyIssueSlots( *block,
-		                                                                 ignoredImplicitWawResources );
-		for( std::vector<VuScheduledIssueSlot>::const_iterator slot = scheduledBlock.issueSlots.begin();
-		     slot != scheduledBlock.issueSlots.end(); ++slot )
-			scheduledBlock.cycleCount += slot->cycleCount;
-		program.cycleCount += scheduledBlock.cycleCount;
-		program.blocks.push_back( scheduledBlock );
-	}
-
-	return program;
+	return scheduleVuProgramReadyIssueSlotsInternal( tokens,
+	                                                ignoredImplicitWawResources,
+	                                                true );
 }
 
 std::vector< std::vector<VuScheduledIssueSlot> > scheduleVuBasicBlocksReadyIssueSlotsWithFlagLiveness(
@@ -1974,26 +2088,53 @@ std::vector< std::vector<VuScheduledIssueSlot> > scheduleVuBasicBlocksReadyIssue
 	return result;
 }
 
+namespace
+{
+	VuScheduledProgram scheduleVuProgramReadyIssueSlotsWithFlagLivenessInternal(
+	    const std::list<Token>& tokens,
+	    bool carryLatencyAcrossBlocks )
+	{
+		VuScheduledProgram program;
+		const std::vector<VuBasicBlock> blocks = buildVuBasicBlocks( tokens );
+		const VuFlagLiveness liveness = analyzeFlagLiveness( tokens );
+		VuLatencyTracker programLatencyTracker;
+
+		for( std::vector<VuBasicBlock>::const_iterator block = blocks.begin(); block != blocks.end(); ++block )
+		{
+			VuScheduledBasicBlock scheduledBlock;
+			scheduledBlock.block = *block;
+			scheduledBlock.firstIssueCycle = program.cycleCount;
+			if( carryLatencyAcrossBlocks )
+			{
+				scheduledBlock.issueSlots =
+					scheduleVuBasicBlockReadyIssueSlotsWithFlagLiveness( *block,
+					                                                     liveness,
+					                                                     programLatencyTracker,
+					                                                     program.cycleCount );
+			}
+			else
+			{
+				VuLatencyTracker blockLatencyTracker;
+				scheduledBlock.issueSlots =
+					scheduleVuBasicBlockReadyIssueSlotsWithFlagLiveness( *block,
+					                                                     liveness,
+					                                                     blockLatencyTracker,
+					                                                     program.cycleCount );
+			}
+			for( std::vector<VuScheduledIssueSlot>::const_iterator slot = scheduledBlock.issueSlots.begin();
+			     slot != scheduledBlock.issueSlots.end(); ++slot )
+				scheduledBlock.cycleCount += slot->cycleCount;
+			program.cycleCount += scheduledBlock.cycleCount;
+			program.blocks.push_back( scheduledBlock );
+		}
+
+		return program;
+	}
+}
+
 VuScheduledProgram scheduleVuProgramReadyIssueSlotsWithFlagLiveness( const std::list<Token>& tokens )
 {
-	VuScheduledProgram program;
-	const std::vector<VuBasicBlock> blocks = buildVuBasicBlocks( tokens );
-	const VuFlagLiveness liveness = analyzeFlagLiveness( tokens );
-
-	for( std::vector<VuBasicBlock>::const_iterator block = blocks.begin(); block != blocks.end(); ++block )
-	{
-		VuScheduledBasicBlock scheduledBlock;
-		scheduledBlock.block = *block;
-		scheduledBlock.firstIssueCycle = program.cycleCount;
-		scheduledBlock.issueSlots = scheduleVuBasicBlockReadyIssueSlotsWithFlagLiveness( *block, liveness );
-		for( std::vector<VuScheduledIssueSlot>::const_iterator slot = scheduledBlock.issueSlots.begin();
-		     slot != scheduledBlock.issueSlots.end(); ++slot )
-			scheduledBlock.cycleCount += slot->cycleCount;
-		program.cycleCount += scheduledBlock.cycleCount;
-		program.blocks.push_back( scheduledBlock );
-	}
-
-	return program;
+	return scheduleVuProgramReadyIssueSlotsWithFlagLivenessInternal( tokens, true );
 }
 
 std::list<Token> flattenVuScheduledProgramTokens( const VuScheduledProgram& program )
@@ -2414,13 +2555,14 @@ std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens,
                                            unsigned int ignoredImplicitWawResources )
 {
 	const VuScheduledProgram program =
-		scheduleVuProgramReadyIssueSlots( tokens, ignoredImplicitWawResources );
+		scheduleVuProgramReadyIssueSlotsInternal( tokens, ignoredImplicitWawResources, false );
 	return flattenVuScheduledProgramTokens( program );
 }
 
 std::list<Token> scheduleVuTokensReadySetWithFlagLiveness( const std::list<Token>& tokens )
 {
-	const VuScheduledProgram program = scheduleVuProgramReadyIssueSlotsWithFlagLiveness( tokens );
+	const VuScheduledProgram program =
+		scheduleVuProgramReadyIssueSlotsWithFlagLivenessInternal( tokens, false );
 	return flattenVuScheduledProgramTokens( program );
 }
 
