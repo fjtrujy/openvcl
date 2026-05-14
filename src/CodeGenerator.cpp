@@ -1656,28 +1656,20 @@ int CodeGenerator::readHazardDelay( const Token& token, const Token* partner ) c
 
 void CodeGenerator::padForReadHazards( const Token& token, const Token* partner )
 {
-	bool readsQ = vuTokenReadsQ(token);
-	bool readsP = vuTokenReadsP(token);
-	if( partner )
-	{
-		readsQ = readsQ || vuTokenReadsQ(*partner);
-		readsP = readsP || vuTokenReadsP(*partner);
-	}
-
 	while( true )
 	{
 		int needed = readHazardDelay(token, partner);
 		if( needed <= 0 )
 			break;
 
-		const int qGap = readsQ ? (m_latencyTracker.qReadyCycle() - m_currentCycle) : 0;
-		const int pGap = readsP ? (m_latencyTracker.pReadyCycle() - m_currentCycle) : 0;
-		if( qGap > 1 && qGap >= pGap )
+		const VuScheduledPaddingKind paddingKind =
+			vuScheduledPaddingKindForReadHazard( token, partner, m_latencyTracker, m_currentCycle );
+		if( paddingKind == VU_SCHEDULED_PADDING_WAITQ )
 		{
 			emitWaitQ();
 			continue;
 		}
-		if( pGap > 1 )
+		if( paddingKind == VU_SCHEDULED_PADDING_WAITP )
 		{
 			emitWaitP();
 			continue;

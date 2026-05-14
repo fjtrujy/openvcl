@@ -49,6 +49,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: ready-scheduler issue-slot dumps now include explicit latency-padding slots, exposing idle cycles that code emission would otherwise insert later.
    - Done: latency-padding slots now identify `nop`, `waitq`, and `waitp` padding kinds, matching the emitter's long-latency wait choices in schedule tooling.
    - Done: issue slots now expose modeled issue cycles and cycle counts, so multi-cycle `waitq`/`waitp` spans are visible to future generic emitters.
+   - Done: code emission and scheduler analysis now share one helper for selecting NOP vs `waitq`/`waitp` hazard padding.
 
 6. **Implement Generic Loop Analysis** - done
    - Detect induction registers, loop-carried dependencies, loads/stores, branch targets, and loop bodies.

@@ -16,6 +16,8 @@
 namespace vcl
 {
 
+class VuLatencyTracker;
+
 enum VuBasicBlockTerminatorKind
 {
 	VU_BASIC_BLOCK_TERMINATOR_NONE,
@@ -236,6 +238,10 @@ std::vector<VuDependencyEdge> buildVuDependencyGraph( const VuBasicBlock& block,
                                                       unsigned int ignoredImplicitWawResources = 0 );
 std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlots( const VuBasicBlock& block,
                                                                        unsigned int ignoredImplicitWawResources = 0 );
+VuScheduledPaddingKind vuScheduledPaddingKindForReadHazard( const Token& token,
+                                                            const Token* partner,
+                                                            const VuLatencyTracker& latencyTracker,
+                                                            int currentCycle );
 std::vector<VuLoopCandidate> findVuLoopCandidates( const std::list<Token>& tokens );
 std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const std::list<Token>& tokens );
 std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( const std::list<Token>& tokens );

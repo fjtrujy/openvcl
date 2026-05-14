@@ -227,28 +227,6 @@ namespace
 		return slot;
 	}
 
-	VuScheduledPaddingKind choosePaddingKind( const Token& token,
-	                                          const Token* partner,
-	                                          const VuLatencyTracker& latencyTracker,
-	                                          int currentCycle )
-	{
-		bool readsQ = vuTokenReadsQ( token );
-		bool readsP = vuTokenReadsP( token );
-		if( partner )
-		{
-			readsQ = readsQ || vuTokenReadsQ( *partner );
-			readsP = readsP || vuTokenReadsP( *partner );
-		}
-
-		const int qGap = readsQ ? (latencyTracker.qReadyCycle() - currentCycle) : 0;
-		const int pGap = readsP ? (latencyTracker.pReadyCycle() - currentCycle) : 0;
-		if( qGap > 1 && qGap >= pGap )
-			return VU_SCHEDULED_PADDING_WAITQ;
-		if( pGap > 1 )
-			return VU_SCHEDULED_PADDING_WAITP;
-		return VU_SCHEDULED_PADDING_NOP;
-	}
-
 	std::vector<VuScheduledIssueSlot> scheduleReadySegmentIssueSlots( const std::vector<const Token*>& segment,
 	                                                                  unsigned int ignoredImplicitWawResources )
 	{
@@ -332,7 +310,10 @@ namespace
 			while( issueDelay > 0 )
 			{
 				const VuScheduledPaddingKind paddingKind =
-					choosePaddingKind( *block.tokens[best], partnerToken, latencyTracker, currentCycle );
+					vuScheduledPaddingKindForReadHazard( *block.tokens[best],
+					                                     partnerToken,
+					                                     latencyTracker,
+					                                     static_cast<int>( currentCycle ) );
 				unsigned int paddingCycleCount = 1;
 				if( paddingKind == VU_SCHEDULED_PADDING_WAITQ )
 				{
@@ -1492,6 +1473,28 @@ namespace
 			}
 		}
 	}
+}
+
+VuScheduledPaddingKind vuScheduledPaddingKindForReadHazard( const Token& token,
+                                                            const Token* partner,
+                                                            const VuLatencyTracker& latencyTracker,
+                                                            int currentCycle )
+{
+	bool readsQ = vuTokenReadsQ( token );
+	bool readsP = vuTokenReadsP( token );
+	if( partner )
+	{
+		readsQ = readsQ || vuTokenReadsQ( *partner );
+		readsP = readsP || vuTokenReadsP( *partner );
+	}
+
+	const int qGap = readsQ ? (latencyTracker.qReadyCycle() - currentCycle) : 0;
+	const int pGap = readsP ? (latencyTracker.pReadyCycle() - currentCycle) : 0;
+	if( qGap > 1 && qGap >= pGap )
+		return VU_SCHEDULED_PADDING_WAITQ;
+	if( pGap > 1 )
+		return VU_SCHEDULED_PADDING_WAITP;
+	return VU_SCHEDULED_PADDING_NOP;
 }
 
 VuBasicBlock::VuBasicBlock()
