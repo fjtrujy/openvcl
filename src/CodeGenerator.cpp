@@ -876,8 +876,11 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			exitWritten = false;
 			continue;
 		}
-		// Specular point loops combine Q/P latency with a dependent W power
-		// chain; keep them scalar until the pipeline schedule is VU-safe.
+		if( tryEmitPtLightSpecSoftwarePipelineLoop(workTokens, k) )
+		{
+			exitWritten = false;
+			continue;
+		}
 		if( tryEmitPtLightNoSpecSoftwarePipelineLoop(workTokens, k) )
 		{
 			exitWritten = false;
@@ -7438,6 +7441,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 	    && haveAttenuateColor
 	    && haveAccumulate
 	    && haveStore
+	    && !pattern.materialDiffFromInput
 	    && ((pattern.materialDiffFromInput && haveMaterialDiffInputLoad && pattern.inputStep == 4
 	         && pattern.materialDiffOffset == 3)
 	        || (!pattern.materialDiffFromInput && pattern.inputStep == 3))
@@ -7541,7 +7545,10 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 		emitRawPairedLine("nop", "nop");
 		emitRawPairedLine("nop", "nop");
 		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("nop", "nop");
 		emitRawPairedLine("addw.x " + r15 + ", " + vf00 + ", " + fieldArg(vf00, "w"), "nop");
+		emitRawPairedLine("nop", "waitq");
 		emitRawPairedLine("mulq.xyz " + r16 + ", " + r16 + ", q",
 		                  "ibeq " + in + ", " + last + ", " + p.fallbackOneLabel);
 		emitRawPairedLine("mul.xyz " + r15 + ", " + r15 + ", " + p.attenCoeffReg, "nop");
@@ -7567,6 +7574,7 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 		emitRawPairedLine("mul.xyz " + r15 + ", " + r20 + ", " + p.attenCoeffReg,
 		                  "move.xyz " + r14 + ", " + r15);
 		emitRawPairedLine("mul.xyz " + r20 + ", " + r16 + ", " + r19, "nop");
+		emitRawPairedLine("nop", "waitq");
 		emitRawPairedLine("mulq.xyz " + r16 + ", " + r18 + ", q",
 		                  "iaddiu " + in + ", " + in + ", " + inputStep);
 		emitRawPairedLine("nop", "move.xyz " + r18 + ", " + r17);
@@ -7609,6 +7617,7 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 		emitRawPairedLine("mul.xyz " + r15 + ", " + r20 + ", " + p.attenCoeffReg,
 		                  "move.xyz " + r14 + ", " + r15);
 		emitRawPairedLine("mul.xyz " + r20 + ", " + r16 + ", " + r19, "nop");
+		emitRawPairedLine("nop", "waitq");
 		emitRawPairedLine("mulq.xyz " + r16 + ", " + r18 + ", q",
 		                  "iaddiu " + in + ", " + in + ", " + inputStep);
 		emitRawPairedLine("mul.w " + r07 + ", " + r06 + ", " + r06,
@@ -7718,7 +7727,10 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 	emitRawPairedLine("nop", "nop");
 	emitRawPairedLine("nop", "nop");
 	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
 	emitRawPairedLine("addw.x " + r16 + ", " + vf00 + ", " + fieldArg(vf00, "w"), "nop");
+	emitRawPairedLine("nop", "waitq");
 	emitRawPairedLine("mulq.xyz " + r17 + ", " + r17 + ", q",
 	                  "ibeq " + in + ", " + last + ", " + p.fallbackOneLabel);
 	emitRawPairedLine("mul.xyz " + r16 + ", " + r16 + ", " + p.attenCoeffReg, "nop");
@@ -7745,6 +7757,7 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 	emitRawPairedLine("mul.xyz " + r16 + ", " + r21 + ", " + p.attenCoeffReg,
 	                  "move.xyz " + r15 + ", " + r16);
 	emitRawPairedLine("mul.xyz " + r21 + ", " + r17 + ", " + r20, "nop");
+	emitRawPairedLine("nop", "waitq");
 	emitRawPairedLine("mulq.xyz " + r17 + ", " + r19 + ", q",
 	                  "iaddiu " + in + ", " + in + ", " + inputStep);
 	emitRawPairedLine("nop", "move.xyz " + r19 + ", " + r18);
@@ -7789,6 +7802,7 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 	emitRawPairedLine("mul.xyz " + r16 + ", " + r21 + ", " + p.attenCoeffReg,
 	                  "move.xyz " + r15 + ", " + r16);
 	emitRawPairedLine("mul.xyz " + r21 + ", " + r17 + ", " + r20, "nop");
+	emitRawPairedLine("nop", "waitq");
 	emitRawPairedLine("mulq.xyz " + r17 + ", " + r19 + ", q",
 	                  "iaddiu " + in + ", " + in + ", " + inputStep);
 	emitRawPairedLine("mul.w " + r07 + ", " + r06 + ", " + r06,
@@ -7885,11 +7899,40 @@ void CodeGenerator::emitPtLightSpecScalarFallbackLoop( const PtLightSpecLoopPipe
 	const std::string scalarStore = p.postIncrementStore
 	                              ? "sqi.xyz " + p.resultReg + ", (" + out + "++)"
 	                              : "sq.xyz " + p.resultReg + ", " + offsetBase(p.storeOffset, out);
+	std::list<std::string> reserved;
+	addScratchReservation(reserved, p.vertexReg);
+	addScratchReservation(reserved, p.normalReg);
+	addScratchReservation(reserved, p.currentColorReg);
+	addScratchReservation(reserved, p.toLightReg);
+	addScratchReservation(reserved, p.attenReg);
+	addScratchReservation(reserved, p.attenProductReg);
+	addScratchReservation(reserved, p.normalizedLightReg);
+	addScratchReservation(reserved, p.halfAngleReg);
+	addScratchReservation(reserved, p.normalProductReg);
+	addScratchReservation(reserved, p.intensityReg);
+	addScratchReservation(reserved, p.clampedIntensityReg);
+	addScratchReservation(reserved, p.localDiffuseReg);
+	addScratchReservation(reserved, p.specProductReg);
+	addScratchReservation(reserved, p.specIntensityReg);
+	addScratchReservation(reserved, p.specPowerReg);
+	addScratchReservation(reserved, p.litColorReg);
+	addScratchReservation(reserved, p.attenuatedColorReg);
+	addScratchReservation(reserved, p.resultReg);
+	addScratchReservation(reserved, p.lightPosReg);
+	addScratchReservation(reserved, p.attenCoeffReg);
+	addScratchReservation(reserved, p.onesReg);
+	addScratchReservation(reserved, p.lightDiffReg);
+	addScratchReservation(reserved, p.materialDiffReg);
+	addScratchReservation(reserved, p.viewDirReg);
+	addScratchReservation(reserved, p.localSpecReg);
+	addScratchReservation(reserved, p.lightAmbReg);
+	addScratchReservation(reserved, p.materialAmbReg);
+	const std::string scalarColor = reserveScratchReg(reserved);
 
 	m_codeLines.push_back(p.scalarLabel + ":");
 	emitRawPairedLine("nop", "lq.xyz " + p.vertexReg + ", " + offsetBase(p.vertexOffset, in));
 	emitRawPairedLine("nop", "lq.xyz " + p.normalReg + ", " + offsetBase(p.normalOffset, in));
-	emitRawPairedLine("nop", "lq.xyz " + p.currentColorReg + ", " + scalarColorLoad);
+	emitRawPairedLine("nop", "lq.xyz " + scalarColor + ", " + scalarColorLoad);
 	if( p.materialDiffFromInput )
 		emitRawPairedLine("nop", "lq.xyz " + p.materialDiffReg + ", "
 		                         + offsetBase(p.materialDiffOffset, in));
@@ -7908,11 +7951,15 @@ void CodeGenerator::emitPtLightSpecScalarFallbackLoop( const PtLightSpecLoopPipe
 	emitRawPairedLine("addw.x " + p.attenReg + ", " + vf00 + ", " + fieldArg(vf00, "w"), "nop");
 	emitRawPairedLine("nop", "sqrt q, " + fieldArg(p.attenReg, "z"));
 	emitRawPairedLine("addq.y " + p.attenReg + ", " + vf00 + ", q", "waitq");
-	emitRawPairedLine("mul.xyz " + p.attenProductReg + ", " + p.attenReg + ", " + p.attenCoeffReg,
-	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(p.attenReg, "y"));
+	emitRawPairedLine("nop", "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(p.attenReg, "y"));
 	emitRawPairedLine("nop", "nop");
 	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "waitq");
 	emitRawPairedLine("mulq.xyz " + p.normalizedLightReg + ", " + p.toLightReg + ", q", "nop");
+	emitRawPairedLine("mul.xyz " + p.attenProductReg + ", " + p.attenReg + ", " + p.attenCoeffReg, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
 	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(p.attenProductReg, "x"), "nop");
 	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(p.attenProductReg, "y"), "nop");
 	emitRawPairedLine("maddz.w " + p.attenReg + ", " + vf00 + ", " + fieldArg(p.attenProductReg, "z"), "nop");
@@ -7936,14 +7983,28 @@ void CodeGenerator::emitPtLightSpecScalarFallbackLoop( const PtLightSpecLoopPipe
 	emitRawPairedLine("maddz.w " + p.specIntensityReg + ", " + vf00 + ", " + fieldArg(p.specProductReg, "z"), "nop");
 	emitRawPairedLine("maxx.w " + p.specIntensityReg + ", " + p.specIntensityReg + ", " + fieldArg(vf00, "x"), "nop");
 	emitRawPairedLine("mul.w " + p.specPowerReg + ", " + p.specIntensityReg + ", " + p.specIntensityReg, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
 	emitRawPairedLine("mul.w " + p.specPowerReg + ", " + p.specPowerReg + ", " + p.specPowerReg, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
 	emitRawPairedLine("mul.w " + p.specPowerReg + ", " + p.specPowerReg + ", " + p.specPowerReg, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
 	emitRawPairedLine("mul.w " + p.specPowerReg + ", " + p.specPowerReg + ", " + p.specPowerReg, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
 	emitRawPairedLine("mul.w " + p.specPowerReg + ", " + p.specPowerReg + ", " + p.specPowerReg, "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
 	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(p.specPowerReg, "w"), "nop");
 	emitRawPairedLine("madd.xyz " + p.litColorReg + ", " + p.lightAmbReg + ", " + p.materialAmbReg, "nop");
 	emitRawPairedLine("mulq.xyz " + p.attenuatedColorReg + ", " + p.litColorReg + ", q", "nop");
-	emitRawPairedLine("add.xyz " + p.resultReg + ", " + p.currentColorReg + ", " + p.attenuatedColorReg, "nop");
+	emitRawPairedLine("add.xyz " + p.resultReg + ", " + scalarColor + ", " + p.attenuatedColorReg, "nop");
 	emitRawPairedLine("nop", scalarStore);
 	emitRawPairedLine("nop", "ibne " + in + ", " + last + ", " + p.scalarLabel);
 	emitRawPairedLine("nop", scalarOutputStep);

@@ -998,17 +998,16 @@ TEST_CASE("Software pipeline: no-spec point light loop emits a 26-cycle steady s
     CHECK(contains(vsm, "sq.xyz VF19, -8(VI03)"));
 }
 
-TEST_CASE("Software pipeline: specular point light loop stays scalar until W power chain is safe")
+TEST_CASE("Software pipeline: plain specular point light loop pipelines Q/P and W power chains")
 {
     std::string vsm = runEmit(ptLightSpecPipelineSource());
     REQUIRE(vsm.length() > 0);
 
-    CHECK(!contains(vsm, "pt_light_vert_loop_lid__SPEC_ENTRY_POINT:"));
-    CHECK(!contains(vsm, "pt_light_vert_loop_lid__MAIN_LOOP:"));
-    CHECK(contains(vsm, "pt_light_vert_loop_lid:"));
-    CHECK(contains(vsm, "ibne VI13, VI04, pt_light_vert_loop_lid"));
-    CHECK(contains(vsm, "maddaw.xyz ACC"));
-    CHECK(contains(vsm, "sq.xyz"));
+    CHECK(contains(vsm, "pt_light_vert_loop_lid__SPEC_ENTRY_POINT:"));
+    CHECK(contains(vsm, "pt_light_vert_loop_lid__MAIN_LOOP:"));
+    CHECK(contains(vsm, "ibne VI13, VI04, pt_light_vert_loop_lid__MAIN_LOOP"));
+    CHECK(contains(vsm, "maddaw.xyz ACC, VF15, VF29w"));
+    CHECK(contains(vsm, "sq.xyz VF20, -2(VI03)"));
 }
 
 TEST_CASE("Software pipeline: pv-diff specular point light loop stays scalar until W power chain is safe")
