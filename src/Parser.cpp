@@ -699,10 +699,10 @@ namespace
 			       << " rewrite_insert_prefetch_after=" << (rewritePlan ? rewritePlan->prefetchInsertAfterTokenIndex : 0)
 			       << " rewrite_insert_q_after=" << (rewritePlan ? rewritePlan->qProducerInsertAfterTokenIndex : 0)
 			       << " rewrite_q_in_branch_delay=" << (rewritePlan && rewritePlan->qProducerInBranchDelaySlot ? "yes" : "no")
-			       << " rewrite_q_branch_delay_blocked_by_suffix_filler="
-			       << (rewritePlan && rewritePlan->qProducerBranchDelayBlockedBySuffixFiller ? "yes" : "no")
-			       << " rewrite_q_branch_delay_suffix_filler="
-			       << (rewritePlan ? rewritePlan->qProducerBranchDelaySuffixFillerTokenIndex : 0)
+			       << " rewrite_q_branch_delay_blocked_by_suffix_dependency="
+			       << (rewritePlan && rewritePlan->qProducerBranchDelayBlockedBySuffixDependency ? "yes" : "no")
+			       << " rewrite_q_branch_delay_suffix_blocker="
+			       << (rewritePlan ? rewritePlan->qProducerBranchDelaySuffixBlockerTokenIndex : 0)
 			       << " rewrite_emits_drain=" << (rewritePlan && rewritePlan->emitsDrain ? "yes" : "no")
 			       << " rewrite_prefetch_tokens=";
 			if( rewritePlan )
@@ -800,10 +800,10 @@ namespace
 			       << (rewritePlan ? rewritePlan->qProducerInsertAfterTokenIndex : 0) << ",\n";
 			stream << "        \"q_producer_in_branch_delay_slot\": "
 			       << (rewritePlan && rewritePlan->qProducerInBranchDelaySlot ? "true" : "false") << ",\n";
-			stream << "        \"q_producer_branch_delay_blocked_by_suffix_filler\": "
-			       << (rewritePlan && rewritePlan->qProducerBranchDelayBlockedBySuffixFiller ? "true" : "false") << ",\n";
-			stream << "        \"q_producer_branch_delay_suffix_filler_token_index\": "
-			       << (rewritePlan ? rewritePlan->qProducerBranchDelaySuffixFillerTokenIndex : 0) << ",\n";
+			stream << "        \"q_producer_branch_delay_blocked_by_suffix_dependency\": "
+			       << (rewritePlan && rewritePlan->qProducerBranchDelayBlockedBySuffixDependency ? "true" : "false") << ",\n";
+			stream << "        \"q_producer_branch_delay_suffix_blocker_token_index\": "
+			       << (rewritePlan ? rewritePlan->qProducerBranchDelaySuffixBlockerTokenIndex : 0) << ",\n";
 			stream << "        \"prefetch_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->prefetchTokenIndices ); else stream << "[]"; stream << ",\n";
 			stream << "        \"prolog_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->prologTokenIndices ); else stream << "[]"; stream << ",\n";
 			stream << "        \"main_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->mainTokenIndices ); else stream << "[]"; stream << ",\n";

@@ -1265,10 +1265,10 @@ namespace
 
 	bool qProducerCanMoveIntoBranchDelaySlot( const VuLoopPipelineOpportunity& opportunity,
 	                                          const std::vector<const Token*>& indexedTokens,
-	                                          unsigned int* suffixFillerTokenIndex )
+	                                          unsigned int* suffixBlockerTokenIndex )
 	{
-		if( suffixFillerTokenIndex )
-			*suffixFillerTokenIndex = 0;
+		if( suffixBlockerTokenIndex )
+			*suffixBlockerTokenIndex = 0;
 		if( opportunity.qLiveOut
 		    || opportunity.qConsumerTokenIndices.empty()
 		    || opportunity.qProducerTokenIndex >= indexedTokens.size()
@@ -1317,7 +1317,11 @@ namespace
 			// Keep every suffix instruction before the branch unless it cannot safely
 			// stay ahead of the cloned next-iteration Q producer.
 			if( !vuTokenCanMoveBefore( *indexedTokens[tokenIndex], qProducer, VU_RESOURCE_NONE ) )
+			{
+				if( suffixBlockerTokenIndex )
+					*suffixBlockerTokenIndex = tokenIndex;
 				return false;
+			}
 		}
 
 		return true;
@@ -1806,8 +1810,8 @@ VuSoftwarePipelineRewritePlan::VuSoftwarePipelineRewritePlan()
 	prefetchInsertAfterTokenIndex = 0;
 	qProducerInsertAfterTokenIndex = 0;
 	qProducerInBranchDelaySlot = false;
-	qProducerBranchDelayBlockedBySuffixFiller = false;
-	qProducerBranchDelaySuffixFillerTokenIndex = 0;
+	qProducerBranchDelayBlockedBySuffixDependency = false;
+	qProducerBranchDelaySuffixBlockerTokenIndex = 0;
 	emitsDrain = false;
 }
 
@@ -2283,16 +2287,16 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		plan.qProducerTokenIndex = i->qProducerTokenIndex;
 		plan.prefetchInsertAfterTokenIndex = i->qConsumerTokenIndices.back();
 		plan.qProducerInsertAfterTokenIndex = i->qConsumerTokenIndices.back();
-		unsigned int suffixFillerTokenIndex = 0;
-		if( qProducerCanMoveIntoBranchDelaySlot( *i, indexedTokens, &suffixFillerTokenIndex ) )
+		unsigned int suffixBlockerTokenIndex = 0;
+		if( qProducerCanMoveIntoBranchDelaySlot( *i, indexedTokens, &suffixBlockerTokenIndex ) )
 		{
 			plan.qProducerInsertAfterTokenIndex = i->branchTokenIndex;
 			plan.qProducerInBranchDelaySlot = true;
 		}
-		else if( suffixFillerTokenIndex != 0 )
+		else if( suffixBlockerTokenIndex != 0 )
 		{
-			plan.qProducerBranchDelayBlockedBySuffixFiller = true;
-			plan.qProducerBranchDelaySuffixFillerTokenIndex = suffixFillerTokenIndex;
+			plan.qProducerBranchDelayBlockedBySuffixDependency = true;
+			plan.qProducerBranchDelaySuffixBlockerTokenIndex = suffixBlockerTokenIndex;
 		}
 		plan.emitsDrain = i->qLiveOut;
 		plan.prefetches = i->softwarePipelinePrefetches;

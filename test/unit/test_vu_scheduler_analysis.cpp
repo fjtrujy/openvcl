@@ -663,8 +663,8 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline prefers Q producers ov
     REQUIRE(plans.size() == 1u);
     CHECK(plans[0].qProducerInsertAfterTokenIndex == 13u);
     CHECK(plans[0].qProducerInBranchDelaySlot);
-    CHECK(!plans[0].qProducerBranchDelayBlockedBySuffixFiller);
-    CHECK(plans[0].qProducerBranchDelaySuffixFillerTokenIndex == 0u);
+    CHECK(!plans[0].qProducerBranchDelayBlockedBySuffixDependency);
+    CHECK(plans[0].qProducerBranchDelaySuffixBlockerTokenIndex == 0u);
 
     std::list<vcl::Token> transformed = vcl::applyVuSoftwarePipelinePlans(program.tokenizer.tokens());
     bool sawOrdinarySuffixBeforeBranch = false;
@@ -687,6 +687,34 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline prefers Q producers ov
     }
     CHECK(sawOrdinarySuffixBeforeBranch);
     CHECK(sawBranchDelayDiv);
+}
+
+TEST_CASE("VuSchedulerAnalysis: generic software pipeline reports suffix dependencies that block Q branch-delay placement")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 1"));
+    REQUIRE(program.parse("lq.xyz vf01, 0(vi01)"));
+    REQUIRE(program.parse("div q, vf00[w], vf01[w]"));
+    REQUIRE(program.parse("mulq.xyz vf02, vf03, q"));
+    REQUIRE(program.parse("add.w vf01, vf04, vf00"));
+    REQUIRE(program.parse("add.xyz vf10, vf10, vf00"));
+    REQUIRE(program.parse("add.xyz vf11, vf11, vf00"));
+    REQUIRE(program.parse("add.xyz vf12, vf12, vf00"));
+    REQUIRE(program.parse("add.xyz vf13, vf13, vf00"));
+    REQUIRE(program.parse("add.xyz vf14, vf14, vf00"));
+    REQUIRE(program.parse("add.xyz vf15, vf15, vf00"));
+    REQUIRE(program.parse("iaddiu vi03, vi03, 1"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
+    REQUIRE(program.parse("ibne vi01, vi02, loop_lid"));
+
+    std::vector<vcl::VuSoftwarePipelineRewritePlan> plans = vcl::buildVuSoftwarePipelineRewritePlans(program.tokenizer.tokens());
+    REQUIRE(plans.size() == 1u);
+    CHECK(plans[0].qProducerInsertAfterTokenIndex == 4u);
+    CHECK(!plans[0].qProducerInBranchDelaySlot);
+    CHECK(plans[0].qProducerBranchDelayBlockedBySuffixDependency);
+    CHECK(plans[0].qProducerBranchDelaySuffixBlockerTokenIndex == 5u);
 }
 
 TEST_CASE("VuSchedulerAnalysis: generic software pipeline rewrites simple rotated registers")

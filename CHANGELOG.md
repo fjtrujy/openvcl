@@ -31,6 +31,9 @@
   that can remain before the branch.
 - Loop-pipeline text and JSON dumps expose the chosen next-iteration Q
   producer insertion point and whether it occupies the branch delay slot.
+- Loop-pipeline rewrite-plan dumps now report suffix dependency blockers when
+  a cloned next-iteration Q producer cannot safely move into the branch delay
+  slot.
 - Ready-scheduler analysis now has a typed `VuScheduledProgram` wrapper with
   block-level cycle ranges, and schedule dumps expose program-relative issue
   cycles.
