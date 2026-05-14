@@ -20,11 +20,12 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: add tests that compile every current software-pipeline fixture with known-loop optimizations disabled.
    - Done: verify VSM is still produced, original labels remain, and optimized `__MAIN_LOOP` labels are absent.
 
-3. **Use Hand Emitters as Performance References**
+3. **Use Hand Emitters as Performance References** - done
    - Keep current optimized emitters while the generic scheduler matures.
    - Compare their output and cost against the generic path and SCEI references.
+   - Done: integration tests now emit optimized and generic fast_nolights VSM, then compare loop-cost JSON so the hand emitter is a measurable reference.
 
-4. **Build Generic Basic-Block Scheduling**
+4. **Build Generic Basic-Block Scheduling** - started
    - Split token streams by labels, branches, barriers, continuations, and memory/control boundaries.
    - Build dependency graphs from `VuTokenResourceAccess`.
    - Initially emit the same order to validate structure.

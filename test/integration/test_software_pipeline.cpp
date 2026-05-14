@@ -28,6 +28,16 @@ namespace
         return count;
     }
 
+    int jsonMetric(const std::string& report, const std::string& name)
+    {
+        std::string key = "\"" + name + "\": ";
+        std::string::size_type pos = report.find(key);
+        if (pos == std::string::npos)
+            return -1;
+        pos += key.size();
+        return std::atoi(report.c_str() + pos);
+    }
+
     int blockLineCount(const std::string& text, const std::string& label)
     {
         const std::string marker = label + ":\n";
@@ -85,6 +95,15 @@ namespace
     std::string runEmit(const std::string& source)
     {
         return runEmitWithExtraArgs(source, std::vector<std::string>());
+    }
+
+    ::test::RunResult runCostJsonWithLoop(const std::string& vsm, const std::string& loop)
+    {
+        std::vector<std::string> args;
+        args.push_back("--cost-json");
+        args.push_back("--cost-loop");
+        args.push_back(loop);
+        return ::test::run_openvcl(args, vsm);
     }
 
     void expectGenericPathCompiles(const std::string& source,
@@ -863,6 +882,30 @@ TEST_CASE("Software pipeline: known-loop optimizations can be disabled")
     expectGenericPathCompiles(ps2glNamedXformLoopSource("vsmGeneralTri"), "xform_loop_lid");
     expectGenericPathCompiles(ps2glNamedXformLoopSource("vsmGeneralPVDiffTri"), "xform_loop_lid");
     expectGenericPathCompiles(ps2glNamedXformLoopSource("vsmIndexed"), "xform_loop_lid");
+}
+
+TEST_CASE("Software pipeline: known-loop emitters remain cost references for generic path")
+{
+    std::string optimized = runEmit(fastNoLightsPipelineSource());
+    REQUIRE(optimized.length() > 0);
+
+    std::vector<std::string> genericArgs;
+    genericArgs.push_back("--disable-known-loop-optimizations");
+    std::string generic = runEmitWithExtraArgs(fastNoLightsPipelineSource(), genericArgs);
+    REQUIRE(generic.length() > 0);
+
+    REQUIRE(contains(optimized, "xform_loop_lid__MAIN_LOOP:"));
+    REQUIRE(contains(generic, "xform_loop_lid:"));
+
+    ::test::RunResult optimizedCost = runCostJsonWithLoop(optimized, "xform_loop_lid__MAIN_LOOP=10");
+    ::test::RunResult genericCost = runCostJsonWithLoop(generic, "xform_loop_lid=10");
+    REQUIRE(optimizedCost.exit_code == 0);
+    REQUIRE(genericCost.exit_code == 0);
+
+    CHECK(jsonMetric(optimizedCost.stdout_data, "affine_estimated_loop_cycles") == 12);
+    CHECK(jsonMetric(genericCost.stdout_data, "affine_estimated_loop_cycles") > 12);
+    CHECK(contains(optimizedCost.stdout_data, "\"affine_estimated_cycles\":"));
+    CHECK(contains(genericCost.stdout_data, "\"affine_estimated_cycles\":"));
 }
 
 TEST_CASE("Software pipeline: fast lit transform loop emits a 16-cycle steady state")
