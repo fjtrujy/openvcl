@@ -301,9 +301,12 @@ TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose loop-carried Q sta
     CHECK(opportunities[0].branchTokenIndex == 11u);
     CHECK(opportunities[0].qProducerTokenIndex == 4u);
     CHECK(opportunities[0].firstQConsumerTokenIndex == 5u);
+    CHECK(opportunities[0].lastQConsumerTokenIndex == 8u);
     CHECK(opportunities[0].qProducerLatency == 7u);
     CHECK(opportunities[0].qProducerConsumerGapCycles == 0u);
     CHECK(opportunities[0].qProducerConsumerGapDeficitCycles == 7u);
+    CHECK(opportunities[0].qProducerInsertionGapCycles == 5u);
+    CHECK(opportunities[0].qProducerInsertionGapDeficitCycles == 2u);
     CHECK(opportunities[0].qSchedulingStrategy == vcl::VU_LOOP_Q_SCHEDULE_LOOP_CARRIED);
     CHECK(opportunities[0].sourcePrefixCycles > 0u);
     CHECK(opportunities[0].sourcePrefixCycles < opportunities[0].qProducerLatency);
@@ -328,6 +331,7 @@ TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose loop-carried Q sta
     CHECK(opportunities[0].eligibleSingleQSoftwarePipeline);
     CHECK(opportunities[0].hasSoftwarePipelinePlan);
     CHECK(!opportunities[0].canEmitSoftwarePipeline);
+    CHECK(hasString(opportunities[0].softwarePipelineBlockers, "insufficient_q_insertion_gap"));
     CHECK(hasString(opportunities[0].softwarePipelineBlockers, "requires_register_rotation"));
     CHECK(!hasString(opportunities[0].softwarePipelineBlockers, "multi_instruction_prefetch"));
     CHECK(hasString(opportunities[0].softwarePipelineRotatedRegisters, "VF03"));

@@ -78,10 +78,13 @@ TEST_CASE("CLI: loop pipeline text dump exposes Q software-pipeline candidates")
     CHECK(r.stderr_data.empty());
     CHECK(contains(r.stdout_data, "OpenVCL VU loop pipeline opportunities"));
     CHECK(contains(r.stdout_data, "loop_lid q_producer_token=4"));
+    CHECK(contains(r.stdout_data, "last_q_consumer_token=8"));
     CHECK(contains(r.stdout_data, "q_latency=7"));
     CHECK(contains(r.stdout_data, "q_producer_consumer_gap_cycles=0"));
     CHECK(contains(r.stdout_data, "q_producer_consumer_gap_deficit_cycles=7"));
     CHECK(contains(r.stdout_data, "loop_carried_q_gap_cycles=8"));
+    CHECK(contains(r.stdout_data, "q_producer_insertion_gap_cycles=5"));
+    CHECK(contains(r.stdout_data, "q_producer_insertion_gap_deficit_cycles=2"));
     CHECK(contains(r.stdout_data, "q_scheduling_strategy=loop_carried"));
     CHECK(contains(r.stdout_data, "requires_prolog_epilog=yes"));
     CHECK(contains(r.stdout_data, "eligible_single_q_pipeline=yes"));
@@ -91,7 +94,7 @@ TEST_CASE("CLI: loop pipeline text dump exposes Q software-pipeline candidates")
     CHECK(contains(r.stdout_data, "prolog_tokens=2|3|4"));
     CHECK(contains(r.stdout_data, "main_tokens=5|6|7|8|9|10|11"));
     CHECK(contains(r.stdout_data, "drain_tokens=5|6|7|8|9|10"));
-    CHECK(contains(r.stdout_data, "blockers=requires_register_rotation"));
+    CHECK(contains(r.stdout_data, "blockers=insufficient_q_insertion_gap|requires_register_rotation"));
     CHECK(contains(r.stdout_data, "rotated_registers=VF03|VF06"));
     CHECK(contains(r.stdout_data, "rotation_descriptors=VF03->VF31(in=x|y|z,out=x|y|z)|VF06->VF30(in=x|y|z,out=x|y|z)"));
     CHECK(contains(r.stdout_data, "prefetch_descriptors=2:lq(load,base=VI01,offset=+0,reads_induction=yes:VI01,next_offset=+3)|3:mul(none,reads_induction=no)"));
@@ -118,6 +121,8 @@ TEST_CASE("CLI: loop pipeline JSON dump is stable enough for scheduler tooling")
     CHECK(contains(r.stdout_data, "\"q_producer_consumer_gap_cycles\": 0"));
     CHECK(contains(r.stdout_data, "\"q_producer_consumer_gap_deficit_cycles\": 7"));
     CHECK(contains(r.stdout_data, "\"loop_carried_q_gap_cycles\": 8"));
+    CHECK(contains(r.stdout_data, "\"q_producer_insertion_gap_cycles\": 5"));
+    CHECK(contains(r.stdout_data, "\"q_producer_insertion_gap_deficit_cycles\": 2"));
     CHECK(contains(r.stdout_data, "\"q_scheduling_strategy\": \"loop_carried\""));
     CHECK(contains(r.stdout_data, "\"requires_loop_carried_registers\": true"));
     CHECK(contains(r.stdout_data, "\"memory_loads\": 2"));
@@ -128,7 +133,7 @@ TEST_CASE("CLI: loop pipeline JSON dump is stable enough for scheduler tooling")
     CHECK(contains(r.stdout_data, "\"pipeline_plan\": {"));
     CHECK(contains(r.stdout_data, "\"available\": true"));
     CHECK(contains(r.stdout_data, "\"emittable\": false"));
-    CHECK(contains(r.stdout_data, "\"blockers\": [\"requires_register_rotation\"]"));
+    CHECK(contains(r.stdout_data, "\"blockers\": [\"insufficient_q_insertion_gap\", \"requires_register_rotation\"]"));
     CHECK(contains(r.stdout_data, "\"rotated_registers\": [\"VF03\", \"VF06\"]"));
     CHECK(contains(r.stdout_data, "\"rotation_descriptors\": [{\"register\": \"VF03\", \"scratch_available\": true, \"scratch_register\": \"VF31\", \"input_fields\": [\"x\", \"y\", \"z\"], \"output_fields\": [\"x\", \"y\", \"z\"]}"));
     CHECK(contains(r.stdout_data, "\"prefetch_descriptors\": [{\"token_index\": 2, \"mnemonic\": \"lq\", \"memory\": \"load\", \"memory_base\": \"VI01\", \"memory_offset_known\": true, \"memory_offset\": 0, \"reads_induction_register\": true, \"induction_register\": \"VI01\", \"next_iteration_offset_known\": true, \"next_iteration_offset\": 3}"));

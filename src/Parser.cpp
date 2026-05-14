@@ -604,11 +604,14 @@ namespace
 			stream << i->label
 			       << " q_producer_token=" << i->qProducerTokenIndex
 			       << " first_q_consumer_token=" << i->firstQConsumerTokenIndex
+			       << " last_q_consumer_token=" << i->lastQConsumerTokenIndex
 			       << " q_consumers=" << i->qConsumerTokenIndices.size()
 			       << " q_latency=" << i->qProducerLatency
 			       << " q_producer_consumer_gap_cycles=" << i->qProducerConsumerGapCycles
 			       << " q_producer_consumer_gap_deficit_cycles=" << i->qProducerConsumerGapDeficitCycles
 			       << " loop_carried_q_gap_cycles=" << i->loopCarriedQGapCycles
+			       << " q_producer_insertion_gap_cycles=" << i->qProducerInsertionGapCycles
+			       << " q_producer_insertion_gap_deficit_cycles=" << i->qProducerInsertionGapDeficitCycles
 			       << " q_scheduling_strategy=" << loopQSchedulingStrategyName( i->qSchedulingStrategy )
 			       << " source_prefix_cycles=" << i->sourcePrefixCycles
 			       << " source_suffix_cycles=" << i->sourceSuffixCycles
@@ -679,11 +682,14 @@ namespace
 			stream << "      \"branch_token_index\": " << opportunity.branchTokenIndex << ",\n";
 			stream << "      \"q_producer_token_index\": " << opportunity.qProducerTokenIndex << ",\n";
 			stream << "      \"first_q_consumer_token_index\": " << opportunity.firstQConsumerTokenIndex << ",\n";
+			stream << "      \"last_q_consumer_token_index\": " << opportunity.lastQConsumerTokenIndex << ",\n";
 			stream << "      \"q_consumer_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.qConsumerTokenIndices ); stream << ",\n";
 			stream << "      \"q_producer_latency\": " << opportunity.qProducerLatency << ",\n";
 			stream << "      \"q_producer_consumer_gap_cycles\": " << opportunity.qProducerConsumerGapCycles << ",\n";
 			stream << "      \"q_producer_consumer_gap_deficit_cycles\": " << opportunity.qProducerConsumerGapDeficitCycles << ",\n";
 			stream << "      \"loop_carried_q_gap_cycles\": " << opportunity.loopCarriedQGapCycles << ",\n";
+			stream << "      \"q_producer_insertion_gap_cycles\": " << opportunity.qProducerInsertionGapCycles << ",\n";
+			stream << "      \"q_producer_insertion_gap_deficit_cycles\": " << opportunity.qProducerInsertionGapDeficitCycles << ",\n";
 			stream << "      \"q_scheduling_strategy\": "; writeJsonString( stream, loopQSchedulingStrategyName( opportunity.qSchedulingStrategy ) ); stream << ",\n";
 			stream << "      \"source_prefix_cycles\": " << opportunity.sourcePrefixCycles << ",\n";
 			stream << "      \"source_suffix_cycles\": " << opportunity.sourceSuffixCycles << ",\n";

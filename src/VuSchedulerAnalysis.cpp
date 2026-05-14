@@ -954,6 +954,8 @@ namespace
 			addPipelineBlocker( opportunity, "q_latency_already_local" );
 		if( opportunity.qSchedulingStrategy == VU_LOOP_Q_SCHEDULE_INSUFFICIENT )
 			addPipelineBlocker( opportunity, "insufficient_loop_carried_q_gap" );
+		if( opportunity.qProducerInsertionGapDeficitCycles != 0 )
+			addPipelineBlocker( opportunity, "insufficient_q_insertion_gap" );
 		if( opportunity.hasMemoryPreOrPostIncrement )
 			addPipelineBlocker( opportunity, "pre_or_post_increment_memory" );
 		if( opportunity.hasXgkick )
@@ -1285,10 +1287,13 @@ VuLoopPipelineOpportunity::VuLoopPipelineOpportunity()
 	branchTokenIndex = 0;
 	qProducerTokenIndex = 0;
 	firstQConsumerTokenIndex = 0;
+	lastQConsumerTokenIndex = 0;
 	qProducerLatency = 0;
 	qProducerConsumerGapCycles = 0;
 	qProducerConsumerGapDeficitCycles = 0;
 	loopCarriedQGapCycles = 0;
+	qProducerInsertionGapCycles = 0;
+	qProducerInsertionGapDeficitCycles = 0;
 	qSchedulingStrategy = VU_LOOP_Q_SCHEDULE_INSUFFICIENT;
 	sourcePrefixCycles = 0;
 	sourceSuffixCycles = 0;
@@ -1516,6 +1521,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		opportunity.branchTokenIndex = loop->branchTokenIndex;
 		opportunity.qProducerTokenIndex = loop->firstBodyTokenIndex + qProducerOffset;
 		opportunity.firstQConsumerTokenIndex = loop->firstBodyTokenIndex + qConsumerOffsets.front();
+		opportunity.lastQConsumerTokenIndex = loop->firstBodyTokenIndex + qConsumerOffsets.back();
 		opportunity.qProducerLatency = loop->bodyTokens[qProducerOffset]->operand()
 		                             ? loop->bodyTokens[qProducerOffset]->operand()->latency()
 		                             : 0;
@@ -1533,6 +1539,16 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			: 0;
 		opportunity.loopCarriedQGapCycles =
 			opportunity.sourceSuffixCycles + opportunity.branchDelaySlots + opportunity.sourcePrefixCycles;
+		opportunity.qProducerInsertionGapCycles =
+			countEmittableTokens( *loop,
+			                      qConsumerOffsets.back() + 1,
+			                      static_cast<unsigned int>( loop->bodyTokens.size() - 1 ) )
+		    + opportunity.branchDelaySlots
+		    + opportunity.sourcePrefixCycles;
+		opportunity.qProducerInsertionGapDeficitCycles =
+			opportunity.qProducerLatency > opportunity.qProducerInsertionGapCycles
+			? opportunity.qProducerLatency - opportunity.qProducerInsertionGapCycles
+			: 0;
 		opportunity.qSchedulingStrategy = classifyLoopQSchedulingStrategy( opportunity );
 		opportunity.simpleCountedLoop = loop->simpleCountedLoop;
 		opportunity.hasSingleQProducer = qProducerCount == 1;
