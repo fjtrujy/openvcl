@@ -240,6 +240,11 @@ resources, memory flags, branch-delay slots, and special bypass notes. This is
 the canonical table to inspect before adding new parser, cost-analysis, or
 scheduler rules.
 
+Generated-code helpers should use `VuInstructionOpcode`/`vuInstructionMnemonic`
+instead of spelling raw mnemonics directly in `CodeGenerator.cpp`. Hand-written
+software-pipeline paths can then share the same names as the parser, cost
+analyzer, and metadata dumps.
+
 ## Scheduler Status
 
 OpenVCL now performs conservative VU scheduling rather than only emitting

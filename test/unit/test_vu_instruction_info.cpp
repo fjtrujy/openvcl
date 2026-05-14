@@ -23,6 +23,21 @@ TEST_CASE("VuInstructionInfo: normalizes field and broadcast mnemonics")
     CHECK(vcl::normalizeVuMnemonic("nop[E]") == "nop");
 }
 
+TEST_CASE("VuInstructionInfo: opcode enum owns mnemonic strings")
+{
+    CHECK(std::string(vcl::vuInstructionMnemonic(vcl::VU_OP_LQ)) == "lq");
+    CHECK(std::string(vcl::vuInstructionMnemonic(vcl::VU_OP_MULQ)) == "mulq");
+    CHECK(std::string(vcl::vuInstructionMnemonic(vcl::VU_OP_WAITQ)) == "waitq");
+    CHECK(vcl::vuInstructionOpcodeForMnemonic("lq") == vcl::VU_OP_LQ);
+    CHECK(vcl::vuInstructionOpcodeForMnemonic("MULQ") == vcl::VU_OP_MULQ);
+    CHECK(vcl::vuInstructionOpcodeForMnemonic("unknown") == vcl::VU_OP_INVALID);
+
+    const vcl::VuInstructionInfo* lq = vcl::findVuInstructionInfo("lq");
+    REQUIRE(lq != 0);
+    CHECK(lq->opcode == vcl::VU_OP_LQ);
+    CHECK(lq->mnemonic == vcl::vuInstructionMnemonic(vcl::VU_OP_LQ));
+}
+
 TEST_CASE("VuInstructionInfo: exposes Q and P producer costs")
 {
     const vcl::VuInstructionInfo* div = vcl::findVuInstructionInfo("div");

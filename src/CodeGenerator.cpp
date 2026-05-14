@@ -626,9 +626,49 @@ namespace
 		return stream.str();
 	}
 
+	std::string vuInstr( VuInstructionOpcode opcode )
+	{
+		const char* mnemonic = vuInstructionMnemonic( opcode );
+		return mnemonic ? mnemonic : "";
+	}
+
+	std::string vuInstr( VuInstructionOpcode opcode, const std::string& arguments )
+	{
+		return vuInstr( opcode ) + " " + arguments;
+	}
+
+	std::string vuInstrFields( VuInstructionOpcode opcode, const std::string& fields, const std::string& arguments )
+	{
+		return vuInstr( opcode ) + "." + fields + " " + arguments;
+	}
+
+	bool vuInstrEquals( const std::string& mnemonic, VuInstructionOpcode opcode )
+	{
+		const char* expected = vuInstructionMnemonic( opcode );
+		return expected && mnemonic == expected;
+	}
+
+	std::string formatRawPairedInstructionLine( const std::string& upper, const std::string& lower )
+	{
+		const int instructionLength = 32;
+		std::string line;
+		for( int d = 0; d < 20; d++ )
+			line += " ";
+		line += upper;
+
+		int pad = instructionLength - int(upper.length());
+		if( pad <= 0 )
+			line += " ";
+		for( int d = 0; d < pad; d++ )
+			line += " ";
+
+		line += lower;
+		return line;
+	}
+
 	bool integerSelfImmediateAdd( const Token& token, std::string& reg, long& immediate )
 	{
-		if( !token.operand() || lowerVuTokenName(token) != "iaddiu" )
+		if( !token.operand() || !vuInstrEquals( lowerVuTokenName(token), VU_OP_IADDIU ) )
 			return false;
 		if( token.flags() & (Token::PREORDERED | Token::E | Token::D | Token::T | Token::BRANCH_DELAY_FILLER) )
 			return false;
@@ -1218,7 +1258,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 	{
 		// Auto-terminate with an exit pair if the last instruction wasn't closed
 		m_codeLines.push_back(std::string("                    nop[E]                          nop"));
-		m_codeLines.push_back(std::string("                    nop                             nop"));
+		m_codeLines.push_back( formatRawPairedInstructionLine( vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP) ) );
 		// Do not treat as an error; some VCL programs end in a loop
 	}
 
@@ -1249,20 +1289,20 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 
 void CodeGenerator::addNopLine()
 {
-	m_codeLines.push_back(std::string("                    nop                             nop"));
+	m_codeLines.push_back( formatRawPairedInstructionLine( vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP) ) );
 }
 
 void CodeGenerator::emitWaitQ()
 {
 	const int nextCycle = m_currentCycle + 1;
-	m_codeLines.push_back(std::string("                    nop                             waitq"));
+	m_codeLines.push_back( formatRawPairedInstructionLine( vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITQ) ) );
 	m_currentCycle = (m_qReadyCycle > nextCycle) ? m_qReadyCycle : nextCycle;
 }
 
 void CodeGenerator::emitWaitP()
 {
 	const int nextCycle = m_currentCycle + 1;
-	m_codeLines.push_back(std::string("                    nop                             waitp"));
+	m_codeLines.push_back( formatRawPairedInstructionLine( vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITP) ) );
 	m_currentCycle = (m_pReadyCycle > nextCycle) ? m_pReadyCycle : nextCycle;
 }
 
@@ -1279,7 +1319,7 @@ void CodeGenerator::emitUpperWithWait( const Token& token, bool waitQ )
 		outputLine += " ";
 	for(int d = 0; d < pad; d++)
 		outputLine += " ";
-	outputLine += waitQ ? "waitq" : "waitp";
+	outputLine += waitQ ? vuInstr(VU_OP_WAITQ) : vuInstr(VU_OP_WAITP);
 
 	const int readyCycle = waitQ ? m_qReadyCycle : m_pReadyCycle;
 	const int issueCycle = (readyCycle > m_currentCycle) ? readyCycle : m_currentCycle;
@@ -1315,7 +1355,8 @@ void CodeGenerator::padForBranchPreBubble( const Token& token )
 	if( !branchNeedsPreBubble( token ) )
 		return;
 
-	if( m_codeLines.empty() || m_codeLines.back() != std::string("                    nop                             nop") )
+	if( m_codeLines.empty()
+	    || m_codeLines.back() != formatRawPairedInstructionLine( vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP) ) )
 	{
 		addNopLine();
 		m_currentCycle++;
@@ -1342,7 +1383,7 @@ void CodeGenerator::emitSingleToken( const Token& token )
 
 	if(tokenIsLowerExecutionPath(token))
 	{
-		outputLine += "nop";
+		outputLine += vuInstr(VU_OP_NOP);
 
 		for(int d = 0; d < instructionLength-3; d++)
 			outputLine += " ";
@@ -1361,7 +1402,7 @@ void CodeGenerator::emitSingleToken( const Token& token )
 			for(int d = 0; d < instructionLength-int(instruction.length()); d++)
 				outputLine += " ";
 
-			outputLine += "nop";
+			outputLine += vuInstr(VU_OP_NOP);
 		}
 	}
 
@@ -1414,7 +1455,7 @@ void CodeGenerator::emitBranchWithDelayFiller( const Token& branch, const Token&
 
 	if(tokenIsLowerExecutionPath(branch))
 	{
-		branchLine += "nop";
+		branchLine += vuInstr(VU_OP_NOP);
 		for(int d = 0; d < instructionLength-3; d++)
 			branchLine += " ";
 		branchLine += branchInstruction;
@@ -1428,7 +1469,7 @@ void CodeGenerator::emitBranchWithDelayFiller( const Token& branch, const Token&
 				branchLine += " ";
 			for(int d = 0; d < instructionLength-int(branchInstruction.length()); d++)
 				branchLine += " ";
-			branchLine += "nop";
+			branchLine += vuInstr(VU_OP_NOP);
 		}
 	}
 
@@ -1448,7 +1489,7 @@ void CodeGenerator::emitBranchWithDelayFiller( const Token& branch, const Token&
 
 	if(tokenIsLowerExecutionPath(filler))
 	{
-		fillerLine += "nop";
+		fillerLine += vuInstr(VU_OP_NOP);
 		for(int d = 0; d < instructionLength-3; d++)
 			fillerLine += " ";
 		fillerLine += fillerInstruction;
@@ -1462,7 +1503,7 @@ void CodeGenerator::emitBranchWithDelayFiller( const Token& branch, const Token&
 				fillerLine += " ";
 			for(int d = 0; d < instructionLength-int(fillerInstruction.length()); d++)
 				fillerLine += " ";
-			fillerLine += "nop";
+			fillerLine += vuInstr(VU_OP_NOP);
 		}
 	}
 
@@ -2160,7 +2201,7 @@ bool CodeGenerator::collectFastNoLightsLoopPipelinePattern( std::list<Token>::it
 		if( branchTargetLabel(token, target) && target == pattern.sourceLabel )
 			continue;
 
-		if( mnemonic == "iaddiu" )
+		if( mnemonic == vuInstr(VU_OP_IADDIU) )
 		{
 			std::string dst;
 			std::string src;
@@ -2200,7 +2241,7 @@ bool CodeGenerator::collectFastNoLightsLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( mnemonic == "lq" )
+		if( mnemonic == vuInstr(VU_OP_LQ) )
 		{
 			std::string base;
 			long offset = 0;
@@ -2224,7 +2265,7 @@ bool CodeGenerator::collectFastNoLightsLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( mnemonic == "ilw" )
+		if( mnemonic == vuInstr(VU_OP_ILW) )
 		{
 			std::string base;
 			long offset = 0;
@@ -2241,7 +2282,7 @@ bool CodeGenerator::collectFastNoLightsLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( mnemonic == "sq" )
+		if( mnemonic == vuInstr(VU_OP_SQ) )
 		{
 			std::string base;
 			long offset = 0;
@@ -2274,7 +2315,7 @@ bool CodeGenerator::collectFastNoLightsLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( mnemonic == "mula" && token.broadcast() == Token::X )
+		if( mnemonic == vuInstr(VU_OP_MULA) && token.broadcast() == Token::X )
 		{
 			if( !getRegisterArgKey(token, 1, pattern.row0Reg)
 			    || !getRegisterArgKey(token, 2, pattern.vertexReg) )
@@ -2284,7 +2325,7 @@ bool CodeGenerator::collectFastNoLightsLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( mnemonic == "madda" && token.broadcast() == Token::Y )
+		if( mnemonic == vuInstr(VU_OP_MADDA) && token.broadcast() == Token::Y )
 		{
 			if( !getRegisterArgKey(token, 1, pattern.row1Reg) )
 				return false;
@@ -2293,7 +2334,7 @@ bool CodeGenerator::collectFastNoLightsLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( mnemonic == "madda" && token.broadcast() == Token::Z )
+		if( mnemonic == vuInstr(VU_OP_MADDA) && token.broadcast() == Token::Z )
 		{
 			if( !getRegisterArgKey(token, 1, pattern.row2Reg) )
 				return false;
@@ -2302,7 +2343,7 @@ bool CodeGenerator::collectFastNoLightsLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( mnemonic == "madd" && token.broadcast() == Token::W )
+		if( mnemonic == vuInstr(VU_OP_MADD) && token.broadcast() == Token::W )
 		{
 			if( !getRegisterArgKey(token, 0, pattern.xformedReg)
 			    || !getRegisterArgKey(token, 1, pattern.row3Reg) )
@@ -2312,7 +2353,7 @@ bool CodeGenerator::collectFastNoLightsLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( mnemonic == "div" )
+		if( mnemonic == vuInstr(VU_OP_DIV) )
 		{
 			std::string denom;
 			if( !getRegisterArgKey(token, 2, denom) )
@@ -2323,7 +2364,7 @@ bool CodeGenerator::collectFastNoLightsLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( mnemonic == "mfir" )
+		if( mnemonic == vuInstr(VU_OP_MFIR) )
 		{
 			std::string dst;
 			std::string src;
@@ -2335,7 +2376,7 @@ bool CodeGenerator::collectFastNoLightsLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( mnemonic == "ftoi4" )
+		if( mnemonic == vuInstr(VU_OP_FTOI4) )
 		{
 			std::string dst;
 			if( !getRegisterArgKey(token, 0, dst) )
@@ -2407,86 +2448,86 @@ void CodeGenerator::emitFastNoLightsSoftwarePipelineLoop( const FastNoLightsLoop
 	const std::string vf00 = "VF00";
 
 	m_codeLines.push_back(p.entryLabel + ":");
-	emitRawPairedLine("nop", "lq.xyz " + vert + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrFields(VU_OP_LQ, "xyz", vert + ", " + offsetBase(0, in)));
 	emitRawPairedLine(p.mulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"),
-	                  "ilw.w " + strip + ", " + offsetBase(0, in));
-	emitRawPairedLine(p.maddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"), "nop");
+	                  vuInstrFields(VU_OP_ILW, "w", strip + ", " + offsetBase(0, in)));
+	emitRawPairedLine(p.maddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.maddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"),
-	                  "sq " + color + ", " + offsetBase(1, out));
+	                  vuInstr(VU_OP_SQ, color + ", " + offsetBase(1, out)));
 	emitRawPairedLine(p.maddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"),
-	                  "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "ibeq " + in + ", " + last + ", " + p.epilogOneLabel);
-	emitRawPairedLine("nop", "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
+	                  vuInstr(VU_OP_IADDIU, in + ", " + in + ", 3"));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_IBEQ, in + ", " + last + ", " + p.epilogOneLabel));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_DIV, std::string("q, ") + fieldArg(vf00, "w") + ", " + fieldArg(x, "w")));
 
 	m_codeLines.push_back(p.prologLabel + ":");
-	emitRawPairedLine("max.xyz " + gs + ", " + x + ", " + x,
-	                  "lq.xyz " + vert + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstrFields(VU_OP_MAX, "xyz", gs + ", " + x + ", " + x),
+	                  vuInstrFields(VU_OP_LQ, "xyz", vert + ", " + offsetBase(0, in)));
 	emitRawPairedLine(p.mulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"),
-	                  "sq " + color + ", " + offsetBase(4, out));
+	                  vuInstr(VU_OP_SQ, color + ", " + offsetBase(4, out)));
 	emitRawPairedLine(p.maddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"),
-	                  "lq.xyz " + tex + ", " + offsetBase(-1, in));
+	                  vuInstrFields(VU_OP_LQ, "xyz", tex + ", " + offsetBase(-1, in)));
 	emitRawPairedLine(p.maddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"),
-	                  "iaddiu " + in + ", " + in + ", 3");
+	                  vuInstr(VU_OP_IADDIU, in + ", " + in + ", 3"));
 	emitRawPairedLine(p.maddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"),
-	                  "iaddiu " + adc + ", " + strip + ", " + p.adcImmediate);
-	emitRawPairedLine("mulq.xyz " + gs + ", " + gs + ", q",
-	                  "iaddiu " + out + ", " + out + ", 6");
-	emitRawPairedLine("nop", "ilw.w " + strip + ", " + offsetBase(-3, in));
-	emitRawPairedLine("nop", "ibeq " + in + ", " + last + ", " + p.epilogTwoLabel);
-	emitRawPairedLine("mulq.xyz " + tex + ", " + tex + ", q",
-	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
+	                  vuInstr(VU_OP_IADDIU, adc + ", " + strip + ", " + p.adcImmediate));
+	emitRawPairedLine(vuInstrFields(VU_OP_MULQ, "xyz", gs + ", " + gs + ", q"),
+	                  vuInstr(VU_OP_IADDIU, out + ", " + out + ", 6"));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrFields(VU_OP_ILW, "w", strip + ", " + offsetBase(-3, in)));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_IBEQ, in + ", " + last + ", " + p.epilogTwoLabel));
+	emitRawPairedLine(vuInstrFields(VU_OP_MULQ, "xyz", tex + ", " + tex + ", q"),
+	                  vuInstr(VU_OP_DIV, std::string("q, ") + fieldArg(vf00, "w") + ", " + fieldArg(x, "w")));
 
 	m_codeLines.push_back(p.mainLabel + ":");
-	emitRawPairedLine("ftoi4.xyz " + gs + ", " + gs,
-	                  "lq.xyz " + vert + ", " + offsetBase(0, in));
-	emitRawPairedLine("nop", "mfir.w " + gs + ", " + adc);
-	emitRawPairedLine("nop", "sq " + color + ", " + offsetBase(1, out));
-	emitRawPairedLine("max.xyz " + xCopy + ", " + x + ", " + x,
-	                  "sq.xyz " + tex + ", " + offsetBase(-6, out));
+	emitRawPairedLine(vuInstrFields(VU_OP_FTOI4, "xyz", gs + ", " + gs),
+	                  vuInstrFields(VU_OP_LQ, "xyz", vert + ", " + offsetBase(0, in)));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrFields(VU_OP_MFIR, "w", gs + ", " + adc));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_SQ, color + ", " + offsetBase(1, out)));
+	emitRawPairedLine(vuInstrFields(VU_OP_MAX, "xyz", xCopy + ", " + x + ", " + x),
+	                  vuInstrFields(VU_OP_SQ, "xyz", tex + ", " + offsetBase(-6, out)));
 	emitRawPairedLine(p.mulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"),
-	                  "lq.xyz " + tex + ", " + offsetBase(-1, in));
+	                  vuInstrFields(VU_OP_LQ, "xyz", tex + ", " + offsetBase(-1, in)));
 	emitRawPairedLine(p.maddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"),
-	                  "sq " + gs + ", " + offsetBase(-4, out));
+	                  vuInstr(VU_OP_SQ, gs + ", " + offsetBase(-4, out)));
 	emitRawPairedLine(p.maddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"),
-	                  "iaddiu " + in + ", " + in + ", 3");
+	                  vuInstr(VU_OP_IADDIU, in + ", " + in + ", 3"));
 	emitRawPairedLine(p.maddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"),
-	                  "iaddiu " + adc + ", " + strip + ", " + p.adcImmediate);
-	emitRawPairedLine("mulq.xyz " + gs + ", " + xCopy + ", q",
-	                  "iaddiu " + out + ", " + out + ", 3");
-	emitRawPairedLine("nop", "ilw.w " + strip + ", " + offsetBase(-3, in));
-	emitRawPairedLine("nop", "ibne " + in + ", " + last + ", " + p.mainLabel);
-	emitRawPairedLine("mulq.xyz " + tex + ", " + tex + ", q",
-	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
+	                  vuInstr(VU_OP_IADDIU, adc + ", " + strip + ", " + p.adcImmediate));
+	emitRawPairedLine(vuInstrFields(VU_OP_MULQ, "xyz", gs + ", " + xCopy + ", q"),
+	                  vuInstr(VU_OP_IADDIU, out + ", " + out + ", 3"));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrFields(VU_OP_ILW, "w", strip + ", " + offsetBase(-3, in)));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_IBNE, in + ", " + last + ", " + p.mainLabel));
+	emitRawPairedLine(vuInstrFields(VU_OP_MULQ, "xyz", tex + ", " + tex + ", q"),
+	                  vuInstr(VU_OP_DIV, std::string("q, ") + fieldArg(vf00, "w") + ", " + fieldArg(x, "w")));
 
 	m_codeLines.push_back(p.epilogTwoLabel + ":");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("ftoi4.xyz " + gs + ", " + gs, "nop");
-	emitRawPairedLine("nop", "mfir.w " + gs + ", " + adc);
-	emitRawPairedLine("nop", "sq.xyz " + tex + ", " + offsetBase(-6, out));
-	emitRawPairedLine("nop", "lq.xyz " + tex + ", " + offsetBase(-1, in));
-	emitRawPairedLine("mulq.xyz " + gs + ", " + x + ", q",
-	                  "sq " + gs + ", " + offsetBase(-4, out));
-	emitRawPairedLine("mulq.xyz " + tex + ", " + tex + ", q",
-	                  "iaddiu " + adc + ", " + strip + ", " + p.adcImmediate);
-	emitRawPairedLine("nop", "mfir.w " + gs + ", " + adc);
-	emitRawPairedLine("ftoi4.xyz " + gs + ", " + gs, "nop");
-	emitRawPairedLine("nop", "sq.xyz " + tex + ", " + offsetBase(-3, out));
-	emitRawPairedLine("nop", "b " + p.exitLabel);
-	emitRawPairedLine("nop", "sq " + gs + ", " + offsetBase(-1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrFields(VU_OP_FTOI4, "xyz", gs + ", " + gs), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrFields(VU_OP_MFIR, "w", gs + ", " + adc));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrFields(VU_OP_SQ, "xyz", tex + ", " + offsetBase(-6, out)));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrFields(VU_OP_LQ, "xyz", tex + ", " + offsetBase(-1, in)));
+	emitRawPairedLine(vuInstrFields(VU_OP_MULQ, "xyz", gs + ", " + x + ", q"),
+	                  vuInstr(VU_OP_SQ, gs + ", " + offsetBase(-4, out)));
+	emitRawPairedLine(vuInstrFields(VU_OP_MULQ, "xyz", tex + ", " + tex + ", q"),
+	                  vuInstr(VU_OP_IADDIU, adc + ", " + strip + ", " + p.adcImmediate));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrFields(VU_OP_MFIR, "w", gs + ", " + adc));
+	emitRawPairedLine(vuInstrFields(VU_OP_FTOI4, "xyz", gs + ", " + gs), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrFields(VU_OP_SQ, "xyz", tex + ", " + offsetBase(-3, out)));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_B, p.exitLabel));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_SQ, gs + ", " + offsetBase(-1, out)));
 
 	m_codeLines.push_back(p.epilogOneLabel + ":");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("max.xyz " + gs + ", " + x + ", " + x,
-	                  "lq.xyz " + tex + ", " + offsetBase(-1, in));
-	emitRawPairedLine("mulq.xyz " + gs + ", " + gs + ", q",
-	                  "iaddiu " + adc + ", " + strip + ", " + p.adcImmediate);
-	emitRawPairedLine("mulq.xyz " + tex + ", " + tex + ", q",
-	                  "mfir.w " + gs + ", " + adc);
-	emitRawPairedLine("ftoi4.xyz " + gs + ", " + gs, "nop");
-	emitRawPairedLine("nop", "sq.xyz " + tex + ", " + offsetBase(0, out));
-	emitRawPairedLine("nop", "sq " + gs + ", " + offsetBase(2, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrFields(VU_OP_MAX, "xyz", gs + ", " + x + ", " + x),
+	                  vuInstrFields(VU_OP_LQ, "xyz", tex + ", " + offsetBase(-1, in)));
+	emitRawPairedLine(vuInstrFields(VU_OP_MULQ, "xyz", gs + ", " + gs + ", q"),
+	                  vuInstr(VU_OP_IADDIU, adc + ", " + strip + ", " + p.adcImmediate));
+	emitRawPairedLine(vuInstrFields(VU_OP_MULQ, "xyz", tex + ", " + tex + ", q"),
+	                  vuInstrFields(VU_OP_MFIR, "w", gs + ", " + adc));
+	emitRawPairedLine(vuInstrFields(VU_OP_FTOI4, "xyz", gs + ", " + gs), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrFields(VU_OP_SQ, "xyz", tex + ", " + offsetBase(0, out)));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_SQ, gs + ", " + offsetBase(2, out)));
 
 	m_codeLines.push_back(p.exitLabel + ":");
 }
@@ -2601,7 +2642,7 @@ bool CodeGenerator::collectFastLitLoopPipelinePattern( std::list<Token>::iterato
 		if( branchTargetLabel(token, target) && target == pattern.sourceLabel )
 			continue;
 
-		if( mnemonic == "iaddiu" )
+		if( mnemonic == vuInstr(VU_OP_IADDIU) )
 		{
 			std::string dst;
 			std::string src;
@@ -2641,7 +2682,7 @@ bool CodeGenerator::collectFastLitLoopPipelinePattern( std::list<Token>::iterato
 			continue;
 		}
 
-		if( mnemonic == "lq" )
+		if( mnemonic == vuInstr(VU_OP_LQ) )
 		{
 			std::string base;
 			long offset = 0;
@@ -2674,7 +2715,7 @@ bool CodeGenerator::collectFastLitLoopPipelinePattern( std::list<Token>::iterato
 			continue;
 		}
 
-		if( mnemonic == "ilw" )
+		if( mnemonic == vuInstr(VU_OP_ILW) )
 		{
 			std::string base;
 			long offset = 0;
@@ -2691,7 +2732,7 @@ bool CodeGenerator::collectFastLitLoopPipelinePattern( std::list<Token>::iterato
 			continue;
 		}
 
-		if( mnemonic == "sq" )
+		if( mnemonic == vuInstr(VU_OP_SQ) )
 		{
 			std::string base;
 			long offset = 0;
@@ -2724,7 +2765,7 @@ bool CodeGenerator::collectFastLitLoopPipelinePattern( std::list<Token>::iterato
 			continue;
 		}
 
-		if( mnemonic == "mula" && token.broadcast() == Token::X )
+		if( mnemonic == vuInstr(VU_OP_MULA) && token.broadcast() == Token::X )
 		{
 			std::string row;
 			std::string src;
@@ -2751,7 +2792,7 @@ bool CodeGenerator::collectFastLitLoopPipelinePattern( std::list<Token>::iterato
 			continue;
 		}
 
-		if( mnemonic == "madda" && token.broadcast() == Token::Y )
+		if( mnemonic == vuInstr(VU_OP_MADDA) && token.broadcast() == Token::Y )
 		{
 			std::string row;
 			std::string src;
@@ -2778,7 +2819,7 @@ bool CodeGenerator::collectFastLitLoopPipelinePattern( std::list<Token>::iterato
 			continue;
 		}
 
-		if( mnemonic == "madda" && token.broadcast() == Token::Z )
+		if( mnemonic == vuInstr(VU_OP_MADDA) && token.broadcast() == Token::Z )
 		{
 			std::string row;
 			std::string src;
@@ -2793,7 +2834,7 @@ bool CodeGenerator::collectFastLitLoopPipelinePattern( std::list<Token>::iterato
 			continue;
 		}
 
-		if( mnemonic == "madd" && token.broadcast() == Token::Z )
+		if( mnemonic == vuInstr(VU_OP_MADD) && token.broadcast() == Token::Z )
 		{
 			std::string dst;
 			std::string row;
@@ -2825,7 +2866,7 @@ bool CodeGenerator::collectFastLitLoopPipelinePattern( std::list<Token>::iterato
 			continue;
 		}
 
-		if( mnemonic == "madd" && token.broadcast() == Token::W )
+		if( mnemonic == vuInstr(VU_OP_MADD) && token.broadcast() == Token::W )
 		{
 			std::string src;
 			if( !getRegisterArgKey(token, 0, pattern.xformedReg)
@@ -2837,7 +2878,7 @@ bool CodeGenerator::collectFastLitLoopPipelinePattern( std::list<Token>::iterato
 			continue;
 		}
 
-		if( mnemonic == "max" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_MAX) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
 			std::string src;
@@ -2850,7 +2891,7 @@ bool CodeGenerator::collectFastLitLoopPipelinePattern( std::list<Token>::iterato
 			continue;
 		}
 
-		if( mnemonic == "add" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_ADD) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
 			std::string src0;
@@ -2867,7 +2908,7 @@ bool CodeGenerator::collectFastLitLoopPipelinePattern( std::list<Token>::iterato
 			continue;
 		}
 
-		if( mnemonic == "mini" && token.broadcast() == Token::W
+		if( mnemonic == vuInstr(VU_OP_MINI) && token.broadcast() == Token::W
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
@@ -2885,7 +2926,7 @@ bool CodeGenerator::collectFastLitLoopPipelinePattern( std::list<Token>::iterato
 			continue;
 		}
 
-		if( mnemonic == "div" )
+		if( mnemonic == vuInstr(VU_OP_DIV) )
 		{
 			std::string denom;
 			if( !getRegisterArgKey(token, 2, denom) )
@@ -2896,7 +2937,7 @@ bool CodeGenerator::collectFastLitLoopPipelinePattern( std::list<Token>::iterato
 			continue;
 		}
 
-		if( mnemonic == "mfir" )
+		if( mnemonic == vuInstr(VU_OP_MFIR) )
 		{
 			std::string dst;
 			std::string src;
@@ -2908,7 +2949,7 @@ bool CodeGenerator::collectFastLitLoopPipelinePattern( std::list<Token>::iterato
 			continue;
 		}
 
-		if( mnemonic == "ftoi4" )
+		if( mnemonic == vuInstr(VU_OP_FTOI4) )
 		{
 			std::string dst;
 			if( !getRegisterArgKey(token, 0, dst) )
@@ -2918,7 +2959,7 @@ bool CodeGenerator::collectFastLitLoopPipelinePattern( std::list<Token>::iterato
 			continue;
 		}
 
-		if( mnemonic == "mulq" )
+		if( mnemonic == vuInstr(VU_OP_MULQ) )
 		{
 			std::string dst;
 			std::string src;
@@ -3024,17 +3065,17 @@ void CodeGenerator::emitFastLitSoftwarePipelineLoop( const FastLitLoopPipelinePa
 	const std::string vf00 = "VF00";
 
 	m_codeLines.push_back(p.entryLabel + ":");
-	emitRawPairedLine("nop", "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine(p.lightDirMulaxOp + " ACC, " + p.lightDir0Reg + ", " + fieldArg(normal, "x"), "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(p.lightDirMulaxOp + " ACC, " + p.lightDir0Reg + ", " + fieldArg(normal, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.lightDirMaddayOp + " ACC, " + p.lightDir1Reg + ", " + fieldArg(normal, "y"),
 	                  "lq.xyz " + vert + ", " + offsetBase(0, in));
-	emitRawPairedLine(p.lightDirMaddzOp + " " + cos + ", " + p.lightDir2Reg + ", " + fieldArg(normal, "z"), "nop");
-	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"), "nop");
-	emitRawPairedLine("max.xyz " + clamped + ", " + cos + ", " + vf00, "nop");
-	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"), "nop");
+	emitRawPairedLine(p.lightDirMaddzOp + " " + cos + ", " + p.lightDir2Reg + ", " + fieldArg(normal, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("max.xyz " + clamped + ", " + cos + ", " + vf00, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"),
 	                  "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), "nop");
+	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.lightColorMulaxOp + " ACC, " + p.lightColor0Reg + ", " + fieldArg(clamped, "x"),
 	                  "ibeq " + in + ", " + last + ", " + p.epilogOneLabel);
 	emitRawPairedLine(p.lightColorMaddayOp + " ACC, " + p.lightColor1Reg + ", " + fieldArg(clamped, "y"),
@@ -3043,12 +3084,12 @@ void CodeGenerator::emitFastLitSoftwarePipelineLoop( const FastLitLoopPipelinePa
 	m_codeLines.push_back(p.prologLabel + ":");
 	emitRawPairedLine(p.lightColorMaddzOp + " " + colorRaw + ", " + p.lightColor2Reg + ", " + fieldArg(clamped, "z"),
 	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("nop", "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
-	emitRawPairedLine("nop", "lq.xyz " + vert + ", " + offsetBase(0, in));
-	emitRawPairedLine(p.lightDirMulaxOp + " ACC, " + p.lightDir0Reg + ", " + fieldArg(normal, "x"), "nop");
-	emitRawPairedLine(p.lightDirMaddayOp + " ACC, " + p.lightDir1Reg + ", " + fieldArg(normal, "y"), "nop");
-	emitRawPairedLine(p.lightDirMaddzOp + " " + cos + ", " + p.lightDir2Reg + ", " + fieldArg(normal, "z"), "nop");
-	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"), "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + vert + ", " + offsetBase(0, in));
+	emitRawPairedLine(p.lightDirMulaxOp + " ACC, " + p.lightDir0Reg + ", " + fieldArg(normal, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.lightDirMaddayOp + " ACC, " + p.lightDir1Reg + ", " + fieldArg(normal, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.lightDirMaddzOp + " " + cos + ", " + p.lightDir2Reg + ", " + fieldArg(normal, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"),
 	                  "ilw.w " + strip + ", " + offsetBase(-3, in));
 	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"),
@@ -3071,14 +3112,14 @@ void CodeGenerator::emitFastLitSoftwarePipelineLoop( const FastLitLoopPipelinePa
 	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
 	emitRawPairedLine("miniw.xyz " + color + ", " + colorAccum + ", " + fieldArg(p.maxColorReg, "w"),
 	                  "iaddiu " + out + ", " + out + ", 3");
-	emitRawPairedLine("ftoi4.xyz " + gs + ", " + xQ, "nop");
+	emitRawPairedLine("ftoi4.xyz " + gs + ", " + xQ, vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulq.xyz " + texOut + ", " + texIn + ", q",
 	                  "lq.xyz " + vert + ", " + offsetBase(0, in));
 	emitRawPairedLine(p.lightDirMulaxOp + " ACC, " + p.lightDir0Reg + ", " + fieldArg(normal, "x"),
 	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
 	emitRawPairedLine(p.lightDirMaddayOp + " ACC, " + p.lightDir1Reg + ", " + fieldArg(normal, "y"),
 	                  "sq " + color + ", " + offsetBase(-8, out));
-	emitRawPairedLine(p.lightDirMaddzOp + " " + cos + ", " + p.lightDir2Reg + ", " + fieldArg(normal, "z"), "nop");
+	emitRawPairedLine(p.lightDirMaddzOp + " " + cos + ", " + p.lightDir2Reg + ", " + fieldArg(normal, "z"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"),
 	                  "ilw.w " + strip + ", " + offsetBase(-3, in));
 	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"),
@@ -3103,42 +3144,42 @@ void CodeGenerator::emitFastLitSoftwarePipelineLoop( const FastLitLoopPipelinePa
 	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
 	emitRawPairedLine("miniw.xyz " + color + ", " + colorAccum + ", " + fieldArg(p.maxColorReg, "w"),
 	                  "ilw.w " + strip + ", " + offsetBase(-3, in));
-	emitRawPairedLine("ftoi4.xyz " + gs + ", " + xQ, "nop");
+	emitRawPairedLine("ftoi4.xyz " + gs + ", " + xQ, vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulq.xyz " + texOut + ", " + texIn + ", q",
 	                  "move.xyz " + xCarry + ", " + x);
-	emitRawPairedLine("nop", "sq " + color + ", " + offsetBase(-5, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + color + ", " + offsetBase(-5, out));
 	emitRawPairedLine("add.xyz " + colorAccum + ", " + colorRaw + ", " + p.constantColorReg,
 	                  "sq " + gs + ", " + offsetBase(-4, out));
 	emitRawPairedLine("mulq.xyz " + xQ + ", " + xCarry + ", q",
 	                  "sq.xyz " + texOut + ", " + offsetBase(-6, out));
-	emitRawPairedLine("nop", "iaddiu " + adc + ", " + strip + ", " + p.adcImmediate);
-	emitRawPairedLine("nop", "lq.xyz " + texIn + ", " + offsetBase(-1, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + adc + ", " + strip + ", " + p.adcImmediate);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + texIn + ", " + offsetBase(-1, in));
 	emitRawPairedLine("miniw.xyz " + color + ", " + colorAccum + ", " + fieldArg(p.maxColorReg, "w"),
 	                  "mfir.w " + gs + ", " + adc);
-	emitRawPairedLine("ftoi4.xyz " + gs + ", " + xQ, "nop");
-	emitRawPairedLine("mulq.xyz " + texOut + ", " + texIn + ", q", "nop");
-	emitRawPairedLine("nop", "sq " + color + ", " + offsetBase(-2, out));
-	emitRawPairedLine("nop", "sq " + gs + ", " + offsetBase(-1, out));
-	emitRawPairedLine("nop", "b " + p.exitLabel);
-	emitRawPairedLine("nop", "sq.xyz " + texOut + ", " + offsetBase(-3, out));
+	emitRawPairedLine("ftoi4.xyz " + gs + ", " + xQ, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulq.xyz " + texOut + ", " + texIn + ", q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + color + ", " + offsetBase(-2, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + gs + ", " + offsetBase(-1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.exitLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + texOut + ", " + offsetBase(-3, out));
 
 	m_codeLines.push_back(p.epilogOneLabel + ":");
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.lightColorMaddzOp + " " + colorRaw + ", " + p.lightColor2Reg + ", " + fieldArg(clamped, "z"),
 	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
-	emitRawPairedLine("nop", "move.xyz " + xCarry + ", " + x);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "move.xyz " + xCarry + ", " + x);
 	emitRawPairedLine("add.xyz " + colorAccum + ", " + colorRaw + ", " + p.constantColorReg,
 	                  "lq.xyz " + texIn + ", " + offsetBase(-1, in));
-	emitRawPairedLine("nop", "ilw.w " + strip + ", " + offsetBase(-3, in));
-	emitRawPairedLine("mulq.xyz " + xQ + ", " + xCarry + ", q", "waitq");
-	emitRawPairedLine("nop", "iaddiu " + adc + ", " + strip + ", " + p.adcImmediate);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ilw.w " + strip + ", " + offsetBase(-3, in));
+	emitRawPairedLine("mulq.xyz " + xQ + ", " + xCarry + ", q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + adc + ", " + strip + ", " + p.adcImmediate);
 	emitRawPairedLine("miniw.xyz " + color + ", " + colorAccum + ", " + fieldArg(p.maxColorReg, "w"),
 	                  "mfir.w " + gs + ", " + adc);
-	emitRawPairedLine("ftoi4.xyz " + gs + ", " + xQ, "nop");
-	emitRawPairedLine("mulq.xyz " + texOut + ", " + texIn + ", q", "nop");
-	emitRawPairedLine("nop", "sq " + color + ", " + offsetBase(1, out));
-	emitRawPairedLine("nop", "sq " + gs + ", " + offsetBase(2, out));
-	emitRawPairedLine("nop", "sq.xyz " + texOut + ", " + offsetBase(0, out));
+	emitRawPairedLine("ftoi4.xyz " + gs + ", " + xQ, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulq.xyz " + texOut + ", " + texIn + ", q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + color + ", " + offsetBase(1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + gs + ", " + offsetBase(2, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + texOut + ", " + offsetBase(0, out));
 
 	m_codeLines.push_back(p.exitLabel + ":");
 }
@@ -3258,7 +3299,7 @@ bool CodeGenerator::collectSceiLoopPipelinePattern( std::list<Token>::iterator b
 		if( branchTargetLabel(token, target) && target == pattern.sourceLabel )
 			continue;
 
-		if( mnemonic == "iaddiu" )
+		if( mnemonic == vuInstr(VU_OP_IADDIU) )
 		{
 			std::string dst;
 			std::string src;
@@ -3292,7 +3333,7 @@ bool CodeGenerator::collectSceiLoopPipelinePattern( std::list<Token>::iterator b
 			continue;
 		}
 
-		if( mnemonic == "lq" )
+		if( mnemonic == vuInstr(VU_OP_LQ) )
 		{
 			std::string base;
 			long offset = 0;
@@ -3325,7 +3366,7 @@ bool CodeGenerator::collectSceiLoopPipelinePattern( std::list<Token>::iterator b
 			continue;
 		}
 
-		if( mnemonic == "ilw" )
+		if( mnemonic == vuInstr(VU_OP_ILW) )
 		{
 			std::string base;
 			long offset = 0;
@@ -3342,7 +3383,7 @@ bool CodeGenerator::collectSceiLoopPipelinePattern( std::list<Token>::iterator b
 			continue;
 		}
 
-		if( mnemonic == "sq" )
+		if( mnemonic == vuInstr(VU_OP_SQ) )
 		{
 			std::string base;
 			long offset = 0;
@@ -3375,7 +3416,7 @@ bool CodeGenerator::collectSceiLoopPipelinePattern( std::list<Token>::iterator b
 			continue;
 		}
 
-		if( mnemonic == "mula" && token.broadcast() == Token::X )
+		if( mnemonic == vuInstr(VU_OP_MULA) && token.broadcast() == Token::X )
 		{
 			std::string row;
 			std::string src;
@@ -3402,7 +3443,7 @@ bool CodeGenerator::collectSceiLoopPipelinePattern( std::list<Token>::iterator b
 			continue;
 		}
 
-		if( mnemonic == "madda" && token.broadcast() == Token::Y )
+		if( mnemonic == vuInstr(VU_OP_MADDA) && token.broadcast() == Token::Y )
 		{
 			std::string row;
 			std::string src;
@@ -3429,7 +3470,7 @@ bool CodeGenerator::collectSceiLoopPipelinePattern( std::list<Token>::iterator b
 			continue;
 		}
 
-		if( mnemonic == "madda" && token.broadcast() == Token::Z )
+		if( mnemonic == vuInstr(VU_OP_MADDA) && token.broadcast() == Token::Z )
 		{
 			std::string row;
 			std::string src;
@@ -3444,7 +3485,7 @@ bool CodeGenerator::collectSceiLoopPipelinePattern( std::list<Token>::iterator b
 			continue;
 		}
 
-		if( mnemonic == "madd" && token.broadcast() == Token::Z )
+		if( mnemonic == vuInstr(VU_OP_MADD) && token.broadcast() == Token::Z )
 		{
 			std::string dst;
 			std::string row;
@@ -3470,7 +3511,7 @@ bool CodeGenerator::collectSceiLoopPipelinePattern( std::list<Token>::iterator b
 			continue;
 		}
 
-		if( mnemonic == "madd" && token.broadcast() == Token::W )
+		if( mnemonic == vuInstr(VU_OP_MADD) && token.broadcast() == Token::W )
 		{
 			if( !getRegisterArgKey(token, 0, pattern.xformedReg)
 			    || !getRegisterArgKey(token, 1, pattern.row3Reg) )
@@ -3480,7 +3521,7 @@ bool CodeGenerator::collectSceiLoopPipelinePattern( std::list<Token>::iterator b
 			continue;
 		}
 
-		if( mnemonic == "max" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_MAX) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
 			std::string src;
@@ -3493,7 +3534,7 @@ bool CodeGenerator::collectSceiLoopPipelinePattern( std::list<Token>::iterator b
 			continue;
 		}
 
-		if( mnemonic == "mul" && token.broadcast() == 0
+		if( mnemonic == vuInstr(VU_OP_MUL) && token.broadcast() == 0
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
@@ -3512,7 +3553,7 @@ bool CodeGenerator::collectSceiLoopPipelinePattern( std::list<Token>::iterator b
 			continue;
 		}
 
-		if( mnemonic == "add" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_ADD) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
 			std::string src0;
@@ -3535,7 +3576,7 @@ bool CodeGenerator::collectSceiLoopPipelinePattern( std::list<Token>::iterator b
 			continue;
 		}
 
-		if( mnemonic == "mini" && token.broadcast() == Token::W
+		if( mnemonic == vuInstr(VU_OP_MINI) && token.broadcast() == Token::W
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
@@ -3567,7 +3608,7 @@ bool CodeGenerator::collectSceiLoopPipelinePattern( std::list<Token>::iterator b
 			continue;
 		}
 
-		if( mnemonic == "fcand" )
+		if( mnemonic == vuInstr(VU_OP_FCAND) )
 		{
 			std::string imm;
 			if( getImmediateArg(token, 1, imm) )
@@ -3576,7 +3617,7 @@ bool CodeGenerator::collectSceiLoopPipelinePattern( std::list<Token>::iterator b
 			continue;
 		}
 
-		if( mnemonic == "ior" )
+		if( mnemonic == vuInstr(VU_OP_IOR) )
 		{
 			std::string dst;
 			std::string src0;
@@ -3595,7 +3636,7 @@ bool CodeGenerator::collectSceiLoopPipelinePattern( std::list<Token>::iterator b
 			continue;
 		}
 
-		if( mnemonic == "div" )
+		if( mnemonic == vuInstr(VU_OP_DIV) )
 		{
 			std::string denom;
 			if( !getRegisterArgKey(token, 2, denom) )
@@ -3606,7 +3647,7 @@ bool CodeGenerator::collectSceiLoopPipelinePattern( std::list<Token>::iterator b
 			continue;
 		}
 
-		if( mnemonic == "mfir" )
+		if( mnemonic == vuInstr(VU_OP_MFIR) )
 		{
 			std::string dst;
 			std::string src;
@@ -3618,7 +3659,7 @@ bool CodeGenerator::collectSceiLoopPipelinePattern( std::list<Token>::iterator b
 			continue;
 		}
 
-		if( mnemonic == "ftoi4" )
+		if( mnemonic == vuInstr(VU_OP_FTOI4) )
 		{
 			std::string dst;
 			if( !getRegisterArgKey(token, 0, dst) )
@@ -3628,7 +3669,7 @@ bool CodeGenerator::collectSceiLoopPipelinePattern( std::list<Token>::iterator b
 			continue;
 		}
 
-		if( mnemonic == "mulq" )
+		if( mnemonic == vuInstr(VU_OP_MULQ) )
 		{
 			std::string dst;
 			std::string src;
@@ -3744,36 +3785,36 @@ void CodeGenerator::emitSceiSoftwarePipelineLoop( const SceiLoopPipelinePattern&
 	const std::string vi01 = "VI01";
 
 	m_codeLines.push_back(p.entryLabel + ":");
-	emitRawPairedLine("nop", "lq.xyz " + vert + ", " + offsetBase(0, in));
-	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"), "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + vert + ", " + offsetBase(0, in));
+	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"),
 	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"), "nop");
-	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), "nop");
-	emitRawPairedLine(p.lightDirMulaxOp + " ACC, " + p.lightDir0Reg + ", " + fieldArg(normal, "x"), "nop");
-	emitRawPairedLine(p.lightDirMaddayOp + " ACC, " + p.lightDir1Reg + ", " + fieldArg(normal, "y"), "nop");
+	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.lightDirMulaxOp + " ACC, " + p.lightDir0Reg + ", " + fieldArg(normal, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.lightDirMaddayOp + " ACC, " + p.lightDir1Reg + ", " + fieldArg(normal, "y"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.lightDirMaddzOp + " " + cos + ", " + p.lightDir2Reg + ", " + fieldArg(normal, "z"),
 	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
 	emitRawPairedLine("max.xyz " + clamped + ", " + cos + ", " + vf00,
 	                  "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "ibeq " + in + ", " + last + ", " + p.epilogOneLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibeq " + in + ", " + last + ", " + p.epilogOneLabel);
 	emitRawPairedLine("mulq.xyz " + xQ + ", " + x + ", q",
 	                  "iaddiu " + out + ", " + out + ", 0");
 
 	m_codeLines.push_back(p.prologLabel + ":");
 	emitRawPairedLine(p.lightColorMulaxOp + " ACC, " + p.lightColor0Reg + ", " + fieldArg(clamped, "x"),
 	                  "lq.xyz " + vert + ", " + offsetBase(0, in));
-	emitRawPairedLine(p.lightColorMaddayOp + " ACC, " + p.lightColor1Reg + ", " + fieldArg(clamped, "y"), "nop");
-	emitRawPairedLine(p.lightColorMaddzOp + " " + colorRaw + ", " + p.lightColor2Reg + ", " + fieldArg(clamped, "z"), "nop");
-	emitRawPairedLine("mul.xyz " + clip + ", " + xQ + ", " + p.clipScalesReg, "nop");
+	emitRawPairedLine(p.lightColorMaddayOp + " ACC, " + p.lightColor1Reg + ", " + fieldArg(clamped, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.lightColorMaddzOp + " " + colorRaw + ", " + p.lightColor2Reg + ", " + fieldArg(clamped, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + clip + ", " + xQ + ", " + p.clipScalesReg, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"),
 	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"), "nop");
-	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"), "nop");
-	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), "nop");
-	emitRawPairedLine(p.lightDirMulaxOp + " ACC, " + p.lightDir0Reg + ", " + fieldArg(normal, "x"), "nop");
-	emitRawPairedLine(p.lightDirMaddayOp + " ACC, " + p.lightDir1Reg + ", " + fieldArg(normal, "y"), "nop");
+	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.lightDirMulaxOp + " ACC, " + p.lightDir0Reg + ", " + fieldArg(normal, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.lightDirMaddayOp + " ACC, " + p.lightDir1Reg + ", " + fieldArg(normal, "y"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.lightDirMaddzOp + " " + cos + ", " + p.lightDir2Reg + ", " + fieldArg(normal, "z"),
 	                  "lq.xyz " + texIn + ", " + offsetBase(-1, in));
 	emitRawPairedLine("clipw.xyz " + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"),
@@ -3806,9 +3847,9 @@ void CodeGenerator::emitSceiSoftwarePipelineLoop( const SceiLoopPipelinePattern&
 	                  "sq.xyz " + texOut + ", " + offsetBase(-9, out));
 	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"),
 	                  "mfir.w " + gs + ", " + adc);
-	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"), "nop");
-	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), "nop");
-	emitRawPairedLine(p.lightDirMulaxOp + " ACC, " + p.lightDir0Reg + ", " + fieldArg(normal, "x"), "nop");
+	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.lightDirMulaxOp + " ACC, " + p.lightDir0Reg + ", " + fieldArg(normal, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.lightDirMaddayOp + " ACC, " + p.lightDir1Reg + ", " + fieldArg(normal, "y"),
 	                  "sq " + gs + ", " + offsetBase(-7, out));
 	emitRawPairedLine(p.lightDirMaddzOp + " " + cos + ", " + p.lightDir2Reg + ", " + fieldArg(normal, "z"),
@@ -3817,7 +3858,7 @@ void CodeGenerator::emitSceiSoftwarePipelineLoop( const SceiLoopPipelinePattern&
 	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
 	emitRawPairedLine("add.xyz " + gs + ", " + xQ + ", " + p.gsOffsetsReg,
 	                  "ilw.w " + strip + ", " + offsetBase(-3, in));
-	emitRawPairedLine("add.xyz " + color + ", " + colorRaw + ", " + p.constantColorReg, "nop");
+	emitRawPairedLine("add.xyz " + color + ", " + colorRaw + ", " + p.constantColorReg, vuInstr(VU_OP_NOP));
 	emitRawPairedLine("max.xyz " + clamped + ", " + cos + ", " + vf00,
 	                  "iaddiu " + in + ", " + in + ", 3");
 	emitRawPairedLine("mulq.xyz " + texOut + ", " + texIn + ", q",
@@ -3830,14 +3871,14 @@ void CodeGenerator::emitSceiSoftwarePipelineLoop( const SceiLoopPipelinePattern&
 	                  "iaddiu " + adc + ", " + adc + ", " + p.adcImmediate);
 
 	m_codeLines.push_back(p.epilogTwoLabel + ":");
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.lightColorMulaxOp + " ACC, " + p.lightColor0Reg + ", " + fieldArg(clamped, "x"),
 	                  "sq.xyz " + texOut + ", " + offsetBase(-6, out));
 	emitRawPairedLine(p.lightColorMaddayOp + " ACC, " + p.lightColor1Reg + ", " + fieldArg(clamped, "y"),
 	                  "mfir.w " + gs + ", " + adc);
 	emitRawPairedLine("mul.xyz " + clip + ", " + xQ + ", " + p.clipScalesReg,
 	                  "sq " + color + ", " + offsetBase(-5, out));
-	emitRawPairedLine(p.lightColorMaddzOp + " " + colorRaw + ", " + p.lightColor2Reg + ", " + fieldArg(clamped, "z"), "nop");
+	emitRawPairedLine(p.lightColorMaddzOp + " " + colorRaw + ", " + p.lightColor2Reg + ", " + fieldArg(clamped, "z"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("add.xyz " + gs + ", " + xQ + ", " + p.gsOffsetsReg,
 	                  "sq " + gs + ", " + offsetBase(-4, out));
 	emitRawPairedLine("clipw.xyz " + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"),
@@ -3850,34 +3891,34 @@ void CodeGenerator::emitSceiSoftwarePipelineLoop( const SceiLoopPipelinePattern&
 	                  "ior " + adc + ", " + vi01 + ", " + strip);
 	emitRawPairedLine("ftoi4.xyz " + gs + ", " + gs,
 	                  "iaddiu " + adc + ", " + adc + ", " + p.adcImmediate);
-	emitRawPairedLine("nop", "mfir.w " + gs + ", " + adc);
-	emitRawPairedLine("nop", "sq.xyz " + texOut + ", " + offsetBase(-3, out));
-	emitRawPairedLine("nop", "sq " + color + ", " + offsetBase(-2, out));
-	emitRawPairedLine("nop", "b " + p.exitLabel);
-	emitRawPairedLine("nop", "sq " + gs + ", " + offsetBase(-1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w " + gs + ", " + adc);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + texOut + ", " + offsetBase(-3, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + color + ", " + offsetBase(-2, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.exitLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + gs + ", " + offsetBase(-1, out));
 
 	m_codeLines.push_back(p.epilogOneLabel + ":");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine(p.lightColorMulaxOp + " ACC, " + p.lightColor0Reg + ", " + fieldArg(clamped, "x"), "nop");
-	emitRawPairedLine("mul.xyz " + clip + ", " + xQ + ", " + p.clipScalesReg, "nop");
-	emitRawPairedLine(p.lightColorMaddayOp + " ACC, " + p.lightColor1Reg + ", " + fieldArg(clamped, "y"), "nop");
-	emitRawPairedLine(p.lightColorMaddzOp + " " + colorRaw + ", " + p.lightColor2Reg + ", " + fieldArg(clamped, "z"), "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.lightColorMulaxOp + " ACC, " + p.lightColor0Reg + ", " + fieldArg(clamped, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + clip + ", " + xQ + ", " + p.clipScalesReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.lightColorMaddayOp + " ACC, " + p.lightColor1Reg + ", " + fieldArg(clamped, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.lightColorMaddzOp + " " + colorRaw + ", " + p.lightColor2Reg + ", " + fieldArg(clamped, "z"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("clipw.xyz " + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"),
 	                  "lq.xyz " + texIn + ", " + offsetBase(-1, in));
 	emitRawPairedLine("add.xyz " + gs + ", " + xQ + ", " + p.gsOffsetsReg,
 	                  "ilw.w " + strip + ", " + offsetBase(-3, in));
-	emitRawPairedLine("add.xyz " + color + ", " + colorRaw + ", " + p.constantColorReg, "nop");
+	emitRawPairedLine("add.xyz " + color + ", " + colorRaw + ", " + p.constantColorReg, vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulq.xyz " + texOut + ", " + texIn + ", q",
 	                  "fcand " + vi01 + ", " + p.clipImmediate);
 	emitRawPairedLine("ftoi4.xyz " + gs + ", " + gs,
 	                  "ior " + adc + ", " + vi01 + ", " + strip);
 	emitRawPairedLine("miniw.xyz " + color + ", " + color + ", " + fieldArg(p.maxColorReg, "w"),
 	                  "iaddiu " + adc + ", " + adc + ", " + p.adcImmediate);
-	emitRawPairedLine("nop", "mfir.w " + gs + ", " + adc);
-	emitRawPairedLine("nop", "sq.xyz " + texOut + ", " + offsetBase(0, out));
-	emitRawPairedLine("nop", "sq " + color + ", " + offsetBase(1, out));
-	emitRawPairedLine("nop", "sq " + gs + ", " + offsetBase(2, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w " + gs + ", " + adc);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + texOut + ", " + offsetBase(0, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + color + ", " + offsetBase(1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + gs + ", " + offsetBase(2, out));
 
 	m_codeLines.push_back(p.exitLabel + ":");
 }
@@ -3944,31 +3985,31 @@ void CodeGenerator::emitPs2glTriXformSoftwarePipelineLoop( bool pvDiff )
 	const long thirdTexOffset = pvDiff ? 10 : 8;
 
 	m_codeLines.push_back("xform_loop_lid__ENTRY_POINT:");
-	emitRawPairedLine("nop", "iadd VI08, VI07, VI00");
-	emitRawPairedLine("nop", "iadd VI07, VI06, VI00");
-	emitRawPairedLine("nop", "iadd VI06, VI05, VI00");
-	emitRawPairedLine("nop", "lq.w VF08, 0(VI00)");
-	emitRawPairedLine("max.xyz VF06, VF07, VF07", "nop");
-	emitRawPairedLine("nop", "loi 0x45000000");
-	emitRawPairedLine("maxi.w VF07, VF00, i", "nop");
-	emitRawPairedLine("nop", "lq.xyz VF08, " + offsetBase(secondVertexOffset, "VI03"));
-	emitRawPairedLine("mulax ACC, VF01, VF08x", "nop");
-	emitRawPairedLine("madday ACC, VF02, VF08y", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI08, VI07, VI00");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI07, VI06, VI00");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI06, VI05, VI00");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.w VF08, 0(VI00)");
+	emitRawPairedLine("max.xyz VF06, VF07, VF07", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "loi 0x45000000");
+	emitRawPairedLine("maxi.w VF07, VF00, i", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF08, " + offsetBase(secondVertexOffset, "VI03"));
+	emitRawPairedLine("mulax ACC, VF01, VF08x", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("madday ACC, VF02, VF08y", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("maddaz ACC, VF03, VF08z", "iadd VI06, VI05, VI00");
 	emitRawPairedLine("maddw VF15, VF04, VF00w", "lq.xyz VF14, 0(VI03)");
 	emitRawPairedLine("mulax ACC, VF01, VF14x", "div q, VF00w, VF15w");
 	emitRawPairedLine("madday ACC, VF02, VF14y", "lq.xyz VF08, " + offsetBase(thirdVertexOffset, "VI03"));
-	emitRawPairedLine("maddaz ACC, VF03, VF14z", "nop");
-	emitRawPairedLine("maddw VF14, VF04, VF00w", "nop");
+	emitRawPairedLine("maddaz ACC, VF03, VF14z", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddw VF14, VF04, VF00w", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulax ACC, VF01, VF08x", "lq.xyz VF07, " + offsetBase(secondTexOffset, "VI03"));
 	emitRawPairedLine("madday ACC, VF02, VF08y", "lq.w VF08, 0(VI00)");
 	emitRawPairedLine("maddaz ACC, VF03, VF08z", "div q, VF00w, VF14w");
-	emitRawPairedLine("mulq.xyz VF08, VF15, q", "nop");
+	emitRawPairedLine("mulq.xyz VF08, VF15, q", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulq.xyz VF07, VF07, q", "iaddiu VI09, VI03, 0");
 	emitRawPairedLine("maddw VF12, VF04, VF00w", "iaddiu VI10, VI04, 0");
-	emitRawPairedLine("nop", "sq.xyz VF09, 1(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF09, 1(VI04)");
 	emitRawPairedLine("add.xyz VF10, VF08, VF05", "lq.xyz VF15, 2(VI03)");
-	emitRawPairedLine("nop", "sq.xyz VF07, 3(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF07, 3(VI04)");
 	emitRawPairedLine("mulq.xyz VF07, VF14, q", "div q, VF00w, VF12w");
 	emitRawPairedLine("mul.xyz VF13, VF08, VF06", "mfir.w VF10, VI08");
 	emitRawPairedLine("ftoi4.xyz VF10, VF10", "lq.xyz VF11, " + offsetBase(thirdTexOffset, "VI03"));
@@ -3983,13 +4024,13 @@ void CodeGenerator::emitPs2glTriXformSoftwarePipelineLoop( bool pvDiff )
 
 	m_codeLines.push_back(mainLabel + ":");
 	emitRawPairedLine("ftoi4.xyz VF12, VF10", "lq.xyz VF11, " + offsetBase(secondVertexOffset, "VI03"));
-	emitRawPairedLine("sub.xyz VF10, VF07, VF08", "nop");
+	emitRawPairedLine("sub.xyz VF10, VF07, VF08", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mul.xyz VF08, VF07, VF06", "iaddiu VI04, VI10, 9");
 	emitRawPairedLine("mulw.xyz VF13, VF14, VF08w", "lq.xyz VF14, 0(VI03)");
 	emitRawPairedLine("mulax ACC, VF01, VF11x", "sq.xyz VF15, 6(VI09)");
 	emitRawPairedLine("madday ACC, VF02, VF11y", "mfir.w VF12, VI08");
-	emitRawPairedLine("maddaz ACC, VF03, VF11z", "nop");
-	emitRawPairedLine("maddw VF15, VF04, VF00w", "nop");
+	emitRawPairedLine("maddaz ACC, VF03, VF11z", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddw VF15, VF04, VF00w", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulax ACC, VF01, VF14x", "lq.xyz VF11, " + offsetBase(thirdVertexOffset, "VI03"));
 	emitRawPairedLine("madday ACC, VF02, VF14y", "sq VF12, 2(VI09)");
 	emitRawPairedLine("maddaz ACC, VF03, VF14z", "iaddiu VI11, VI03, 0");
@@ -4003,7 +4044,7 @@ void CodeGenerator::emitPs2glTriXformSoftwarePipelineLoop( bool pvDiff )
 	emitRawPairedLine("mulq.xyz VF08, VF15, q", "div q, VF00w, VF14w");
 	emitRawPairedLine("mulq.xyz VF16, VF16, q", "lq.xyz VF15, 2(VI03)");
 	emitRawPairedLine("opmsub.xyz VF00xyz, VF10xyz, VF13xyz", "fcand VI01, 262143");
-	emitRawPairedLine("nop", "iand VI03, VI01, VI02");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI03, VI01, VI02");
 	emitRawPairedLine("mul.xyz VF13, VF08, VF06", "sq.xyz VF09, 7(VI04)");
 	emitRawPairedLine("add.xyz VF10, VF08, VF05", "sq.xyz VF16, 3(VI04)");
 	emitRawPairedLine("add.xyz VF17, VF07, VF05", "fmand VI01, VI07");
@@ -4020,26 +4061,26 @@ void CodeGenerator::emitPs2glTriXformSoftwarePipelineLoop( bool pvDiff )
 	emitRawPairedLine("clipw.xyz VF13xyz, VF07w", "iaddiu VI09, VI04, 0");
 
 	m_codeLines.push_back(epiLabel + ":");
-	emitRawPairedLine("ftoi4.xyz VF09, VF10", "nop");
-	emitRawPairedLine("sub.xyz VF10, VF07, VF08", "nop");
-	emitRawPairedLine("mul.xyz VF08, VF07, VF06", "nop");
-	emitRawPairedLine("mulw.xyz VF14, VF14, VF08w", "nop");
+	emitRawPairedLine("ftoi4.xyz VF09, VF10", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("sub.xyz VF10, VF07, VF08", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz VF08, VF07, VF06", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulw.xyz VF14, VF14, VF08w", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("add.xyz VF07, VF07, VF05", "mfir.w VF09, VI08");
 	emitRawPairedLine("clipw.xyz VF08xyz, VF07w", "sq.xyz VF15, 6(VI09)");
-	emitRawPairedLine("opmula.xyz ACCxyz, VF14xyz, VF10xyz", "nop");
-	emitRawPairedLine("opmsub.xyz VF11xyz, VF10xyz, VF14xyz", "nop");
-	emitRawPairedLine("nop", "sq VF09, 2(VI09)");
-	emitRawPairedLine("nop", "fcand VI01, 262143");
-	emitRawPairedLine("nop", "iand VI02, VI01, VI02");
+	emitRawPairedLine("opmula.xyz ACCxyz, VF14xyz, VF10xyz", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("opmsub.xyz VF11xyz, VF10xyz, VF14xyz", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF09, 2(VI09)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand VI01, 262143");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI02, VI01, VI02");
 	emitRawPairedLine("abs.xyz VF00, VF11", "fmand VI07, VI07");
-	emitRawPairedLine("nop", "ior VI02, VI02, VI07");
-	emitRawPairedLine("nop", "iaddiu VI02, VI02, 0x7fff");
-	emitRawPairedLine("ftoi4.xyz VF15, VF07", "nop");
-	emitRawPairedLine("nop", "mfir.w VF15, VI02");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "b " + exitLabel);
-	emitRawPairedLine("nop", "sq VF15, 8(VI09)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior VI02, VI02, VI07");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI02, VI02, 0x7fff");
+	emitRawPairedLine("ftoi4.xyz VF15, VF07", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF15, VI02");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + exitLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF15, 8(VI09)");
 
 	m_codeLines.push_back(exitLabel + ":");
 }
@@ -4054,43 +4095,43 @@ void CodeGenerator::emitPs2glQuadXformSoftwarePipelineLoop()
 	const std::string doneLabel = "xform_loop_lid__AFTER_FALLBACK";
 
 	m_codeLines.push_back("xform_loop_lid__ENTRY_POINT:");
-	emitRawPairedLine("nop", "isub VI01, VI05, VI03");
-	emitRawPairedLine("nop", "isubiu VI01, VI01, 384");
-	emitRawPairedLine("nop", "iblez VI01, " + fallbackLabel);
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "iadd VI08, VI07, VI00");
-	emitRawPairedLine("nop", "iadd VI07, VI06, VI00");
-	emitRawPairedLine("nop", "iadd VI06, VI05, VI00");
-	emitRawPairedLine("nop", "lq.w VF08, 0(VI00)");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "loi 0x45000000");
-	emitRawPairedLine("nop", "lq.xyz VF20, 0(VI03)");
-	emitRawPairedLine("mulax ACC, VF01, VF20x", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isub VI01, VI05, VI03");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu VI01, VI01, 384");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iblez VI01, " + fallbackLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI08, VI07, VI00");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI07, VI06, VI00");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI06, VI05, VI00");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.w VF08, 0(VI00)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "loi 0x45000000");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF20, 0(VI03)");
+	emitRawPairedLine("mulax ACC, VF01, VF20x", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("madday ACC, VF02, VF20y", "lq.xyz VF08, 6(VI03)");
-	emitRawPairedLine("maddaz ACC, VF03, VF20z", "nop");
+	emitRawPairedLine("maddaz ACC, VF03, VF20z", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("maddw VF20, VF04, VF00w", "lq.xyz VF14, 9(VI03)");
-	emitRawPairedLine("mulax ACC, VF01, VF08x", "nop");
-	emitRawPairedLine("madday ACC, VF02, VF08y", "nop");
+	emitRawPairedLine("mulax ACC, VF01, VF08x", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("madday ACC, VF02, VF08y", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("maddaz ACC, VF03, VF08z", "div q, VF00w, VF20w");
-	emitRawPairedLine("maddw VF16, VF04, VF00w", "nop");
+	emitRawPairedLine("maddw VF16, VF04, VF00w", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulax ACC, VF01, VF14x", "lq.xyz VF13, 3(VI03)");
-	emitRawPairedLine("madday ACC, VF02, VF14y", "nop");
-	emitRawPairedLine("maddaz ACC, VF03, VF14z", "nop");
-	emitRawPairedLine("maddw VF14, VF04, VF00w", "nop");
-	emitRawPairedLine("mulax ACC, VF01, VF13x", "nop");
-	emitRawPairedLine("madday ACC, VF02, VF13y", "nop");
+	emitRawPairedLine("madday ACC, VF02, VF14y", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddaz ACC, VF03, VF14z", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddw VF14, VF04, VF00w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulax ACC, VF01, VF13x", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("madday ACC, VF02, VF13y", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("maddaz ACC, VF03, VF13z", "lq.xyz VF07, 7(VI03)");
-	emitRawPairedLine("maddw VF13, VF04, VF00w", "nop");
-	emitRawPairedLine("nop", "ilw.w VI02, 76(VI00)");
-	emitRawPairedLine("nop", "div q, VF00w, VF13w");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "lq.xyz VF15, 2(VI03)");
+	emitRawPairedLine("maddw VF13, VF04, VF00w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ilw.w VI02, 76(VI00)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF13w");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF15, 2(VI03)");
 	emitRawPairedLine("mulq.xyz VF08, VF20, q", "lq.xyz VF06, 76(VI00)");
-	emitRawPairedLine("nop", "fcset 0");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcset 0");
 	emitRawPairedLine("maxi.w VF07, VF00, i", "lq.xyz VF17, 10(VI03)");
 	emitRawPairedLine("mulq.xyz VF15, VF15, q", "sq.xyz VF07, 10(VI03)");
 	emitRawPairedLine("mul.xyz VF10, VF08, VF06", "div q, VF00w, VF16w");
-	emitRawPairedLine("nop", "lq.xyz VF07, 5(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF07, 5(VI03)");
 	emitRawPairedLine("mulq.xyz VF13, VF13, q", "iaddiu VI01, VI03, 0");
 	emitRawPairedLine("add.xyz VF11, VF08, VF05", "sq.xyz VF17, 7(VI03)");
 	emitRawPairedLine("clipw.xyz VF10xyz, VF07w", "lq.xyz VF17, 11(VI03)");
@@ -4101,17 +4142,17 @@ void CodeGenerator::emitPs2glQuadXformSoftwarePipelineLoop()
 	emitRawPairedLine("mulq.xyz VF16, VF16, q", "lq.w VF08, 0(VI00)");
 
 	m_codeLines.push_back("xform_loop_lid__PRO1:");
-	emitRawPairedLine("mulq.xyz VF19, VF20, q", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "nop");
+	emitRawPairedLine("mulq.xyz VF19, VF20, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulq.xyz VF17, VF17, q", "lq.xyz VF20, 0(VI03)");
-	emitRawPairedLine("mulq.xyz VF18, VF14, q", "nop");
-	emitRawPairedLine("sub.xyz VF13, VF16, VF13", "nop");
-	emitRawPairedLine("add.xyz VF07, VF16, VF05", "nop");
-	emitRawPairedLine("mulax ACC, VF01, VF20x", "nop");
+	emitRawPairedLine("mulq.xyz VF18, VF14, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("sub.xyz VF13, VF16, VF13", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("add.xyz VF07, VF16, VF05", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulax ACC, VF01, VF20x", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("madday ACC, VF02, VF20y", "lq.xyz VF22, 6(VI03)");
-	emitRawPairedLine("maddaz ACC, VF03, VF20z", "nop");
+	emitRawPairedLine("maddaz ACC, VF03, VF20z", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("maddw VF20, VF04, VF00w", "iaddiu VI01, VI03, 0");
 	emitRawPairedLine("mul.xyz VF21, VF16, VF06", "iaddiu VI09, VI04, 0");
 	emitRawPairedLine("mulax ACC, VF01, VF22x", "lq.xyz VF14, 9(VI03)");
@@ -4150,22 +4191,22 @@ void CodeGenerator::emitPs2glQuadXformSoftwarePipelineLoop()
 	emitRawPairedLine("mulq.xyz VF16, VF16, q", "mfir.w VF22, VI01");
 
 	m_codeLines.push_back(mainLabel + ":");
-	emitRawPairedLine("nop", "sq VF19, 8(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF19, 8(VI04)");
 	emitRawPairedLine("mulq.xyz VF19, VF20, q", "sq VF18, 5(VI04)");
-	emitRawPairedLine("ftoi4.xyz VF11, VF11", "nop");
+	emitRawPairedLine("ftoi4.xyz VF11, VF11", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("sub.xyz VF13, VF16, VF13", "sq VF22, 11(VI04)");
 	emitRawPairedLine("mulq.xyz VF17, VF17, q", "iaddiu VI04, VI09, 12");
 	emitRawPairedLine("add.xyz VF07, VF16, VF05", "lq.xyz VF20, 0(VI03)");
-	emitRawPairedLine("mulq.xyz VF18, VF14, q", "nop");
+	emitRawPairedLine("mulq.xyz VF18, VF14, q", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "lq.xyz VF22, 6(VI03)");
 	emitRawPairedLine("mul.xyz VF21, VF16, VF06", "iaddiu VI01, VI03, 0");
 	emitRawPairedLine("mulax ACC, VF01, VF20x", "iaddiu VI09, VI04, 0");
-	emitRawPairedLine("madday ACC, VF02, VF20y", "nop");
+	emitRawPairedLine("madday ACC, VF02, VF20y", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("maddaz ACC, VF03, VF20z", "lq.xyz VF14, 9(VI03)");
-	emitRawPairedLine("maddw VF20, VF04, VF00w", "nop");
+	emitRawPairedLine("maddw VF20, VF04, VF00w", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulax ACC, VF01, VF22x", "lq.xyz VF23, 7(VI03)");
 	emitRawPairedLine("madday ACC, VF02, VF22y", "lq.xyz VF25, 10(VI03)");
-	emitRawPairedLine("maddaz ACC, VF03, VF22z", "nop");
+	emitRawPairedLine("maddaz ACC, VF03, VF22z", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("maddw VF16, VF04, VF00w", "div q, VF00w, VF20w");
 	emitRawPairedLine("mulax ACC, VF01, VF14x", "sq.xyz VF15, 0(VI04)");
 	emitRawPairedLine("madday ACC, VF02, VF14y", "lq.xyz VF24, 3(VI03)");
@@ -4194,53 +4235,53 @@ void CodeGenerator::emitPs2glQuadXformSoftwarePipelineLoop()
 	emitRawPairedLine("sub.xyz VF12, VF22, VF13", "ior VI01, VI01, VI10");
 	emitRawPairedLine("mul.xyz VF21, VF13, VF06", "iaddiu VI01, VI01, 0x7fff");
 	emitRawPairedLine("add.xyz VF08, VF13, VF05", "mfir.w VF19, VI01");
-	emitRawPairedLine("nop", "div q, VF00w, VF14w");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF14w");
 	emitRawPairedLine("ftoi4.xyz VF22, VF07", "ibne VI03, VI06, " + mainLabel);
 	emitRawPairedLine("mulq.xyz VF16, VF16, q", "mfir.w VF22, VI01");
 
 	m_codeLines.push_back(epi0Label + ":");
 	emitRawPairedLine("mulq.xyz VF19, VF20, q", "sq VF19, 8(VI04)");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulq.xyz VF17, VF17, q", "mfir.w VF11, VI08");
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulq.xyz VF18, VF14, q", "sq VF18, 5(VI04)");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "sq VF22, 11(VI04)");
 	emitRawPairedLine("sub.xyz VF13, VF16, VF13", "iaddiu VI04, VI09, 0");
 	emitRawPairedLine("mul.xyz VF15, VF18, VF06", "sq.xyz VF15, 12(VI04)");
 	emitRawPairedLine("mul.xyz VF21, VF16, VF06", "sq.xyz VF19, 21(VI04)");
 	emitRawPairedLine("mulw.xyz VF10, VF12, VF08w", "sq.xyz VF10, 15(VI04)");
-	emitRawPairedLine("nop", "sq.xyz VF17, 18(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF17, 18(VI04)");
 	emitRawPairedLine("clipw.xyz VF15xyz, VF07w", "sq.xyz VF09, 16(VI04)");
 	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "sq.xyz VF09, 19(VI04)");
 	emitRawPairedLine("opmula.xyz ACCxyz, VF10xyz, VF13xyz", "sq.xyz VF09, 13(VI04)");
 	emitRawPairedLine("opmsub.xyz VF00xyz, VF13xyz, VF10xyz", "sq.xyz VF09, 22(VI04)");
-	emitRawPairedLine("nop", "mfir.w VF18, VI08");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF18, VI08");
 	emitRawPairedLine("add.xyz VF12, VF18, VF05", "fcand VI01, 16777215");
 	emitRawPairedLine("ftoi4.xyz VF11, VF11", "iand VI02, VI01, VI02");
 	emitRawPairedLine("add.xyz VF07, VF16, VF05", "fmand VI07, VI07");
 	emitRawPairedLine("ftoi4.xyz VF18, VF08", "ior VI02, VI02, VI07");
 	emitRawPairedLine("ftoi4.xyz VF19, VF12", "iaddiu VI02, VI02, 0x7fff");
-	emitRawPairedLine("nop", "mfir.w VF19, VI02");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF19, VI02");
 	emitRawPairedLine("ftoi4.xyz VF22, VF07", "sq VF11, 14(VI04)");
-	emitRawPairedLine("nop", "mfir.w VF22, VI02");
-	emitRawPairedLine("nop", "sq VF18, 17(VI04)");
-	emitRawPairedLine("nop", "sq VF19, 20(VI04)");
-	emitRawPairedLine("nop", "b " + exitLabel);
-	emitRawPairedLine("nop", "sq VF22, 23(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF22, VI02");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF18, 17(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF19, 20(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + exitLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF22, 23(VI04)");
 
 	m_codeLines.push_back(epi1Label + ":");
-	emitRawPairedLine("mulq.xyz VF20, VF20, q", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mulq.xyz VF17, VF17, q", "nop");
-	emitRawPairedLine("mulq.xyz VF14, VF14, q", "nop");
-	emitRawPairedLine("ftoi4.xyz VF11, VF11", "nop");
-	emitRawPairedLine("sub.xyz VF13, VF16, VF13", "nop");
+	emitRawPairedLine("mulq.xyz VF20, VF20, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulq.xyz VF17, VF17, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulq.xyz VF14, VF14, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("ftoi4.xyz VF11, VF11", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("sub.xyz VF13, VF16, VF13", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulw.xyz VF10, VF12, VF08w", "sq.xyz VF10, 3(VI04)");
 	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "sq.xyz VF15, 0(VI04)");
 	emitRawPairedLine("mul.xyz VF15, VF14, VF06", "sq.xyz VF09, 4(VI04)");
@@ -4249,23 +4290,23 @@ void CodeGenerator::emitPs2glQuadXformSoftwarePipelineLoop()
 	emitRawPairedLine("opmsub.xyz VF18xyz, VF13xyz, VF10xyz", "sq.xyz VF20, 9(VI04)");
 	emitRawPairedLine("clipw.xyz VF15xyz, VF07w", "sq.xyz VF09, 1(VI04)");
 	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "sq.xyz VF09, 10(VI04)");
-	emitRawPairedLine("nop", "sq VF11, 2(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF11, 2(VI04)");
 	emitRawPairedLine("abs.xyz VF00, VF18", "mfir.w VF08, VI08");
 	emitRawPairedLine("add.xyz VF12, VF14, VF05", "fmand VI07, VI07");
 	emitRawPairedLine("add.xyz VF07, VF16, VF05", "fcand VI01, 16777215");
-	emitRawPairedLine("nop", "iand VI02, VI01, VI02");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI02, VI01, VI02");
 	emitRawPairedLine("ftoi4.xyz VF08, VF08", "ior VI02, VI02, VI07");
 	emitRawPairedLine("ftoi4.xyz VF11, VF12", "iaddiu VI02, VI02, 0x7fff");
 	emitRawPairedLine("ftoi4.xyz VF07, VF07", "mfir.w VF11, VI02");
-	emitRawPairedLine("nop", "mfir.w VF07, VI02");
-	emitRawPairedLine("nop", "sq.xyz VF17, 6(VI04)");
-	emitRawPairedLine("nop", "sq VF08, 5(VI04)");
-	emitRawPairedLine("nop", "sq VF11, 8(VI04)");
-	emitRawPairedLine("nop", "sq VF07, 11(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF07, VI02");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF17, 6(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF08, 5(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF11, 8(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF07, 11(VI04)");
 
 	m_codeLines.push_back(exitLabel + ":");
-	emitRawPairedLine("nop", "b " + doneLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + doneLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	emitPs2glQuadXformScalarFallbackLoop();
 
@@ -4277,157 +4318,157 @@ void CodeGenerator::emitPs2glQuadXformScalarFallbackLoop()
 	const std::string fallbackLabel = "xform_loop_lid__FALLBACK_SHORT";
 
 	m_codeLines.push_back(fallbackLabel + ":");
-	emitRawPairedLine("nop", "lq.xyz VF08, 0(VI03)");
-	emitRawPairedLine("nop", "lq.xyz VF10, 2(VI03)");
-	emitRawPairedLine("nop", "mfir.w VF11, VI07");
-	emitRawPairedLine("nop", "mfir.w VF13, VI07");
-	emitRawPairedLine("nop", "sq.xyz VF09, 1(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF08, 0(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF10, 2(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF11, VI07");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF13, VI07");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF09, 1(VI04)");
 	emitRawPairedLine("mulax.xyzw ACC, VF01, VF08x", "sq.xyz VF09, 4(VI04)");
 	emitRawPairedLine("madday.xyzw ACC, VF02, VF08y", "sq.xyz VF09, 7(VI04)");
 	emitRawPairedLine("maddaz.xyzw ACC, VF03, VF08z", "sq.xyz VF09, 10(VI04)");
-	emitRawPairedLine("maddw.xyzw VF08, VF04, VF00w", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "div q, VF00w, VF08w");
-	emitRawPairedLine("mulq.xyz VF08, VF08, q", "waitq");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("add.xyz VF11, VF08, VF05", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("ftoi4.xyz VF11, VF11", "nop");
-	emitRawPairedLine("mulq.xyz VF12, VF10, q", "nop");
-	emitRawPairedLine("mul.xyz VF10, VF08, VF07", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("maddw.xyzw VF08, VF04, VF00w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF08w");
+	emitRawPairedLine("mulq.xyz VF08, VF08, q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("add.xyz VF11, VF08, VF05", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("ftoi4.xyz VF11, VF11", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulq.xyz VF12, VF10, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz VF10, VF08, VF07", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("clipw.xyz VF10, VF07w", "sq.xyz VF12, 0(VI04)");
-	emitRawPairedLine("nop", "lq.xyz VF10, 3(VI03)");
-	emitRawPairedLine("nop", "lq.xyz VF12, 5(VI03)");
-	emitRawPairedLine("nop", "sq VF11, 2(VI04)");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mulax.xyzw ACC, VF01, VF10x", "nop");
-	emitRawPairedLine("madday.xyzw ACC, VF02, VF10y", "nop");
-	emitRawPairedLine("maddaz.xyzw ACC, VF03, VF10z", "nop");
-	emitRawPairedLine("maddw.xyzw VF10, VF04, VF00w", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "div q, VF00w, VF10w");
-	emitRawPairedLine("mulq.xyz VF10, VF10, q", "waitq");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("add.xyz VF13, VF10, VF05", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("ftoi4.xyz VF13, VF13", "nop");
-	emitRawPairedLine("mulq.xyz VF14, VF12, q", "nop");
-	emitRawPairedLine("mul.xyz VF12, VF10, VF07", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF10, 3(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF12, 5(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF11, 2(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulax.xyzw ACC, VF01, VF10x", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("madday.xyzw ACC, VF02, VF10y", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddaz.xyzw ACC, VF03, VF10z", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddw.xyzw VF10, VF04, VF00w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF10w");
+	emitRawPairedLine("mulq.xyz VF10, VF10, q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("add.xyz VF13, VF10, VF05", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("ftoi4.xyz VF13, VF13", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulq.xyz VF14, VF12, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz VF12, VF10, VF07", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("clipw.xyz VF12, VF07w", "sq.xyz VF14, 3(VI04)");
-	emitRawPairedLine("nop", "lq.xyz VF12, 9(VI03)");
-	emitRawPairedLine("nop", "lq.xyz VF14, 11(VI03)");
-	emitRawPairedLine("nop", "sq VF13, 5(VI04)");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mulax.xyzw ACC, VF01, VF12x", "nop");
-	emitRawPairedLine("madday.xyzw ACC, VF02, VF12y", "nop");
-	emitRawPairedLine("maddaz.xyzw ACC, VF03, VF12z", "nop");
-	emitRawPairedLine("maddw.xyzw VF12, VF04, VF00w", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "div q, VF00w, VF12w");
-	emitRawPairedLine("mulq.xyz VF12, VF12, q", "waitq");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("add.xyz VF15, VF12, VF05", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("ftoi4.xyz VF15, VF15", "nop");
-	emitRawPairedLine("mulq.xyz VF16, VF14, q", "nop");
-	emitRawPairedLine("mul.xyz VF14, VF12, VF07", "nop");
-	emitRawPairedLine("nop", "lq.xyz VF12, 6(VI03)");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF12, 9(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF14, 11(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF13, 5(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulax.xyzw ACC, VF01, VF12x", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("madday.xyzw ACC, VF02, VF12y", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddaz.xyzw ACC, VF03, VF12z", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddw.xyzw VF12, VF04, VF00w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF12w");
+	emitRawPairedLine("mulq.xyz VF12, VF12, q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("add.xyz VF15, VF12, VF05", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("ftoi4.xyz VF15, VF15", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulq.xyz VF16, VF14, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz VF14, VF12, VF07", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF12, 6(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("clipw.xyz VF14, VF07w", "sq.xyz VF16, 6(VI04)");
 	emitRawPairedLine("mulax.xyzw ACC, VF01, VF12x", "lq.xyz VF14, 8(VI03)");
-	emitRawPairedLine("madday.xyzw ACC, VF02, VF12y", "nop");
-	emitRawPairedLine("maddaz.xyzw ACC, VF03, VF12z", "nop");
-	emitRawPairedLine("maddw.xyzw VF12, VF04, VF00w", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "div q, VF00w, VF12w");
-	emitRawPairedLine("mulq.xyz VF12, VF12, q", "waitq");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("add.xyz VF17, VF12, VF05", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("ftoi4.xyz VF17, VF17", "nop");
-	emitRawPairedLine("mulq.xyz VF16, VF14, q", "nop");
-	emitRawPairedLine("mul.xyz VF14, VF12, VF07", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("madday.xyzw ACC, VF02, VF12y", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddaz.xyzw ACC, VF03, VF12z", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddw.xyzw VF12, VF04, VF00w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF12w");
+	emitRawPairedLine("mulq.xyz VF12, VF12, q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("add.xyz VF17, VF12, VF05", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("ftoi4.xyz VF17, VF17", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulq.xyz VF16, VF14, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz VF14, VF12, VF07", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("clipw.xyz VF14, VF07w", "sq.xyz VF16, 9(VI04)");
-	emitRawPairedLine("sub.xyz VF14, VF08, VF10", "nop");
-	emitRawPairedLine("sub.xyz VF08, VF12, VF10", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("sub.xyz VF14, VF08, VF10", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("sub.xyz VF08, VF12, VF10", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulw.xyz VF10, VF14, VF06w", "fcand VI01, 0x0ffffff");
-	emitRawPairedLine("nop", "iand VI01, VI01, VI02");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("opmula.xyz ACC, VF10, VF08", "nop");
-	emitRawPairedLine("opmsub.xyz VF12, VF08, VF10", "nop");
-	emitRawPairedLine("nop", "lq.xyz VF08, 7(VI03)");
-	emitRawPairedLine("nop", "lq.xyz VF10, 10(VI03)");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "fmand VI08, VI06");
-	emitRawPairedLine("nop", "ior VI09, VI01, VI08");
-	emitRawPairedLine("nop", "iaddiu VI09, VI09, 0x7fff");
-	emitRawPairedLine("nop", "mfir.w VF15, VI09");
-	emitRawPairedLine("nop", "mfir.w VF17, VI09");
-	emitRawPairedLine("nop", "sq.xyz VF08, 10(VI03)");
-	emitRawPairedLine("nop", "sq.xyz VF10, 7(VI03)");
-	emitRawPairedLine("nop", "iaddiu VI03, VI03, 12");
-	emitRawPairedLine("nop", "sq VF15, 8(VI04)");
-	emitRawPairedLine("nop", "sq VF17, 11(VI04)");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "ibne VI03, VI05, " + fallbackLabel);
-	emitRawPairedLine("nop", "iaddiu VI04, VI04, 12");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI01, VI01, VI02");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("opmula.xyz ACC, VF10, VF08", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("opmsub.xyz VF12, VF08, VF10", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF08, 7(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF10, 10(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "fmand VI08, VI06");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior VI09, VI01, VI08");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI09, VI09, 0x7fff");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF15, VI09");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF17, VI09");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF08, 10(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF10, 7(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI03, VI03, 12");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF15, 8(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF17, 11(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibne VI03, VI05, " + fallbackLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI04, VI04, 12");
 }
 
 void CodeGenerator::emitPs2glPvDiffQuadXformSoftwarePipelineLoop()
@@ -4437,21 +4478,21 @@ void CodeGenerator::emitPs2glPvDiffQuadXformSoftwarePipelineLoop()
 	const std::string exitLabel = "xform_loop_lid__EXIT_POINT";
 
 	m_codeLines.push_back("xform_loop_lid__ENTRY_POINT:");
-	emitRawPairedLine("nop", "iadd VI08, VI07, VI00");
-	emitRawPairedLine("nop", "iadd VI07, VI06, VI00");
-	emitRawPairedLine("nop", "iadd VI06, VI05, VI00");
-	emitRawPairedLine("nop", "lq.w VF08, 0(VI00)");
-	emitRawPairedLine("max.xyz VF06, VF07, VF07", "nop");
-	emitRawPairedLine("nop", "loi 0x45000000");
-	emitRawPairedLine("nop", "lq.xyz VF07, 0(VI03)");
-	emitRawPairedLine("mulax ACC, VF01, VF07x", "nop");
-	emitRawPairedLine("madday ACC, VF02, VF07y", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI08, VI07, VI00");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI07, VI06, VI00");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI06, VI05, VI00");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.w VF08, 0(VI00)");
+	emitRawPairedLine("max.xyz VF06, VF07, VF07", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "loi 0x45000000");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF07, 0(VI03)");
+	emitRawPairedLine("mulax ACC, VF01, VF07x", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("madday ACC, VF02, VF07y", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("maddaz ACC, VF03, VF07z", "lq.xyz VF20, 8(VI03)");
-	emitRawPairedLine("maddw VF22, VF04, VF00w", "nop");
+	emitRawPairedLine("maddw VF22, VF04, VF00w", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulax ACC, VF01, VF20x", "lq.xyz VF15, 12(VI03)");
 	emitRawPairedLine("madday ACC, VF02, VF20y", "div q, VF00w, VF22w");
 	emitRawPairedLine("maddaz ACC, VF03, VF20z", "lq.xyz VF12, 15(VI03)");
-	emitRawPairedLine("maddw VF20, VF04, VF00w", "nop");
+	emitRawPairedLine("maddw VF20, VF04, VF00w", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulax ACC, VF01, VF15x", "lq.xyz VF14, 4(VI03)");
 	emitRawPairedLine("madday ACC, VF02, VF15y", "lq.xyz VF07, 11(VI03)");
 	emitRawPairedLine("maddaz ACC, VF03, VF15z", "sq.xyz VF12, 11(VI03)");
@@ -4460,29 +4501,29 @@ void CodeGenerator::emitPs2glPvDiffQuadXformSoftwarePipelineLoop()
 	emitRawPairedLine("madday ACC, VF02, VF14y", "lq.xyz VF18, 13(VI03)");
 	emitRawPairedLine("maddaz ACC, VF03, VF14z", "lq.xyz VF10, 2(VI03)");
 	emitRawPairedLine("maddw VF12, VF04, VF00w", "sq.xyz VF12, 13(VI03)");
-	emitRawPairedLine("mulq.xyz VF13, VF22, q", "nop");
-	emitRawPairedLine("mulq.xyz VF10, VF10, q", "nop");
-	emitRawPairedLine("nop", "div q, VF00w, VF12w");
-	emitRawPairedLine("nop", "ilw.w VI02, 76(VI00)");
-	emitRawPairedLine("nop", "lq.xyz VF11, 10(VI03)");
+	emitRawPairedLine("mulq.xyz VF13, VF22, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulq.xyz VF10, VF10, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF12w");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ilw.w VI02, 76(VI00)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF11, 10(VI03)");
 	emitRawPairedLine("maxi.w VF07, VF00, i", "sq.xyz VF18, 9(VI03)");
 	emitRawPairedLine("mul.xyz VF08, VF13, VF06", "lq.xyz VF18, 6(VI03)");
-	emitRawPairedLine("mulq.xyz VF20, VF20, q", "nop");
-	emitRawPairedLine("mulq.xyz VF11, VF11, q", "nop");
+	emitRawPairedLine("mulq.xyz VF20, VF20, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulq.xyz VF11, VF11, q", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("add.xyz VF14, VF13, VF05", "div q, VF00w, VF15w");
 	emitRawPairedLine("mulq.xyz VF16, VF12, q", "fcset 0");
-	emitRawPairedLine("clipw.xyz VF08xyz, VF07w", "nop");
+	emitRawPairedLine("clipw.xyz VF08xyz, VF07w", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("add.xyz VF07, VF20, VF05", "sq.xyz VF07, 15(VI03)");
-	emitRawPairedLine("mulq.xyz VF12, VF18, q", "nop");
+	emitRawPairedLine("mulq.xyz VF12, VF18, q", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("sub.xyz VF22, VF13, VF16", "iaddiu VI08, VI08, 0");
 	emitRawPairedLine("mul.xyz VF17, VF16, VF06", "lq.w VF08, 0(VI00)");
-	emitRawPairedLine("mulq.xyz VF08, VF15, q", "nop");
+	emitRawPairedLine("mulq.xyz VF08, VF15, q", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("add.xyz VF13, VF16, VF05", "iaddiu VI01, VI03, 0");
 	emitRawPairedLine("mul.xyz VF15, VF20, VF06", "iaddiu VI01, VI01, 0");
 	emitRawPairedLine("clipw.xyz VF17xyz, VF07w", "lq.xyz VF18, 14(VI03)");
 	emitRawPairedLine("mul.xyz VF17, VF08, VF06", "iaddiu VI03, VI01, 0");
 	emitRawPairedLine("mulw.xyz VF22, VF22, VF08w", "iaddiu VI03, VI03, 16");
-	emitRawPairedLine("sub.xyz VF20, VF20, VF16", "nop");
+	emitRawPairedLine("sub.xyz VF20, VF20, VF16", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("add.xyz VF08, VF08, VF05", "ibeq VI03, VI06, " + epiLabel);
 	emitRawPairedLine("clipw.xyz VF17xyz, VF07w", "mfir.w VF10, VI08");
 
@@ -4515,52 +4556,52 @@ void CodeGenerator::emitPs2glPvDiffQuadXformSoftwarePipelineLoop()
 	emitRawPairedLine("mulq.xyz VF10, VF10, q", "lq.xyz VF11, 10(VI03)");
 	emitRawPairedLine("clipw.xyz VF19xyz, VF07w", "sq.xyz VF16, 15(VI03)");
 	emitRawPairedLine("mulq.xyz VF16, VF17, q", "div q, VF00w, VF12w");
-	emitRawPairedLine("nop", "iaddiu VI10, VI01, 0");
-	emitRawPairedLine("nop", "fcand VI01, 16777215");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI10, VI01, 0");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand VI01, 16777215");
 	emitRawPairedLine("ftoi4.xyz VF19, VF07", "iand VI12, VI01, VI02");
 	emitRawPairedLine("add.xyz VF07, VF16, VF05", "lq.xyz VF18, 6(VI03)");
-	emitRawPairedLine("nop", "iaddiu VI01, VI11, 0");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI01, VI11, 0");
 	emitRawPairedLine("mulq.xyz VF11, VF11, q", "ior VI09, VI12, VI09");
 	emitRawPairedLine("mulq.xyz VF17, VF12, q", "div q, VF00w, VF15w");
-	emitRawPairedLine("nop", "iaddiu VI09, VI09, 0x7fff");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI09, VI09, 0x7fff");
 	emitRawPairedLine("mulq.xyz VF12, VF18, q", "mfir.w VF20, VI09");
 	emitRawPairedLine("ftoi4.xyz VF20, VF08", "mfir.w VF19, VI09");
 	emitRawPairedLine("sub.xyz VF22, VF13, VF17", "sq.xyz VF09, 10(VI04)");
 	emitRawPairedLine("mul.xyz VF21, VF17, VF06", "sq.xyz VF09, 4(VI04)");
 	emitRawPairedLine("add.xyz VF13, VF17, VF05", "lq.xyz VF18, 14(VI03)");
 	emitRawPairedLine("mulq.xyz VF08, VF15, q", "sq VF19, 11(VI04)");
-	emitRawPairedLine("nop", "sq VF20, 8(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF20, 8(VI04)");
 	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "sq.xyz VF09, 1(VI04)");
 	emitRawPairedLine("mul.xyz VF15, VF16, VF06", "sq.xyz VF09, 7(VI04)");
 	emitRawPairedLine("mul.xyz VF19, VF08, VF06", "iaddiu VI04, VI01, 12");
 	emitRawPairedLine("add.xyz VF08, VF08, VF05", "iaddiu VI03, VI10, 0");
 	emitRawPairedLine("mulw.xyz VF22, VF22, VF08w", "iaddiu VI03, VI03, 16");
-	emitRawPairedLine("sub.xyz VF20, VF16, VF17", "nop");
+	emitRawPairedLine("sub.xyz VF20, VF16, VF17", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("clipw.xyz VF19xyz, VF07w", "ibne VI03, VI06, " + mainLabel);
-	emitRawPairedLine("nop", "mfir.w VF10, VI08");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF10, VI08");
 
 	m_codeLines.push_back(epiLabel + ":");
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("opmula.xyz ACCxyz, VF22xyz, VF20xyz", "sq.xyz VF10, 0(VI04)");
 	emitRawPairedLine("opmsub.xyz VF16xyz, VF20xyz, VF22xyz", "mfir.w VF05, VI08");
 	emitRawPairedLine("ftoi4.xyz VF05, VF14", "sq.xyz VF11, 9(VI04)");
 	emitRawPairedLine("mulq.xyz VF20, VF18, q", "sq.xyz VF12, 3(VI04)");
 	emitRawPairedLine("clipw.xyz VF15xyz, VF07w", "sq.xyz VF09, 10(VI04)");
 	emitRawPairedLine("abs.xyz VF00, VF16", "fmand VI07, VI07");
-	emitRawPairedLine("nop", "sq VF05, 2(VI04)");
-	emitRawPairedLine("nop", "sq.xyz VF20, 6(VI04)");
-	emitRawPairedLine("nop", "fcand VI01, 16777215");
-	emitRawPairedLine("nop", "iand VI02, VI01, VI02");
-	emitRawPairedLine("nop", "ior VI02, VI02, VI07");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF05, 2(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF20, 6(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand VI01, 16777215");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI02, VI01, VI02");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior VI02, VI02, VI07");
 	emitRawPairedLine("ftoi4.xyz VF20, VF08", "iaddiu VI02, VI02, 0x7fff");
 	emitRawPairedLine("ftoi4.xyz VF07, VF07", "mfir.w VF20, VI02");
-	emitRawPairedLine("nop", "mfir.w VF07, VI02");
-	emitRawPairedLine("nop", "sq.xyz VF09, 4(VI04)");
-	emitRawPairedLine("nop", "sq.xyz VF09, 1(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF07, VI02");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF09, 4(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF09, 1(VI04)");
 	emitRawPairedLine("ftoi4.xyz VF10, VF13", "sq VF20, 8(VI04)");
-	emitRawPairedLine("nop", "sq VF07, 11(VI04)");
-	emitRawPairedLine("nop", "sq.xyz VF09, 7(VI04)");
-	emitRawPairedLine("nop", "sq VF10, 5(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF07, 11(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF09, 7(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF10, 5(VI04)");
 
 	m_codeLines.push_back(exitLabel + ":");
 }
@@ -4574,43 +4615,43 @@ void CodeGenerator::emitPs2glIndexedXformSoftwarePipelineLoop()
 	const std::string exitLabel = "xform_loop_lid__EXIT_POINT";
 
 	m_codeLines.push_back("xform_loop_lid__ENTRY_POINT:");
-	emitRawPairedLine("nop", "lq.w VF05, 60(VI00)");
-	emitRawPairedLine("nop", "loi 0x43000000");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.w VF05, 60(VI00)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "loi 0x43000000");
 	emitRawPairedLine("muli.w VF10, VF05, i", "xtop VI04");
-	emitRawPairedLine("nop", "ilw.y VI08, 0(VI04)");
-	emitRawPairedLine("nop", "loi 0x437f0000");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ilw.y VI08, 0(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "loi 0x437f0000");
 	emitRawPairedLine("maxi.w VF12, VF00, i", "ilw.z VI03, 0(VI04)");
 	emitRawPairedLine("minii.w VF10, VF10, i", "loi 0x437f0000");
-	emitRawPairedLine("nop", "lq.xyz VF05, 75(VI00)");
-	emitRawPairedLine("nop", "iaddiu VI06, VI04, 5");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF05, 75(VI00)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI06, VI04, 5");
 	emitRawPairedLine("maxi.y VF10, VF00, i", "loi 0x40400000");
-	emitRawPairedLine("nop", "mtir VI02, VF05x");
-	emitRawPairedLine("nop", "ior VI03, VI02, VI03");
-	emitRawPairedLine("nop", "mfir.x VF05, VI03");
-	emitRawPairedLine("nop", "iaddiu VI03, VI00, 0x4e");
-	emitRawPairedLine("nop", "mfir.w VF05, VI03");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mtir VI02, VF05x");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior VI03, VI02, VI03");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.x VF05, VI03");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI03, VI00, 0x4e");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF05, VI03");
 	emitRawPairedLine("maxi.z VF09, VF00, i", "loi 0x437d0000");
-	emitRawPairedLine("nop", "iadd VI08, VI06, VI08");
-	emitRawPairedLine("nop", "ilw.w VI09, 0(VI06)");
-	emitRawPairedLine("nop", "sq VF05, 77(VI00)");
-	emitRawPairedLine("nop", "lqi.w VF05, (VI06++)");
-	emitRawPairedLine("nop", "iaddiu VI05, VI04, 0xac");
-	emitRawPairedLine("nop", "iaddiu VI04, VI04, 5");
-	emitRawPairedLine("nop", "iaddiu VI07, VI00, 0xff");
-	emitRawPairedLine("nop", "iand VI09, VI09, VI07");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI08, VI06, VI08");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ilw.w VI09, 0(VI06)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF05, 77(VI00)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lqi.w VF05, (VI06++)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI05, VI04, 0xac");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI04, VI04, 5");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI07, VI00, 0xff");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI09, VI09, VI07");
 	emitRawPairedLine("maxi.w VF08, VF00, i", "iadd VI01, VI09, VI09");
 	emitRawPairedLine("addy.w VF06, VF05, VF10y", "iadd VI01, VI01, VI09");
 	emitRawPairedLine("mulz.w VF05, VF05, VF09z", "iadd VI10, VI01, VI04");
-	emitRawPairedLine("nop", "lq.xyz VF11, 0(VI10)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF11, 0(VI10)");
 	emitRawPairedLine("add.w VF05, VF05, VF08", "lq.w VF09, 57(VI00)");
 	emitRawPairedLine("mulax ACC, VF01, VF11x", "loi 0x45000000");
-	emitRawPairedLine("madday ACC, VF02, VF11y", "nop");
+	emitRawPairedLine("madday ACC, VF02, VF11y", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("maddaz ACC, VF03, VF11z", "iadd VI09, VI09, VI05");
 	emitRawPairedLine("maddw VF13, VF04, VF00w", "lq.xyz VF07, 0(VI09)");
-	emitRawPairedLine("nop", "mtir VI11, VF05w");
-	emitRawPairedLine("nop", "div q, VF00w, VF13w");
-	emitRawPairedLine("nop", "iadd VI09, VI11, VI04");
-	emitRawPairedLine("nop", "lq.xyz VF12, 0(VI09)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mtir VI11, VF05w");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF13w");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI09, VI11, VI04");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF12, 0(VI09)");
 	emitRawPairedLine("maxi.w VF07, VF00, i", "mr32.z VF05, VF09");
 	emitRawPairedLine("miniw.xyz VF11, VF07, VF12w", "loi 0x44fff000");
 	emitRawPairedLine("addi.xy VF05, VF00, i", "iaddiu VI02, VI00, 0x4b");
@@ -4621,19 +4662,19 @@ void CodeGenerator::emitPs2glIndexedXformSoftwarePipelineLoop()
 	emitRawPairedLine("maddw VF16, VF04, VF00w", "mtir VI01, VF06w");
 	emitRawPairedLine("add.xyz VF13, VF08, VF05", "lq.xyz VF14, 2(VI10)");
 	emitRawPairedLine("mul.xyz VF08, VF08, VF06", "iadd VI01, VI01, VI05");
-	emitRawPairedLine("nop", "lq.xyz VF12, 0(VI01)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF12, 0(VI01)");
 	emitRawPairedLine("ftoi0.w VF11, VF10", "div q, VF00w, VF16w");
 	emitRawPairedLine("ftoi0.xyz VF11, VF11", "ibeq VI06, VI08, " + epi1Label);
 	emitRawPairedLine("clipw.xyz VF08xyz, VF07w", "lq.xyz VF08, 2(VI09)");
 
 	m_codeLines.push_back(pro1Label + ":");
 	emitRawPairedLine("mulq.xyz VF15, VF14, q", "ilw.w VI11, 0(VI06)");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "lqi.w VF05, (VI06++)");
-	emitRawPairedLine("nop", "sq VF11, 1(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lqi.w VF05, (VI06++)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF11, 1(VI03)");
 	emitRawPairedLine("mulq.xyz VF11, VF16, q", "fcand VI01, 262143");
-	emitRawPairedLine("nop", "iand VI11, VI11, VI07");
-	emitRawPairedLine("nop", "iadd VI10, VI11, VI11");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI11, VI11, VI07");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI10, VI11, VI11");
 	emitRawPairedLine("addy.w VF06, VF05, VF10y", "iadd VI10, VI10, VI11");
 	emitRawPairedLine("mulz.w VF05, VF05, VF09z", "iadd VI12, VI10, VI04");
 	emitRawPairedLine("mul.xyz VF07, VF11, VF06", "iadd VI11, VI11, VI05");
@@ -4646,14 +4687,14 @@ void CodeGenerator::emitPs2glIndexedXformSoftwarePipelineLoop()
 	emitRawPairedLine("maddaz ACC, VF03, VF11z", "mtir VI09, VF05w");
 	emitRawPairedLine("maddw VF13, VF04, VF00w", "lq.xyz VF07, 0(VI11)");
 	emitRawPairedLine("mulq.xyz VF16, VF08, q", "sq VF16, 2(VI03)");
-	emitRawPairedLine("nop", "iadd VI11, VI09, VI04");
-	emitRawPairedLine("nop", "sq.xyz VF15, 0(VI03)");
-	emitRawPairedLine("nop", "div q, VF00w, VF13w");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI11, VI09, VI04");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF15, 0(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF13w");
 	emitRawPairedLine("miniw.xyz VF11, VF07, VF12w", "iaddiu VI09, VI03, 0");
 	emitRawPairedLine("miniw.xyz VF07, VF12, VF12w", "lq.xyz VF12, 0(VI11)");
-	emitRawPairedLine("nop", "fcand VI01, 262143");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand VI01, 262143");
 	emitRawPairedLine("ftoi4.xyz VF15, VF14", "lq.xyz VF14, 2(VI12)");
-	emitRawPairedLine("nop", "iand VI03, VI01, VI02");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI03, VI01, VI02");
 	emitRawPairedLine("mulax ACC, VF01, VF12x", "ior VI03, VI03, VI00");
 	emitRawPairedLine("mulq.xyz VF08, VF13, q", "iaddiu VI03, VI03, 0x7fff");
 	emitRawPairedLine("madday ACC, VF02, VF12y", "mfir.w VF15, VI03");
@@ -4661,20 +4702,20 @@ void CodeGenerator::emitPs2glIndexedXformSoftwarePipelineLoop()
 	emitRawPairedLine("maddw VF16, VF04, VF00w", "sq.xyz VF16, 3(VI09)");
 	emitRawPairedLine("add.xyz VF13, VF08, VF05", "iaddiu VI03, VI09, 6");
 	emitRawPairedLine("mul.xyz VF08, VF08, VF06", "lq.xyz VF12, 0(VI10)");
-	emitRawPairedLine("nop", "sq VF15, 5(VI09)");
-	emitRawPairedLine("nop", "div q, VF00w, VF16w");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF15, 5(VI09)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF16w");
 	emitRawPairedLine("ftoi0.xyz VF11, VF11", "ibeq VI06, VI08, " + epi0Label);
 	emitRawPairedLine("clipw.xyz VF08xyz, VF07w", "lq.xyz VF08, 2(VI11)");
 
 	m_codeLines.push_back(mainLabel + ":");
-	emitRawPairedLine("nop", "ilw.w VI11, 0(VI06)");
-	emitRawPairedLine("nop", "lqi.w VF05, (VI06++)");
-	emitRawPairedLine("nop", "sq VF11, 1(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ilw.w VI11, 0(VI06)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lqi.w VF05, (VI06++)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF11, 1(VI03)");
 	emitRawPairedLine("mulq.xyz VF15, VF14, q", "fcand VI01, 262143");
 	emitRawPairedLine("mulq.xyz VF11, VF16, q", "iand VI11, VI11, VI07");
 	emitRawPairedLine("addy.w VF06, VF05, VF10y", "iadd VI10, VI11, VI11");
 	emitRawPairedLine("mulz.w VF05, VF05, VF09z", "iadd VI10, VI10, VI11");
-	emitRawPairedLine("nop", "iadd VI12, VI10, VI04");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI12, VI10, VI04");
 	emitRawPairedLine("add.xyz VF14, VF11, VF05", "iadd VI11, VI11, VI05");
 	emitRawPairedLine("mul.xyz VF18, VF11, VF06", "mtir VI10, VF06w");
 	emitRawPairedLine("add.w VF05, VF05, VF08", "lq.xyz VF17, 0(VI12)");
@@ -4685,13 +4726,13 @@ void CodeGenerator::emitPs2glIndexedXformSoftwarePipelineLoop()
 	emitRawPairedLine("madday ACC, VF02, VF17y", "mfir.w VF16, VI13");
 	emitRawPairedLine("maddaz ACC, VF03, VF17z", "lq.xyz VF07, 0(VI11)");
 	emitRawPairedLine("maddw VF13, VF04, VF00w", "iadd VI11, VI01, VI04");
-	emitRawPairedLine("nop", "sq.xyz VF15, 0(VI03)");
-	emitRawPairedLine("nop", "sq VF16, 2(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF15, 0(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF16, 2(VI03)");
 	emitRawPairedLine("miniw.xyz VF11, VF07, VF12w", "sq VF11, 4(VI09)");
-	emitRawPairedLine("nop", "div q, VF00w, VF13w");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF13w");
 	emitRawPairedLine("miniw.xyz VF07, VF12, VF12w", "iaddiu VI09, VI03, 0");
-	emitRawPairedLine("nop", "lq.xyz VF12, 0(VI11)");
-	emitRawPairedLine("nop", "fcand VI01, 262143");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF12, 0(VI11)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand VI01, 262143");
 	emitRawPairedLine("ftoi4.xyz VF15, VF14", "lq.xyz VF14, 2(VI12)");
 	emitRawPairedLine("mulq.xyz VF16, VF08, q", "iand VI03, VI01, VI02");
 	emitRawPairedLine("mulax ACC, VF01, VF12x", "ior VI03, VI03, VI00");
@@ -4701,62 +4742,62 @@ void CodeGenerator::emitPs2glIndexedXformSoftwarePipelineLoop()
 	emitRawPairedLine("maddw VF16, VF04, VF00w", "sq.xyz VF16, 3(VI09)");
 	emitRawPairedLine("add.xyz VF13, VF08, VF05", "iaddiu VI03, VI09, 6");
 	emitRawPairedLine("mul.xyz VF08, VF08, VF06", "lq.xyz VF12, 0(VI10)");
-	emitRawPairedLine("nop", "sq VF15, 5(VI09)");
-	emitRawPairedLine("nop", "div q, VF00w, VF16w");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF15, 5(VI09)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF16w");
 	emitRawPairedLine("ftoi0.xyz VF11, VF11", "ibne VI06, VI08, " + mainLabel);
 	emitRawPairedLine("clipw.xyz VF08xyz, VF07w", "lq.xyz VF08, 2(VI11)");
 
 	m_codeLines.push_back(epi0Label + ":");
-	emitRawPairedLine("mulq.xyz VF09, VF14, q", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("mulq.xyz VF09, VF14, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulq.xyz VF11, VF16, q", "sq VF11, 1(VI03)");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "fcand VI01, 262143");
-	emitRawPairedLine("nop", "iand VI01, VI01, VI02");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand VI01, 262143");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI01, VI01, VI02");
 	emitRawPairedLine("ftoi4.xyz VF16, VF13", "ior VI01, VI01, VI00");
 	emitRawPairedLine("mul.xyz VF06, VF11, VF06", "iaddiu VI01, VI01, 0x7fff");
 	emitRawPairedLine("add.xyz VF14, VF11, VF05", "mfir.w VF16, VI01");
-	emitRawPairedLine("ftoi0.xyz VF11, VF07", "nop");
+	emitRawPairedLine("ftoi0.xyz VF11, VF07", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("clipw.xyz VF06xyz, VF07w", "sq.xyz VF09, 0(VI03)");
 	emitRawPairedLine("mulq.xyz VF16, VF08, q", "sq VF16, 2(VI03)");
 	emitRawPairedLine("miniw.xyz VF07, VF12, VF12w", "sq VF11, 4(VI09)");
-	emitRawPairedLine("nop", "iaddiu VI09, VI03, 0");
-	emitRawPairedLine("nop", "fcand VI01, 262143");
-	emitRawPairedLine("nop", "iand VI03, VI01, VI02");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI09, VI03, 0");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand VI01, 262143");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI03, VI01, VI02");
 	emitRawPairedLine("ftoi0.xyz VF11, VF07", "ior VI03, VI03, VI00");
 	emitRawPairedLine("ftoi4.xyz VF12, VF14", "iaddiu VI03, VI03, 0x7fff");
-	emitRawPairedLine("nop", "mfir.w VF12, VI03");
-	emitRawPairedLine("nop", "sq.xyz VF16, 3(VI09)");
-	emitRawPairedLine("nop", "sq VF11, 4(VI09)");
-	emitRawPairedLine("nop", "b " + exitLabel);
-	emitRawPairedLine("nop", "sq VF12, 5(VI09)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF12, VI03");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF16, 3(VI09)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF11, 4(VI09)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + exitLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF12, 5(VI09)");
 
 	m_codeLines.push_back(epi1Label + ":");
-	emitRawPairedLine("mulq.xyz VF07, VF14, q", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "sq VF11, 1(VI03)");
-	emitRawPairedLine("nop", "fcand VI01, 262143");
+	emitRawPairedLine("mulq.xyz VF07, VF14, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF11, 1(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand VI01, 262143");
 	emitRawPairedLine("mulq.xyz VF11, VF16, q", "iand VI04, VI01, VI02");
-	emitRawPairedLine("nop", "ior VI04, VI04, VI00");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior VI04, VI04, VI00");
 	emitRawPairedLine("ftoi4.xyz VF16, VF13", "iaddiu VI04, VI04, 0x7fff");
-	emitRawPairedLine("nop", "mfir.w VF16, VI04");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF16, VI04");
 	emitRawPairedLine("add.xyz VF14, VF11, VF05", "sq.xyz VF07, 0(VI03)");
-	emitRawPairedLine("mul.xyz VF11, VF11, VF06", "nop");
+	emitRawPairedLine("mul.xyz VF11, VF11, VF06", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulq.xyz VF16, VF08, q", "sq VF16, 2(VI03)");
-	emitRawPairedLine("clipw.xyz VF11xyz, VF07w", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("clipw.xyz VF11xyz, VF07w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("miniw.xyz VF07, VF12, VF12w", "iaddiu VI04, VI03, 0");
-	emitRawPairedLine("nop", "fcand VI01, 262143");
-	emitRawPairedLine("nop", "iand VI03, VI01, VI02");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand VI01, 262143");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI03, VI01, VI02");
 	emitRawPairedLine("ftoi4.xyz VF12, VF14", "ior VI03, VI03, VI00");
 	emitRawPairedLine("ftoi0.xyz VF11, VF07", "iaddiu VI03, VI03, 0x7fff");
-	emitRawPairedLine("nop", "mfir.w VF12, VI03");
-	emitRawPairedLine("nop", "sq.xyz VF16, 3(VI04)");
-	emitRawPairedLine("nop", "sq VF11, 4(VI04)");
-	emitRawPairedLine("nop", "sq VF12, 5(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF12, VI03");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF16, 3(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF11, 4(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF12, 5(VI04)");
 
 	m_codeLines.push_back(exitLabel + ":");
 }
@@ -4871,14 +4912,14 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			continue;
 
 		const std::string mnemonic = lowerVuTokenName(token);
-		if( mnemonic == "nop" )
+		if( mnemonic == vuInstr(VU_OP_NOP) )
 			continue;
 
 		std::string target;
 		if( branchTargetLabel(token, target) && target == pattern.sourceLabel )
 			continue;
 
-		if( mnemonic == "lq" )
+		if( mnemonic == vuInstr(VU_OP_LQ) )
 		{
 			std::string base;
 			long offset = 0;
@@ -4905,7 +4946,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			return false;
 		}
 
-		if( mnemonic == "ilw" )
+		if( mnemonic == vuInstr(VU_OP_ILW) )
 		{
 			std::string base;
 			long offset = 0;
@@ -4923,7 +4964,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			return false;
 		}
 
-		if( mnemonic == "sq" )
+		if( mnemonic == vuInstr(VU_OP_SQ) )
 		{
 			std::string base;
 			long offset = 0;
@@ -4959,7 +5000,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			return false;
 		}
 
-		if( mnemonic == "iaddiu" )
+		if( mnemonic == vuInstr(VU_OP_IADDIU) )
 		{
 			std::string dst;
 			std::string src;
@@ -4994,7 +5035,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			return false;
 		}
 
-		if( mnemonic == "mula" && token.broadcast() == Token::X )
+		if( mnemonic == vuInstr(VU_OP_MULA) && token.broadcast() == Token::X )
 		{
 			if( !getRegisterArgKey(token, 1, pattern.row0Reg) )
 				return false;
@@ -5003,7 +5044,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "madda" && token.broadcast() == Token::Y )
+		if( mnemonic == vuInstr(VU_OP_MADDA) && token.broadcast() == Token::Y )
 		{
 			if( !getRegisterArgKey(token, 1, pattern.row1Reg) )
 				return false;
@@ -5012,7 +5053,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "madda" && token.broadcast() == Token::Z )
+		if( mnemonic == vuInstr(VU_OP_MADDA) && token.broadcast() == Token::Z )
 		{
 			if( !getRegisterArgKey(token, 1, pattern.row2Reg) )
 				return false;
@@ -5021,7 +5062,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "madd" && token.broadcast() == Token::W )
+		if( mnemonic == vuInstr(VU_OP_MADD) && token.broadcast() == Token::W )
 		{
 			if( !getRegisterArgKey(token, 0, pattern.xformedReg)
 			    || !getRegisterArgKey(token, 1, pattern.row3Reg) )
@@ -5031,7 +5072,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "div" )
+		if( mnemonic == vuInstr(VU_OP_DIV) )
 		{
 			std::string denom;
 			if( !getRegisterArgKey(token, 2, denom) )
@@ -5042,7 +5083,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "mulq" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_MULQ) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
 			std::string src;
@@ -5062,7 +5103,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			return false;
 		}
 
-		if( mnemonic == "add" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_ADD) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
 			std::string src0;
@@ -5081,7 +5122,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			return false;
 		}
 
-		if( mnemonic == "ftoi4" )
+		if( mnemonic == vuInstr(VU_OP_FTOI4) )
 		{
 			std::string dst;
 			if( !getRegisterArgKey(token, 0, dst) )
@@ -5091,7 +5132,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "sub" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_SUB) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
 			std::string src0;
@@ -5108,7 +5149,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "opmula" )
+		if( mnemonic == vuInstr(VU_OP_OPMULA) )
 		{
 			std::string src0;
 			std::string src1;
@@ -5121,7 +5162,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "opmsub" )
+		if( mnemonic == vuInstr(VU_OP_OPMSUB) )
 		{
 			std::string dst;
 			std::string src0;
@@ -5137,7 +5178,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "fmand" )
+		if( mnemonic == vuInstr(VU_OP_FMAND) )
 		{
 			if( !getRegisterArgKey(token, 0, pattern.zSignReg)
 			    || !getRegisterArgKey(token, 1, pattern.zSignMaskReg) )
@@ -5146,7 +5187,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "isub" )
+		if( mnemonic == vuInstr(VU_OP_ISUB) )
 		{
 			std::string dst;
 			std::string src0;
@@ -5170,7 +5211,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			return false;
 		}
 
-		if( mnemonic == "iand" )
+		if( mnemonic == vuInstr(VU_OP_IAND) )
 		{
 			std::string dst;
 			std::string src0;
@@ -5200,7 +5241,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			return false;
 		}
 
-		if( mnemonic == "ior" )
+		if( mnemonic == vuInstr(VU_OP_IOR) )
 		{
 			std::string dst;
 			std::string src0;
@@ -5235,7 +5276,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			return false;
 		}
 
-		if( mnemonic == "mul" && token.broadcast() == Token::W
+		if( mnemonic == vuInstr(VU_OP_MUL) && token.broadcast() == Token::W
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
@@ -5259,7 +5300,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			return false;
 		}
 
-		if( mnemonic == "mul" && token.broadcast() == 0
+		if( mnemonic == vuInstr(VU_OP_MUL) && token.broadcast() == 0
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
@@ -5292,7 +5333,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "fcand" )
+		if( mnemonic == vuInstr(VU_OP_FCAND) )
 		{
 			if( !getRegisterArgKey(token, 0, pattern.clipResultReg) )
 				return false;
@@ -5301,7 +5342,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "mfir" )
+		if( mnemonic == vuInstr(VU_OP_MFIR) )
 		{
 			std::string dst;
 			std::string src;
@@ -5410,42 +5451,42 @@ void CodeGenerator::emitLinearXformScalarBody( const LinearXformLoopPipelinePatt
 	const std::string tex = p.texReg;
 	const std::string vf00 = "VF00";
 
-	emitRawPairedLine("nop", "lq.xyz " + vert + ", " + offsetBase(0, in));
-	emitRawPairedLine("nop", "ilw.w " + strip + ", " + offsetBase(0, in));
-	emitRawPairedLine("nop", "lq.xyz " + tex + ", " + offsetBase(2, in));
-	emitRawPairedLine("nop", "sq.xyz " + p.constantColorReg + ", " + offsetBase(1, out));
-	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"), "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + vert + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ilw.w " + strip + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + tex + ", " + offsetBase(2, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + p.constantColorReg + ", " + offsetBase(1, out));
+	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"),
 	                  "iand " + stripFlip + ", " + strip + ", " + p.zSignMaskReg);
-	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"), "nop");
-	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
-	emitRawPairedLine("mulq.xyz " + x + ", " + x + ", q", "waitq");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("add.xyz " + gs + ", " + x + ", " + p.gsOffsetsReg, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("ftoi4.xyz " + gs + ", " + gs, "nop");
-	emitRawPairedLine("sub.xyz " + delta + ", " + p.oldVertexReg + ", " + x, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("opmula.xyz ACCxyz, " + fieldArg(delta, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz"), "nop");
-	emitRawPairedLine("opmsub.xyz " + fieldArg(p.bfcNormalReg, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz") + ", " + fieldArg(delta, "xyz"), "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "fmand " + zSign + ", " + p.zSignMaskReg);
+	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
+	emitRawPairedLine("mulq.xyz " + x + ", " + x + ", q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("add.xyz " + gs + ", " + x + ", " + p.gsOffsetsReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("ftoi4.xyz " + gs + ", " + gs, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("sub.xyz " + delta + ", " + p.oldVertexReg + ", " + x, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("opmula.xyz ACCxyz, " + fieldArg(delta, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("opmsub.xyz " + fieldArg(p.bfcNormalReg, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz") + ", " + fieldArg(delta, "xyz"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "fmand " + zSign + ", " + p.zSignMaskReg);
 	emitRawPairedLine("mul.xyz " + clip + ", " + x + ", " + p.clipScalesReg,
 	                  "isub " + zSign + ", " + zSign + ", " + zSwitch);
 	emitRawPairedLine("mulw.xyz " + p.oldDeltaReg + ", " + delta + ", " + fieldArg(p.bfcMultiplierReg, "w"),
@@ -5454,23 +5495,23 @@ void CodeGenerator::emitLinearXformScalarBody( const LinearXformLoopPipelinePatt
 	                  "iand " + zSign + ", " + zSign + ", " + p.zSignMaskReg);
 	emitRawPairedLine("mulq.xyz " + tex + ", " + tex + ", q",
 	                  "ior " + zSwitch + ", " + zSwitch + ", " + stripFlip);
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("clipw.xyz " + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"), "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "fcand " + clipResult + ", " + p.clipImmediate);
-	emitRawPairedLine("nop", "iand " + clipResult + ", " + clipResult + ", " + p.doClippingReg);
-	emitRawPairedLine("nop", "ior " + adc + ", " + clipResult + ", " + zSign);
-	emitRawPairedLine("nop", "ior " + adc + ", " + adc + ", " + strip);
-	emitRawPairedLine("nop", "iaddiu " + adc + ", " + adc + ", " + p.adcImmediate);
-	emitRawPairedLine("nop", "mfir.w " + gs + ", " + adc);
-	emitRawPairedLine("nop", "sq.xyz " + tex + ", " + offsetBase(0, out));
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "sq " + gs + ", " + offsetBase(2, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("clipw.xyz " + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand " + clipResult + ", " + p.clipImmediate);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand " + clipResult + ", " + clipResult + ", " + p.doClippingReg);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior " + adc + ", " + clipResult + ", " + zSign);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior " + adc + ", " + adc + ", " + strip);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + adc + ", " + adc + ", " + p.adcImmediate);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w " + gs + ", " + adc);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + tex + ", " + offsetBase(0, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + gs + ", " + offsetBase(2, out));
 }
 
 void CodeGenerator::emitLinearXformSoftwarePipelineLoop( const LinearXformLoopPipelinePattern& p )
@@ -5494,43 +5535,43 @@ void CodeGenerator::emitLinearXformSoftwarePipelineLoop( const LinearXformLoopPi
 
 	m_codeLines.push_back(p.entryLabel + ":");
 	emitLinearXformScalarBody(p);
-	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", " + integerText(p.inputStep));
-	emitRawPairedLine("nop", "ibne " + in + ", " + last + ", " + p.prologLabel);
-	emitRawPairedLine("nop", "iaddiu " + out + ", " + out + ", " + integerText(p.outputStep));
-	emitRawPairedLine("nop", "b " + p.exitLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", " + integerText(p.inputStep));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibne " + in + ", " + last + ", " + p.prologLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + out + ", " + out + ", " + integerText(p.outputStep));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.exitLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.prologLabel + ":");
-	emitRawPairedLine("nop", "lq.xyz " + vert + ", " + offsetBase(0, in));
-	emitRawPairedLine("nop", "ilw.w " + strip + ", " + offsetBase(0, in));
-	emitRawPairedLine("nop", "lq.xyz " + tex + ", " + offsetBase(2, in));
-	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"), "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + vert + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ilw.w " + strip + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + tex + ", " + offsetBase(2, in));
+	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"),
 	                  "iand " + stripFlip + ", " + strip + ", " + p.zSignMaskReg);
-	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"), "nop");
-	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
-	emitRawPairedLine("mulq.xyz " + x + ", " + x + ", q", "waitq");
-	emitRawPairedLine("add.xyz " + gs + ", " + x + ", " + p.gsOffsetsReg, "nop");
-	emitRawPairedLine("sub.xyz " + delta + ", " + p.oldVertexReg + ", " + x, "nop");
-	emitRawPairedLine("mul.xyz " + clip + ", " + x + ", " + p.clipScalesReg, "nop");
-	emitRawPairedLine("opmula.xyz ACCxyz, " + fieldArg(delta, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz"), "nop");
-	emitRawPairedLine("opmsub.xyz " + fieldArg(p.bfcNormalReg, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz") + ", " + fieldArg(delta, "xyz"), "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("clipw.xyz " + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"), "nop");
-	emitRawPairedLine("nop", "fmand " + zSign + ", " + p.zSignMaskReg);
-	emitRawPairedLine("nop", "isub " + zSign + ", " + zSign + ", " + zSwitch);
-	emitRawPairedLine("nop", "iand " + zSign + ", " + zSign + ", " + p.zSignMaskReg);
-	emitRawPairedLine("nop", "isub " + zSwitch + ", " + p.zSignMaskReg + ", " + zSwitch);
-	emitRawPairedLine("nop", "ior " + zSwitch + ", " + zSwitch + ", " + stripFlip);
-	emitRawPairedLine("nop", "fcand " + clipResult + ", " + p.clipImmediate);
-	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", " + integerText(p.inputStep));
-	emitRawPairedLine("nop", "ibeq " + in + ", " + last + ", " + p.epilogLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
+	emitRawPairedLine("mulq.xyz " + x + ", " + x + ", q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine("add.xyz " + gs + ", " + x + ", " + p.gsOffsetsReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("sub.xyz " + delta + ", " + p.oldVertexReg + ", " + x, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + clip + ", " + x + ", " + p.clipScalesReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("opmula.xyz ACCxyz, " + fieldArg(delta, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("opmsub.xyz " + fieldArg(p.bfcNormalReg, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz") + ", " + fieldArg(delta, "xyz"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("clipw.xyz " + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "fmand " + zSign + ", " + p.zSignMaskReg);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isub " + zSign + ", " + zSign + ", " + zSwitch);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand " + zSign + ", " + zSign + ", " + p.zSignMaskReg);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isub " + zSwitch + ", " + p.zSignMaskReg + ", " + zSwitch);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior " + zSwitch + ", " + zSwitch + ", " + stripFlip);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand " + clipResult + ", " + p.clipImmediate);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", " + integerText(p.inputStep));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibeq " + in + ", " + last + ", " + p.epilogLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.mainLabel + ":");
 	emitRawPairedLine("ftoi4.xyz " + gs + ", " + gs,
@@ -5541,53 +5582,53 @@ void CodeGenerator::emitLinearXformSoftwarePipelineLoop( const LinearXformLoopPi
 	                  "ior " + adc + ", " + adc + ", " + strip);
 	emitRawPairedLine("mulw.xyz " + p.oldDeltaReg + ", " + delta + ", " + fieldArg(p.bfcMultiplierReg, "w"),
 	                  "iaddiu " + adc + ", " + adc + ", " + p.adcImmediate);
-	emitRawPairedLine("nop", "mfir.w " + gs + ", " + adc);
-	emitRawPairedLine("nop", "sq.xyz " + p.constantColorReg + ", " + offsetBase(1, out));
-	emitRawPairedLine("nop", "sq.xyz " + tex + ", " + offsetBase(0, out));
-	emitRawPairedLine("nop", "sq " + gs + ", " + offsetBase(2, out));
-	emitRawPairedLine("nop", "lq.xyz " + vert + ", " + offsetBase(0, in));
-	emitRawPairedLine("nop", "ilw.w " + strip + ", " + offsetBase(0, in));
-	emitRawPairedLine("nop", "lq.xyz " + tex + ", " + offsetBase(2, in));
-	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"), "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w " + gs + ", " + adc);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + p.constantColorReg + ", " + offsetBase(1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + tex + ", " + offsetBase(0, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + gs + ", " + offsetBase(2, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + vert + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ilw.w " + strip + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + tex + ", " + offsetBase(2, in));
+	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"),
 	                  "iand " + stripFlip + ", " + strip + ", " + p.zSignMaskReg);
-	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"), "nop");
-	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
-	emitRawPairedLine("mulq.xyz " + x + ", " + x + ", q", "waitq");
-	emitRawPairedLine("add.xyz " + gs + ", " + x + ", " + p.gsOffsetsReg, "nop");
-	emitRawPairedLine("sub.xyz " + delta + ", " + p.oldVertexReg + ", " + x, "nop");
-	emitRawPairedLine("mul.xyz " + clip + ", " + x + ", " + p.clipScalesReg, "nop");
-	emitRawPairedLine("opmula.xyz ACCxyz, " + fieldArg(delta, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz"), "nop");
-	emitRawPairedLine("opmsub.xyz " + fieldArg(p.bfcNormalReg, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz") + ", " + fieldArg(delta, "xyz"), "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("clipw.xyz " + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"), "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "fmand " + zSign + ", " + p.zSignMaskReg);
-	emitRawPairedLine("nop", "isub " + zSign + ", " + zSign + ", " + zSwitch);
-	emitRawPairedLine("nop", "iand " + zSign + ", " + zSign + ", " + p.zSignMaskReg);
-	emitRawPairedLine("nop", "isub " + zSwitch + ", " + p.zSignMaskReg + ", " + zSwitch);
-	emitRawPairedLine("nop", "ior " + zSwitch + ", " + zSwitch + ", " + stripFlip);
-	emitRawPairedLine("nop", "fcand " + clipResult + ", " + p.clipImmediate);
-	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", " + integerText(p.inputStep));
-	emitRawPairedLine("nop", "ibne " + in + ", " + last + ", " + p.mainLabel);
-	emitRawPairedLine("nop", "iaddiu " + out + ", " + out + ", " + integerText(p.outputStep));
+	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
+	emitRawPairedLine("mulq.xyz " + x + ", " + x + ", q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine("add.xyz " + gs + ", " + x + ", " + p.gsOffsetsReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("sub.xyz " + delta + ", " + p.oldVertexReg + ", " + x, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + clip + ", " + x + ", " + p.clipScalesReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("opmula.xyz ACCxyz, " + fieldArg(delta, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("opmsub.xyz " + fieldArg(p.bfcNormalReg, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz") + ", " + fieldArg(delta, "xyz"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("clipw.xyz " + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "fmand " + zSign + ", " + p.zSignMaskReg);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isub " + zSign + ", " + zSign + ", " + zSwitch);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand " + zSign + ", " + zSign + ", " + p.zSignMaskReg);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isub " + zSwitch + ", " + p.zSignMaskReg + ", " + zSwitch);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior " + zSwitch + ", " + zSwitch + ", " + stripFlip);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand " + clipResult + ", " + p.clipImmediate);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", " + integerText(p.inputStep));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibne " + in + ", " + last + ", " + p.mainLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + out + ", " + out + ", " + integerText(p.outputStep));
 
 	m_codeLines.push_back(p.epilogLabel + ":");
 	emitRawPairedLine("ftoi4.xyz " + gs + ", " + gs,
 	                  "iand " + clipResult + ", " + clipResult + ", " + p.doClippingReg);
-	emitRawPairedLine("nop", "ior " + adc + ", " + clipResult + ", " + zSign);
-	emitRawPairedLine("nop", "ior " + adc + ", " + adc + ", " + strip);
-	emitRawPairedLine("nop", "iaddiu " + adc + ", " + adc + ", " + p.adcImmediate);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior " + adc + ", " + clipResult + ", " + zSign);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior " + adc + ", " + adc + ", " + strip);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + adc + ", " + adc + ", " + p.adcImmediate);
 	emitRawPairedLine("mulq.xyz " + tex + ", " + tex + ", q",
 	                  "mfir.w " + gs + ", " + adc);
-	emitRawPairedLine("nop", "sq.xyz " + p.constantColorReg + ", " + offsetBase(1, out));
-	emitRawPairedLine("nop", "sq.xyz " + tex + ", " + offsetBase(0, out));
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "sq " + gs + ", " + offsetBase(2, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + p.constantColorReg + ", " + offsetBase(1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + tex + ", " + offsetBase(0, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + gs + ", " + offsetBase(2, out));
 
 	m_codeLines.push_back(p.exitLabel + ":");
 }
@@ -5748,14 +5789,14 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 			continue;
 
 		const std::string mnemonic = lowerVuTokenName(token);
-		if( mnemonic == "nop" )
+		if( mnemonic == vuInstr(VU_OP_NOP) )
 			continue;
 
 		std::string target;
 		if( branchTargetLabel(token, target) && target == pattern.sourceLabel )
 			continue;
 
-		if( mnemonic == "lq" )
+		if( mnemonic == vuInstr(VU_OP_LQ) )
 		{
 			std::string base;
 			long offset = 0;
@@ -5792,7 +5833,7 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 			return false;
 		}
 
-		if( mnemonic == "iaddiu" )
+		if( mnemonic == vuInstr(VU_OP_IADDIU) )
 		{
 			std::string dst;
 			std::string src;
@@ -5820,7 +5861,7 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 			return false;
 		}
 
-		if( mnemonic == "mul" && token.broadcast() == 0
+		if( mnemonic == vuInstr(VU_OP_MUL) && token.broadcast() == 0
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
@@ -5846,7 +5887,7 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 			return false;
 		}
 
-		if( mnemonic == "mr32" )
+		if( mnemonic == vuInstr(VU_OP_MR32) )
 		{
 			std::string dst;
 			std::string src;
@@ -5859,7 +5900,7 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( mnemonic == "adda" && token.broadcast() == Token::Y && tokenHasFields(token, Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_ADDA) && token.broadcast() == Token::Y && tokenHasFields(token, Token::Z) )
 		{
 			std::string src;
 			if( !getRegisterArgKey(token, 1, src) || src != pattern.diffProductReg )
@@ -5868,7 +5909,7 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( mnemonic == "madd" && token.broadcast() == Token::X && tokenHasFields(token, Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_MADD) && token.broadcast() == Token::X && tokenHasFields(token, Token::Z) )
 		{
 			std::string dst;
 			std::string src;
@@ -5883,7 +5924,7 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( mnemonic == "max" && token.broadcast() == Token::X )
+		if( mnemonic == vuInstr(VU_OP_MAX) && token.broadcast() == Token::X )
 		{
 			std::string dst;
 			std::string src;
@@ -5904,7 +5945,7 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 			return false;
 		}
 
-		if( mnemonic == "mul" && token.broadcast() == Token::Z
+		if( mnemonic == vuInstr(VU_OP_MUL) && token.broadcast() == Token::Z
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
@@ -5921,7 +5962,7 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( mnemonic == "mula" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_MULA) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string src;
 			std::string material;
@@ -5942,7 +5983,7 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( mnemonic == "adda" && token.broadcast() == Token::X && tokenHasFields(token, Token::W) )
+		if( mnemonic == vuInstr(VU_OP_ADDA) && token.broadcast() == Token::X && tokenHasFields(token, Token::W) )
 		{
 			std::string src;
 			if( !getRegisterArgKey(token, 1, src) || src != pattern.specSwizzleReg )
@@ -5951,7 +5992,7 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( mnemonic == "madd" && token.broadcast() == Token::Y && tokenHasFields(token, Token::W) )
+		if( mnemonic == vuInstr(VU_OP_MADD) && token.broadcast() == Token::Y && tokenHasFields(token, Token::W) )
 		{
 			std::string dst;
 			std::string src;
@@ -5964,7 +6005,7 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( mnemonic == "mul" && token.broadcast() == 0 && tokenHasFields(token, Token::W) )
+		if( mnemonic == vuInstr(VU_OP_MUL) && token.broadcast() == 0 && tokenHasFields(token, Token::W) )
 		{
 			std::string dst;
 			std::string src0;
@@ -5983,7 +6024,7 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( mnemonic == "madda" && token.broadcast() == Token::W
+		if( mnemonic == vuInstr(VU_OP_MADDA) && token.broadcast() == Token::W
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string src;
@@ -5994,7 +6035,7 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( mnemonic == "madd" && token.broadcast() == 0
+		if( mnemonic == vuInstr(VU_OP_MADD) && token.broadcast() == 0
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
@@ -6010,7 +6051,7 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( mnemonic == "add" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_ADD) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
 			std::string left;
@@ -6025,7 +6066,7 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 			continue;
 		}
 
-		if( (mnemonic == "sq" || mnemonic == "sqi") && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( (mnemonic == vuInstr(VU_OP_SQ) || mnemonic == vuInstr(VU_OP_SQI)) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string base;
 			long offset = 0;
@@ -6043,7 +6084,7 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 				return false;
 			if( base != pattern.outputReg || src != pattern.resultReg )
 				return false;
-			if( mnemonic == "sqi" || (getArg(token, 1, addressArg)
+			if( mnemonic == vuInstr(VU_OP_SQI) || (getArg(token, 1, addressArg)
 			    && (addressArg.flags() & Token::Argument::POSTINC)) )
 				pattern.postIncrementStore = true;
 			pattern.storeOffset = offset;
@@ -6143,7 +6184,7 @@ void CodeGenerator::emitDirLightSpecSoftwarePipelineLoop( const DirLightSpecLoop
 	const std::string result = reserveScratchReg(reserved);
 	const std::string materialDiff = p.materialDiffFromInput ? reserveScratchReg(reserved)
 	                                                        : p.materialDiffReg;
-	const std::string mainOutputStep = p.postIncrementStore ? "nop" : "iaddiu " + out + ", " + out + ", 3";
+	const std::string mainOutputStep = p.postIncrementStore ? vuInstr(VU_OP_NOP) : "iaddiu " + out + ", " + out + ", 3";
 	const std::string mainColorLoad = p.postIncrementStore ? offsetBase(0, out) : offsetBase(-2, out);
 	const std::string mainStore = p.postIncrementStore
 	                            ? "sqi.xyz " + result + ", (" + out + "++)"
@@ -6151,54 +6192,54 @@ void CodeGenerator::emitDirLightSpecSoftwarePipelineLoop( const DirLightSpecLoop
 	const std::string prologOneMaterialLoad = p.materialDiffFromInput
 	                                        ? "lq.xyz " + materialDiff + ", "
 	                                          + offsetBase(p.materialDiffOffset - p.inputStep, in)
-	                                        : "nop";
+	                                        : vuInstr(VU_OP_NOP);
 	const std::string pipelinedMaterialLoad = p.materialDiffFromInput
 	                                        ? "lq.xyz " + materialDiff + ", "
 	                                          + offsetBase(p.materialDiffOffset - (2 * p.inputStep), in)
-	                                        : "nop";
+	                                        : vuInstr(VU_OP_NOP);
 
 	m_codeLines.push_back(p.entryLabel + ":");
-	emitRawPairedLine("nop", "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", " + inputStep);
-	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, "nop");
-	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal, "nop");
-	emitRawPairedLine("nop", "mr32.xyw " + specSwizzle + ", " + specProd);
-	emitRawPairedLine("nop", "ibeq " + in + ", " + last + ", " + p.fallbackOneLabel);
-	emitRawPairedLine("addax.w ACC, " + specSwizzle + ", " + fieldArg(specSwizzle, "x"), "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", " + inputStep);
+	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mr32.xyw " + specSwizzle + ", " + specProd);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibeq " + in + ", " + last + ", " + p.fallbackOneLabel);
+	emitRawPairedLine("addax.w ACC, " + specSwizzle + ", " + fieldArg(specSwizzle, "x"), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.prologOneLabel + ":");
 	emitRawPairedLine("maddy.w " + specScratch + ", " + vf00 + ", " + fieldArg(specSwizzle, "y"),
 	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("adday.z ACC, " + diff + ", " + fieldArg(diff, "y"), "nop");
-	emitRawPairedLine("maddx.z " + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), "nop");
-	emitRawPairedLine("maxx.w " + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), "nop");
-	emitRawPairedLine("maxx.z " + diffClamp + ", " + diff + ", " + fieldArg(vf00, "x"), "nop");
-	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, "nop");
-	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, "nop");
-	emitRawPairedLine("nop", "mr32.xyw " + specSwizzle + ", " + specProd);
+	emitRawPairedLine("adday.z ACC, " + diff + ", " + fieldArg(diff, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddx.z " + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maxx.w " + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maxx.z " + diffClamp + ", " + diff + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mr32.xyw " + specSwizzle + ", " + specProd);
 	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity,
 	                  prologOneMaterialLoad);
 	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal,
 	                  "iaddiu " + in + ", " + in + ", " + inputStep);
-	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diffClamp, "z"), "nop");
+	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diffClamp, "z"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("addax.w ACC, " + specSwizzle + ", " + fieldArg(specSwizzle, "x"),
 	                  "ibeq " + in + ", " + last + ", " + p.fallbackTwoLabel);
-	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, "nop");
+	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.prologTwoLabel + ":");
-	emitRawPairedLine("maddy.w " + specScratch + ", " + vf00 + ", " + fieldArg(specSwizzle, "y"), "nop");
-	emitRawPairedLine("adday.z ACC, " + diff + ", " + fieldArg(diff, "y"), "nop");
-	emitRawPairedLine("maddx.z " + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), "nop");
-	emitRawPairedLine("mul.w " + specPower + ", " + specIntensity + ", " + specIntensity, "nop");
-	emitRawPairedLine("maxx.w " + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), "nop");
+	emitRawPairedLine("maddy.w " + specScratch + ", " + vf00 + ", " + fieldArg(specSwizzle, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("adday.z ACC, " + diff + ", " + fieldArg(diff, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddx.z " + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.w " + specPower + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maxx.w " + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mula.xyz ACC, " + localDiff + ", " + materialDiff,
 	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("maxx.z " + diffClamp + ", " + diff + ", " + fieldArg(vf00, "x"), "nop");
-	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, "nop");
-	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, "nop");
-	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, "nop");
-	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(specPower, "w"), "nop");
-	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, "nop");
+	emitRawPairedLine("maxx.z " + diffClamp + ", " + diff + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(specPower, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
 	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg,
 	                  "mr32.xyw " + specSwizzle + ", " + specProd);
 	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal,
@@ -6207,24 +6248,24 @@ void CodeGenerator::emitDirLightSpecSoftwarePipelineLoop( const DirLightSpecLoop
 	                  pipelinedMaterialLoad);
 	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity,
 	                  "ibeq " + in + ", " + last + ", " + p.fallbackThreeLabel);
-	emitRawPairedLine("addax.w ACC, " + specSwizzle + ", " + fieldArg(specSwizzle, "x"), "nop");
+	emitRawPairedLine("addax.w ACC, " + specSwizzle + ", " + fieldArg(specSwizzle, "x"), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.mainLabel + ":");
 	emitRawPairedLine("maddy.w " + specScratch + ", " + vf00 + ", " + fieldArg(specSwizzle, "y"),
 	                  mainOutputStep);
-	emitRawPairedLine("adday.z ACC, " + diff + ", " + fieldArg(diff, "y"), "nop");
-	emitRawPairedLine("maddx.z " + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), "nop");
-	emitRawPairedLine("mul.w " + specPower + ", " + specIntensity + ", " + specIntensity, "nop");
-	emitRawPairedLine("maxx.w " + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), "nop");
+	emitRawPairedLine("adday.z ACC, " + diff + ", " + fieldArg(diff, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddx.z " + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.w " + specPower + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maxx.w " + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mula.xyz ACC, " + localDiff + ", " + materialDiff,
 	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
 	emitRawPairedLine("maxx.z " + diffClamp + ", " + diff + ", " + fieldArg(vf00, "x"),
 	                  "lq.xyz " + color + ", " + mainColorLoad);
-	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, "nop");
-	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, "nop");
-	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, "nop");
-	emitRawPairedLine("add.xyz " + result + ", " + color + ", " + lit, "nop");
-	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(specPower, "w"), "nop");
+	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("add.xyz " + result + ", " + color + ", " + lit, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(specPower, "w"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity,
 	                  "iaddiu " + in + ", " + in + ", " + inputStep);
 	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg,
@@ -6235,27 +6276,27 @@ void CodeGenerator::emitDirLightSpecSoftwarePipelineLoop( const DirLightSpecLoop
 	                  pipelinedMaterialLoad);
 	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity,
 	                  "ibne " + in + ", " + last + ", " + p.mainLabel);
-	emitRawPairedLine("addax.w ACC, " + specSwizzle + ", " + fieldArg(specSwizzle, "x"), "nop");
+	emitRawPairedLine("addax.w ACC, " + specSwizzle + ", " + fieldArg(specSwizzle, "x"), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.drainLabel + ":");
-	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepThree);
-	emitRawPairedLine("nop", "b " + p.scalarLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepThree);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackOneLabel + ":");
-	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepOne);
-	emitRawPairedLine("nop", "b " + p.scalarLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepOne);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackTwoLabel + ":");
-	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepTwo);
-	emitRawPairedLine("nop", "b " + p.scalarLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepTwo);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackThreeLabel + ":");
-	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepThree);
-	emitRawPairedLine("nop", "b " + p.scalarLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepThree);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	emitDirLightSpecScalarFallbackLoop(p);
 }
@@ -6281,66 +6322,66 @@ void CodeGenerator::emitDirLightSpecScalarFallbackLoop( const DirLightSpecLoopPi
 	const std::string scalarStore = p.postIncrementStore
 	                              ? "sqi.xyz " + result + ", (" + out + "++)"
 	                              : "sq.xyz " + result + ", " + offsetBase(1, out);
-	const std::string scalarOutputStep = p.postIncrementStore ? "nop" : "iaddiu " + out + ", " + out + ", 3";
+	const std::string scalarOutputStep = p.postIncrementStore ? vuInstr(VU_OP_NOP) : "iaddiu " + out + ", " + out + ", 3";
 
 	m_codeLines.push_back(p.scalarLabel + ":");
-	emitRawPairedLine("nop", "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("nop", "lq.xyz " + color + ", " + scalarColorLoad);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + color + ", " + scalarColorLoad);
 	if( p.materialDiffFromInput )
-		emitRawPairedLine("nop", "lq.xyz " + p.materialDiffReg + ", " + offsetBase(p.materialDiffOffset, in));
-	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", " + inputStep);
-	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal, "nop");
-	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "mr32.xyw " + p.specSwizzleReg + ", " + specProd);
-	emitRawPairedLine("adday.z ACC, " + diff + ", " + fieldArg(diff, "y"), "nop");
-	emitRawPairedLine("maddx.z " + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("maxx.z " + diff + ", " + diff + ", " + fieldArg(vf00, "x"), "nop");
-	emitRawPairedLine("addax.w ACC, " + p.specSwizzleReg + ", " + fieldArg(p.specSwizzleReg, "x"), "nop");
-	emitRawPairedLine("maddy.w " + specScratch + ", " + vf00 + ", " + fieldArg(p.specSwizzleReg, "y"), "nop");
-	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diff, "z"), "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("maxx.w " + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), "nop");
-	emitRawPairedLine("mula.xyz ACC, " + localDiff + ", " + p.materialDiffReg, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mul.w " + specPower + ", " + specIntensity + ", " + specIntensity, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(specPower, "w"), "nop");
-	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("add.xyz " + result + ", " + color + ", " + lit, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", scalarStore);
-	emitRawPairedLine("nop", "ibne " + in + ", " + last + ", " + p.scalarLabel);
-	emitRawPairedLine("nop", scalarOutputStep);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + p.materialDiffReg + ", " + offsetBase(p.materialDiffOffset, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", " + inputStep);
+	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mr32.xyw " + p.specSwizzleReg + ", " + specProd);
+	emitRawPairedLine("adday.z ACC, " + diff + ", " + fieldArg(diff, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddx.z " + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maxx.z " + diff + ", " + diff + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("addax.w ACC, " + p.specSwizzleReg + ", " + fieldArg(p.specSwizzleReg, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddy.w " + specScratch + ", " + vf00 + ", " + fieldArg(p.specSwizzleReg, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diff, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maxx.w " + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mula.xyz ACC, " + localDiff + ", " + p.materialDiffReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.w " + specPower + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(specPower, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("add.xyz " + result + ", " + color + ", " + lit, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), scalarStore);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibne " + in + ", " + last + ", " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), scalarOutputStep);
 
 	m_codeLines.push_back(p.exitLabel + ":");
 }
@@ -6387,7 +6428,7 @@ bool CodeGenerator::collectDirLightNoSpecLoopPipelinePattern( std::list<Token>::
 			continue;
 
 		const std::string mnemonic = lowerVuTokenName(token);
-		if( mnemonic == "nop" )
+		if( mnemonic == vuInstr(VU_OP_NOP) )
 			continue;
 
 		std::string target;
@@ -6400,7 +6441,7 @@ bool CodeGenerator::collectDirLightNoSpecLoopPipelinePattern( std::list<Token>::
 			continue;
 		}
 
-		if( mnemonic == "lq" )
+		if( mnemonic == vuInstr(VU_OP_LQ) )
 		{
 			std::string base;
 			long offset = 0;
@@ -6429,7 +6470,7 @@ bool CodeGenerator::collectDirLightNoSpecLoopPipelinePattern( std::list<Token>::
 			return false;
 		}
 
-		if( mnemonic == "iaddiu" )
+		if( mnemonic == vuInstr(VU_OP_IADDIU) )
 		{
 			std::string dst;
 			std::string src;
@@ -6457,7 +6498,7 @@ bool CodeGenerator::collectDirLightNoSpecLoopPipelinePattern( std::list<Token>::
 			return false;
 		}
 
-		if( mnemonic == "mul" && token.broadcast() == 0
+		if( mnemonic == vuInstr(VU_OP_MUL) && token.broadcast() == 0
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
@@ -6476,7 +6517,7 @@ bool CodeGenerator::collectDirLightNoSpecLoopPipelinePattern( std::list<Token>::
 			return false;
 		}
 
-		if( mnemonic == "adda" && token.broadcast() == Token::Y && tokenHasFields(token, Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_ADDA) && token.broadcast() == Token::Y && tokenHasFields(token, Token::Z) )
 		{
 			std::string src;
 			if( !getRegisterArgKey(token, 1, src) || src != pattern.productReg )
@@ -6485,7 +6526,7 @@ bool CodeGenerator::collectDirLightNoSpecLoopPipelinePattern( std::list<Token>::
 			continue;
 		}
 
-		if( mnemonic == "madd" && token.broadcast() == Token::X && tokenHasFields(token, Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_MADD) && token.broadcast() == Token::X && tokenHasFields(token, Token::Z) )
 		{
 			std::string dst;
 			std::string src;
@@ -6500,7 +6541,7 @@ bool CodeGenerator::collectDirLightNoSpecLoopPipelinePattern( std::list<Token>::
 			continue;
 		}
 
-		if( mnemonic == "max" && token.broadcast() == Token::X && tokenHasFields(token, Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_MAX) && token.broadcast() == Token::X && tokenHasFields(token, Token::Z) )
 		{
 			std::string dst;
 			std::string src;
@@ -6512,7 +6553,7 @@ bool CodeGenerator::collectDirLightNoSpecLoopPipelinePattern( std::list<Token>::
 			continue;
 		}
 
-		if( mnemonic == "mul" && token.broadcast() == Token::Z
+		if( mnemonic == vuInstr(VU_OP_MUL) && token.broadcast() == Token::Z
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
@@ -6529,7 +6570,7 @@ bool CodeGenerator::collectDirLightNoSpecLoopPipelinePattern( std::list<Token>::
 			continue;
 		}
 
-		if( mnemonic == "mula" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_MULA) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string src;
 			std::string material;
@@ -6542,7 +6583,7 @@ bool CodeGenerator::collectDirLightNoSpecLoopPipelinePattern( std::list<Token>::
 			continue;
 		}
 
-		if( mnemonic == "madd" && token.broadcast() == 0
+		if( mnemonic == vuInstr(VU_OP_MADD) && token.broadcast() == 0
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
@@ -6558,7 +6599,7 @@ bool CodeGenerator::collectDirLightNoSpecLoopPipelinePattern( std::list<Token>::
 			continue;
 		}
 
-		if( mnemonic == "add" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_ADD) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
 			std::string left;
@@ -6573,7 +6614,7 @@ bool CodeGenerator::collectDirLightNoSpecLoopPipelinePattern( std::list<Token>::
 			continue;
 		}
 
-		if( mnemonic == "sq" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_SQ) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string base;
 			long offset = 0;
@@ -6676,55 +6717,55 @@ void CodeGenerator::emitDirLightNoSpecSoftwarePipelineLoop( const DirLightNoSpec
 	const std::string vf00 = "VF00";
 
 	m_codeLines.push_back(p.entryLabel + ":");
-	emitRawPairedLine("nop", "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("nop", "lq.xyz " + color + ", " + offsetBase(1, out));
-	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + color + ", " + offsetBase(1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mul.xyz " + product + ", " + p.lightDirReg + ", " + normal,
 	                  "ibeq " + in + ", " + last + ", " + p.fallbackOneLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.prologOneLabel + ":");
 	emitRawPairedLine("adday.z ACC, " + product + ", " + fieldArg(product, "y"),
 	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("maddx.z " + dot + ", " + p.dotBaseReg + ", " + fieldArg(product, "x"), "nop");
+	emitRawPairedLine("maddx.z " + dot + ", " + p.dotBaseReg + ", " + fieldArg(product, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mul.xyz " + product + ", " + p.lightDirReg + ", " + normal,
 	                  "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "ibeq " + in + ", " + last + ", " + p.fallbackTwoLabel);
-	emitRawPairedLine("maxx.z " + dot + ", " + dot + ", " + fieldArg(vf00, "x"), "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibeq " + in + ", " + last + ", " + p.fallbackTwoLabel);
+	emitRawPairedLine("maxx.z " + dot + ", " + dot + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.prologTwoLabel + ":");
 	emitRawPairedLine("adday.z ACC, " + product + ", " + fieldArg(product, "y"),
 	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("maddx.z " + dotNext + ", " + p.dotBaseReg + ", " + fieldArg(product, "x"), "nop");
+	emitRawPairedLine("maddx.z " + dotNext + ", " + p.dotBaseReg + ", " + fieldArg(product, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mul.xyz " + product + ", " + p.lightDirReg + ", " + normal,
 	                  "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulz.xyz " + scaled + ", " + p.lightColorReg + ", " + fieldArg(dot, "z"),
 	                  "ibeq " + in + ", " + last + ", " + p.fallbackThreeLabel);
-	emitRawPairedLine("maxx.z " + dot + ", " + dotNext + ", " + fieldArg(vf00, "x"), "nop");
+	emitRawPairedLine("maxx.z " + dot + ", " + dotNext + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.prologThreeLabel + ":");
 	emitRawPairedLine("adday.z ACC, " + product + ", " + fieldArg(product, "y"),
 	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("maddx.z " + dotNext + ", " + p.dotBaseReg + ", " + fieldArg(product, "x"), "nop");
-	emitRawPairedLine("mula.xyz ACC, " + scaled + ", " + p.materialMulReg, "nop");
+	emitRawPairedLine("maddx.z " + dotNext + ", " + p.dotBaseReg + ", " + fieldArg(product, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mula.xyz ACC, " + scaled + ", " + p.materialMulReg, vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mul.xyz " + product + ", " + p.lightDirReg + ", " + normal,
 	                  "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("mulz.xyz " + scaled + ", " + p.lightColorReg + ", " + fieldArg(dot, "z"), "nop");
+	emitRawPairedLine("mulz.xyz " + scaled + ", " + p.lightColorReg + ", " + fieldArg(dot, "z"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("madd.xyz " + lit + ", " + p.materialAddReg + ", " + p.ambientReg,
 	                  "ibeq " + in + ", " + last + ", " + p.fallbackFourLabel);
-	emitRawPairedLine("maxx.z " + dot + ", " + dotNext + ", " + fieldArg(vf00, "x"), "nop");
+	emitRawPairedLine("maxx.z " + dot + ", " + dotNext + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.mainLabel + ":");
 	emitRawPairedLine("adday.z ACC, " + product + ", " + fieldArg(product, "y"),
 	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("maddx.z " + dotNext + ", " + p.dotBaseReg + ", " + fieldArg(product, "x"), "nop");
+	emitRawPairedLine("maddx.z " + dotNext + ", " + p.dotBaseReg + ", " + fieldArg(product, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("add.xyz " + result + ", " + color + ", " + lit,
 	                  "iaddiu " + out + ", " + out + ", 3");
-	emitRawPairedLine("mula.xyz ACC, " + scaled + ", " + p.materialMulReg, "nop");
+	emitRawPairedLine("mula.xyz ACC, " + scaled + ", " + p.materialMulReg, vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mul.xyz " + product + ", " + p.lightDirReg + ", " + normal,
 	                  "iaddiu " + in + ", " + in + ", 3");
 	emitRawPairedLine("madd.xyz " + lit + ", " + p.materialAddReg + ", " + p.ambientReg,
@@ -6735,29 +6776,29 @@ void CodeGenerator::emitDirLightNoSpecSoftwarePipelineLoop( const DirLightNoSpec
 	                  "sq.xyz " + result + ", " + offsetBase(-2, out));
 
 	m_codeLines.push_back(p.drainLabel + ":");
-	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", 12");
-	emitRawPairedLine("nop", "b " + p.scalarLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", 12");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackOneLabel + ":");
-	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("nop", "b " + p.scalarLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackTwoLabel + ":");
-	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", 6");
-	emitRawPairedLine("nop", "b " + p.scalarLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", 6");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackThreeLabel + ":");
-	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", 9");
-	emitRawPairedLine("nop", "b " + p.scalarLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", 9");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackFourLabel + ":");
-	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", 12");
-	emitRawPairedLine("nop", "b " + p.scalarLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", 12");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	emitDirLightNoSpecScalarFallbackLoop(p);
 }
@@ -6776,46 +6817,46 @@ void CodeGenerator::emitDirLightNoSpecScalarFallbackLoop( const DirLightNoSpecLo
 	const std::string vf00 = "VF00";
 
 	m_codeLines.push_back(p.scalarLabel + ":");
-	emitRawPairedLine("nop", "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("nop", "lq.xyz " + color + ", " + offsetBase(1, out));
-	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mul.xyz " + product + ", " + p.lightDirReg + ", " + normal, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("adday.z ACC, " + product + ", " + fieldArg(product, "y"), "nop");
-	emitRawPairedLine("maddx.z " + product + ", " + p.dotBaseReg + ", " + fieldArg(product, "x"), "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("maxx.z " + product + ", " + product + ", " + fieldArg(vf00, "x"), "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mulz.xyz " + scaled + ", " + p.lightColorReg + ", " + fieldArg(product, "z"), "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mula.xyz ACC, " + scaled + ", " + p.materialMulReg, "nop");
-	emitRawPairedLine("madd.xyz " + lit + ", " + p.materialAddReg + ", " + p.ambientReg, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("add.xyz " + result + ", " + color + ", " + lit, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "sq.xyz " + result + ", " + offsetBase(1, out));
-	emitRawPairedLine("nop", "ibne " + in + ", " + last + ", " + p.scalarLabel);
-	emitRawPairedLine("nop", "iaddiu " + out + ", " + out + ", 3");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + color + ", " + offsetBase(1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + product + ", " + p.lightDirReg + ", " + normal, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("adday.z ACC, " + product + ", " + fieldArg(product, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddx.z " + product + ", " + p.dotBaseReg + ", " + fieldArg(product, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maxx.z " + product + ", " + product + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulz.xyz " + scaled + ", " + p.lightColorReg + ", " + fieldArg(product, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mula.xyz ACC, " + scaled + ", " + p.materialMulReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("madd.xyz " + lit + ", " + p.materialAddReg + ", " + p.ambientReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("add.xyz " + result + ", " + color + ", " + lit, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + result + ", " + offsetBase(1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibne " + in + ", " + last + ", " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + out + ", " + out + ", 3");
 
 	m_codeLines.push_back(p.exitLabel + ":");
 }
@@ -6944,14 +6985,14 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 
 		const std::string mnemonic = lowerVuTokenName(token);
-		if( mnemonic == "nop" || mnemonic == "waitp" || mnemonic == "waitq" )
+		if( mnemonic == vuInstr(VU_OP_NOP) || mnemonic == vuInstr(VU_OP_WAITP) || mnemonic == vuInstr(VU_OP_WAITQ) )
 			continue;
 
 		std::string target;
 		if( branchTargetLabel(token, target) && target == pattern.sourceLabel )
 			continue;
 
-		if( mnemonic == "lq" )
+		if( mnemonic == vuInstr(VU_OP_LQ) )
 		{
 			std::string base;
 			long offset = 0;
@@ -6997,7 +7038,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			return false;
 		}
 
-		if( mnemonic == "iaddiu" )
+		if( mnemonic == vuInstr(VU_OP_IADDIU) )
 		{
 			std::string dst;
 			std::string src;
@@ -7023,7 +7064,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "sub" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_SUB) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
 			std::string left;
@@ -7038,7 +7079,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "mul" && token.broadcast() == 0
+		if( mnemonic == vuInstr(VU_OP_MUL) && token.broadcast() == 0
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
@@ -7075,7 +7116,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "adda" && token.broadcast() == Token::Y && tokenHasFields(token, Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_ADDA) && token.broadcast() == Token::Y && tokenHasFields(token, Token::Z) )
 		{
 			std::string src;
 			if( getRegisterArgKey(token, 1, src) && src == pattern.attenReg )
@@ -7083,7 +7124,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "madd" && token.broadcast() == Token::X && tokenHasFields(token, Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_MADD) && token.broadcast() == Token::X && tokenHasFields(token, Token::Z) )
 		{
 			std::string dst;
 			std::string src;
@@ -7098,7 +7139,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "sqrt" )
+		if( mnemonic == vuInstr(VU_OP_SQRT) )
 		{
 			std::string src;
 			if( getRegisterArgKey(token, 1, src) && src == pattern.attenReg )
@@ -7106,7 +7147,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "add" && token.broadcast() == Token::W && tokenHasFields(token, Token::X) )
+		if( mnemonic == vuInstr(VU_OP_ADD) && token.broadcast() == Token::W && tokenHasFields(token, Token::X) )
 		{
 			std::string dst;
 			if( getRegisterArgKey(token, 0, dst) && dst == pattern.attenReg )
@@ -7116,7 +7157,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 
 		Token::Argument qArg("");
 		const bool addReadsQ = getArg(token, 2, qArg) && qArg.type() == Token::Argument::Q;
-		if( (mnemonic == "addq" || (mnemonic == "add" && addReadsQ))
+		if( (mnemonic == vuInstr(VU_OP_ADDQ) || (mnemonic == vuInstr(VU_OP_ADD) && addReadsQ))
 		    && tokenHasFields(token, Token::Y) )
 		{
 			std::string dst;
@@ -7125,7 +7166,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "div" )
+		if( mnemonic == vuInstr(VU_OP_DIV) )
 		{
 			std::string denom;
 			if( !getRegisterArgKey(token, 2, denom) )
@@ -7140,7 +7181,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "mulq" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_MULQ) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
 			std::string src;
@@ -7159,7 +7200,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( (mnemonic == "mula" || mnemonic == "mulax") && token.broadcast() == Token::X
+		if( (mnemonic == vuInstr(VU_OP_MULA) || mnemonic == "mulax") && token.broadcast() == Token::X
 		    && tokenHasFields(token, Token::W) )
 		{
 			std::string src;
@@ -7174,7 +7215,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( (mnemonic == "madda" || mnemonic == "madday") && token.broadcast() == Token::Y
+		if( (mnemonic == vuInstr(VU_OP_MADDA) || mnemonic == "madday") && token.broadcast() == Token::Y
 		    && tokenHasFields(token, Token::W) )
 		{
 			std::string src;
@@ -7189,7 +7230,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "madd" && token.broadcast() == Token::Z && tokenHasFields(token, Token::W) )
+		if( mnemonic == vuInstr(VU_OP_MADD) && token.broadcast() == Token::Z && tokenHasFields(token, Token::W) )
 		{
 			std::string dst;
 			std::string src;
@@ -7213,7 +7254,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "max" && token.broadcast() == Token::X && tokenHasFields(token, Token::W) )
+		if( mnemonic == vuInstr(VU_OP_MAX) && token.broadcast() == Token::X && tokenHasFields(token, Token::W) )
 		{
 			std::string dst;
 			std::string src;
@@ -7232,7 +7273,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "mul" && token.broadcast() == Token::W
+		if( mnemonic == vuInstr(VU_OP_MUL) && token.broadcast() == Token::W
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
@@ -7254,7 +7295,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "mula" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_MULA) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string src;
 			std::string material;
@@ -7276,7 +7317,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "add" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_ADD) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
 			std::string left;
@@ -7298,7 +7339,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "esadd" )
+		if( mnemonic == vuInstr(VU_OP_ESADD) )
 		{
 			std::string src;
 			if( getRegisterArgKey(token, 1, src) && src == pattern.halfAngleReg )
@@ -7306,7 +7347,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "mfp" )
+		if( mnemonic == vuInstr(VU_OP_MFP) )
 		{
 			std::string dst;
 			if( getRegisterArgKey(token, 0, dst) && dst == pattern.halfAngleReg )
@@ -7319,7 +7360,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "ersqrt" )
+		if( mnemonic == vuInstr(VU_OP_ERSQRT) )
 		{
 			std::string src;
 			if( getRegisterArgKey(token, 1, src) && src == pattern.halfAngleReg )
@@ -7327,7 +7368,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "mul" && token.broadcast() == 0 && tokenHasFields(token, Token::W) )
+		if( mnemonic == vuInstr(VU_OP_MUL) && token.broadcast() == 0 && tokenHasFields(token, Token::W) )
 		{
 			std::string dst;
 			std::string left;
@@ -7344,7 +7385,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( (mnemonic == "madda" || mnemonic == "maddaw") && token.broadcast() == Token::W
+		if( (mnemonic == vuInstr(VU_OP_MADDA) || mnemonic == "maddaw") && token.broadcast() == Token::W
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string src;
@@ -7356,7 +7397,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( mnemonic == "madd" && token.broadcast() == 0
+		if( mnemonic == vuInstr(VU_OP_MADD) && token.broadcast() == 0
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
@@ -7372,7 +7413,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( (mnemonic == "sq" || mnemonic == "sqi") && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( (mnemonic == vuInstr(VU_OP_SQ) || mnemonic == vuInstr(VU_OP_SQI)) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string base;
 			long offset = 0;
@@ -7390,7 +7431,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 				continue;
 			if( base == pattern.outputReg && src == pattern.resultReg )
 			{
-				if( mnemonic == "sqi" || (getArg(token, 1, addressArg)
+				if( mnemonic == vuInstr(VU_OP_SQI) || (getArg(token, 1, addressArg)
 				    && (addressArg.flags() & Token::Argument::POSTINC)) )
 					pattern.postIncrementStore = true;
 				pattern.storeOffset = offset;
@@ -7479,7 +7520,7 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 	const std::string inputStepOne = integerText(p.inputStep);
 	const std::string inputStepTwo = integerText(p.inputStep * 2);
 	const std::string inputStepThree = integerText(p.inputStep * 3);
-	const std::string mainOutputStep = p.postIncrementStore ? "nop" : "iaddiu " + out + ", " + out + ", 3";
+	const std::string mainOutputStep = p.postIncrementStore ? vuInstr(VU_OP_NOP) : "iaddiu " + out + ", " + out + ", 3";
 	const std::string mainColorLoad = p.postIncrementStore ? offsetBase(0, out) : offsetBase(-2, out);
 	const std::string mainStore = p.postIncrementStore
 	                            ? "sqi.xyz r22, (" + out + "++)"
@@ -7526,36 +7567,36 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 		                          : "sq.xyz " + r19 + ", " + offsetBase(-2, out);
 
 		m_codeLines.push_back(p.entryLabel + ":");
-		emitRawPairedLine("nop", "lq.xyz " + r16 + ", " + offsetBase(0, in));
-		emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", " + inputStep);
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("sub.xyz " + r16 + ", " + p.lightPosReg + ", " + r16, "nop");
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("mul.xyz " + r15 + ", " + r16 + ", " + r16, "nop");
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("adday.z ACC, " + r15 + ", " + fieldArg(r15, "y"), "nop");
-		emitRawPairedLine("maddx.z " + r15 + ", " + p.onesReg + ", " + fieldArg(r15, "x"), "nop");
-		emitRawPairedLine("nop", "sqrt q, " + fieldArg(r15, "z"));
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("addq.y " + r15 + ", " + vf00 + ", q", "waitq");
-		emitRawPairedLine("nop", "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r15, "y"));
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("addw.x " + r15 + ", " + vf00 + ", " + fieldArg(vf00, "w"), "nop");
-		emitRawPairedLine("nop", "waitq");
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + r16 + ", " + offsetBase(0, in));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", " + inputStep);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("sub.xyz " + r16 + ", " + p.lightPosReg + ", " + r16, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("mul.xyz " + r15 + ", " + r16 + ", " + r16, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("adday.z ACC, " + r15 + ", " + fieldArg(r15, "y"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("maddx.z " + r15 + ", " + p.onesReg + ", " + fieldArg(r15, "x"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "sqrt q, " + fieldArg(r15, "z"));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("addq.y " + r15 + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r15, "y"));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("addw.x " + r15 + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITQ));
 		emitRawPairedLine("mulq.xyz " + r16 + ", " + r16 + ", q",
 		                  "ibeq " + in + ", " + last + ", " + p.fallbackOneLabel);
-		emitRawPairedLine("mul.xyz " + r15 + ", " + r15 + ", " + p.attenCoeffReg, "nop");
+		emitRawPairedLine("mul.xyz " + r15 + ", " + r15 + ", " + p.attenCoeffReg, vuInstr(VU_OP_NOP));
 
 		m_codeLines.push_back(p.prologOneLabel + ":");
 		emitRawPairedLine("add.xyz " + r17 + ", " + p.viewDirReg + ", " + r16,
@@ -7563,65 +7604,65 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 		emitRawPairedLine("sub.xyz " + r18 + ", " + p.lightPosReg + ", " + r18,
 		                  "esadd p, " + r17);
 		emitRawPairedLine("mul.xyz " + r20 + ", " + r18 + ", " + r18, normalLoad);
-		emitRawPairedLine("adday.z ACC, " + r20 + ", " + fieldArg(r20, "y"), "nop");
-		emitRawPairedLine("maddx.z " + r20 + ", " + p.onesReg + ", " + fieldArg(r20, "x"), "nop");
-		emitRawPairedLine("nop", "waitp");
+		emitRawPairedLine("adday.z ACC, " + r20 + ", " + fieldArg(r20, "y"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("maddx.z " + r20 + ", " + p.onesReg + ", " + fieldArg(r20, "x"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITP));
 		emitRawPairedLine("addw.x " + r20 + ", " + vf00 + ", " + fieldArg(vf00, "w"),
 		                  "mfp.w " + r06 + ", p");
-		emitRawPairedLine("nop", "sqrt q, " + fieldArg(r20, "z"));
-		emitRawPairedLine("nop", "ersqrt p, " + fieldArg(r06, "w"));
-		emitRawPairedLine("addq.y " + r20 + ", " + vf00 + ", q", "waitq");
-		emitRawPairedLine("nop", "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r20, "y"));
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "sqrt q, " + fieldArg(r20, "z"));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "ersqrt p, " + fieldArg(r06, "w"));
+		emitRawPairedLine("addq.y " + r20 + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r20, "y"));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 		emitRawPairedLine("mul.xyz " + r15 + ", " + r20 + ", " + p.attenCoeffReg,
 		                  "move.xyz " + r14 + ", " + r15);
-		emitRawPairedLine("mul.xyz " + r20 + ", " + r16 + ", " + r19, "nop");
-		emitRawPairedLine("nop", "waitq");
+		emitRawPairedLine("mul.xyz " + r20 + ", " + r16 + ", " + r19, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITQ));
 		emitRawPairedLine("mulq.xyz " + r16 + ", " + r18 + ", q",
 		                  "iaddiu " + in + ", " + in + ", " + inputStep);
-		emitRawPairedLine("nop", "move.xyz " + r18 + ", " + r17);
-		emitRawPairedLine("nop", "ibeq " + in + ", " + last + ", " + p.fallbackTwoLabel);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "move.xyz " + r18 + ", " + r17);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "ibeq " + in + ", " + last + ", " + p.fallbackTwoLabel);
 		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r20, "x"),
 		                  "mfp.w " + r06 + ", p");
 
 		m_codeLines.push_back(p.prologTwoLabel + ":");
 		emitRawPairedLine("add.xyz " + r17 + ", " + p.viewDirReg + ", " + r16,
 		                  "lq.xyz " + r22 + ", " + offsetBase(0, in));
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("mulw.xyz " + r21 + ", " + r18 + ", " + fieldArg(r06, "w"), "nop");
-		emitRawPairedLine("sub.xyz " + r18 + ", " + p.lightPosReg + ", " + r22, "nop");
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("mulw.xyz " + r21 + ", " + r18 + ", " + fieldArg(r06, "w"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("sub.xyz " + r18 + ", " + p.lightPosReg + ", " + r22, vuInstr(VU_OP_NOP));
 		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r20, "y"),
 		                  "esadd p, " + r17);
-		emitRawPairedLine("maddz.w " + r06 + ", " + vf00 + ", " + fieldArg(r20, "z"), "nop");
-		emitRawPairedLine("mul.xyz " + r21 + ", " + r21 + ", " + r19, "nop");
-		emitRawPairedLine("mul.xyz " + r20 + ", " + r18 + ", " + r18, "nop");
-		emitRawPairedLine("maxx.w " + r05 + ", " + r06 + ", " + fieldArg(vf00, "x"), "nop");
-		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r21, "x"), "nop");
-		emitRawPairedLine("adday.z ACC, " + r20 + ", " + fieldArg(r20, "y"), "nop");
-		emitRawPairedLine("maddx.z " + r20 + ", " + p.onesReg + ", " + fieldArg(r20, "x"), "nop");
-		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r21, "y"), "nop");
-		emitRawPairedLine("maddz.w " + r07 + ", " + vf00 + ", " + fieldArg(r21, "z"), "waitp");
+		emitRawPairedLine("maddz.w " + r06 + ", " + vf00 + ", " + fieldArg(r20, "z"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("mul.xyz " + r21 + ", " + r21 + ", " + r19, vuInstr(VU_OP_NOP));
+		emitRawPairedLine("mul.xyz " + r20 + ", " + r18 + ", " + r18, vuInstr(VU_OP_NOP));
+		emitRawPairedLine("maxx.w " + r05 + ", " + r06 + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r21, "x"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("adday.z ACC, " + r20 + ", " + fieldArg(r20, "y"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("maddx.z " + r20 + ", " + p.onesReg + ", " + fieldArg(r20, "x"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r21, "y"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("maddz.w " + r07 + ", " + vf00 + ", " + fieldArg(r21, "z"), vuInstr(VU_OP_WAITP));
 		emitRawPairedLine("mulw.xyz " + r21 + ", " + p.lightDiffReg + ", " + fieldArg(r05, "w"),
 		                  "mfp.w " + r06 + ", p");
 		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r14, "x"),
 		                  "sqrt q, " + fieldArg(r20, "z"));
-		emitRawPairedLine("maxx.w " + r05 + ", " + r07 + ", " + fieldArg(vf00, "x"), "nop");
+		emitRawPairedLine("maxx.w " + r05 + ", " + r07 + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
 		emitRawPairedLine("addw.x " + r20 + ", " + vf00 + ", " + fieldArg(vf00, "w"),
 		                  "ersqrt p, " + fieldArg(r06, "w"));
-		emitRawPairedLine("mul.w " + r06 + ", " + r05 + ", " + r05, "nop");
-		emitRawPairedLine("addq.y " + r20 + ", " + vf00 + ", q", "waitq");
+		emitRawPairedLine("mul.w " + r06 + ", " + r05 + ", " + r05, vuInstr(VU_OP_NOP));
+		emitRawPairedLine("addq.y " + r20 + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
 		emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06,
 		                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r20, "y"));
 		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r14, "y"), normalLoad);
-		emitRawPairedLine("maddz.w " + r05 + ", " + vf00 + ", " + fieldArg(r14, "z"), "nop");
+		emitRawPairedLine("maddz.w " + r05 + ", " + vf00 + ", " + fieldArg(r14, "z"), vuInstr(VU_OP_NOP));
 		emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06, materialLoad);
 		emitRawPairedLine("mul.xyz " + r15 + ", " + r20 + ", " + p.attenCoeffReg,
 		                  "move.xyz " + r14 + ", " + r15);
-		emitRawPairedLine("mul.xyz " + r20 + ", " + r16 + ", " + r19, "nop");
-		emitRawPairedLine("nop", "waitq");
+		emitRawPairedLine("mul.xyz " + r20 + ", " + r16 + ", " + r19, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITQ));
 		emitRawPairedLine("mulq.xyz " + r16 + ", " + r18 + ", q",
 		                  "iaddiu " + in + ", " + in + ", " + inputStep);
 		emitRawPairedLine("mul.w " + r07 + ", " + r06 + ", " + r06,
@@ -7635,33 +7676,33 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 		emitRawPairedLine("add.xyz " + r17 + ", " + p.viewDirReg + ", " + r16,
 		                  "lq.xyz " + r22 + ", " + offsetBase(0, in));
 		emitRawPairedLine("mul.w " + r07 + ", " + r07 + ", " + r07, mainOutputStep);
-		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r20, "y"), "nop");
-		emitRawPairedLine("mulw.xyz " + r21 + ", " + r18 + ", " + fieldArg(r06, "w"), "nop");
+		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r20, "y"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("mulw.xyz " + r21 + ", " + r18 + ", " + fieldArg(r06, "w"), vuInstr(VU_OP_NOP));
 		emitRawPairedLine("sub.xyz " + r18 + ", " + p.lightPosReg + ", " + r22,
 		                  "esadd p, " + r17);
-		emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(r07, "w"), "nop");
-		emitRawPairedLine("maddz.w " + r06 + ", " + vf00 + ", " + fieldArg(r20, "z"), "nop");
-		emitRawPairedLine("mul.xyz " + r21 + ", " + r21 + ", " + r19, "nop");
-		emitRawPairedLine("mul.xyz " + r20 + ", " + r18 + ", " + r18, "nop");
-		emitRawPairedLine("madd.xyz " + r19 + ", " + p.lightAmbReg + ", " + p.materialAmbReg, "nop");
+		emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(r07, "w"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("maddz.w " + r06 + ", " + vf00 + ", " + fieldArg(r20, "z"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("mul.xyz " + r21 + ", " + r21 + ", " + r19, vuInstr(VU_OP_NOP));
+		emitRawPairedLine("mul.xyz " + r20 + ", " + r18 + ", " + r18, vuInstr(VU_OP_NOP));
+		emitRawPairedLine("madd.xyz " + r19 + ", " + p.lightAmbReg + ", " + p.materialAmbReg, vuInstr(VU_OP_NOP));
 		emitRawPairedLine("maxx.w " + r05 + ", " + r06 + ", " + fieldArg(vf00, "x"),
 		                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r05, "w"));
-		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r21, "x"), "nop");
-		emitRawPairedLine("adday.z ACC, " + r20 + ", " + fieldArg(r20, "y"), "nop");
-		emitRawPairedLine("maddx.z " + r20 + ", " + p.onesReg + ", " + fieldArg(r20, "x"), "nop");
-		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r21, "y"), "nop");
+		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r21, "x"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("adday.z ACC, " + r20 + ", " + fieldArg(r20, "y"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("maddx.z " + r20 + ", " + p.onesReg + ", " + fieldArg(r20, "x"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r21, "y"), vuInstr(VU_OP_NOP));
 		emitRawPairedLine("maddz.w " + r07 + ", " + vf00 + ", " + fieldArg(r21, "z"),
 		                  "mfp.w " + r06 + ", p");
-		emitRawPairedLine("nop", "lq.xyz " + color + ", " + mainColorLoad);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + color + ", " + mainColorLoad);
 		emitRawPairedLine("mulq.xyz " + r19 + ", " + r19 + ", q",
 		                  "sqrt q, " + fieldArg(r20, "z"));
-		emitRawPairedLine("mulw.xyz " + r21 + ", " + p.lightDiffReg + ", " + fieldArg(r05, "w"), "nop");
-		emitRawPairedLine("maxx.w " + r05 + ", " + r07 + ", " + fieldArg(vf00, "x"), "nop");
+		emitRawPairedLine("mulw.xyz " + r21 + ", " + p.lightDiffReg + ", " + fieldArg(r05, "w"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("maxx.w " + r05 + ", " + r07 + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
 		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r14, "x"),
 		                  "ersqrt p, " + fieldArg(r06, "w"));
-		emitRawPairedLine("add.xyz " + r19 + ", " + color + ", " + r19, "nop");
-		emitRawPairedLine("addw.x " + r20 + ", " + vf00 + ", " + fieldArg(vf00, "w"), "nop");
-		emitRawPairedLine("mul.w " + r06 + ", " + r05 + ", " + r05, "nop");
+		emitRawPairedLine("add.xyz " + r19 + ", " + color + ", " + r19, vuInstr(VU_OP_NOP));
+		emitRawPairedLine("addw.x " + r20 + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("mul.w " + r06 + ", " + r05 + ", " + r05, vuInstr(VU_OP_NOP));
 		emitRawPairedLine("addq.y " + r20 + ", " + vf00 + ", q", materialLoad);
 		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r14, "y"), pvStore);
 		emitRawPairedLine("maddz.w " + r05 + ", " + vf00 + ", " + fieldArg(r14, "z"),
@@ -7669,75 +7710,75 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 		emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06, normalLoad);
 		emitRawPairedLine("mul.xyz " + r15 + ", " + r20 + ", " + p.attenCoeffReg,
 		                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r20, "y"));
-		emitRawPairedLine("mula.xyz ACC, " + r21 + ", " + r22, "nop");
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06, "nop");
-		emitRawPairedLine("mul.xyz " + r20 + ", " + r16 + ", " + r19, "nop");
-		emitRawPairedLine("nop", "nop");
-		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine("mula.xyz ACC, " + r21 + ", " + r22, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06, vuInstr(VU_OP_NOP));
+		emitRawPairedLine("mul.xyz " + r20 + ", " + r16 + ", " + r19, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 		emitRawPairedLine("mulq.xyz " + r16 + ", " + r18 + ", q",
 		                  "iaddiu " + in + ", " + in + ", " + inputStep);
 		emitRawPairedLine("mul.w " + r07 + ", " + r06 + ", " + r06,
 		                  "move.xyz " + r18 + ", " + r17);
-		emitRawPairedLine("nop", "ibne " + in + ", " + last + ", " + p.mainLabel);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "ibne " + in + ", " + last + ", " + p.mainLabel);
 		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r20, "x"),
 		                  "mfp.w " + r06 + ", p");
 
 		m_codeLines.push_back(p.drainLabel + ":");
-		emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepThree);
-		emitRawPairedLine("nop", "b " + p.scalarLabel);
-		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepThree);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 		m_codeLines.push_back(p.fallbackOneLabel + ":");
-		emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepOne);
-		emitRawPairedLine("nop", "b " + p.scalarLabel);
-		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepOne);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 		m_codeLines.push_back(p.fallbackTwoLabel + ":");
-		emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepTwo);
-		emitRawPairedLine("nop", "b " + p.scalarLabel);
-		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepTwo);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 		m_codeLines.push_back(p.fallbackThreeLabel + ":");
-		emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepThree);
-		emitRawPairedLine("nop", "b " + p.scalarLabel);
-		emitRawPairedLine("nop", "nop");
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepThree);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 		emitPtLightSpecScalarFallbackLoop(p);
 		return;
 	}
 
 	m_codeLines.push_back(p.entryLabel + ":");
-	emitRawPairedLine("nop", "lq.xyz " + r17 + ", " + offsetBase(0, in));
-	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", " + inputStep);
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("sub.xyz " + r17 + ", " + p.lightPosReg + ", " + r17, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mul.xyz " + r16 + ", " + r17 + ", " + r17, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("adday.z ACC, " + r16 + ", " + fieldArg(r16, "y"), "nop");
-	emitRawPairedLine("maddx.z " + r16 + ", " + p.onesReg + ", " + fieldArg(r16, "x"), "nop");
-	emitRawPairedLine("nop", "sqrt q, " + fieldArg(r16, "z"));
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("addq.y " + r16 + ", " + vf00 + ", q", "waitq");
-	emitRawPairedLine("nop", "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r16, "y"));
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("addw.x " + r16 + ", " + vf00 + ", " + fieldArg(vf00, "w"), "nop");
-	emitRawPairedLine("nop", "waitq");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + r17 + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", " + inputStep);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("sub.xyz " + r17 + ", " + p.lightPosReg + ", " + r17, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + r16 + ", " + r17 + ", " + r17, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("adday.z ACC, " + r16 + ", " + fieldArg(r16, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddx.z " + r16 + ", " + p.onesReg + ", " + fieldArg(r16, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sqrt q, " + fieldArg(r16, "z"));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("addq.y " + r16 + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r16, "y"));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("addw.x " + r16 + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITQ));
 	emitRawPairedLine("mulq.xyz " + r17 + ", " + r17 + ", q",
 	                  "ibeq " + in + ", " + last + ", " + p.fallbackOneLabel);
-	emitRawPairedLine("mul.xyz " + r16 + ", " + r16 + ", " + p.attenCoeffReg, "nop");
+	emitRawPairedLine("mul.xyz " + r16 + ", " + r16 + ", " + p.attenCoeffReg, vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.prologOneLabel + ":");
 	emitRawPairedLine("add.xyz " + r18 + ", " + p.viewDirReg + ", " + r17,
@@ -7746,72 +7787,72 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 	                  "esadd p, " + r18);
 	emitRawPairedLine("mul.xyz " + r21 + ", " + r19 + ", " + r19,
 	                  "lq.xyz " + r20 + ", " + offsetBase(p.normalOffset - p.inputStep, in));
-	emitRawPairedLine("adday.z ACC, " + r21 + ", " + fieldArg(r21, "y"), "nop");
-	emitRawPairedLine("maddx.z " + r21 + ", " + p.onesReg + ", " + fieldArg(r21, "x"), "nop");
-	emitRawPairedLine("nop", "waitp");
+	emitRawPairedLine("adday.z ACC, " + r21 + ", " + fieldArg(r21, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddx.z " + r21 + ", " + p.onesReg + ", " + fieldArg(r21, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITP));
 	emitRawPairedLine("addw.x " + r21 + ", " + vf00 + ", " + fieldArg(vf00, "w"),
 	                  "mfp.w " + r06 + ", p");
-	emitRawPairedLine("nop", "sqrt q, " + fieldArg(r21, "z"));
-	emitRawPairedLine("nop", "ersqrt p, " + fieldArg(r06, "w"));
-	emitRawPairedLine("addq.y " + r21 + ", " + vf00 + ", q", "waitq");
-	emitRawPairedLine("nop", "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r21, "y"));
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sqrt q, " + fieldArg(r21, "z"));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ersqrt p, " + fieldArg(r06, "w"));
+	emitRawPairedLine("addq.y " + r21 + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r21, "y"));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mul.xyz " + r16 + ", " + r21 + ", " + p.attenCoeffReg,
 	                  "move.xyz " + r15 + ", " + r16);
-	emitRawPairedLine("mul.xyz " + r21 + ", " + r17 + ", " + r20, "nop");
-	emitRawPairedLine("nop", "waitq");
+	emitRawPairedLine("mul.xyz " + r21 + ", " + r17 + ", " + r20, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITQ));
 	emitRawPairedLine("mulq.xyz " + r17 + ", " + r19 + ", q",
 	                  "iaddiu " + in + ", " + in + ", " + inputStep);
-	emitRawPairedLine("nop", "move.xyz " + r19 + ", " + r18);
-	emitRawPairedLine("nop", "ibeq " + in + ", " + last + ", " + p.fallbackTwoLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "move.xyz " + r19 + ", " + r18);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibeq " + in + ", " + last + ", " + p.fallbackTwoLabel);
 	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r21, "x"),
 	                  "mfp.w " + r06 + ", p");
 
 	m_codeLines.push_back(p.prologTwoLabel + ":");
 	emitRawPairedLine("add.xyz " + r18 + ", " + p.viewDirReg + ", " + r17,
 	                  "lq.xyz " + r23 + ", " + offsetBase(0, in));
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mulw.xyz " + r22 + ", " + r19 + ", " + fieldArg(r06, "w"), "nop");
-	emitRawPairedLine("sub.xyz " + r19 + ", " + p.lightPosReg + ", " + r23, "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulw.xyz " + r22 + ", " + r19 + ", " + fieldArg(r06, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("sub.xyz " + r19 + ", " + p.lightPosReg + ", " + r23, vuInstr(VU_OP_NOP));
 	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r21, "y"),
 	                  "esadd p, " + r18);
-	emitRawPairedLine("maddz.w " + r06 + ", " + vf00 + ", " + fieldArg(r21, "z"), "nop");
-	emitRawPairedLine("mul.xyz " + r20 + ", " + r22 + ", " + r20, "nop");
-	emitRawPairedLine("mul.xyz " + r21 + ", " + r19 + ", " + r19, "nop");
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r20, "x"), "nop");
-	emitRawPairedLine("adday.z ACC, " + r21 + ", " + fieldArg(r21, "y"), "nop");
-	emitRawPairedLine("maddx.z " + r21 + ", " + p.onesReg + ", " + fieldArg(r21, "x"), "nop");
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r20, "y"), "nop");
-	emitRawPairedLine("maddz.w " + r07 + ", " + vf00 + ", " + fieldArg(r20, "z"), "waitp");
+	emitRawPairedLine("maddz.w " + r06 + ", " + vf00 + ", " + fieldArg(r21, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + r20 + ", " + r22 + ", " + r20, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + r21 + ", " + r19 + ", " + r19, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r20, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("adday.z ACC, " + r21 + ", " + fieldArg(r21, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddx.z " + r21 + ", " + p.onesReg + ", " + fieldArg(r21, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r20, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddz.w " + r07 + ", " + vf00 + ", " + fieldArg(r20, "z"), vuInstr(VU_OP_WAITP));
 	emitRawPairedLine("maxx.w " + r05 + ", " + r06 + ", " + fieldArg(vf00, "x"),
 	                  "mfp.w " + r06 + ", p");
 	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r15, "x"),
 	                  "sqrt q, " + fieldArg(r21, "z"));
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r15, "y"), "nop");
-	emitRawPairedLine("maxx.w " + r07 + ", " + r07 + ", " + fieldArg(vf00, "x"), "nop");
+	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r15, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maxx.w " + r07 + ", " + r07 + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulw.xyz " + r20 + ", " + p.lightDiffReg + ", " + fieldArg(r05, "w"),
 	                  "ersqrt p, " + fieldArg(r06, "w"));
-	emitRawPairedLine("mul.w " + r06 + ", " + r07 + ", " + r07, "nop");
-	emitRawPairedLine("addq.y " + r21 + ", " + vf00 + ", q", "waitq");
+	emitRawPairedLine("mul.w " + r06 + ", " + r07 + ", " + r07, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("addq.y " + r21 + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
 	emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06,
 	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r21, "y"));
-	emitRawPairedLine("addw.x " + r21 + ", " + vf00 + ", " + fieldArg(vf00, "w"), "nop");
+	emitRawPairedLine("addw.x " + r21 + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mula.xyz ACC, " + r20 + ", " + p.materialDiffReg,
 	                  "lq.xyz " + r20 + ", " + offsetBase(p.normalOffset - p.inputStep, in));
-	emitRawPairedLine("maddz.w " + r05 + ", " + vf00 + ", " + fieldArg(r15, "z"), "nop");
-	emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06, "nop");
+	emitRawPairedLine("maddz.w " + r05 + ", " + vf00 + ", " + fieldArg(r15, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06, vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mul.xyz " + r16 + ", " + r21 + ", " + p.attenCoeffReg,
 	                  "move.xyz " + r15 + ", " + r16);
-	emitRawPairedLine("mul.xyz " + r21 + ", " + r17 + ", " + r20, "nop");
-	emitRawPairedLine("nop", "waitq");
+	emitRawPairedLine("mul.xyz " + r21 + ", " + r17 + ", " + r20, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITQ));
 	emitRawPairedLine("mulq.xyz " + r17 + ", " + r19 + ", q",
 	                  "iaddiu " + in + ", " + in + ", " + inputStep);
 	emitRawPairedLine("mul.w " + r07 + ", " + r06 + ", " + r06,
 	                  "move.xyz " + r19 + ", " + r18);
-	emitRawPairedLine("nop", "ibeq " + in + ", " + last + ", " + p.fallbackThreeLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibeq " + in + ", " + last + ", " + p.fallbackThreeLabel);
 	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r21, "x"),
 	                  "mfp.w " + r06 + ", p");
 
@@ -7819,35 +7860,35 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 	emitRawPairedLine("add.xyz " + r18 + ", " + p.viewDirReg + ", " + r17,
 	                  "lq.xyz " + r23 + ", " + offsetBase(0, in));
 	emitRawPairedLine("mul.w " + r07 + ", " + r07 + ", " + r07, mainOutputStep);
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r21, "y"), "nop");
-	emitRawPairedLine("mulw.xyz " + r22 + ", " + r19 + ", " + fieldArg(r06, "w"), "nop");
+	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r21, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulw.xyz " + r22 + ", " + r19 + ", " + fieldArg(r06, "w"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("sub.xyz " + r19 + ", " + p.lightPosReg + ", " + r23,
 	                  "esadd p, " + r18);
-	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(r07, "w"), "nop");
-	emitRawPairedLine("maddz.w " + r06 + ", " + vf00 + ", " + fieldArg(r21, "z"), "nop");
-	emitRawPairedLine("mul.xyz " + r20 + ", " + r22 + ", " + r20, "nop");
-	emitRawPairedLine("mul.xyz " + r21 + ", " + r19 + ", " + r19, "nop");
+	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(r07, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddz.w " + r06 + ", " + vf00 + ", " + fieldArg(r21, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + r20 + ", " + r22 + ", " + r20, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + r21 + ", " + r19 + ", " + r19, vuInstr(VU_OP_NOP));
 	emitRawPairedLine("madd.xyz " + r22 + ", " + p.lightAmbReg + ", " + p.materialAmbReg,
 	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r05, "w"));
-	emitRawPairedLine("maxx.w " + r05 + ", " + r06 + ", " + fieldArg(vf00, "x"), "nop");
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r20, "x"), "nop");
-	emitRawPairedLine("adday.z ACC, " + r21 + ", " + fieldArg(r21, "y"), "nop");
-	emitRawPairedLine("maddx.z " + r21 + ", " + p.onesReg + ", " + fieldArg(r21, "x"), "nop");
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r20, "y"), "nop");
+	emitRawPairedLine("maxx.w " + r05 + ", " + r06 + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r20, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("adday.z ACC, " + r21 + ", " + fieldArg(r21, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddx.z " + r21 + ", " + p.onesReg + ", " + fieldArg(r21, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r20, "y"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("maddz.w " + r07 + ", " + vf00 + ", " + fieldArg(r20, "z"),
 	                  "mfp.w " + r06 + ", p");
 	emitRawPairedLine("mulq.xyz " + r23 + ", " + r22 + ", q",
 	                  "lq.xyz " + color + ", " + mainColorLoad);
 	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r15, "x"),
 	                  "sqrt q, " + fieldArg(r21, "z"));
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r15, "y"), "nop");
-	emitRawPairedLine("maxx.w " + r07 + ", " + r07 + ", " + fieldArg(vf00, "x"), "nop");
+	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r15, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maxx.w " + r07 + ", " + r07 + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulw.xyz " + r20 + ", " + p.lightDiffReg + ", " + fieldArg(r05, "w"),
 	                  "ersqrt p, " + fieldArg(r06, "w"));
-	emitRawPairedLine("add.xyz " + r22 + ", " + color + ", " + r23, "nop");
-	emitRawPairedLine("addw.x " + r21 + ", " + vf00 + ", " + fieldArg(vf00, "w"), "nop");
-	emitRawPairedLine("mul.w " + r06 + ", " + r07 + ", " + r07, "nop");
-	emitRawPairedLine("addq.y " + r21 + ", " + vf00 + ", q", "nop");
+	emitRawPairedLine("add.xyz " + r22 + ", " + color + ", " + r23, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("addw.x " + r21 + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.w " + r06 + ", " + r07 + ", " + r07, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("addq.y " + r21 + ", " + vf00 + ", q", vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mula.xyz ACC, " + r20 + ", " + p.materialDiffReg, store);
 	emitRawPairedLine("maddz.w " + r05 + ", " + vf00 + ", " + fieldArg(r15, "z"),
 	                  "move.xyz " + r15 + ", " + r16);
@@ -7855,39 +7896,39 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 	                  "lq.xyz " + r20 + ", " + offsetBase(p.normalOffset - p.inputStep, in));
 	emitRawPairedLine("mul.xyz " + r16 + ", " + r21 + ", " + p.attenCoeffReg,
 	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r21, "y"));
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06, "nop");
-	emitRawPairedLine("mul.xyz " + r21 + ", " + r17 + ", " + r20, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + r21 + ", " + r17 + ", " + r20, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulq.xyz " + r17 + ", " + r19 + ", q",
 	                  "iaddiu " + in + ", " + in + ", " + inputStep);
 	emitRawPairedLine("mul.w " + r07 + ", " + r06 + ", " + r06,
 	                  "move.xyz " + r19 + ", " + r18);
-	emitRawPairedLine("nop", "ibne " + in + ", " + last + ", " + p.mainLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibne " + in + ", " + last + ", " + p.mainLabel);
 	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r21, "x"),
 	                  "mfp.w " + r06 + ", p");
 
 	m_codeLines.push_back(p.drainLabel + ":");
-	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepThree);
-	emitRawPairedLine("nop", "b " + p.scalarLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepThree);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackOneLabel + ":");
-	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepOne);
-	emitRawPairedLine("nop", "b " + p.scalarLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepOne);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackTwoLabel + ":");
-	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepTwo);
-	emitRawPairedLine("nop", "b " + p.scalarLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepTwo);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackThreeLabel + ":");
-	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepThree);
-	emitRawPairedLine("nop", "b " + p.scalarLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepThree);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	emitPtLightSpecScalarFallbackLoop(p);
 }
@@ -7898,7 +7939,7 @@ void CodeGenerator::emitPtLightSpecScalarFallbackLoop( const PtLightSpecLoopPipe
 	const std::string out = p.outputReg;
 	const std::string last = p.lastInputReg;
 	const std::string vf00 = "VF00";
-	const std::string scalarOutputStep = p.postIncrementStore ? "nop" : "iaddiu " + out + ", " + out + ", 3";
+	const std::string scalarOutputStep = p.postIncrementStore ? vuInstr(VU_OP_NOP) : "iaddiu " + out + ", " + out + ", 3";
 	const std::string scalarColorLoad = offsetBase(p.colorOffset, out);
 	const std::string scalarStore = p.postIncrementStore
 	                              ? "sqi.xyz " + p.resultReg + ", (" + out + "++)"
@@ -7934,84 +7975,84 @@ void CodeGenerator::emitPtLightSpecScalarFallbackLoop( const PtLightSpecLoopPipe
 	const std::string scalarColor = reserveScratchReg(reserved);
 
 	m_codeLines.push_back(p.scalarLabel + ":");
-	emitRawPairedLine("nop", "lq.xyz " + p.vertexReg + ", " + offsetBase(p.vertexOffset, in));
-	emitRawPairedLine("nop", "lq.xyz " + p.normalReg + ", " + offsetBase(p.normalOffset, in));
-	emitRawPairedLine("nop", "lq.xyz " + scalarColor + ", " + scalarColorLoad);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + p.vertexReg + ", " + offsetBase(p.vertexOffset, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + p.normalReg + ", " + offsetBase(p.normalOffset, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + scalarColor + ", " + scalarColorLoad);
 	if( p.materialDiffFromInput )
-		emitRawPairedLine("nop", "lq.xyz " + p.materialDiffReg + ", "
+		emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + p.materialDiffReg + ", "
 		                         + offsetBase(p.materialDiffOffset, in));
-	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", " + integerText(p.inputStep));
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("sub.xyz " + p.toLightReg + ", " + p.lightPosReg + ", " + p.vertexReg, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mul.xyz " + p.attenReg + ", " + p.toLightReg + ", " + p.toLightReg, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("adday.z ACC, " + p.attenReg + ", " + fieldArg(p.attenReg, "y"), "nop");
-	emitRawPairedLine("maddx.z " + p.attenReg + ", " + p.onesReg + ", " + fieldArg(p.attenReg, "x"), "nop");
-	emitRawPairedLine("addw.x " + p.attenReg + ", " + vf00 + ", " + fieldArg(vf00, "w"), "nop");
-	emitRawPairedLine("nop", "sqrt q, " + fieldArg(p.attenReg, "z"));
-	emitRawPairedLine("addq.y " + p.attenReg + ", " + vf00 + ", q", "waitq");
-	emitRawPairedLine("nop", "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(p.attenReg, "y"));
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "waitq");
-	emitRawPairedLine("mulq.xyz " + p.normalizedLightReg + ", " + p.toLightReg + ", q", "nop");
-	emitRawPairedLine("mul.xyz " + p.attenProductReg + ", " + p.attenReg + ", " + p.attenCoeffReg, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(p.attenProductReg, "x"), "nop");
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(p.attenProductReg, "y"), "nop");
-	emitRawPairedLine("maddz.w " + p.attenReg + ", " + vf00 + ", " + fieldArg(p.attenProductReg, "z"), "nop");
-	emitRawPairedLine("add.xyz " + p.halfAngleReg + ", " + p.viewDirReg + ", " + p.normalizedLightReg, "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", " + integerText(p.inputStep));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("sub.xyz " + p.toLightReg + ", " + p.lightPosReg + ", " + p.vertexReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + p.attenReg + ", " + p.toLightReg + ", " + p.toLightReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("adday.z ACC, " + p.attenReg + ", " + fieldArg(p.attenReg, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddx.z " + p.attenReg + ", " + p.onesReg + ", " + fieldArg(p.attenReg, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("addw.x " + p.attenReg + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sqrt q, " + fieldArg(p.attenReg, "z"));
+	emitRawPairedLine("addq.y " + p.attenReg + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(p.attenReg, "y"));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine("mulq.xyz " + p.normalizedLightReg + ", " + p.toLightReg + ", q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + p.attenProductReg + ", " + p.attenReg + ", " + p.attenCoeffReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(p.attenProductReg, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(p.attenProductReg, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddz.w " + p.attenReg + ", " + vf00 + ", " + fieldArg(p.attenProductReg, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("add.xyz " + p.halfAngleReg + ", " + p.viewDirReg + ", " + p.normalizedLightReg, vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mul.xyz " + p.normalProductReg + ", " + p.normalizedLightReg + ", " + p.normalReg,
 	                  "esadd p, " + p.halfAngleReg);
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(p.normalProductReg, "x"), "waitp");
+	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(p.normalProductReg, "x"), vuInstr(VU_OP_WAITP));
 	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(p.normalProductReg, "y"),
 	                  "mfp.w " + p.halfAngleReg + ", p");
 	emitRawPairedLine("maddz.w " + p.intensityReg + ", " + vf00 + ", " + fieldArg(p.normalProductReg, "z"),
 	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(p.attenReg, "w"));
-	emitRawPairedLine("nop", "ersqrt p, " + fieldArg(p.halfAngleReg, "w"));
-	emitRawPairedLine("maxx.w " + p.clampedIntensityReg + ", " + p.intensityReg + ", " + fieldArg(vf00, "x"), "waitp");
-	emitRawPairedLine("nop", "mfp.w " + p.halfAngleReg + ", p");
-	emitRawPairedLine("mulw.xyz " + p.localDiffuseReg + ", " + p.lightDiffReg + ", " + fieldArg(p.clampedIntensityReg, "w"), "nop");
-	emitRawPairedLine("mulw.xyz " + p.halfAngleReg + ", " + p.halfAngleReg + ", " + fieldArg(p.halfAngleReg, "w"), "nop");
-	emitRawPairedLine("mula.xyz ACC, " + p.localDiffuseReg + ", " + p.materialDiffReg, "nop");
-	emitRawPairedLine("mul.xyz " + p.specProductReg + ", " + p.halfAngleReg + ", " + p.normalReg, "nop");
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(p.specProductReg, "x"), "nop");
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(p.specProductReg, "y"), "nop");
-	emitRawPairedLine("maddz.w " + p.specIntensityReg + ", " + vf00 + ", " + fieldArg(p.specProductReg, "z"), "nop");
-	emitRawPairedLine("maxx.w " + p.specIntensityReg + ", " + p.specIntensityReg + ", " + fieldArg(vf00, "x"), "nop");
-	emitRawPairedLine("mul.w " + p.specPowerReg + ", " + p.specIntensityReg + ", " + p.specIntensityReg, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mul.w " + p.specPowerReg + ", " + p.specPowerReg + ", " + p.specPowerReg, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mul.w " + p.specPowerReg + ", " + p.specPowerReg + ", " + p.specPowerReg, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mul.w " + p.specPowerReg + ", " + p.specPowerReg + ", " + p.specPowerReg, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mul.w " + p.specPowerReg + ", " + p.specPowerReg + ", " + p.specPowerReg, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(p.specPowerReg, "w"), "nop");
-	emitRawPairedLine("madd.xyz " + p.litColorReg + ", " + p.lightAmbReg + ", " + p.materialAmbReg, "nop");
-	emitRawPairedLine("mulq.xyz " + p.attenuatedColorReg + ", " + p.litColorReg + ", q", "nop");
-	emitRawPairedLine("add.xyz " + p.resultReg + ", " + scalarColor + ", " + p.attenuatedColorReg, "nop");
-	emitRawPairedLine("nop", scalarStore);
-	emitRawPairedLine("nop", "ibne " + in + ", " + last + ", " + p.scalarLabel);
-	emitRawPairedLine("nop", scalarOutputStep);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ersqrt p, " + fieldArg(p.halfAngleReg, "w"));
+	emitRawPairedLine("maxx.w " + p.clampedIntensityReg + ", " + p.intensityReg + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_WAITP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfp.w " + p.halfAngleReg + ", p");
+	emitRawPairedLine("mulw.xyz " + p.localDiffuseReg + ", " + p.lightDiffReg + ", " + fieldArg(p.clampedIntensityReg, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulw.xyz " + p.halfAngleReg + ", " + p.halfAngleReg + ", " + fieldArg(p.halfAngleReg, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mula.xyz ACC, " + p.localDiffuseReg + ", " + p.materialDiffReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + p.specProductReg + ", " + p.halfAngleReg + ", " + p.normalReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(p.specProductReg, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(p.specProductReg, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddz.w " + p.specIntensityReg + ", " + vf00 + ", " + fieldArg(p.specProductReg, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maxx.w " + p.specIntensityReg + ", " + p.specIntensityReg + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.w " + p.specPowerReg + ", " + p.specIntensityReg + ", " + p.specIntensityReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.w " + p.specPowerReg + ", " + p.specPowerReg + ", " + p.specPowerReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.w " + p.specPowerReg + ", " + p.specPowerReg + ", " + p.specPowerReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.w " + p.specPowerReg + ", " + p.specPowerReg + ", " + p.specPowerReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.w " + p.specPowerReg + ", " + p.specPowerReg + ", " + p.specPowerReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(p.specPowerReg, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("madd.xyz " + p.litColorReg + ", " + p.lightAmbReg + ", " + p.materialAmbReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulq.xyz " + p.attenuatedColorReg + ", " + p.litColorReg + ", q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine("add.xyz " + p.resultReg + ", " + scalarColor + ", " + p.attenuatedColorReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), scalarStore);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibne " + in + ", " + last + ", " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), scalarOutputStep);
 
 	m_codeLines.push_back(p.exitLabel + ":");
 }
@@ -8123,16 +8164,16 @@ bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::i
 			continue;
 
 		const std::string mnemonic = lowerVuTokenName(token);
-		if( mnemonic == "nop" )
+		if( mnemonic == vuInstr(VU_OP_NOP) )
 			continue;
-		if( mnemonic == "esadd" || mnemonic == "ersqrt" || mnemonic == "mfp" || mnemonic == "waitp" )
+		if( mnemonic == vuInstr(VU_OP_ESADD) || mnemonic == vuInstr(VU_OP_ERSQRT) || mnemonic == vuInstr(VU_OP_MFP) || mnemonic == vuInstr(VU_OP_WAITP) )
 			return false;
 
 		std::string target;
 		if( branchTargetLabel(token, target) && target == pattern.sourceLabel )
 			continue;
 
-		if( mnemonic == "lq" )
+		if( mnemonic == vuInstr(VU_OP_LQ) )
 		{
 			std::string base;
 			long offset = 0;
@@ -8170,7 +8211,7 @@ bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::i
 			return false;
 		}
 
-		if( mnemonic == "iaddiu" )
+		if( mnemonic == vuInstr(VU_OP_IADDIU) )
 		{
 			std::string dst;
 			std::string src;
@@ -8196,7 +8237,7 @@ bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::i
 			continue;
 		}
 
-		if( mnemonic == "sub" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_SUB) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
 			std::string left;
@@ -8213,7 +8254,7 @@ bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::i
 			continue;
 		}
 
-		if( mnemonic == "mul" && token.broadcast() == 0
+		if( mnemonic == vuInstr(VU_OP_MUL) && token.broadcast() == 0
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
@@ -8246,7 +8287,7 @@ bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::i
 			continue;
 		}
 
-		if( mnemonic == "adda" && token.broadcast() == Token::Y && tokenHasFields(token, Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_ADDA) && token.broadcast() == Token::Y && tokenHasFields(token, Token::Z) )
 		{
 			std::string src;
 			if( getRegisterArgKey(token, 1, src) && src == pattern.attenReg )
@@ -8254,7 +8295,7 @@ bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::i
 			continue;
 		}
 
-		if( mnemonic == "madd" && token.broadcast() == Token::X && tokenHasFields(token, Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_MADD) && token.broadcast() == Token::X && tokenHasFields(token, Token::Z) )
 		{
 			std::string dst;
 			std::string src;
@@ -8270,7 +8311,7 @@ bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::i
 			continue;
 		}
 
-		if( mnemonic == "sqrt" )
+		if( mnemonic == vuInstr(VU_OP_SQRT) )
 		{
 			std::string src;
 			if( getRegisterArgKey(token, 1, src) && src == pattern.attenReg )
@@ -8278,7 +8319,7 @@ bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::i
 			continue;
 		}
 
-		if( mnemonic == "add" && token.broadcast() == Token::W && tokenHasFields(token, Token::X) )
+		if( mnemonic == vuInstr(VU_OP_ADD) && token.broadcast() == Token::W && tokenHasFields(token, Token::X) )
 		{
 			std::string dst;
 			if( getRegisterArgKey(token, 0, dst) && dst == pattern.attenReg )
@@ -8288,7 +8329,7 @@ bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::i
 
 		Token::Argument qArg("");
 		const bool addReadsQ = getArg(token, 2, qArg) && qArg.type() == Token::Argument::Q;
-		if( (mnemonic == "addq" || (mnemonic == "add" && addReadsQ))
+		if( (mnemonic == vuInstr(VU_OP_ADDQ) || (mnemonic == vuInstr(VU_OP_ADD) && addReadsQ))
 		    && tokenHasFields(token, Token::Y) )
 		{
 			std::string dst;
@@ -8297,7 +8338,7 @@ bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::i
 			continue;
 		}
 
-		if( mnemonic == "div" )
+		if( mnemonic == vuInstr(VU_OP_DIV) )
 		{
 			std::string denom;
 			if( !getRegisterArgKey(token, 2, denom) )
@@ -8312,7 +8353,7 @@ bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::i
 			continue;
 		}
 
-		if( mnemonic == "mulq" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_MULQ) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
 			std::string src;
@@ -8331,7 +8372,7 @@ bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::i
 			continue;
 		}
 
-		if( mnemonic == "mula" && token.broadcast() == Token::X && tokenHasFields(token, Token::W) )
+		if( mnemonic == vuInstr(VU_OP_MULA) && token.broadcast() == Token::X && tokenHasFields(token, Token::W) )
 		{
 			std::string src;
 			if( getRegisterArgKey(token, 2, src) )
@@ -8344,7 +8385,7 @@ bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::i
 			continue;
 		}
 
-		if( mnemonic == "madda" && token.broadcast() == Token::Y && tokenHasFields(token, Token::W) )
+		if( mnemonic == vuInstr(VU_OP_MADDA) && token.broadcast() == Token::Y && tokenHasFields(token, Token::W) )
 		{
 			std::string src;
 			if( getRegisterArgKey(token, 2, src) )
@@ -8357,7 +8398,7 @@ bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::i
 			continue;
 		}
 
-		if( mnemonic == "madd" && token.broadcast() == Token::Z && tokenHasFields(token, Token::W) )
+		if( mnemonic == vuInstr(VU_OP_MADD) && token.broadcast() == Token::Z && tokenHasFields(token, Token::W) )
 		{
 			std::string dst;
 			std::string src;
@@ -8377,7 +8418,7 @@ bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::i
 			continue;
 		}
 
-		if( mnemonic == "max" && token.broadcast() == Token::X && tokenHasFields(token, Token::W) )
+		if( mnemonic == vuInstr(VU_OP_MAX) && token.broadcast() == Token::X && tokenHasFields(token, Token::W) )
 		{
 			std::string dst;
 			std::string src;
@@ -8390,7 +8431,7 @@ bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::i
 			continue;
 		}
 
-		if( mnemonic == "mul" && token.broadcast() == Token::W
+		if( mnemonic == vuInstr(VU_OP_MUL) && token.broadcast() == Token::W
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
@@ -8408,7 +8449,7 @@ bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::i
 			continue;
 		}
 
-		if( mnemonic == "mula" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_MULA) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string src;
 			std::string material;
@@ -8422,7 +8463,7 @@ bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::i
 			continue;
 		}
 
-		if( mnemonic == "madd" && token.broadcast() == 0
+		if( mnemonic == vuInstr(VU_OP_MADD) && token.broadcast() == 0
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
@@ -8438,7 +8479,7 @@ bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::i
 			continue;
 		}
 
-		if( mnemonic == "add" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_ADD) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
 			std::string left;
@@ -8454,7 +8495,7 @@ bool CodeGenerator::collectPtLightNoSpecLoopPipelinePattern( std::list<Token>::i
 			continue;
 		}
 
-		if( mnemonic == "sq" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_SQ) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string base;
 			long offset = 0;
@@ -8551,110 +8592,110 @@ void CodeGenerator::emitPtLightNoSpecSoftwarePipelineLoop( const PtLightNoSpecLo
 	const std::string vf00 = "VF00";
 
 	m_codeLines.push_back(p.entryLabel + ":");
-	emitRawPairedLine("nop", "lq.xyz " + delta + ", " + offsetBase(0, in));
-	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("sub.xyz " + delta + ", " + lightPos + ", " + delta, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mul.xyz " + atten + ", " + delta + ", " + delta, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("adday.z ACC, " + atten + ", " + fieldArg(atten, "y"), "nop");
-	emitRawPairedLine("maddx.z " + atten + ", " + p.onesReg + ", " + fieldArg(atten, "x"), "nop");
-	emitRawPairedLine("addw.x " + atten + ", " + vf00 + ", " + fieldArg(vf00, "w"), "nop");
-	emitRawPairedLine("nop", "sqrt q, " + fieldArg(atten, "z"));
-	emitRawPairedLine("addq.y " + atten + ", " + vf00 + ", q", "waitq");
-	emitRawPairedLine("nop", "ibeq " + in + ", " + last + ", " + p.fallbackOneLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + delta + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("sub.xyz " + delta + ", " + lightPos + ", " + delta, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + atten + ", " + delta + ", " + delta, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("adday.z ACC, " + atten + ", " + fieldArg(atten, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddx.z " + atten + ", " + p.onesReg + ", " + fieldArg(atten, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("addw.x " + atten + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sqrt q, " + fieldArg(atten, "z"));
+	emitRawPairedLine("addq.y " + atten + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibeq " + in + ", " + last + ", " + p.fallbackOneLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.prologLabel + ":");
-	emitRawPairedLine("nop", "lq.xyz " + vertex + ", " + offsetBase(0, in));
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + vertex + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mul.xyz " + attenProduct + ", " + atten + ", " + p.attenCoeffReg,
 	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(atten, "y"));
 	emitRawPairedLine("sub.xyz " + delta + ", " + lightPos + ", " + vertex,
 	                  "move.xyz " + vertex + ", " + delta);
 	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "x"),
 	                  "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("mul.xyz " + atten + ", " + delta + ", " + delta, "nop");
-	emitRawPairedLine("nop", "waitq");
+	emitRawPairedLine("mul.xyz " + atten + ", " + delta + ", " + delta, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITQ));
 	emitRawPairedLine("mulq.xyz " + vertex + ", " + vertex + ", q",
 	                  "lq.xyz " + normal + ", " + offsetBase(-5, in));
-	emitRawPairedLine("adday.z ACC, " + atten + ", " + fieldArg(atten, "y"), "nop");
-	emitRawPairedLine("maddx.z " + atten + ", " + p.onesReg + ", " + fieldArg(atten, "x"), "nop");
-	emitRawPairedLine("mul.xyz " + vertex + ", " + vertex + ", " + normal, "nop");
+	emitRawPairedLine("adday.z ACC, " + atten + ", " + fieldArg(atten, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddx.z " + atten + ", " + p.onesReg + ", " + fieldArg(atten, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + vertex + ", " + vertex + ", " + normal, vuInstr(VU_OP_NOP));
 	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "y"),
 	                  "sqrt q, " + fieldArg(atten, "z"));
-	emitRawPairedLine("maddz.w " + p.materialAmbReg + ", " + vf00 + ", " + fieldArg(attenProduct, "z"), "nop");
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(vertex, "x"), "nop");
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(vertex, "y"), "nop");
-	emitRawPairedLine("maddz.w " + p.materialDiffReg + ", " + vf00 + ", " + fieldArg(vertex, "z"), "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("addw.x " + atten + ", " + vf00 + ", " + fieldArg(vf00, "w"), "nop");
+	emitRawPairedLine("maddz.w " + p.materialAmbReg + ", " + vf00 + ", " + fieldArg(attenProduct, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(vertex, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(vertex, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddz.w " + p.materialDiffReg + ", " + vf00 + ", " + fieldArg(vertex, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("addw.x " + atten + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("addq.y " + atten + ", " + vf00 + ", q",
 	                  "ibeq " + in + ", " + last + ", " + p.fallbackTwoLabel);
-	emitRawPairedLine("maxx.w " + p.materialDiffReg + ", " + p.materialDiffReg + ", " + fieldArg(vf00, "x"), "nop");
-	emitRawPairedLine("nop", "iaddiu " + out + ", " + out + ", 6");
+	emitRawPairedLine("maxx.w " + p.materialDiffReg + ", " + p.materialDiffReg + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + out + ", " + out + ", 6");
 
 	m_codeLines.push_back(p.mainLabel + ":");
-	emitRawPairedLine("nop", "lq.xyz " + vertex + ", " + offsetBase(0, in));
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + vertex + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mul.xyz " + attenProduct + ", " + atten + ", " + p.attenCoeffReg,
 	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(atten, "y"));
 	emitRawPairedLine("mulw.xyz " + atten + ", " + p.lightDiffReg + ", " + fieldArg(p.materialDiffReg, "w"),
 	                  "iaddiu " + out + ", " + out + ", 3");
 	emitRawPairedLine("sub.xyz " + delta + ", " + lightPos + ", " + vertex,
 	                  "move.xyz " + vertex + ", " + delta);
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mula.xyz ACC, " + atten + ", " + p.materialDiffReg, "nop");
-	emitRawPairedLine("mul.xyz " + atten + ", " + delta + ", " + delta, "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mula.xyz ACC, " + atten + ", " + p.materialDiffReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + atten + ", " + delta + ", " + delta, vuInstr(VU_OP_NOP));
 	emitRawPairedLine("mulq.xyz " + vertex + ", " + vertex + ", q",
 	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(p.materialAmbReg, "w"));
 	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg,
 	                  "lq.xyz " + normal + ", " + offsetBase(-2, in));
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "x"), "nop");
-	emitRawPairedLine("adday.z ACC, " + atten + ", " + fieldArg(atten, "y"), "nop");
-	emitRawPairedLine("maddx.z " + atten + ", " + p.onesReg + ", " + fieldArg(atten, "x"), "nop");
-	emitRawPairedLine("mul.xyz " + vertex + ", " + vertex + ", " + normal, "nop");
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "y"), "nop");
+	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("adday.z ACC, " + atten + ", " + fieldArg(atten, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddx.z " + atten + ", " + p.onesReg + ", " + fieldArg(atten, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + vertex + ", " + vertex + ", " + normal, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "y"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("maddz.w " + p.materialAmbReg + ", " + vf00 + ", " + fieldArg(attenProduct, "z"),
 	                  "lq.xyz " + attenProduct + ", " + offsetBase(-8, out));
 	emitRawPairedLine("mulq.xyz " + lit + ", " + lit + ", q",
 	                  "sqrt q, " + fieldArg(atten, "z"));
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(vertex, "x"), "nop");
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(vertex, "y"), "nop");
-	emitRawPairedLine("maddz.w " + p.materialDiffReg + ", " + vf00 + ", " + fieldArg(vertex, "z"), "nop");
-	emitRawPairedLine("add.xyz " + attenProduct + ", " + attenProduct + ", " + lit, "nop");
-	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("addw.x " + atten + ", " + vf00 + ", " + fieldArg(vf00, "w"), "nop");
+	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(vertex, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(vertex, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddz.w " + p.materialDiffReg + ", " + vf00 + ", " + fieldArg(vertex, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("add.xyz " + attenProduct + ", " + attenProduct + ", " + lit, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine("addw.x " + atten + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("addq.y " + atten + ", " + vf00 + ", q",
 	                  "ibne " + in + ", " + last + ", " + p.mainLabel);
 	emitRawPairedLine("maxx.w " + p.materialDiffReg + ", " + p.materialDiffReg + ", " + fieldArg(vf00, "x"),
 	                  "sq.xyz " + attenProduct + ", " + offsetBase(-8, out));
 
 	m_codeLines.push_back(p.drainLabel + ":");
-	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", 6");
-	emitRawPairedLine("nop", "isubiu " + out + ", " + out + ", 6");
-	emitRawPairedLine("nop", "b " + p.scalarLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", 6");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + out + ", " + out + ", 6");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackOneLabel + ":");
-	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("nop", "b " + p.scalarLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackTwoLabel + ":");
-	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", 6");
-	emitRawPairedLine("nop", "b " + p.scalarLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", 6");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	emitPtLightNoSpecScalarFallbackLoop(p);
 }
@@ -8681,81 +8722,81 @@ void CodeGenerator::emitPtLightNoSpecScalarFallbackLoop( const PtLightNoSpecLoop
 	const std::string vf00 = "VF00";
 
 	m_codeLines.push_back(p.scalarLabel + ":");
-	emitRawPairedLine("nop", "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("nop", "lq.xyz " + vertex + ", " + offsetBase(0, in));
-	emitRawPairedLine("nop", "lq.xyz " + currentColor + ", " + offsetBase(1, out));
-	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("sub.xyz " + delta + ", " + p.lightPosReg + ", " + vertex, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mul.xyz " + atten + ", " + delta + ", " + delta, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("adday.z ACC, " + atten + ", " + fieldArg(atten, "y"), "nop");
-	emitRawPairedLine("maddx.z " + atten + ", " + p.onesReg + ", " + fieldArg(atten, "x"), "nop");
-	emitRawPairedLine("addw.x " + atten + ", " + vf00 + ", " + fieldArg(vf00, "w"), "nop");
-	emitRawPairedLine("nop", "sqrt q, " + fieldArg(atten, "z"));
-	emitRawPairedLine("addq.y " + atten + ", " + vf00 + ", q", "waitq");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + vertex + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + currentColor + ", " + offsetBase(1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("sub.xyz " + delta + ", " + p.lightPosReg + ", " + vertex, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mul.xyz " + atten + ", " + delta + ", " + delta, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("adday.z ACC, " + atten + ", " + fieldArg(atten, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddx.z " + atten + ", " + p.onesReg + ", " + fieldArg(atten, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("addw.x " + atten + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sqrt q, " + fieldArg(atten, "z"));
+	emitRawPairedLine("addq.y " + atten + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
 	emitRawPairedLine("mul.xyz " + attenProduct + ", " + atten + ", " + p.attenCoeffReg,
 	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(atten, "y"));
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "x"), "nop");
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "y"), "nop");
-	emitRawPairedLine("maddz.w " + atten + ", " + vf00 + ", " + fieldArg(attenProduct, "z"), "nop");
-	emitRawPairedLine("mulq.xyz " + normalized + ", " + delta + ", q", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(atten, "w"));
-	emitRawPairedLine("mul.xyz " + normalProduct + ", " + normalized + ", " + normal, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(normalProduct, "x"), "nop");
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(normalProduct, "y"), "nop");
-	emitRawPairedLine("maddz.w " + intensity + ", " + vf00 + ", " + fieldArg(normalProduct, "z"), "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("maxx.w " + clamped + ", " + intensity + ", " + fieldArg(vf00, "x"), "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mulw.xyz " + localDiffuse + ", " + p.lightDiffReg + ", " + fieldArg(clamped, "w"), "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mula.xyz ACC, " + localDiffuse + ", " + p.materialDiffReg, "nop");
-	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("mulq.xyz " + attenuated + ", " + lit + ", q", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("add.xyz " + result + ", " + currentColor + ", " + attenuated, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "sq.xyz " + result + ", " + offsetBase(1, out));
-	emitRawPairedLine("nop", "ibne " + in + ", " + last + ", " + p.scalarLabel);
-	emitRawPairedLine("nop", "iaddiu " + out + ", " + out + ", 3");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddz.w " + atten + ", " + vf00 + ", " + fieldArg(attenProduct, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulq.xyz " + normalized + ", " + delta + ", q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(atten, "w"));
+	emitRawPairedLine("mul.xyz " + normalProduct + ", " + normalized + ", " + normal, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(normalProduct, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(normalProduct, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maddz.w " + intensity + ", " + vf00 + ", " + fieldArg(normalProduct, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("maxx.w " + clamped + ", " + intensity + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulw.xyz " + localDiffuse + ", " + p.lightDiffReg + ", " + fieldArg(clamped, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mula.xyz ACC, " + localDiffuse + ", " + p.materialDiffReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("mulq.xyz " + attenuated + ", " + lit + ", q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("add.xyz " + result + ", " + currentColor + ", " + attenuated, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + result + ", " + offsetBase(1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibne " + in + ", " + last + ", " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + out + ", " + out + ", 3");
 
 	m_codeLines.push_back(p.exitLabel + ":");
 }
@@ -8847,7 +8888,7 @@ bool CodeGenerator::collectFinalColorLoopPipelinePattern( std::list<Token>::iter
 			continue;
 		}
 
-		if( mnemonic == "lq" )
+		if( mnemonic == vuInstr(VU_OP_LQ) )
 		{
 			std::string base;
 			long offset = 0;
@@ -8875,7 +8916,7 @@ bool CodeGenerator::collectFinalColorLoopPipelinePattern( std::list<Token>::iter
 			continue;
 		}
 
-		if( mnemonic == "iaddiu" )
+		if( mnemonic == vuInstr(VU_OP_IADDIU) )
 		{
 			std::string dst;
 			std::string src;
@@ -8894,7 +8935,7 @@ bool CodeGenerator::collectFinalColorLoopPipelinePattern( std::list<Token>::iter
 			continue;
 		}
 
-		if( (mnemonic == "mini" || mnemonic == "minii")
+		if( (mnemonic == vuInstr(VU_OP_MINI) || mnemonic == vuInstr(VU_OP_MINII))
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
@@ -8906,7 +8947,7 @@ bool CodeGenerator::collectFinalColorLoopPipelinePattern( std::list<Token>::iter
 			continue;
 		}
 
-		if( mnemonic == "ftoi0" && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
+		if( mnemonic == vuInstr(VU_OP_FTOI0) && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string dst;
 			std::string src;
@@ -8917,7 +8958,7 @@ bool CodeGenerator::collectFinalColorLoopPipelinePattern( std::list<Token>::iter
 			continue;
 		}
 
-		if( mnemonic == "sq" )
+		if( mnemonic == vuInstr(VU_OP_SQ) )
 		{
 			std::string base;
 			long offset = 0;
@@ -8959,63 +9000,50 @@ void CodeGenerator::emitFinalColorSoftwarePipelineLoop( const FinalColorLoopPipe
 	const std::string load = p.outputReg;
 
 	m_codeLines.push_back(p.entryLabel + ":");
-	emitRawPairedLine("nop", "lq.xyz " + output + ", " + offsetBase(1, in));
-	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + output + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", 3");
 	emitRawPairedLine("minii.xyz " + minReg + ", " + output + ", i",
 	                  "ibeq " + in + ", " + last + ", " + p.epilogOneLabel);
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.prologLabel + ":");
-	emitRawPairedLine("nop", "lq.xyz " + load + ", " + offsetBase(1, in));
-	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + load + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("ftoi0.xyz " + output + ", " + minReg,
 	                  "ibeq " + in + ", " + last + ", " + p.epilogTwoLabel);
-	emitRawPairedLine("minii.xyz " + minReg + ", " + load + ", i", "nop");
+	emitRawPairedLine("minii.xyz " + minReg + ", " + load + ", i", vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.mainLabel + ":");
-	emitRawPairedLine("nop", "lq.xyz " + load + ", " + offsetBase(1, in));
-	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("nop", "sq " + output + ", " + offsetBase(-8, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + load + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + output + ", " + offsetBase(-8, in));
 	emitRawPairedLine("ftoi0.xyz " + output + ", " + minReg,
 	                  "ibne " + in + ", " + last + ", " + p.mainLabel);
-	emitRawPairedLine("minii.xyz " + minReg + ", " + load + ", i", "nop");
+	emitRawPairedLine("minii.xyz " + minReg + ", " + load + ", i", vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.epilogTwoLabel + ":");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine("ftoi0.xyz " + output + ", " + minReg,
 	                  "sq " + output + ", " + offsetBase(-5, in));
-	emitRawPairedLine("nop", "b " + p.exitLabel);
-	emitRawPairedLine("nop", "sq " + output + ", " + offsetBase(-2, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.exitLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + output + ", " + offsetBase(-2, in));
 
 	m_codeLines.push_back(p.epilogOneLabel + ":");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("ftoi0.xyz " + output + ", " + minReg, "nop");
-	emitRawPairedLine("nop", "nop");
-	emitRawPairedLine("nop", "sq " + output + ", " + offsetBase(-2, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine("ftoi0.xyz " + output + ", " + minReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + output + ", " + offsetBase(-2, in));
 
 	m_codeLines.push_back(p.exitLabel + ":");
 }
 
 void CodeGenerator::emitRawPairedLine( const std::string& upper, const std::string& lower )
 {
-	const int instructionLength = 32;
-	std::string line;
-	for( int d = 0; d < 20; d++ )
-		line += " ";
-	line += upper;
-
-	int pad = instructionLength - int(upper.length());
-	if( pad <= 0 )
-		line += " ";
-	for( int d = 0; d < pad; d++ )
-		line += " ";
-
-	line += lower;
-	m_codeLines.push_back(line);
+	m_codeLines.push_back( formatRawPairedInstructionLine( upper, lower ) );
 	++m_currentCycle;
 }
 
@@ -9056,23 +9084,9 @@ bool CodeGenerator::tokensCanPair( const Token& a, const Token& b ) const
 
 std::string CodeGenerator::formatPairedLine( const Token& upper, const Token& lower )
 {
-	const int instructionLength = 32;
 	std::string upperInstr = generateInstruction(upper);
 	std::string lowerInstr = generateInstruction(lower);
-
-	std::string line;
-	for( int d = 0; d < 20; d++ )
-		line += " ";
-	line += upperInstr;
-
-	int pad = instructionLength - int(upperInstr.length());
-	if( pad <= 0 )
-		line += " ";
-	for( int d = 0; d < pad; d++ )
-		line += " ";
-
-	line += lowerInstr;
-	return line;
+	return formatRawPairedInstructionLine( upperInstr, lowerInstr );
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -9126,24 +9140,20 @@ std::string CodeGenerator::generateInstruction(const Token& token)
 std::string CodeGenerator::generateUpperZeroMoveInstruction( const Token& token )
 {
 	static const char* fieldnames = "xyzw";
-	std::string codeLine = "max.";
+	std::string fields;
 	for(unsigned int t = 0; t < 4; t++ )
 	{
 		if(token.fields() & (1<<t))
-			codeLine += fieldnames[t];
+			fields += fieldnames[t];
 	}
-	codeLine += " ";
 
 	std::list<Token::Argument>::const_iterator dst = token.arguments().begin();
 	std::list<Token::Argument>::const_iterator src = dst;
 	++src;
 
-	codeLine += registerArg(*dst, token);
-	codeLine += ", ";
-	codeLine += registerArg(*src, token);
-	codeLine += ", ";
-	codeLine += registerArg(*src, token);
-	return codeLine;
+	return vuInstrFields( VU_OP_MAX, fields, registerArg(*dst, token) + ", "
+	                                      + registerArg(*src, token) + ", "
+	                                      + registerArg(*src, token) );
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
