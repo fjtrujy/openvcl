@@ -893,7 +893,9 @@ TEST_CASE("Software pipeline: fast_nolights transform loop emits a 12-cycle stea
 
 TEST_CASE("Software pipeline: generic path emits safe single-Q loop prologs")
 {
-    std::string vsm = runEmit(simpleGenericSingleQPipelineSource());
+    std::vector<std::string> args;
+    args.push_back("--enable-generic-software-pipelining");
+    std::string vsm = runEmitWithExtraArgs(simpleGenericSingleQPipelineSource(), args);
     REQUIRE(vsm.length() > 0);
 
     CHECK(contains(vsm, "loop_lid__PROLOG:"));
@@ -903,11 +905,9 @@ TEST_CASE("Software pipeline: generic path emits safe single-Q loop prologs")
     CHECK(!contains(vsm, "loop_lid__MAIN_LOOP:"));
 }
 
-TEST_CASE("Software pipeline: generic software-pipelining can be disabled for baseline comparisons")
+TEST_CASE("Software pipeline: generic software-pipelining is opt-in until profit scheduling is ready")
 {
-    std::vector<std::string> args;
-    args.push_back("--disable-generic-software-pipelining");
-    std::string vsm = runEmitWithExtraArgs(simpleGenericSingleQPipelineSource(), args);
+    std::string vsm = runEmit(simpleGenericSingleQPipelineSource());
     REQUIRE(vsm.length() > 0);
 
     CHECK(!contains(vsm, "loop_lid__PROLOG:"));

@@ -931,7 +931,7 @@ CodeGenerator::CodeGenerator()
 {
 	m_currentCycle    = 0;
 	m_knownLoopOptimizations = false;
-	m_genericSoftwarePipelining = true;
+	m_genericSoftwarePipelining = false;
 	m_enableUpperZeroMoves = false;
 	m_ignoredImplicitWawResources = VU_RESOURCE_NONE;
 	// Sentinels < 0 by more than FMAC latency so the first flag-reader

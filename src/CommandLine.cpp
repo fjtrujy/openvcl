@@ -75,7 +75,7 @@ CommandLine::CommandLine()
 	m_dumpScheduleInfo = false;
 	m_dumpScheduleInfoJson = false;
 	m_knownLoopOptimizations = false;
-	m_genericSoftwarePipelining = true;
+	m_genericSoftwarePipelining = false;
 
 	m_gasp = "gasp";
 	m_cpp = "cpp";
@@ -328,8 +328,8 @@ void CommandLine::showUsage( std::ostream& stream )
 	stream << "  --dump-schedule-info-json  Print generic ready-scheduler issue slots as JSON." << std::endl;
 	stream << "  --enable-known-loop-optimizations  Compile with ps2gl-shaped loop reference emitters." << std::endl;
 	stream << "  --disable-known-loop-optimizations  Kept for compatibility; generic compilation is the default." << std::endl;
-	stream << "  --enable-generic-software-pipelining  Enable safe generic software-pipeline rewrites. (Default)" << std::endl;
-	stream << "  --disable-generic-software-pipelining  Disable generic software-pipeline rewrites for baseline comparisons." << std::endl;
+	stream << "  --enable-generic-software-pipelining  Enable experimental generic software-pipeline rewrites." << std::endl;
+	stream << "  --disable-generic-software-pipelining  Disable generic software-pipeline rewrites. (Default)" << std::endl;
 
 	stream << std::endl << "  If no input or output file are specified, standard I/O will be used instead." << std::endl;
 
