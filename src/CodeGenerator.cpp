@@ -931,6 +931,7 @@ CodeGenerator::CodeGenerator()
 {
 	m_currentCycle    = 0;
 	m_knownLoopOptimizations = false;
+	m_genericSoftwarePipelining = true;
 	m_enableUpperZeroMoves = false;
 	m_ignoredImplicitWawResources = VU_RESOURCE_NONE;
 	// Sentinels < 0 by more than FMAC latency so the first flag-reader
@@ -984,7 +985,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 	std::list<Token> workTokens = tokens;
 	coalesceAdjacentVuIntegerAdds(workTokens);
 	fillPreIncrementStoreBranchDelaySlots(workTokens);
-	if( !m_knownLoopOptimizations )
+	if( !m_knownLoopOptimizations && m_genericSoftwarePipelining )
 	{
 		std::list<Token> pipelinedTokens = applyVuSoftwarePipelinePlans(workTokens);
 		workTokens.swap(pipelinedTokens);

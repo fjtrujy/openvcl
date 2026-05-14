@@ -1600,6 +1600,7 @@ bool Parser::generateCode()
 {
 	m_codeGenerator.setEmitSource( m_cmdLine.emitSource() );
 	m_codeGenerator.setKnownLoopOptimizations( m_cmdLine.knownLoopOptimizations() );
+	m_codeGenerator.setGenericSoftwarePipelining( m_cmdLine.genericSoftwarePipelining() );
 	m_codeGenerator.setName( m_registerAllocator.name() );
 
 	if( !m_codeGenerator.beginProcess( m_tokenizer.tokens() ) )

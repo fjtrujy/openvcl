@@ -56,6 +56,7 @@ public:
 	bool dumpScheduleInfo() const;
 	bool dumpScheduleInfoJson() const;
 	bool knownLoopOptimizations() const;
+	bool genericSoftwarePipelining() const;
 	const std::vector< std::pair<std::string, unsigned int> >& costLoops() const;
 	const std::string& costCompareBaseline() const;
 	const std::string& costCompareListCheckMetric() const;
@@ -129,6 +130,8 @@ private:
 		DUMP_SCHEDULE_INFO_JSON,
 		ENABLE_KNOWN_LOOP_OPTIMIZATIONS,
 		DISABLE_KNOWN_LOOP_OPTIMIZATIONS,
+		ENABLE_GENERIC_SOFTWARE_PIPELINING,
+		DISABLE_GENERIC_SOFTWARE_PIPELINING,
 
 		IGNORE
 	};
@@ -180,6 +183,7 @@ private:
 	bool m_dumpScheduleInfo;
 	bool m_dumpScheduleInfoJson;
 	bool m_knownLoopOptimizations;
+	bool m_genericSoftwarePipelining;
 	std::vector< std::pair<std::string, unsigned int> > m_costLoops;
 	std::string m_costCompareBaseline;
 	std::string m_costCompareListCheckMetric;

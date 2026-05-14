@@ -75,6 +75,7 @@ CommandLine::CommandLine()
 	m_dumpScheduleInfo = false;
 	m_dumpScheduleInfoJson = false;
 	m_knownLoopOptimizations = false;
+	m_genericSoftwarePipelining = true;
 
 	m_gasp = "gasp";
 	m_cpp = "cpp";
@@ -124,6 +125,8 @@ CommandLine::CommandLine()
 	m_options.push_back(Option('\0',"dump-schedule-info-json",DUMP_SCHEDULE_INFO_JSON,false));
 	m_options.push_back(Option('\0',"enable-known-loop-optimizations",ENABLE_KNOWN_LOOP_OPTIMIZATIONS,false));
 	m_options.push_back(Option('\0',"disable-known-loop-optimizations",DISABLE_KNOWN_LOOP_OPTIMIZATIONS,false));
+	m_options.push_back(Option('\0',"enable-generic-software-pipelining",ENABLE_GENERIC_SOFTWARE_PIPELINING,false));
+	m_options.push_back(Option('\0',"disable-generic-software-pipelining",DISABLE_GENERIC_SOFTWARE_PIPELINING,false));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -235,6 +238,8 @@ bool CommandLine::parse( int argc, char* argv[] )
 				case DUMP_SCHEDULE_INFO_JSON: m_dumpScheduleInfo = true; m_dumpScheduleInfoJson = true; break;
 				case ENABLE_KNOWN_LOOP_OPTIMIZATIONS: m_knownLoopOptimizations = true; break;
 				case DISABLE_KNOWN_LOOP_OPTIMIZATIONS: m_knownLoopOptimizations = false; break;
+				case ENABLE_GENERIC_SOFTWARE_PIPELINING: m_genericSoftwarePipelining = true; break;
+				case DISABLE_GENERIC_SOFTWARE_PIPELINING: m_genericSoftwarePipelining = false; break;
 				case ANALYZE_VSM_COST_LOOP:
 				{
 					std::string::size_type separator = argument.find('=');
@@ -323,6 +328,8 @@ void CommandLine::showUsage( std::ostream& stream )
 	stream << "  --dump-schedule-info-json  Print generic ready-scheduler issue slots as JSON." << std::endl;
 	stream << "  --enable-known-loop-optimizations  Compile with ps2gl-shaped loop reference emitters." << std::endl;
 	stream << "  --disable-known-loop-optimizations  Kept for compatibility; generic compilation is the default." << std::endl;
+	stream << "  --enable-generic-software-pipelining  Enable safe generic software-pipeline rewrites. (Default)" << std::endl;
+	stream << "  --disable-generic-software-pipelining  Disable generic software-pipeline rewrites for baseline comparisons." << std::endl;
 
 	stream << std::endl << "  If no input or output file are specified, standard I/O will be used instead." << std::endl;
 

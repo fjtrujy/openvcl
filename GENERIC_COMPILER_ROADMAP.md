@@ -55,6 +55,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: software-pipeline plans now list the concrete VF/VI registers that require rotation before generic emission can be enabled.
    - Done: the emittable subset is now limited to single-instruction Q prefetches that do not read induction registers or perform memory access, so automatic emission has an explicit safety boundary.
    - Done: the generic path now rewrites that safe single-Q subset into an automatic prolog plus main loop, while blocked loops continue through ordinary generic scheduling.
+   - Done: generic software-pipelining can be disabled independently with `--disable-generic-software-pipelining` so tests and cost tooling can compare against the plain generic scheduler.
 
 8. **Retire Pattern Emitters Incrementally** - started
    - Replace each hand emitter only after generic scheduling/software pipelining matches correctness and reaches equal or better loop cost.

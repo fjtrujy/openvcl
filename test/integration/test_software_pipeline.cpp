@@ -903,6 +903,19 @@ TEST_CASE("Software pipeline: generic path emits safe single-Q loop prologs")
     CHECK(!contains(vsm, "loop_lid__MAIN_LOOP:"));
 }
 
+TEST_CASE("Software pipeline: generic software-pipelining can be disabled for baseline comparisons")
+{
+    std::vector<std::string> args;
+    args.push_back("--disable-generic-software-pipelining");
+    std::string vsm = runEmitWithExtraArgs(simpleGenericSingleQPipelineSource(), args);
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(!contains(vsm, "loop_lid__PROLOG:"));
+    CHECK(contains(vsm, "loop_lid:"));
+    CHECK(contains(vsm, "ibne VI01, VI02, loop_lid"));
+    CHECK(countSubstrings(vsm, "div q, VF00w, VF00w") == 1);
+}
+
 TEST_CASE("Software pipeline: generic compiler path is the default")
 {
     expectGenericPathCompiles(fastNoLightsPipelineSource(), "xform_loop_lid");
