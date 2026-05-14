@@ -106,6 +106,64 @@ namespace
 		return priority;
 	}
 
+	bool tokenWritesMacForPair( const Token& token )
+	{
+		VuTokenResourceAccess access;
+		if( !buildVuTokenResourceAccess( token, access ) )
+			return false;
+		return (access.implicitWrites & VU_RESOURCE_MAC) != 0;
+	}
+
+	unsigned int chooseReadyPairPartner( unsigned int primary,
+	                                     const VuBasicBlock& block,
+	                                     const std::vector<unsigned int>& incoming,
+	                                     const std::vector<bool>& emitted,
+	                                     const std::vector<unsigned int>& priority )
+	{
+		unsigned int best = static_cast<unsigned int>( block.tokens.size() );
+		int bestScore = 0;
+		const bool primaryIsLower = isVuLowerPipe( *block.tokens[primary] );
+		const bool primaryWritesMac = tokenWritesMacForPair( *block.tokens[primary] );
+
+		for( unsigned int i = 0; i < block.tokens.size(); ++i )
+		{
+			if( i == primary || emitted[i] || incoming[i] != 0 )
+				continue;
+			if( isVuLowerPipe( *block.tokens[i] ) == primaryIsLower )
+				continue;
+			if( !vuTokenPairResourcesAreIndependent( *block.tokens[primary],
+			                                         *block.tokens[i],
+			                                         primaryWritesMac,
+			                                         tokenWritesMacForPair( *block.tokens[i] ) ) )
+				continue;
+
+			const int score = readyCandidateScore( i, false, false, block, priority );
+			if( best == block.tokens.size() || score < bestScore )
+			{
+				best = i;
+				bestScore = score;
+			}
+		}
+
+		return best;
+	}
+
+	void markReadyTokenScheduled( unsigned int token,
+	                              std::vector<unsigned int>& incoming,
+	                              const std::vector< std::vector<unsigned int> >& outgoing,
+	                              std::vector<bool>& emitted,
+	                              unsigned int& emittedCount )
+	{
+		emitted[token] = true;
+		++emittedCount;
+
+		for( std::vector<unsigned int>::const_iterator i = outgoing[token].begin(); i != outgoing[token].end(); ++i )
+		{
+			if( incoming[*i] > 0 )
+				--incoming[*i];
+		}
+	}
+
 	void appendReadyScheduledSegment( const std::vector<const Token*>& segment,
 	                                  std::list<Token>& scheduled,
 	                                  unsigned int ignoredImplicitWawResources )
@@ -167,15 +225,20 @@ namespace
 			}
 
 			scheduled.push_back( *block.tokens[best] );
-			emitted[best] = true;
-			++emittedCount;
-			haveLastPipe = true;
-			lastWasLower = isVuLowerPipe( *block.tokens[best] );
+			const unsigned int partner = chooseReadyPairPartner( best, block, incoming, emitted, priority );
+			if( partner < block.tokens.size() )
+				scheduled.push_back( *block.tokens[partner] );
 
-			for( std::vector<unsigned int>::const_iterator i = outgoing[best].begin(); i != outgoing[best].end(); ++i )
+			markReadyTokenScheduled( best, incoming, outgoing, emitted, emittedCount );
+			if( partner < block.tokens.size() )
 			{
-				if( incoming[*i] > 0 )
-					--incoming[*i];
+				markReadyTokenScheduled( partner, incoming, outgoing, emitted, emittedCount );
+				haveLastPipe = false;
+			}
+			else
+			{
+				haveLastPipe = true;
+				lastWasLower = isVuLowerPipe( *block.tokens[best] );
 			}
 		}
 	}

@@ -31,10 +31,11 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Initially emit the same order to validate structure.
    - Done: basic blocks now preserve explicit terminator kind and token pointer for branches, xgkick, compiler boundaries, and preordered barriers.
 
-5. **Implement Generic Dual-Pipe Scheduling**
+5. **Implement Generic Dual-Pipe Scheduling** - started
    - Schedule upper/lower pipe instructions from a ready set.
    - Respect latency, Q/P waits, I, ACC, MAC, CLIP, memory, branch delays, and bypass metadata.
    - Improve cost while keeping output valid for arbitrary VCL.
+   - Done: ready-set scheduling now keeps independent opposite-pipe ready instructions adjacent so the generic emitter can dual-issue them.
 
 6. **Implement Generic Loop Analysis**
    - Detect induction registers, loop-carried dependencies, loads/stores, branch targets, and loop bodies.

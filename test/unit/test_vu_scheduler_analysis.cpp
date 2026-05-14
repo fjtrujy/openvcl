@@ -477,6 +477,28 @@ TEST_CASE("VuSchedulerAnalysis: ready-set scheduler pulls plain loads before ind
     CHECK(vcl::normalizeVuMnemonic(i->name()) == "mul");
 }
 
+TEST_CASE("VuSchedulerAnalysis: ready-set scheduler keeps independent dual-pipe partners adjacent")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("mul.xy vf04, vf01, vf05"));
+    REQUIRE(program.parse("iaddiu vi01, vi00, 1"));
+
+    std::list<vcl::Token> scheduled = vcl::scheduleVuTokensReadySet(program.tokenizer.tokens());
+    REQUIRE(scheduled.size() == program.tokenizer.tokens().size());
+
+    std::list<vcl::Token>::const_iterator i = scheduled.begin();
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "add");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "iaddiu");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "mul");
+}
+
 TEST_CASE("VuSchedulerAnalysis: ready-set scheduler prefers longer dependency chains")
 {
     vcl::Error::ResetErrorCount();
