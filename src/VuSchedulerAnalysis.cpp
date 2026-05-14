@@ -546,6 +546,21 @@ namespace
 			opportunity.softwarePipelineBlockers.push_back( blocker );
 	}
 
+	std::string registerBaseKey( const std::string& key )
+	{
+		std::string::size_type field = key.find( '.' );
+		if( field == std::string::npos )
+			return key;
+		return key.substr( 0, field );
+	}
+
+	void collectRotatedRegisterBaseKeys( const std::list<std::string>& keys,
+	                                     std::list<std::string>& rotatedRegisters )
+	{
+		for( std::list<std::string>::const_iterator i = keys.begin(); i != keys.end(); ++i )
+			addUniqueString( rotatedRegisters, registerBaseKey( *i ) );
+	}
+
 	void classifySoftwarePipelineEmissionSafety( VuLoopPipelineOpportunity& opportunity )
 	{
 		if( !opportunity.simpleCountedLoop )
@@ -562,7 +577,12 @@ namespace
 			addPipelineBlocker( opportunity, "xgkick_barrier" );
 		if( opportunity.inductionRegisters.size() != 1 )
 			addPipelineBlocker( opportunity, "requires_single_induction_register" );
-		if( opportunity.requiresLoopCarriedRegisters )
+		collectRotatedRegisterBaseKeys( opportunity.carriedQInputRegisters,
+		                                opportunity.softwarePipelineRotatedRegisters );
+		collectRotatedRegisterBaseKeys( opportunity.carriedQOutputRegisters,
+		                                opportunity.softwarePipelineRotatedRegisters );
+
+		if( !opportunity.softwarePipelineRotatedRegisters.empty() )
 			addPipelineBlocker( opportunity, "requires_register_rotation" );
 
 		opportunity.canEmitSoftwarePipeline =

@@ -111,6 +111,7 @@ struct VuLoopPipelineOpportunity
 	std::vector<unsigned int> mainTokenIndices;
 	std::vector<unsigned int> drainTokenIndices;
 	std::list<std::string> softwarePipelineBlockers;
+	std::list<std::string> softwarePipelineRotatedRegisters;
 	std::list<std::string> carriedQInputRegisters;
 	std::list<std::string> carriedQOutputRegisters;
 	unsigned int memoryLoadCount;

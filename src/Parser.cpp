@@ -453,6 +453,8 @@ namespace
 			writeUnsignedVectorText( stream, i->drainTokenIndices );
 			stream << " blockers=";
 			writeStringListText( stream, i->softwarePipelineBlockers );
+			stream << " rotated_registers=";
+			writeStringListText( stream, i->softwarePipelineRotatedRegisters );
 			stream << " induction_registers=";
 			writeStringListText( stream, i->inductionRegisters );
 			stream << " loop_read_write_registers=";
@@ -497,6 +499,7 @@ namespace
 			stream << "        \"available\": " << (opportunity.hasSoftwarePipelinePlan ? "true" : "false") << ",\n";
 			stream << "        \"emittable\": " << (opportunity.canEmitSoftwarePipeline ? "true" : "false") << ",\n";
 			stream << "        \"blockers\": "; writeStringListJson( stream, opportunity.softwarePipelineBlockers ); stream << ",\n";
+			stream << "        \"rotated_registers\": "; writeStringListJson( stream, opportunity.softwarePipelineRotatedRegisters ); stream << ",\n";
 			stream << "        \"prolog_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.prologTokenIndices ); stream << ",\n";
 			stream << "        \"main_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.mainTokenIndices ); stream << ",\n";
 			stream << "        \"drain_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.drainTokenIndices ); stream << "\n";
