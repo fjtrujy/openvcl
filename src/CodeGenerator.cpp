@@ -1862,6 +1862,8 @@ bool CodeGenerator::emitStrictScheduledProgram( const std::list<Token>& tokens, 
 				emitSingleToken(*second);
 			else
 				emitSingleToken(*delayFiller);
+			if( branch && isVuTerminalUnconditionalBranch(*branch) )
+				exitWritten = true;
 			i = delayFillerSlot;
 			continue;
 		}
@@ -1877,13 +1879,23 @@ bool CodeGenerator::emitStrictScheduledProgram( const std::list<Token>& tokens, 
 				emitSingleToken(*first);
 				emitSingleToken(*second);
 			}
+			if( isVuTerminalUnconditionalBranch(*first) || isVuTerminalUnconditionalBranch(*second) )
+				exitWritten = true;
 			continue;
 		}
 
 		if( firstEmits )
+		{
 			emitSingleToken(*first);
+			if( isVuTerminalUnconditionalBranch(*first) )
+				exitWritten = true;
+		}
 		if( secondEmits )
+		{
 			emitSingleToken(*second);
+			if( isVuTerminalUnconditionalBranch(*second) )
+				exitWritten = true;
+		}
 	}
 
 	return true;

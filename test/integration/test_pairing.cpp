@@ -201,6 +201,19 @@ TEST_CASE("Scheduling: strict schedule slots emit typed Q wait padding across la
     CHECK(waitLine < mulqLine);
 }
 
+TEST_CASE("Scheduling: strict schedule slots omit unreachable exit after terminal branch")
+{
+    const std::string body =
+        "loop_lid:\n"
+        "\tb loop_lid\n";
+    std::vector<std::string> args;
+    args.push_back("--strict-schedule-slots");
+
+    std::string vsm = runEmitWithArgs(body, "vsmStrictTerminalBranch", args);
+    REQUIRE(vsm.length() > 0);
+    CHECK(countSubstrings(vsm, "nop[E]") == 0);
+}
+
 TEST_CASE("Pairing: strict schedule slots pair safe barrier tails")
 {
     std::vector<std::string> args;
