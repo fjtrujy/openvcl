@@ -27,6 +27,7 @@
 #include <iomanip>
 #include <sstream>
 #include <fstream>
+#include <vector>
 #include <assert.h>
 #include <cmath>
 
@@ -996,16 +997,24 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 		workTokens.swap(pipelinedTokens);
 	}
 	const bool macFlagsDead = !vuTokenListReadsMac(workTokens);
-	std::list<Token> scheduledTokens = scheduleVuTokensReadySetWithFlagLiveness(workTokens);
-	workTokens.swap(scheduledTokens);
 	m_enableUpperZeroMoves = macFlagsDead;
 	m_ignoredImplicitWawResources = VU_RESOURCE_NONE;
-	fillBranchDelaySlots(workTokens);
-	fillDeadFallthroughBranchDelaySlots(workTokens);
 
-	for( std::list<Token>::iterator k = workTokens.begin(); k != workTokens.end(); )
+	if( m_strictScheduleSlots )
 	{
-		m_ignoredImplicitWawResources = ignoredImplicitWawResourcesForRemaining(k, workTokens.end());
+		if( !emitStrictScheduledProgram(workTokens, exitWritten) )
+			return false;
+	}
+	else
+	{
+		std::list<Token> scheduledTokens = scheduleVuTokensReadySetWithFlagLiveness(workTokens);
+		workTokens.swap(scheduledTokens);
+		fillBranchDelaySlots(workTokens);
+		fillDeadFallthroughBranchDelaySlots(workTokens);
+
+		for( std::list<Token>::iterator k = workTokens.begin(); k != workTokens.end(); )
+		{
+			m_ignoredImplicitWawResources = ignoredImplicitWawResourcesForRemaining(k, workTokens.end());
 
 		if( tryEmitKnownLoopOptimization(workTokens, k) )
 		{
@@ -1372,6 +1381,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			exitWritten = true;
 		++k;
 	}
+	}
 
 	if( !exitWritten )
 	{
@@ -1694,6 +1704,189 @@ void CodeGenerator::emitPairedBranchWithDelayFiller( const Token& a, const Token
 	m_codeLines.push_back(fillerLine);
 	recordRegisterWrites(filler, m_currentCycle);
 	m_currentCycle++;
+}
+
+namespace
+{
+
+const Token* branchTokenInScheduledSlot( const VuScheduledIssueSlot& slot )
+{
+	if( slot.firstToken && vuTokenBranchDelaySlots(*slot.firstToken) > 0 )
+		return slot.firstToken;
+	if( slot.secondToken && vuTokenBranchDelaySlots(*slot.secondToken) > 0 )
+		return slot.secondToken;
+	return NULL;
+}
+
+const Token* branchDelayFillerInScheduledSlot( const VuScheduledIssueSlot& slot )
+{
+	if( slot.firstToken && (slot.firstToken->flags() & Token::BRANCH_DELAY_FILLER) )
+		return slot.firstToken;
+	if( slot.secondToken && (slot.secondToken->flags() & Token::BRANCH_DELAY_FILLER) )
+		return slot.secondToken;
+	return NULL;
+}
+
+}
+
+bool CodeGenerator::prepareStrictScheduledToken( const Token& token,
+                                                 bool& exitWritten,
+                                                 bool allowBranchDelayFiller )
+{
+	if( token.label().length() > 0 )
+		m_codeLines.push_back(token.label() + ":");
+
+	if( !token.operand() )
+		return false;
+
+	if( ((token.operand()->unit() == Operand::EXIT) || (token.operand()->unit() == Operand::ENTER)) && !exitWritten )
+	{
+		m_codeLines.push_back(formatRawPairedInstructionLine(vuInstr(VU_OP_NOP) + "[E]", vuInstr(VU_OP_NOP)));
+		m_codeLines.push_back(formatRawPairedInstructionLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP)));
+		exitWritten = true;
+	}
+
+	if( token.flags()&Token::IGNORED )
+		return false;
+
+	if( !(token.flags()&Token::PROCESSED) && !(token.operand()->flags()&Operand::PREPROCESSOR) )
+		return false;
+
+	if( token.operand()->flags()&Operand::PREPROCESSOR )
+	{
+		if( token.operand()->name() == ".vu" )
+			return false;
+		if( token.operand()->name() == "--cont" )
+		{
+			m_codeLines.push_back(formatRawPairedInstructionLine(vuInstr(VU_OP_NOP) + "[E]", vuInstr(VU_OP_NOP)));
+			m_codeLines.push_back(formatRawPairedInstructionLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP)));
+			exitWritten = true;
+			return false;
+		}
+		if( token.operand()->name() == "--barrier" )
+			return false;
+	}
+	else
+	{
+		exitWritten = false;
+	}
+
+	if( token.operand()->flags()&Operand::FILTERED )
+		return false;
+
+	if( (token.flags() & Token::BRANCH_DELAY_FILLER) && !allowBranchDelayFiller )
+		return false;
+
+	return true;
+}
+
+void CodeGenerator::emitStrictScheduledPadding( const VuScheduledIssueSlot& slot )
+{
+	switch( slot.paddingKind )
+	{
+		case VU_SCHEDULED_PADDING_WAITQ:
+			emitWaitQ();
+			break;
+
+		case VU_SCHEDULED_PADDING_WAITP:
+			emitWaitP();
+			break;
+
+		case VU_SCHEDULED_PADDING_NOP:
+		{
+			const unsigned int count = slot.cycleCount > 0 ? slot.cycleCount : 1;
+			for( unsigned int i = 0; i < count; ++i )
+			{
+				addNopLine();
+				m_currentCycle++;
+			}
+			break;
+		}
+
+		case VU_SCHEDULED_PADDING_NONE:
+			break;
+	}
+}
+
+bool CodeGenerator::emitStrictScheduledProgram( const std::list<Token>& tokens, bool& exitWritten )
+{
+	VuScheduledProgram program = scheduleVuProgramReadyIssueSlotsWithFlagLiveness(tokens);
+	std::vector<const VuScheduledIssueSlot*> slots;
+	for( std::vector<VuScheduledBasicBlock>::const_iterator block = program.blocks.begin();
+	     block != program.blocks.end();
+	     ++block )
+	{
+		for( std::vector<VuScheduledIssueSlot>::const_iterator slot = block->issueSlots.begin();
+		     slot != block->issueSlots.end();
+		     ++slot )
+		{
+			slots.push_back(&(*slot));
+		}
+	}
+
+	for( unsigned int i = 0; i < slots.size(); ++i )
+	{
+		const VuScheduledIssueSlot& slot = *slots[i];
+		m_ignoredImplicitWawResources = slot.ignoredImplicitWawResources;
+
+		if( slot.padding )
+		{
+			emitStrictScheduledPadding(slot);
+			continue;
+		}
+
+		const Token* first = slot.firstToken;
+		const Token* second = slot.secondToken;
+		if( second == first )
+			second = NULL;
+
+		bool firstEmits = first && prepareStrictScheduledToken(*first, exitWritten, false);
+		bool secondEmits = second && prepareStrictScheduledToken(*second, exitWritten, false);
+		const Token* branch = branchTokenInScheduledSlot(slot);
+		const Token* delayFiller = NULL;
+		unsigned int delayFillerSlot = i + 1;
+		if( branch && delayFillerSlot < slots.size() && !slots[delayFillerSlot]->padding )
+			delayFiller = branchDelayFillerInScheduledSlot(*slots[delayFillerSlot]);
+
+		if( delayFiller && prepareStrictScheduledToken(*delayFiller, exitWritten, true) )
+		{
+			if( firstEmits && secondEmits )
+				emitPairedBranchWithDelayFiller(*first, *second, *delayFiller);
+			else if( branch == first && firstEmits )
+				emitBranchWithDelayFiller(*first, *delayFiller);
+			else if( branch == second && secondEmits )
+				emitBranchWithDelayFiller(*second, *delayFiller);
+			else if( firstEmits )
+				emitSingleToken(*first);
+			else if( secondEmits )
+				emitSingleToken(*second);
+			else
+				emitSingleToken(*delayFiller);
+			i = delayFillerSlot;
+			continue;
+		}
+
+		if( firstEmits && secondEmits )
+		{
+			if( tokensCanPair(*first, *second) )
+			{
+				emitPairedTokens(*first, *second);
+			}
+			else
+			{
+				emitSingleToken(*first);
+				emitSingleToken(*second);
+			}
+			continue;
+		}
+
+		if( firstEmits )
+			emitSingleToken(*first);
+		if( secondEmits )
+			emitSingleToken(*second);
+	}
+
+	return true;
 }
 
 bool CodeGenerator::emitsAsUpperZeroMove( const Token& token ) const

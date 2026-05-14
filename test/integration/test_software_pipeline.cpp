@@ -987,14 +987,14 @@ TEST_CASE("Software pipeline: generic path emits safe single-Q loop prologs")
     CHECK(!contains(vsm, "loop_lid__MAIN_LOOP:"));
 }
 
-TEST_CASE("Software pipeline: strict schedule slots preserve paired branch delay fillers")
+TEST_CASE("Software pipeline: strict schedule slots preserve scheduled branch pairs and delay fillers")
 {
     std::vector<std::string> args;
     args.push_back("--strict-schedule-slots");
     std::string vsm = runEmitWithExtraArgs(simpleGenericSingleQPipelineSource(), args);
     REQUIRE(vsm.length() > 0);
 
-    CHECK(contains(vsm, "add.xyz VF15, VF00, VF00        ibne VI01, VI02, loop_lid"));
+    CHECK(contains(vsm, "mulq.xyz VF02, VF00, q          ibne VI01, VI02, loop_lid"));
     CHECK(contains(vsm, "nop                             div q, VF00w, VF00w"));
     CHECK(countSubstrings(vsm, "div q, VF00w, VF00w") == 2);
 }

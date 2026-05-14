@@ -30,6 +30,8 @@
 namespace vcl
 {
 
+struct VuScheduledIssueSlot;
+
 class CodeGenerator
 {
 public:
@@ -73,6 +75,9 @@ private:
 	void emitBranchWithDelayFiller( const Token& branch, const Token& filler );
 	void emitPairedTokens( const Token& a, const Token& b );
 	void emitPairedBranchWithDelayFiller( const Token& a, const Token& b, const Token& filler );
+	bool emitStrictScheduledProgram( const std::list<Token>& tokens, bool& exitWritten );
+	void emitStrictScheduledPadding( const VuScheduledIssueSlot& slot );
+	bool prepareStrictScheduledToken( const Token& token, bool& exitWritten, bool allowBranchDelayFiller );
 	int readHazardDelay( const Token& token, const Token* partner ) const;
 	void padForReadHazards( const Token& token, const Token* partner );
 	void recordRegisterWrites( const Token& token, int issueCycle );

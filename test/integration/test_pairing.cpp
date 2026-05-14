@@ -182,6 +182,25 @@ TEST_CASE("Pairing: strict schedule slots honor ready-set pair tags")
     CHECK(linePairsSubstrings(vsm, "add.xy", "iaddiu"));
 }
 
+TEST_CASE("Scheduling: strict schedule slots emit typed Q wait padding across labels")
+{
+    const std::string body =
+        "\tdiv q, vf00w, vf00w\n"
+        "after_div_lid:\n"
+        "\tmulq.xyz vf02, vf00, q\n";
+    std::vector<std::string> args;
+    args.push_back("--strict-schedule-slots");
+
+    std::string vsm = runEmitWithArgs(body, "vsmStrictQPaddingAcrossLabel", args);
+    REQUIRE(vsm.length() > 0);
+    const int divLine = lineIndex(vsm, "div q, VF00w, VF00w");
+    const int waitLine = lineIndex(vsm, "waitq");
+    const int mulqLine = lineIndex(vsm, "mulq.xyz VF02, VF00, q");
+    REQUIRE(divLine >= 0);
+    CHECK(divLine < waitLine);
+    CHECK(waitLine < mulqLine);
+}
+
 TEST_CASE("Pairing: strict schedule slots pair safe barrier tails")
 {
     std::vector<std::string> args;
