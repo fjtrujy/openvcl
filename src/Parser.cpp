@@ -420,12 +420,27 @@ namespace
 		stream << "]";
 	}
 
+	const VuSoftwarePipelineRewritePlan* findRewritePlanForOpportunity(
+	    const std::vector<VuSoftwarePipelineRewritePlan>& plans,
+	    const VuLoopPipelineOpportunity& opportunity )
+	{
+		for( std::vector<VuSoftwarePipelineRewritePlan>::const_iterator i = plans.begin(); i != plans.end(); ++i )
+		{
+			if( i->labelTokenIndex == opportunity.labelTokenIndex
+			    && i->branchTokenIndex == opportunity.branchTokenIndex )
+				return &*i;
+		}
+		return NULL;
+	}
+
 	void writeLoopPipelineInfoText( std::ostream& stream,
-	                                const std::vector<VuLoopPipelineOpportunity>& opportunities )
+	                                const std::vector<VuLoopPipelineOpportunity>& opportunities,
+	                                const std::vector<VuSoftwarePipelineRewritePlan>& rewritePlans )
 	{
 		stream << "OpenVCL VU loop pipeline opportunities" << std::endl;
 		for( std::vector<VuLoopPipelineOpportunity>::const_iterator i = opportunities.begin(); i != opportunities.end(); ++i )
 		{
+			const VuSoftwarePipelineRewritePlan* rewritePlan = findRewritePlanForOpportunity( rewritePlans, *i );
 			stream << i->label
 			       << " q_producer_token=" << i->qProducerTokenIndex
 			       << " first_q_consumer_token=" << i->firstQConsumerTokenIndex
@@ -445,6 +460,12 @@ namespace
 			       << " eligible_single_q_pipeline=" << (i->eligibleSingleQSoftwarePipeline ? "yes" : "no")
 			       << " pipeline_plan=" << (i->hasSoftwarePipelinePlan ? "yes" : "no")
 			       << " pipeline_emittable=" << (i->canEmitSoftwarePipeline ? "yes" : "no")
+			       << " rewrite_plan=" << (rewritePlan ? "yes" : "no")
+			       << " rewrite_prolog_label=" << (rewritePlan ? rewritePlan->prologLabel : "")
+			       << " rewrite_main_label=" << (rewritePlan ? rewritePlan->mainLabel : "")
+			       << " rewrite_drain_label=" << (rewritePlan ? rewritePlan->drainLabel : "")
+			       << " rewrite_insert_q_after=" << (rewritePlan ? rewritePlan->qProducerInsertAfterTokenIndex : 0)
+			       << " rewrite_emits_drain=" << (rewritePlan && rewritePlan->emitsDrain ? "yes" : "no")
 			       << " prolog_tokens=";
 			writeUnsignedVectorText( stream, i->prologTokenIndices );
 			stream << " main_tokens=";
@@ -468,12 +489,14 @@ namespace
 	}
 
 	void writeLoopPipelineInfoJson( std::ostream& stream,
-	                                const std::vector<VuLoopPipelineOpportunity>& opportunities )
+	                                const std::vector<VuLoopPipelineOpportunity>& opportunities,
+	                                const std::vector<VuSoftwarePipelineRewritePlan>& rewritePlans )
 	{
 		stream << "{\n  \"loop_pipeline_opportunities\": [\n";
 		for( unsigned int i = 0; i < opportunities.size(); ++i )
 		{
 			const VuLoopPipelineOpportunity& opportunity = opportunities[i];
+			const VuSoftwarePipelineRewritePlan* rewritePlan = findRewritePlanForOpportunity( rewritePlans, opportunity );
 			if( i != 0 )
 				stream << ",\n";
 			stream << "    {\n";
@@ -503,6 +526,18 @@ namespace
 			stream << "        \"prolog_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.prologTokenIndices ); stream << ",\n";
 			stream << "        \"main_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.mainTokenIndices ); stream << ",\n";
 			stream << "        \"drain_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.drainTokenIndices ); stream << "\n";
+			stream << "      },\n";
+			stream << "      \"rewrite_plan\": {\n";
+			stream << "        \"available\": " << (rewritePlan ? "true" : "false") << ",\n";
+			stream << "        \"prolog_label\": "; writeJsonString( stream, rewritePlan ? rewritePlan->prologLabel.c_str() : "" ); stream << ",\n";
+			stream << "        \"main_label\": "; writeJsonString( stream, rewritePlan ? rewritePlan->mainLabel.c_str() : "" ); stream << ",\n";
+			stream << "        \"drain_label\": "; writeJsonString( stream, rewritePlan ? rewritePlan->drainLabel.c_str() : "" ); stream << ",\n";
+			stream << "        \"emits_drain\": " << (rewritePlan && rewritePlan->emitsDrain ? "true" : "false") << ",\n";
+			stream << "        \"q_producer_insert_after_token_index\": "
+			       << (rewritePlan ? rewritePlan->qProducerInsertAfterTokenIndex : 0) << ",\n";
+			stream << "        \"prolog_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->prologTokenIndices ); else stream << "[]"; stream << ",\n";
+			stream << "        \"main_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->mainTokenIndices ); else stream << "[]"; stream << ",\n";
+			stream << "        \"drain_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->drainTokenIndices ); else stream << "[]"; stream << "\n";
 			stream << "      },\n";
 			stream << "      \"induction_registers\": "; writeStringListJson( stream, opportunity.inductionRegisters ); stream << ",\n";
 			stream << "      \"loop_read_write_registers\": "; writeStringListJson( stream, opportunity.loopReadWriteRegisters ); stream << ",\n";
@@ -1233,6 +1268,7 @@ bool Parser::dumpInstructionInfo()
 bool Parser::dumpLoopPipelineInfo()
 {
 	const std::vector<VuLoopPipelineOpportunity> opportunities = findVuLoopPipelineOpportunities( m_tokenizer.tokens() );
+	const std::vector<VuSoftwarePipelineRewritePlan> rewritePlans = buildVuSoftwarePipelineRewritePlans( m_tokenizer.tokens() );
 
 	if( m_cmdLine.output().length() > 0 )
 	{
@@ -1244,16 +1280,16 @@ bool Parser::dumpLoopPipelineInfo()
 		}
 
 		if( m_cmdLine.dumpLoopPipelineInfoJson() )
-			writeLoopPipelineInfoJson( output, opportunities );
+			writeLoopPipelineInfoJson( output, opportunities, rewritePlans );
 		else
-			writeLoopPipelineInfoText( output, opportunities );
+			writeLoopPipelineInfoText( output, opportunities, rewritePlans );
 	}
 	else
 	{
 		if( m_cmdLine.dumpLoopPipelineInfoJson() )
-			writeLoopPipelineInfoJson( std::cout, opportunities );
+			writeLoopPipelineInfoJson( std::cout, opportunities, rewritePlans );
 		else
-			writeLoopPipelineInfoText( std::cout, opportunities );
+			writeLoopPipelineInfoText( std::cout, opportunities, rewritePlans );
 	}
 
 	setState( EXIT );

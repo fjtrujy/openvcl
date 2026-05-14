@@ -37,6 +37,23 @@ namespace
             "mul.xy vf04, vf01, vf05\n"
             "iaddiu vi01, vi00, 1\n";
     }
+
+    std::string safePipelineInput()
+    {
+        return
+            "loop_lid:\n"
+            "--LoopCS 1, 1\n"
+            "div q, vf00[w], vf01[w]\n"
+            "mulq.xyz vf02, vf03, q\n"
+            "add.xyz vf10, vf10, vf00\n"
+            "add.xyz vf11, vf11, vf00\n"
+            "add.xyz vf12, vf12, vf00\n"
+            "add.xyz vf13, vf13, vf00\n"
+            "add.xyz vf14, vf14, vf00\n"
+            "add.xyz vf15, vf15, vf00\n"
+            "iaddiu vi01, vi01, 1\n"
+            "ibne vi01, vi02, loop_lid\n";
+    }
 }
 
 TEST_CASE("CLI: --version prints the shared OpenVCL version")
@@ -66,6 +83,7 @@ TEST_CASE("CLI: loop pipeline text dump exposes Q software-pipeline candidates")
     CHECK(contains(r.stdout_data, "eligible_single_q_pipeline=yes"));
     CHECK(contains(r.stdout_data, "pipeline_plan=yes"));
     CHECK(contains(r.stdout_data, "pipeline_emittable=no"));
+    CHECK(contains(r.stdout_data, "rewrite_plan=no"));
     CHECK(contains(r.stdout_data, "prolog_tokens=2|3|4"));
     CHECK(contains(r.stdout_data, "main_tokens=5|6|7|8|9|10|11"));
     CHECK(contains(r.stdout_data, "drain_tokens=5|6|7|8|9|10"));
@@ -103,7 +121,42 @@ TEST_CASE("CLI: loop pipeline JSON dump is stable enough for scheduler tooling")
     CHECK(contains(r.stdout_data, "\"prolog_token_indices\": [2, 3, 4]"));
     CHECK(contains(r.stdout_data, "\"main_token_indices\": [5, 6, 7, 8, 9, 10, 11]"));
     CHECK(contains(r.stdout_data, "\"drain_token_indices\": [5, 6, 7, 8, 9, 10]"));
+    CHECK(contains(r.stdout_data, "\"rewrite_plan\": {"));
+    CHECK(contains(r.stdout_data, "\"available\": false"));
     CHECK(contains(r.stdout_data, "\"carried_q_input_registers\": [\"VF03.x\""));
+}
+
+TEST_CASE("CLI: loop pipeline dumps expose emitted rewrite plans")
+{
+    std::vector<std::string> args;
+    args.push_back("-n");
+    args.push_back("--dump-loop-pipeline-info");
+
+    ::test::RunResult r = ::test::run_openvcl(args, safePipelineInput());
+    REQUIRE(r.exit_code == 0);
+    CHECK(r.stderr_data.empty());
+    CHECK(contains(r.stdout_data, "pipeline_emittable=yes"));
+    CHECK(contains(r.stdout_data, "rewrite_plan=yes"));
+    CHECK(contains(r.stdout_data, "rewrite_prolog_label=loop_lid__PROLOG"));
+    CHECK(contains(r.stdout_data, "rewrite_main_label=loop_lid"));
+    CHECK(contains(r.stdout_data, "rewrite_insert_q_after=3"));
+}
+
+TEST_CASE("CLI: loop pipeline JSON dumps expose emitted rewrite plans")
+{
+    std::vector<std::string> args;
+    args.push_back("-n");
+    args.push_back("--dump-loop-pipeline-info-json");
+
+    ::test::RunResult r = ::test::run_openvcl(args, safePipelineInput());
+    REQUIRE(r.exit_code == 0);
+    CHECK(r.stderr_data.empty());
+    CHECK(contains(r.stdout_data, "\"emittable\": true"));
+    CHECK(contains(r.stdout_data, "\"rewrite_plan\": {"));
+    CHECK(contains(r.stdout_data, "\"available\": true"));
+    CHECK(contains(r.stdout_data, "\"prolog_label\": \"loop_lid__PROLOG\""));
+    CHECK(contains(r.stdout_data, "\"main_label\": \"loop_lid\""));
+    CHECK(contains(r.stdout_data, "\"q_producer_insert_after_token_index\": 3"));
 }
 
 TEST_CASE("CLI: schedule text dump exposes ready-set issue slots")
