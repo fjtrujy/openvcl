@@ -104,8 +104,11 @@ Useful options:
 | `--cost-compare-list-check <metric>` | fail if any listed candidate is slower than its baseline |
 | `--dump-instruction-info` | print the VU instruction metadata table |
 | `--dump-instruction-info-json` | print the VU instruction metadata table as JSON |
+| `--dump-schedule-info` | print generic ready-scheduler issue slots |
+| `--dump-schedule-info-json` | print generic ready-scheduler issue slots as JSON |
 | `--enable-generic-software-pipelining` | enable safe generic software-pipeline rewrites, currently the default |
 | `--disable-generic-software-pipelining` | disable generic software-pipeline rewrites for comparison/debugging |
+| `--strict-schedule-slots` | emit from the typed scheduler slot model without legacy lookahead pairing |
 
 `-M`, `-P`, and `-Z` are accepted for VCL command-line compatibility.
 
@@ -311,19 +314,21 @@ matching SCE/reference VSM for the selected static and estimated metrics.
 
 ## Roadmap
 
-The next major scheduler step is a real list scheduler over descriptor-backed
-basic blocks. The intended shape is:
+The generic scheduler is now a descriptor-backed ready-set scheduler over typed
+basic blocks. The remaining work is to keep moving code emission and loop
+optimization decisions onto that explicit schedule model:
 
 - keep `VuInstructionInfo` as the canonical instruction table for parser,
   cost analysis, resource descriptors, and scheduler tooling;
-- move remaining emission-time cycle state into an explicit scheduler plan;
+- move remaining default emission-time cycle state into the typed scheduler
+  plan already used by `--strict-schedule-slots`;
 - improve exact memory aliasing beyond base register and constant offset;
-- add precise branch-delay-slot metadata before attempting broader branch NOP
-  removal or delay-slot filling;
+- extend typed branch-delay-slot metadata before attempting broader branch NOP
+  removal or delay-slot filling in the default path;
 - optimize hot ps2gl loops for estimated block cost and dual-pipe occupancy,
   guided by `--cost-compare` and `--cost-loop-preset ps2gl`;
-- eventually replace bounded textual lookahead with a ready-set list scheduler
-  and dual-pipe bundler that can prepare software-pipelined loop bodies.
+- retire the remaining bounded textual lookahead once the typed scheduler and
+  software-pipeline planner match the legacy output on correctness and cost.
 
 Scheduling changes should preserve Q/P, I, MAC, CLIP, ACC, VF/VI, broadcast
 field, branch-delay, and memory-ordering correctness. Each new scheduling rule
