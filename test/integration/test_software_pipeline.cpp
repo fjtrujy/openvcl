@@ -866,7 +866,7 @@ TEST_CASE("Software pipeline: final color loop keeps the original output registe
     CHECK(!contains(vsm, "sq VF25, -8(VI03)"));
 }
 
-TEST_CASE("Software pipeline: linear transform loop emits a 22-cycle steady state")
+TEST_CASE("Software pipeline: linear transform loop computes next flags before looping")
 {
     std::string vsm = runEmit(linearXformPipelineSource());
     REQUIRE(vsm.length() > 0);
@@ -877,11 +877,11 @@ TEST_CASE("Software pipeline: linear transform loop emits a 22-cycle steady stat
     CHECK(contains(vsm, "xform_loop_lid__EPI0:"));
     CHECK(contains(vsm, "xform_loop_lid__EXIT_POINT:"));
     CHECK(contains(vsm, "ibne VI13, VI04, xform_loop_lid__MAIN_LOOP"));
-    CHECK(contains(vsm, "lq.xyz VF18, -1(VI13)"));
+    CHECK(contains(vsm, "lq.xyz VF18, 2(VI13)"));
     CHECK(contains(vsm, "fcand VI01, 0x003ffff"));
 }
 
-TEST_CASE("Software pipeline: linear transform loop falls back when clip scratch aliases strip flip")
+TEST_CASE("Software pipeline: linear transform loop pipelines when clip scratch aliases strip flip")
 {
     std::string source = linearXformPipelineSource();
     const std::string stripFlip = "\tiand vi10, vi07, vi06\n";
@@ -896,9 +896,14 @@ TEST_CASE("Software pipeline: linear transform loop falls back when clip scratch
     std::string vsm = runEmit(source);
     REQUIRE(vsm.length() > 0);
 
-    CHECK(!contains(vsm, "xform_loop_lid__MAIN_LOOP:"));
-    CHECK(contains(vsm, "xform_loop_lid:"));
-    CHECK(contains(vsm, "iand VI01, VI07, VI06"));
+    CHECK(contains(vsm, "xform_loop_lid__PRO1:"));
+    CHECK(contains(vsm, "xform_loop_lid__MAIN_LOOP:"));
+    CHECK(contains(vsm, "xform_loop_lid__EPI0:"));
+    CHECK(contains(vsm, "ibne VI13, VI04, xform_loop_lid__MAIN_LOOP"));
+    CHECK(!contains(vsm, "iand VI01, VI07, VI06"));
+    CHECK(contains(vsm, "iand VI09, VI07, VI06"));
+    CHECK(contains(vsm, "ior VI05, VI05, VI09"));
+    CHECK(contains(vsm, "fcand VI01, 0x003ffff"));
 }
 
 TEST_CASE("Software pipeline: safe ps2gl primitive transform loops keep SCE-sized steady states")

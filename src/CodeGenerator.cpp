@@ -5388,8 +5388,7 @@ bool CodeGenerator::collectLinearXformLoopPipelinePattern( std::list<Token>::ite
 	    && !pattern.doClippingReg.empty()
 	    && !pattern.newAdcReg.empty()
 	    && !pattern.constantColorReg.empty()
-	    && !pattern.texReg.empty()
-	    && pattern.stripFlipReg != pattern.clipResultReg;
+	    && !pattern.texReg.empty();
 	return ok;
 }
 
@@ -5399,7 +5398,6 @@ void CodeGenerator::emitLinearXformScalarBody( const LinearXformLoopPipelinePatt
 	const std::string out = p.outputReg;
 	const std::string vert = p.vertexReg;
 	const std::string strip = p.stripAdcReg;
-	const std::string stripFlip = p.stripFlipReg;
 	const std::string x = p.xformedReg;
 	const std::string gs = p.gsReg;
 	const std::string delta = p.deltaReg;
@@ -5408,6 +5406,7 @@ void CodeGenerator::emitLinearXformScalarBody( const LinearXformLoopPipelinePatt
 	const std::string clip = p.clipReg;
 	const std::string clipResult = p.clipResultReg;
 	const std::string adc = p.newAdcReg;
+	const std::string stripFlip = p.stripFlipReg == clipResult ? adc : p.stripFlipReg;
 	const std::string tex = p.texReg;
 	const std::string vf00 = "VF00";
 
@@ -5481,7 +5480,6 @@ void CodeGenerator::emitLinearXformSoftwarePipelineLoop( const LinearXformLoopPi
 	const std::string last = p.lastInputReg;
 	const std::string vert = p.vertexReg;
 	const std::string strip = p.stripAdcReg;
-	const std::string stripFlip = p.stripFlipReg;
 	const std::string x = p.xformedReg;
 	const std::string gs = p.gsReg;
 	const std::string delta = p.deltaReg;
@@ -5490,6 +5488,7 @@ void CodeGenerator::emitLinearXformSoftwarePipelineLoop( const LinearXformLoopPi
 	const std::string clip = p.clipReg;
 	const std::string clipResult = p.clipResultReg;
 	const std::string adc = p.newAdcReg;
+	const std::string stripFlip = p.stripFlipReg == clipResult ? adc : p.stripFlipReg;
 	const std::string tex = p.texReg;
 	const std::string vf00 = "VF00";
 
@@ -5520,8 +5519,8 @@ void CodeGenerator::emitLinearXformSoftwarePipelineLoop( const LinearXformLoopPi
 	emitRawPairedLine("mul.xyz " + clip + ", " + x + ", " + p.clipScalesReg, "nop");
 	emitRawPairedLine("opmula.xyz ACCxyz, " + fieldArg(delta, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz"), "nop");
 	emitRawPairedLine("opmsub.xyz " + fieldArg(p.bfcNormalReg, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz") + ", " + fieldArg(delta, "xyz"), "nop");
-	emitRawPairedLine("max.xyz " + p.oldVertexReg + ", " + x + ", " + x, "nop");
-	emitRawPairedLine("mulw.xyz " + p.oldDeltaReg + ", " + delta + ", " + fieldArg(p.bfcMultiplierReg, "w"), "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
 	emitRawPairedLine("clipw.xyz " + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"), "nop");
 	emitRawPairedLine("nop", "fmand " + zSign + ", " + p.zSignMaskReg);
 	emitRawPairedLine("nop", "isub " + zSign + ", " + zSign + ", " + zSwitch);
@@ -5536,41 +5535,46 @@ void CodeGenerator::emitLinearXformSoftwarePipelineLoop( const LinearXformLoopPi
 	m_codeLines.push_back(p.mainLabel + ":");
 	emitRawPairedLine("ftoi4.xyz " + gs + ", " + gs,
 	                  "iand " + clipResult + ", " + clipResult + ", " + p.doClippingReg);
-	emitRawPairedLine("add.xyz " + gs + ", " + x + ", " + p.gsOffsetsReg,
-	                  "lq.xyz " + vert + ", " + offsetBase(0, in));
-	emitRawPairedLine("sub.xyz " + delta + ", " + p.oldVertexReg + ", " + x,
+	emitRawPairedLine("mulq.xyz " + tex + ", " + tex + ", q",
 	                  "ior " + adc + ", " + clipResult + ", " + zSign);
 	emitRawPairedLine("max.xyz " + p.oldVertexReg + ", " + x + ", " + x,
 	                  "ior " + adc + ", " + adc + ", " + strip);
-	emitRawPairedLine("mul.xyz " + clip + ", " + x + ", " + p.clipScalesReg,
-	                  "ilw.w " + strip + ", " + offsetBase(0, in));
-	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"),
-	                  "iaddiu " + adc + ", " + adc + ", " + p.adcImmediate);
-	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"),
-	                  "mfir.w " + gs + ", " + adc);
-	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"),
-	                  "isub " + zSign + ", " + zSign + ", " + zSwitch);
-	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"),
-	                  "iand " + stripFlip + ", " + strip + ", " + p.zSignMaskReg);
-	emitRawPairedLine("mulq.xyz " + tex + ", " + tex + ", q",
-	                  "sq.xyz " + p.constantColorReg + ", " + offsetBase(1, out));
-	emitRawPairedLine("opmula.xyz ACCxyz, " + fieldArg(delta, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz"),
-	                  "sq " + gs + ", " + offsetBase(2, out));
-	emitRawPairedLine("opmsub.xyz " + fieldArg(p.bfcNormalReg, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz") + ", " + fieldArg(delta, "xyz"),
-	                  "iaddiu " + in + ", " + in + ", " + integerText(p.inputStep));
 	emitRawPairedLine("mulw.xyz " + p.oldDeltaReg + ", " + delta + ", " + fieldArg(p.bfcMultiplierReg, "w"),
-	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
-	emitRawPairedLine("clipw.xyz " + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"),
-	                  "sq.xyz " + tex + ", " + offsetBase(0, out));
-	emitRawPairedLine("nop", "iaddiu " + out + ", " + out + ", " + integerText(p.outputStep));
+	                  "iaddiu " + adc + ", " + adc + ", " + p.adcImmediate);
+	emitRawPairedLine("nop", "mfir.w " + gs + ", " + adc);
+	emitRawPairedLine("nop", "sq.xyz " + p.constantColorReg + ", " + offsetBase(1, out));
+	emitRawPairedLine("nop", "sq.xyz " + tex + ", " + offsetBase(0, out));
+	emitRawPairedLine("nop", "sq " + gs + ", " + offsetBase(2, out));
+	emitRawPairedLine("nop", "lq.xyz " + vert + ", " + offsetBase(0, in));
+	emitRawPairedLine("nop", "ilw.w " + strip + ", " + offsetBase(0, in));
+	emitRawPairedLine("nop", "lq.xyz " + tex + ", " + offsetBase(2, in));
+	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"), "nop");
+	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"),
+	                  "iand " + stripFlip + ", " + strip + ", " + p.zSignMaskReg);
+	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"), "nop");
+	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("nop", "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
+	emitRawPairedLine("mulq.xyz " + x + ", " + x + ", q", "waitq");
+	emitRawPairedLine("add.xyz " + gs + ", " + x + ", " + p.gsOffsetsReg, "nop");
+	emitRawPairedLine("sub.xyz " + delta + ", " + p.oldVertexReg + ", " + x, "nop");
+	emitRawPairedLine("mul.xyz " + clip + ", " + x + ", " + p.clipScalesReg, "nop");
+	emitRawPairedLine("opmula.xyz ACCxyz, " + fieldArg(delta, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz"), "nop");
+	emitRawPairedLine("opmsub.xyz " + fieldArg(p.bfcNormalReg, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz") + ", " + fieldArg(delta, "xyz"), "nop");
+	emitRawPairedLine("nop", "nop");
+	emitRawPairedLine("clipw.xyz " + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"), "nop");
+	emitRawPairedLine("nop", "nop");
 	emitRawPairedLine("nop", "fmand " + zSign + ", " + p.zSignMaskReg);
-	emitRawPairedLine("nop", "lq.xyz " + tex + ", " + offsetBase(p.texOffset - p.inputStep, in));
+	emitRawPairedLine("nop", "isub " + zSign + ", " + zSign + ", " + zSwitch);
+	emitRawPairedLine("nop", "iand " + zSign + ", " + zSign + ", " + p.zSignMaskReg);
 	emitRawPairedLine("nop", "isub " + zSwitch + ", " + p.zSignMaskReg + ", " + zSwitch);
 	emitRawPairedLine("nop", "ior " + zSwitch + ", " + zSwitch + ", " + stripFlip);
-	emitRawPairedLine("mulq.xyz " + x + ", " + x + ", q",
-	                  "iand " + zSign + ", " + zSign + ", " + p.zSignMaskReg);
-	emitRawPairedLine("nop", "ibne " + in + ", " + last + ", " + p.mainLabel);
 	emitRawPairedLine("nop", "fcand " + clipResult + ", " + p.clipImmediate);
+	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", " + integerText(p.inputStep));
+	emitRawPairedLine("nop", "ibne " + in + ", " + last + ", " + p.mainLabel);
+	emitRawPairedLine("nop", "iaddiu " + out + ", " + out + ", " + integerText(p.outputStep));
 
 	m_codeLines.push_back(p.epilogLabel + ":");
 	emitRawPairedLine("ftoi4.xyz " + gs + ", " + gs,
