@@ -61,6 +61,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: ready-scheduler issue slots now pair safe upper-pipe tails with following direct branches and with `xgkick`, reducing the amount of pairing legality that exists only in legacy codegen lookahead.
    - Done: strict schedule-slot emission now preserves explicit branch-delay fillers after scheduled upper+branch pairs, so direct scheduler emission can model loop-tail branch pairs without losing the delay-slot instruction.
    - Done: typed schedule-program dumps now carry Q/P/register latency across label and basic-block boundaries, exposing the padding that direct emission must eventually consume.
+   - Done: strict schedule-slot emission now consumes the typed scheduled-program model directly, including explicit `nop`, `waitq`, and `waitp` padding slots across label/basic-block boundaries.
 
 6. **Implement Generic Loop Analysis** - done
    - Detect induction registers, loop-carried dependencies, loads/stores, branch targets, and loop bodies.
