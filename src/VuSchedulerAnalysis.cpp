@@ -970,6 +970,11 @@ namespace
 		return token.operand() && token.operand()->name() == "--LoopCS";
 	}
 
+	bool tokenCanCarrySoftwarePipelineLabel( const Token& token )
+	{
+		return !token.operand() || tokenIsLoopDirective( token );
+	}
+
 	bool parseImmediateLong( const std::string& text, long& value )
 	{
 		char* end = NULL;
@@ -3988,7 +3993,7 @@ std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens )
 		}
 
 		const VuSoftwarePipelineRewritePlan& rewrite = plan->second;
-		if( i->operand() )
+		if( !tokenCanCarrySoftwarePipelineLabel( *i ) )
 		{
 			output.push_back( *i );
 			++i;

@@ -49,6 +49,10 @@
 - Multi-Q cyclic-prefix rewrites can now insert the cloned prefix before
   independent loop-tail work, giving the modulo-scheduled Q producer/consumer
   more useful cycles before the branch.
+- Generic software-pipeline rewrites now handle labels attached directly to
+  `--LoopCS` directives, so ps2gl-style `label: --LoopCS ...` loops actually
+  emit the planned prolog/main/drain structure instead of falling back to the
+  original loop body.
 - Ready-scheduler analysis now has a typed `VuScheduledProgram` wrapper with
   block-level cycle ranges, and schedule dumps expose program-relative issue
   cycles.
