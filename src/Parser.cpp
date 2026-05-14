@@ -420,6 +420,40 @@ namespace
 		stream << "]";
 	}
 
+	void writeRotationListText( std::ostream& stream, const std::vector<VuSoftwarePipelineRotation>& rotations )
+	{
+		bool wrote = false;
+		for( std::vector<VuSoftwarePipelineRotation>::const_iterator i = rotations.begin(); i != rotations.end(); ++i )
+		{
+			if( wrote )
+				stream << "|";
+			stream << i->registerBase << "(in=";
+			writeStringListText( stream, i->inputFields );
+			stream << ",out=";
+			writeStringListText( stream, i->outputFields );
+			stream << ")";
+			wrote = true;
+		}
+		if( !wrote )
+			stream << "-";
+	}
+
+	void writeRotationListJson( std::ostream& stream, const std::vector<VuSoftwarePipelineRotation>& rotations )
+	{
+		stream << "[";
+		for( unsigned int i = 0; i < rotations.size(); ++i )
+		{
+			if( i != 0 )
+				stream << ", ";
+			stream << "{";
+			stream << "\"register\": "; writeJsonString( stream, rotations[i].registerBase.c_str() ); stream << ", ";
+			stream << "\"input_fields\": "; writeStringListJson( stream, rotations[i].inputFields ); stream << ", ";
+			stream << "\"output_fields\": "; writeStringListJson( stream, rotations[i].outputFields );
+			stream << "}";
+		}
+		stream << "]";
+	}
+
 	const VuSoftwarePipelineRewritePlan* findRewritePlanForOpportunity(
 	    const std::vector<VuSoftwarePipelineRewritePlan>& plans,
 	    const VuLoopPipelineOpportunity& opportunity )
@@ -491,6 +525,8 @@ namespace
 			writeStringListText( stream, i->softwarePipelineBlockers );
 			stream << " rotated_registers=";
 			writeStringListText( stream, i->softwarePipelineRotatedRegisters );
+			stream << " rotation_descriptors=";
+			writeRotationListText( stream, i->softwarePipelineRotations );
 			stream << " induction_registers=";
 			writeStringListText( stream, i->inductionRegisters );
 			stream << " loop_read_write_registers=";
@@ -542,6 +578,7 @@ namespace
 			stream << "        \"emittable\": " << (opportunity.canEmitSoftwarePipeline ? "true" : "false") << ",\n";
 			stream << "        \"blockers\": "; writeStringListJson( stream, opportunity.softwarePipelineBlockers ); stream << ",\n";
 			stream << "        \"rotated_registers\": "; writeStringListJson( stream, opportunity.softwarePipelineRotatedRegisters ); stream << ",\n";
+			stream << "        \"rotation_descriptors\": "; writeRotationListJson( stream, opportunity.softwarePipelineRotations ); stream << ",\n";
 			stream << "        \"prolog_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.prologTokenIndices ); stream << ",\n";
 			stream << "        \"main_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.mainTokenIndices ); stream << ",\n";
 			stream << "        \"drain_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.drainTokenIndices ); stream << "\n";

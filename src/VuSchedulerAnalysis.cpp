@@ -554,11 +554,55 @@ namespace
 		return key.substr( 0, field );
 	}
 
+	std::string registerFieldKey( const std::string& key )
+	{
+		std::string::size_type field = key.find( '.' );
+		if( field == std::string::npos || field + 1 >= key.size() )
+			return "";
+		return key.substr( field + 1 );
+	}
+
 	void collectRotatedRegisterBaseKeys( const std::list<std::string>& keys,
 	                                     std::list<std::string>& rotatedRegisters )
 	{
 		for( std::list<std::string>::const_iterator i = keys.begin(); i != keys.end(); ++i )
 			addUniqueString( rotatedRegisters, registerBaseKey( *i ) );
+	}
+
+	void addRotationField( std::vector<VuSoftwarePipelineRotation>& rotations,
+	                       const std::string& key,
+	                       bool input )
+	{
+		const std::string base = registerBaseKey( key );
+		unsigned int index = static_cast<unsigned int>( rotations.size() );
+		for( unsigned int i = 0; i < rotations.size(); ++i )
+		{
+			if( rotations[i].registerBase == base )
+			{
+				index = i;
+				break;
+			}
+		}
+
+		if( index == rotations.size() )
+		{
+			VuSoftwarePipelineRotation rotation;
+			rotation.registerBase = base;
+			rotations.push_back( rotation );
+		}
+
+		if( input )
+			addUniqueString( rotations[index].inputFields, registerFieldKey( key ) );
+		else
+			addUniqueString( rotations[index].outputFields, registerFieldKey( key ) );
+	}
+
+	void collectRotationDescriptors( const std::list<std::string>& keys,
+	                                 bool input,
+	                                 std::vector<VuSoftwarePipelineRotation>& rotations )
+	{
+		for( std::list<std::string>::const_iterator i = keys.begin(); i != keys.end(); ++i )
+			addRotationField( rotations, *i, input );
 	}
 
 	VuLoopQSchedulingStrategy classifyLoopQSchedulingStrategy( const VuLoopPipelineOpportunity& opportunity )
@@ -597,6 +641,12 @@ namespace
 		                                opportunity.softwarePipelineRotatedRegisters );
 		collectRotatedRegisterBaseKeys( opportunity.carriedQOutputRegisters,
 		                                opportunity.softwarePipelineRotatedRegisters );
+		collectRotationDescriptors( opportunity.carriedQInputRegisters,
+		                            true,
+		                            opportunity.softwarePipelineRotations );
+		collectRotationDescriptors( opportunity.carriedQOutputRegisters,
+		                            false,
+		                            opportunity.softwarePipelineRotations );
 
 		if( !opportunity.softwarePipelineRotatedRegisters.empty() )
 			addPipelineBlocker( opportunity, "requires_register_rotation" );

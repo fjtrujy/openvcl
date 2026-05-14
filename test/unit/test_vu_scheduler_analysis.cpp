@@ -81,6 +81,17 @@ namespace
         return false;
     }
 
+    const vcl::VuSoftwarePipelineRotation* findRotation(const std::vector<vcl::VuSoftwarePipelineRotation>& rotations,
+                                                        const std::string& registerBase)
+    {
+        for (std::vector<vcl::VuSoftwarePipelineRotation>::const_iterator i = rotations.begin(); i != rotations.end(); ++i)
+        {
+            if (i->registerBase == registerBase)
+                return &*i;
+        }
+        return NULL;
+    }
+
     std::string terminatorName(const vcl::VuBasicBlock& block)
     {
         if (!block.terminator || !block.terminator->operand())
@@ -288,6 +299,22 @@ TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose loop-carried Q sta
     CHECK(hasString(opportunities[0].softwarePipelineBlockers, "multi_instruction_prefetch"));
     CHECK(hasString(opportunities[0].softwarePipelineRotatedRegisters, "VF03"));
     CHECK(hasString(opportunities[0].softwarePipelineRotatedRegisters, "VF06"));
+    const vcl::VuSoftwarePipelineRotation* vf03Rotation = findRotation(opportunities[0].softwarePipelineRotations, "VF03");
+    REQUIRE(vf03Rotation != NULL);
+    CHECK(hasString(vf03Rotation->inputFields, "x"));
+    CHECK(hasString(vf03Rotation->inputFields, "y"));
+    CHECK(hasString(vf03Rotation->inputFields, "z"));
+    CHECK(hasString(vf03Rotation->outputFields, "x"));
+    CHECK(hasString(vf03Rotation->outputFields, "y"));
+    CHECK(hasString(vf03Rotation->outputFields, "z"));
+    const vcl::VuSoftwarePipelineRotation* vf06Rotation = findRotation(opportunities[0].softwarePipelineRotations, "VF06");
+    REQUIRE(vf06Rotation != NULL);
+    CHECK(hasString(vf06Rotation->inputFields, "x"));
+    CHECK(hasString(vf06Rotation->inputFields, "y"));
+    CHECK(hasString(vf06Rotation->inputFields, "z"));
+    CHECK(hasString(vf06Rotation->outputFields, "x"));
+    CHECK(hasString(vf06Rotation->outputFields, "y"));
+    CHECK(hasString(vf06Rotation->outputFields, "z"));
     REQUIRE(opportunities[0].qConsumerTokenIndices.size() == 2u);
     CHECK(opportunities[0].qConsumerTokenIndices[0] == 5u);
     CHECK(opportunities[0].qConsumerTokenIndices[1] == 8u);

@@ -93,6 +93,7 @@ TEST_CASE("CLI: loop pipeline text dump exposes Q software-pipeline candidates")
     CHECK(contains(r.stdout_data, "drain_tokens=5|6|7|8|9|10"));
     CHECK(contains(r.stdout_data, "blockers=requires_register_rotation"));
     CHECK(contains(r.stdout_data, "rotated_registers=VF03|VF06"));
+    CHECK(contains(r.stdout_data, "rotation_descriptors=VF03(in=x|y|z,out=x|y|z)|VF06(in=x|y|z,out=x|y|z)"));
     CHECK(contains(r.stdout_data, "memory_loads=2"));
     CHECK(contains(r.stdout_data, "memory_stores=1"));
     CHECK(contains(r.stdout_data, "induction_registers=VI01"));
@@ -126,6 +127,7 @@ TEST_CASE("CLI: loop pipeline JSON dump is stable enough for scheduler tooling")
     CHECK(contains(r.stdout_data, "\"emittable\": false"));
     CHECK(contains(r.stdout_data, "\"blockers\": [\"requires_register_rotation\", \"multi_instruction_prefetch\", \"multi_instruction_prefetch_memory\", \"multi_instruction_prefetch_reads_induction\"]"));
     CHECK(contains(r.stdout_data, "\"rotated_registers\": [\"VF03\", \"VF06\"]"));
+    CHECK(contains(r.stdout_data, "\"rotation_descriptors\": [{\"register\": \"VF03\", \"input_fields\": [\"x\", \"y\", \"z\"], \"output_fields\": [\"x\", \"y\", \"z\"]}"));
     CHECK(contains(r.stdout_data, "\"prolog_token_indices\": [2, 3, 4]"));
     CHECK(contains(r.stdout_data, "\"main_token_indices\": [5, 6, 7, 8, 9, 10, 11]"));
     CHECK(contains(r.stdout_data, "\"drain_token_indices\": [5, 6, 7, 8, 9, 10]"));

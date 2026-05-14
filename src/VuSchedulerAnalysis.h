@@ -94,6 +94,13 @@ enum VuLoopQSchedulingStrategy
 	VU_LOOP_Q_SCHEDULE_INSUFFICIENT
 };
 
+struct VuSoftwarePipelineRotation
+{
+	std::string registerBase;
+	std::list<std::string> inputFields;
+	std::list<std::string> outputFields;
+};
+
 struct VuLoopPipelineOpportunity
 {
 	VuLoopPipelineOpportunity();
@@ -124,6 +131,7 @@ struct VuLoopPipelineOpportunity
 	std::vector<unsigned int> drainTokenIndices;
 	std::list<std::string> softwarePipelineBlockers;
 	std::list<std::string> softwarePipelineRotatedRegisters;
+	std::vector<VuSoftwarePipelineRotation> softwarePipelineRotations;
 	std::list<std::string> carriedQInputRegisters;
 	std::list<std::string> carriedQOutputRegisters;
 	unsigned int memoryLoadCount;
