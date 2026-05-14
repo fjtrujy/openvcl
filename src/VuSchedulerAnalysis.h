@@ -185,6 +185,21 @@ struct VuSoftwarePipelinePrefetch
 	long nextIterationOffset;
 };
 
+struct VuSoftwarePipelineSuffixStore
+{
+	unsigned int tokenIndex;
+	std::string mnemonic;
+	bool hasMemoryBase;
+	std::string memoryBaseRegister;
+	bool hasMemoryOffset;
+	long memoryOffset;
+	bool usesInductionRegister;
+	std::string inductionRegister;
+	bool hasNextIterationOffset;
+	long nextIterationOffset;
+	bool drainCandidate;
+};
+
 struct VuLoopPipelineOpportunity
 {
 	VuLoopPipelineOpportunity();
@@ -223,6 +238,7 @@ struct VuLoopPipelineOpportunity
 	std::list<std::string> softwarePipelineRotatedRegisters;
 	std::vector<VuSoftwarePipelineRotation> softwarePipelineRotations;
 	std::vector<VuSoftwarePipelinePrefetch> softwarePipelinePrefetches;
+	std::vector<VuSoftwarePipelineSuffixStore> softwarePipelineSuffixStores;
 	std::list<std::string> carriedQInputRegisters;
 	std::list<std::string> carriedQOutputRegisters;
 	unsigned int memoryLoadCount;

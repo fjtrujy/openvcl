@@ -1379,6 +1379,60 @@ namespace
 		prefetches.push_back( prefetch );
 	}
 
+	void appendSoftwarePipelineSuffixStoreDescriptor( const Token& token,
+	                                                  unsigned int tokenIndex,
+	                                                  const VuLoopPipelineOpportunity& opportunity,
+	                                                  std::vector<VuSoftwarePipelineSuffixStore>& suffixStores )
+	{
+		VuSoftwarePipelineSuffixStore suffixStore;
+		suffixStore.tokenIndex = tokenIndex;
+		suffixStore.mnemonic = lowerVuTokenName( token );
+		suffixStore.hasMemoryBase = false;
+		suffixStore.memoryBaseRegister = "";
+		suffixStore.hasMemoryOffset = false;
+		suffixStore.memoryOffset = 0;
+		suffixStore.usesInductionRegister = false;
+		suffixStore.inductionRegister = "";
+		suffixStore.hasNextIterationOffset = false;
+		suffixStore.nextIterationOffset = 0;
+		suffixStore.drainCandidate = false;
+
+		VuTokenResourceAccess access;
+		if( buildVuTokenResourceAccess( token, access )
+		    && access.memoryKind == VU_MEMORY_STORE
+		    && access.memoryFlags == VU_MEMORY_FLAG_NONE )
+		{
+			suffixStore.hasMemoryBase = access.hasMemoryBase;
+			suffixStore.memoryBaseRegister = access.memoryBaseRegister;
+			suffixStore.hasMemoryOffset = access.hasMemoryOffset;
+			suffixStore.memoryOffset = access.memoryOffset;
+
+			for( std::list<std::string>::const_iterator i = opportunity.inductionRegisters.begin();
+			     i != opportunity.inductionRegisters.end(); ++i )
+			{
+				if( access.hasMemoryBase && access.memoryBaseRegister == *i )
+				{
+					suffixStore.usesInductionRegister = true;
+					suffixStore.inductionRegister = *i;
+					break;
+				}
+			}
+
+			const VuLoopInductionUpdate* update =
+			    access.hasMemoryBase
+			    ? findInductionUpdate( opportunity.inductionUpdates, access.memoryBaseRegister )
+			    : NULL;
+			if( update && update->stepKnown && access.hasMemoryOffset )
+			{
+				suffixStore.hasNextIterationOffset = true;
+				suffixStore.nextIterationOffset = access.memoryOffset - update->step;
+				suffixStore.drainCandidate = suffixStore.usesInductionRegister;
+			}
+		}
+
+		suffixStores.push_back( suffixStore );
+	}
+
 	void collectTokenWriteKeys( const std::vector<unsigned int>& tokenIndices,
 	                            const std::vector<const Token*>& indexedTokens,
 	                            std::list<std::string>& writes )
@@ -1660,6 +1714,29 @@ namespace
 			                                          *i,
 			                                          opportunity,
 			                                          opportunity.softwarePipelinePrefetches );
+		}
+	}
+
+	void collectSoftwarePipelineSuffixStoreDescriptors( const std::vector<unsigned int>& tokenIndices,
+	                                                   const std::vector<const Token*>& indexedTokens,
+	                                                   VuLoopPipelineOpportunity& opportunity )
+	{
+		for( std::vector<unsigned int>::const_iterator i = tokenIndices.begin();
+		     i != tokenIndices.end(); ++i )
+		{
+			if( *i >= indexedTokens.size() )
+				continue;
+
+			VuTokenResourceAccess access;
+			if( !buildVuTokenResourceAccess( *indexedTokens[*i], access )
+			    || access.memoryKind != VU_MEMORY_STORE
+			    || access.memoryFlags != VU_MEMORY_FLAG_NONE )
+				continue;
+
+			appendSoftwarePipelineSuffixStoreDescriptor( *indexedTokens[*i],
+			                                             *i,
+			                                             opportunity,
+			                                             opportunity.softwarePipelineSuffixStores );
 		}
 	}
 
@@ -2716,6 +2793,9 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			appendPipelineInstructionIndices( *loop, 0, firstConsumerOffset, opportunity.prologTokenIndices );
 			appendPipelineInstructionIndices( *loop, firstConsumerOffset, branchOffset + 1, opportunity.mainTokenIndices );
 			appendPipelineInstructionIndices( *loop, firstConsumerOffset, branchOffset, opportunity.drainTokenIndices );
+			collectSoftwarePipelineSuffixStoreDescriptors( opportunity.drainTokenIndices,
+			                                               indexedTokens,
+			                                               opportunity );
 		}
 
 		classifySoftwarePipelineEmissionSafety( opportunity, *loop, qProducerOffset, indexedTokens );

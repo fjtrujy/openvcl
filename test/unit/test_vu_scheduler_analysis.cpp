@@ -116,6 +116,17 @@ namespace
         return NULL;
     }
 
+    const vcl::VuSoftwarePipelineSuffixStore* findSuffixStore(const std::vector<vcl::VuSoftwarePipelineSuffixStore>& stores,
+                                                              unsigned int tokenIndex)
+    {
+        for (std::vector<vcl::VuSoftwarePipelineSuffixStore>::const_iterator i = stores.begin(); i != stores.end(); ++i)
+        {
+            if (i->tokenIndex == tokenIndex)
+                return &*i;
+        }
+        return NULL;
+    }
+
     std::string terminatorName(const vcl::VuBasicBlock& block)
     {
         if (!block.terminator || !block.terminator->operand())
@@ -690,6 +701,45 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline rewrites next-iteratio
     CHECK(lqOffsetZeroCount == 1u);
     CHECK(lqOffsetOneCount == 1u);
     CHECK(branchDelayDivCount == 1u);
+}
+
+TEST_CASE("VuSchedulerAnalysis: generic software pipeline reports suffix store drain candidates")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 1"));
+    REQUIRE(program.parse("lq.xyz vf01, 0(vi01)"));
+    REQUIRE(program.parse("div q, vf00[w], vf01[w]"));
+    REQUIRE(program.parse("mulq.xyz vf02, vf03, q"));
+    REQUIRE(program.parse("sq.xyz vf02, 0(vi03)"));
+    REQUIRE(program.parse("add.xyz vf10, vf10, vf00"));
+    REQUIRE(program.parse("add.xyz vf11, vf11, vf00"));
+    REQUIRE(program.parse("add.xyz vf12, vf12, vf00"));
+    REQUIRE(program.parse("add.xyz vf13, vf13, vf00"));
+    REQUIRE(program.parse("add.xyz vf14, vf14, vf00"));
+    REQUIRE(program.parse("add.xyz vf15, vf15, vf00"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
+    REQUIRE(program.parse("iaddiu vi03, vi03, 1"));
+    REQUIRE(program.parse("ibne vi01, vi02, loop_lid"));
+
+    std::vector<vcl::VuLoopPipelineOpportunity> opportunities = vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
+    REQUIRE(opportunities.size() == 1u);
+    REQUIRE(opportunities[0].softwarePipelineSuffixStores.size() == 1u);
+
+    const vcl::VuSoftwarePipelineSuffixStore* store =
+        findSuffixStore(opportunities[0].softwarePipelineSuffixStores, 5u);
+    REQUIRE(store != NULL);
+    CHECK(store->mnemonic == "sq");
+    CHECK(store->hasMemoryBase);
+    CHECK(store->memoryBaseRegister == "VI03");
+    CHECK(store->hasMemoryOffset);
+    CHECK(store->memoryOffset == 0);
+    CHECK(store->usesInductionRegister);
+    CHECK(store->inductionRegister == "VI03");
+    CHECK(store->hasNextIterationOffset);
+    CHECK(store->nextIterationOffset == -1);
+    CHECK(store->drainCandidate);
 }
 
 TEST_CASE("VuSchedulerAnalysis: generic software pipeline prefers Q producers over ordinary branch-delay suffix fillers")

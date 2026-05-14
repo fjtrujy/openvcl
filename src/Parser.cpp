@@ -639,6 +639,64 @@ namespace
 		stream << "]";
 	}
 
+	void writeSuffixStoreListText( std::ostream& stream, const std::vector<VuSoftwarePipelineSuffixStore>& stores )
+	{
+		if( stores.empty() )
+		{
+			stream << "-";
+			return;
+		}
+
+		for( unsigned int i = 0; i < stores.size(); ++i )
+		{
+			if( i != 0 )
+				stream << "|";
+			stream << stores[i].tokenIndex << ":" << stores[i].mnemonic << "(";
+			if( stores[i].hasMemoryBase )
+				stream << "base=" << stores[i].memoryBaseRegister;
+			else
+				stream << "base=?";
+			if( stores[i].hasMemoryOffset )
+			{
+				stream << ",offset=";
+				writeSignedLongText( stream, stores[i].memoryOffset );
+			}
+			stream << ",induction=" << (stores[i].usesInductionRegister ? "yes" : "no");
+			if( stores[i].usesInductionRegister )
+				stream << ":" << stores[i].inductionRegister;
+			if( stores[i].hasNextIterationOffset )
+			{
+				stream << ",next_offset=";
+				writeSignedLongText( stream, stores[i].nextIterationOffset );
+			}
+			stream << ",drain_candidate=" << (stores[i].drainCandidate ? "yes" : "no");
+			stream << ")";
+		}
+	}
+
+	void writeSuffixStoreListJson( std::ostream& stream, const std::vector<VuSoftwarePipelineSuffixStore>& stores )
+	{
+		stream << "[";
+		for( unsigned int i = 0; i < stores.size(); ++i )
+		{
+			if( i != 0 )
+				stream << ", ";
+			stream << "{";
+			stream << "\"token_index\": " << stores[i].tokenIndex << ", ";
+			stream << "\"mnemonic\": "; writeJsonString( stream, stores[i].mnemonic.c_str() ); stream << ", ";
+			stream << "\"memory_base\": "; writeJsonString( stream, stores[i].hasMemoryBase ? stores[i].memoryBaseRegister.c_str() : "" ); stream << ", ";
+			stream << "\"memory_offset_known\": " << (stores[i].hasMemoryOffset ? "true" : "false") << ", ";
+			stream << "\"memory_offset\": " << stores[i].memoryOffset << ", ";
+			stream << "\"uses_induction_register\": " << (stores[i].usesInductionRegister ? "true" : "false") << ", ";
+			stream << "\"induction_register\": "; writeJsonString( stream, stores[i].inductionRegister.c_str() ); stream << ", ";
+			stream << "\"next_iteration_offset_known\": " << (stores[i].hasNextIterationOffset ? "true" : "false") << ", ";
+			stream << "\"next_iteration_offset\": " << stores[i].nextIterationOffset << ", ";
+			stream << "\"drain_candidate\": " << (stores[i].drainCandidate ? "true" : "false");
+			stream << "}";
+		}
+		stream << "]";
+	}
+
 	const VuSoftwarePipelineRewritePlan* findRewritePlanForOpportunity(
 	    const std::vector<VuSoftwarePipelineRewritePlan>& plans,
 	    const VuLoopPipelineOpportunity& opportunity )
@@ -723,6 +781,8 @@ namespace
 			writeRotationListText( stream, i->softwarePipelineRotations );
 			stream << " prefetch_descriptors=";
 			writePrefetchListText( stream, i->softwarePipelinePrefetches );
+			stream << " suffix_store_descriptors=";
+			writeSuffixStoreListText( stream, i->softwarePipelineSuffixStores );
 			stream << " induction_registers=";
 			writeStringListText( stream, i->inductionRegisters );
 			stream << " induction_updates=";
@@ -784,6 +844,7 @@ namespace
 			stream << "        \"rotated_registers\": "; writeStringListJson( stream, opportunity.softwarePipelineRotatedRegisters ); stream << ",\n";
 			stream << "        \"rotation_descriptors\": "; writeRotationListJson( stream, opportunity.softwarePipelineRotations ); stream << ",\n";
 			stream << "        \"prefetch_descriptors\": "; writePrefetchListJson( stream, opportunity.softwarePipelinePrefetches ); stream << ",\n";
+			stream << "        \"suffix_store_descriptors\": "; writeSuffixStoreListJson( stream, opportunity.softwarePipelineSuffixStores ); stream << ",\n";
 			stream << "        \"prolog_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.prologTokenIndices ); stream << ",\n";
 			stream << "        \"main_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.mainTokenIndices ); stream << ",\n";
 			stream << "        \"drain_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.drainTokenIndices ); stream << "\n";
