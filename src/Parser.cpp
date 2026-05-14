@@ -454,6 +454,55 @@ namespace
 		stream << "]";
 	}
 
+	void writeSignedStepText( std::ostream& stream, const VuLoopInductionUpdate& update )
+	{
+		if( !update.stepKnown )
+		{
+			stream << "?";
+			return;
+		}
+		if( update.step >= 0 )
+			stream << "+";
+		stream << update.step;
+	}
+
+	void writeInductionUpdateListText( std::ostream& stream, const std::vector<VuLoopInductionUpdate>& updates )
+	{
+		if( updates.empty() )
+		{
+			stream << "-";
+			return;
+		}
+
+		for( unsigned int i = 0; i < updates.size(); ++i )
+		{
+			if( i != 0 )
+				stream << "|";
+			stream << updates[i].registerName << ":";
+			writeSignedStepText( stream, updates[i] );
+			stream << "@" << updates[i].tokenIndex;
+		}
+	}
+
+	void writeInductionUpdateListJson( std::ostream& stream, const std::vector<VuLoopInductionUpdate>& updates )
+	{
+		stream << "[";
+		for( unsigned int i = 0; i < updates.size(); ++i )
+		{
+			if( i != 0 )
+				stream << ", ";
+			stream << "{";
+			stream << "\"register\": "; writeJsonString( stream, updates[i].registerName.c_str() ); stream << ", ";
+			stream << "\"mnemonic\": "; writeJsonString( stream, updates[i].mnemonic.c_str() ); stream << ", ";
+			stream << "\"immediate\": "; writeJsonString( stream, updates[i].immediate.c_str() ); stream << ", ";
+			stream << "\"step_known\": " << (updates[i].stepKnown ? "true" : "false") << ", ";
+			stream << "\"step\": " << updates[i].step << ", ";
+			stream << "\"token_index\": " << updates[i].tokenIndex;
+			stream << "}";
+		}
+		stream << "]";
+	}
+
 	const VuSoftwarePipelineRewritePlan* findRewritePlanForOpportunity(
 	    const std::vector<VuSoftwarePipelineRewritePlan>& plans,
 	    const VuLoopPipelineOpportunity& opportunity )
@@ -529,6 +578,8 @@ namespace
 			writeRotationListText( stream, i->softwarePipelineRotations );
 			stream << " induction_registers=";
 			writeStringListText( stream, i->inductionRegisters );
+			stream << " induction_updates=";
+			writeInductionUpdateListText( stream, i->inductionUpdates );
 			stream << " loop_read_write_registers=";
 			writeStringListText( stream, i->loopReadWriteRegisters );
 			stream << " carried_q_inputs=";
@@ -596,6 +647,7 @@ namespace
 			stream << "        \"drain_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->drainTokenIndices ); else stream << "[]"; stream << "\n";
 			stream << "      },\n";
 			stream << "      \"induction_registers\": "; writeStringListJson( stream, opportunity.inductionRegisters ); stream << ",\n";
+			stream << "      \"induction_updates\": "; writeInductionUpdateListJson( stream, opportunity.inductionUpdates ); stream << ",\n";
 			stream << "      \"loop_read_write_registers\": "; writeStringListJson( stream, opportunity.loopReadWriteRegisters ); stream << ",\n";
 			stream << "      \"carried_q_input_registers\": "; writeStringListJson( stream, opportunity.carriedQInputRegisters ); stream << ",\n";
 			stream << "      \"carried_q_output_registers\": "; writeStringListJson( stream, opportunity.carriedQOutputRegisters ); stream << "\n";

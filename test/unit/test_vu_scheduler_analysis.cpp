@@ -92,6 +92,17 @@ namespace
         return NULL;
     }
 
+    const vcl::VuLoopInductionUpdate* findInductionUpdate(const std::vector<vcl::VuLoopInductionUpdate>& updates,
+                                                          const std::string& registerName)
+    {
+        for (std::vector<vcl::VuLoopInductionUpdate>::const_iterator i = updates.begin(); i != updates.end(); ++i)
+        {
+            if (i->registerName == registerName)
+                return &*i;
+        }
+        return NULL;
+    }
+
     std::string terminatorName(const vcl::VuBasicBlock& block)
     {
         if (!block.terminator || !block.terminator->operand())
@@ -220,6 +231,11 @@ TEST_CASE("VuSchedulerAnalysis: loop candidates find LoopCS back-edge loops")
     CHECK(!loops[0].hasMemoryPreOrPostIncrement);
     CHECK(!loops[0].hasXgkick);
     CHECK(hasString(loops[0].inductionRegisters, "VI02"));
+    const vcl::VuLoopInductionUpdate* vi02Update = findInductionUpdate(loops[0].inductionUpdates, "VI02");
+    REQUIRE(vi02Update != NULL);
+    CHECK(vi02Update->stepKnown);
+    CHECK(vi02Update->step == 3);
+    CHECK(vi02Update->tokenIndex == 5u);
     CHECK(hasString(loops[0].loopReadWriteRegisters, "VI02"));
     REQUIRE(loops[0].branchToken != NULL);
     CHECK(vcl::normalizeVuMnemonic(loops[0].branchToken->name()) == "ibne");
@@ -290,6 +306,11 @@ TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose loop-carried Q sta
     CHECK(!opportunities[0].hasMemoryPreOrPostIncrement);
     CHECK(!opportunities[0].hasXgkick);
     CHECK(hasString(opportunities[0].inductionRegisters, "VI01"));
+    const vcl::VuLoopInductionUpdate* vi01Update = findInductionUpdate(opportunities[0].inductionUpdates, "VI01");
+    REQUIRE(vi01Update != NULL);
+    CHECK(vi01Update->stepKnown);
+    CHECK(vi01Update->step == 3);
+    CHECK(vi01Update->tokenIndex == 10u);
     CHECK(hasString(opportunities[0].loopReadWriteRegisters, "VI01"));
     CHECK(opportunities[0].requiresLoopCarriedRegisters);
     CHECK(opportunities[0].eligibleSingleQSoftwarePipeline);
@@ -389,6 +410,12 @@ TEST_CASE("VuSchedulerAnalysis: pipeline plans allow multiple induction register
     CHECK(opportunities[0].canEmitSoftwarePipeline);
     CHECK(hasString(opportunities[0].inductionRegisters, "VI01"));
     CHECK(hasString(opportunities[0].inductionRegisters, "VI03"));
+    const vcl::VuLoopInductionUpdate* vi01Update = findInductionUpdate(opportunities[0].inductionUpdates, "VI01");
+    const vcl::VuLoopInductionUpdate* vi03Update = findInductionUpdate(opportunities[0].inductionUpdates, "VI03");
+    REQUIRE(vi01Update != NULL);
+    REQUIRE(vi03Update != NULL);
+    CHECK(vi01Update->step == 1);
+    CHECK(vi03Update->step == 1);
     CHECK(!hasString(opportunities[0].softwarePipelineBlockers, "requires_single_induction_register"));
     CHECK(!hasString(opportunities[0].softwarePipelineBlockers, "missing_induction_register"));
 }

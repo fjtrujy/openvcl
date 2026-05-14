@@ -97,6 +97,7 @@ TEST_CASE("CLI: loop pipeline text dump exposes Q software-pipeline candidates")
     CHECK(contains(r.stdout_data, "memory_loads=2"));
     CHECK(contains(r.stdout_data, "memory_stores=1"));
     CHECK(contains(r.stdout_data, "induction_registers=VI01"));
+    CHECK(contains(r.stdout_data, "induction_updates=VI01:+3@10"));
     CHECK(contains(r.stdout_data, "carried_q_inputs=VF03.x"));
 }
 
@@ -121,6 +122,7 @@ TEST_CASE("CLI: loop pipeline JSON dump is stable enough for scheduler tooling")
     CHECK(contains(r.stdout_data, "\"memory_loads\": 2"));
     CHECK(contains(r.stdout_data, "\"memory_stores\": 1"));
     CHECK(contains(r.stdout_data, "\"induction_registers\": [\"VI01\"]"));
+    CHECK(contains(r.stdout_data, "\"induction_updates\": [{\"register\": \"VI01\", \"mnemonic\": \"iaddiu\", \"immediate\": \"3\", \"step_known\": true, \"step\": 3, \"token_index\": 10}]"));
     CHECK(contains(r.stdout_data, "\"eligible_single_q_pipeline\": true"));
     CHECK(contains(r.stdout_data, "\"pipeline_plan\": {"));
     CHECK(contains(r.stdout_data, "\"available\": true"));

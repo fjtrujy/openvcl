@@ -35,6 +35,16 @@ struct VuBasicBlock
 	const Token* terminator;
 };
 
+struct VuLoopInductionUpdate
+{
+	std::string registerName;
+	std::string mnemonic;
+	std::string immediate;
+	long step;
+	bool stepKnown;
+	unsigned int tokenIndex;
+};
+
 enum VuDependencyKind
 {
 	VU_DEPENDENCY_REGISTER_RAW,
@@ -82,6 +92,7 @@ struct VuLoopCandidate
 	bool hasMemoryPreOrPostIncrement;
 	bool hasXgkick;
 	std::list<std::string> inductionRegisters;
+	std::vector<VuLoopInductionUpdate> inductionUpdates;
 	std::list<std::string> loopReadWriteRegisters;
 	std::vector<const Token*> bodyTokens;
 	const Token* branchToken;
@@ -139,6 +150,7 @@ struct VuLoopPipelineOpportunity
 	bool hasMemoryPreOrPostIncrement;
 	bool hasXgkick;
 	std::list<std::string> inductionRegisters;
+	std::vector<VuLoopInductionUpdate> inductionUpdates;
 	std::list<std::string> loopReadWriteRegisters;
 };
 

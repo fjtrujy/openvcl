@@ -3,6 +3,7 @@
 #include "VuSchedulingRules.h"
 #include "VuTokenResourceAccess.h"
 
+#include <cstdlib>
 #include <map>
 #include <string>
 
@@ -357,7 +358,16 @@ namespace
 		return token.operand() && token.operand()->name() == "--LoopCS";
 	}
 
-	bool isSelfIntegerImmediateUpdate( const Token& token, std::string& reg )
+	bool parseImmediateLong( const std::string& text, long& value )
+	{
+		char* end = NULL;
+		value = std::strtol( text.c_str(), &end, 0 );
+		return end && *end == '\0';
+	}
+
+	bool describeSelfIntegerImmediateUpdate( const Token& token,
+	                                         unsigned int tokenIndex,
+	                                         VuLoopInductionUpdate& update )
 	{
 		if( !token.operand() )
 			return false;
@@ -390,7 +400,17 @@ namespace
 		if( dstReg != srcReg )
 			return false;
 
-		reg = dstReg;
+		long step = 0;
+		const bool stepKnown = parseImmediateLong( (*imm).immediate(), step );
+		if( name == "isubiu" )
+			step = -step;
+
+		update.registerName = dstReg;
+		update.mnemonic = name;
+		update.immediate = (*imm).immediate();
+		update.step = step;
+		update.stepKnown = stepKnown;
+		update.tokenIndex = tokenIndex;
 		return true;
 	}
 
@@ -424,10 +444,11 @@ namespace
 		std::list<std::string> reads;
 		std::list<std::string> writes;
 
-		for( std::vector<const Token*>::const_iterator i = candidate.bodyTokens.begin(); i != candidate.bodyTokens.end(); ++i )
+		for( unsigned int offset = 0; offset < candidate.bodyTokens.size(); ++offset )
 		{
+			const Token* token = candidate.bodyTokens[offset];
 			VuTokenResourceAccess access;
-			if( buildVuTokenResourceAccess( **i, access ) )
+			if( buildVuTokenResourceAccess( *token, access ) )
 			{
 				if( access.memoryKind == VU_MEMORY_LOAD )
 					++candidate.memoryLoadCount;
@@ -440,14 +461,19 @@ namespace
 					candidate.hasMemoryPreOrPostIncrement = true;
 			}
 
-			std::string inductionReg;
-			if( isSelfIntegerImmediateUpdate( **i, inductionReg ) )
-				addUniqueString( candidate.inductionRegisters, inductionReg );
+			VuLoopInductionUpdate inductionUpdate;
+			if( describeSelfIntegerImmediateUpdate( *token,
+			                                        candidate.firstBodyTokenIndex + offset,
+			                                        inductionUpdate ) )
+			{
+				addUniqueString( candidate.inductionRegisters, inductionUpdate.registerName );
+				candidate.inductionUpdates.push_back( inductionUpdate );
+			}
 
 			std::list<std::string> tokenReads;
 			std::list<std::string> tokenWrites;
-			collectVuRegisterReadKeys( **i, tokenReads );
-			collectVuRegisterWriteKeys( **i, tokenWrites );
+			collectVuRegisterReadKeys( *token, tokenReads );
+			collectVuRegisterWriteKeys( *token, tokenWrites );
 			for( std::list<std::string>::const_iterator read = tokenReads.begin(); read != tokenReads.end(); ++read )
 				addUniqueString( reads, *read );
 			for( std::list<std::string>::const_iterator write = tokenWrites.begin(); write != tokenWrites.end(); ++write )
@@ -1028,6 +1054,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		opportunity.hasMemoryPreOrPostIncrement = loop->hasMemoryPreOrPostIncrement;
 		opportunity.hasXgkick = loop->hasXgkick;
 		opportunity.inductionRegisters = loop->inductionRegisters;
+		opportunity.inductionUpdates = loop->inductionUpdates;
 		opportunity.loopReadWriteRegisters = loop->loopReadWriteRegisters;
 
 		for( std::vector<unsigned int>::const_iterator q = qConsumerOffsets.begin(); q != qConsumerOffsets.end(); ++q )
