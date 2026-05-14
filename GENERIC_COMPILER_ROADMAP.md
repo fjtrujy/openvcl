@@ -99,6 +99,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: rewrite plans now distinguish cloned prefetch placement from cloned Q-producer placement, and the simple no-prefetch/no-rotation subset can put the next Q producer in the loop branch delay slot.
    - Done: explicit branch-delay fillers are preserved as scheduling barriers, keeping typed rewrite decisions intact through ready-set scheduling.
    - Done: safe cloned-prefetch and scratch-rotation rewrites can now also place the next Q producer in the loop branch delay slot when there is no better ordinary suffix filler.
+   - Done: rewrite-plan dumps now expose when a better ordinary suffix filler blocks moving the next Q producer into the branch delay slot.
 
 8. **Retire Pattern Emitters Incrementally** - started
    - Replace each hand emitter only after generic scheduling/software pipelining matches correctness and reaches equal or better loop cost.

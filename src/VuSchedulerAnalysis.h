@@ -224,6 +224,8 @@ struct VuSoftwarePipelineRewritePlan
 	unsigned int prefetchInsertAfterTokenIndex;
 	unsigned int qProducerInsertAfterTokenIndex;
 	bool qProducerInBranchDelaySlot;
+	bool qProducerBranchDelayBlockedBySuffixFiller;
+	unsigned int qProducerBranchDelaySuffixFillerTokenIndex;
 	bool emitsDrain;
 	std::vector<unsigned int> prefetchTokenIndices;
 	std::vector<VuSoftwarePipelinePrefetch> prefetches;

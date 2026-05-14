@@ -663,6 +663,8 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline preserves useful branc
     REQUIRE(plans.size() == 1u);
     CHECK(plans[0].qProducerInsertAfterTokenIndex == 4u);
     CHECK(!plans[0].qProducerInBranchDelaySlot);
+    CHECK(plans[0].qProducerBranchDelayBlockedBySuffixFiller);
+    CHECK(plans[0].qProducerBranchDelaySuffixFillerTokenIndex == 11u);
 }
 
 TEST_CASE("VuSchedulerAnalysis: generic software pipeline rewrites simple rotated registers")

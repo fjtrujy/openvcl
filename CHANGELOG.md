@@ -29,6 +29,9 @@
   producer in the loop branch delay slot even when the plan has safe cloned
   prefetch work or scratch-register rotation, while preserving better
   ordinary suffix fillers when they exist.
+- Loop-pipeline text and JSON dumps now expose when an ordinary suffix
+  instruction blocks moving the next-iteration Q producer into the branch
+  delay slot.
 - Added regression fixtures and unit/integration tests for cost analysis.
 - Added conservative VU scheduling improvements used by ps2gl:
   - upper/lower pairing lookahead;
