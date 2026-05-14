@@ -39,7 +39,9 @@ namespace
             "\t--endexit\n";
     }
 
-    std::string runEmit(const std::string& body, const std::string& name)
+    std::string runEmitWithArgs(const std::string& body,
+                                const std::string& name,
+                                const std::vector<std::string>& extraArgs)
     {
         char tmpl[] = "/tmp/openvcl_test_XXXXXX.vsm";
         int fd = mkstemps(tmpl, 4);
@@ -48,6 +50,8 @@ namespace
         close(fd);
 
         std::vector<std::string> args;
+        for( std::vector<std::string>::const_iterator i = extraArgs.begin(); i != extraArgs.end(); ++i )
+            args.push_back(*i);
         args.push_back("-o");
         args.push_back(tmpl);
         ::test::RunResult r = ::test::run_openvcl(args, skeleton(name, body));
@@ -61,6 +65,11 @@ namespace
         ss << f.rdbuf();
         std::remove(tmpl);
         return ss.str();
+    }
+
+    std::string runEmit(const std::string& body, const std::string& name)
+    {
+        return runEmitWithArgs(body, name, std::vector<std::string>());
     }
 
     // Number of emitted lines (cycles) between the first line that
@@ -127,6 +136,25 @@ TEST_CASE("Latency: FMAC opmsub followed by fmand has at least 4 cycles between"
         "\tfmand vi02, my_mask\n";
 
     std::string vsm = runEmit(body, "vsmLatencyFmand");
+    REQUIRE(vsm.length() > 0);
+    int d = cycleDistance(vsm, "opmsub", "fmand");
+    REQUIRE(d > 0);
+    CHECK(d >= 4);
+}
+
+TEST_CASE("Latency: strict schedule slots keep opmsub to fmand padding")
+{
+    const std::string body =
+        "\tmove.xyzw vf01, vf00\n"
+        "\tmove.xyzw vf02, vf00\n"
+        "\tilw.x my_mask, 0(vi00)\n"
+        "\topmula.xyz acc, vf01, vf02\n"
+        "\topmsub.xyz vf03, vf02, vf01\n"
+        "\tfmand vi02, my_mask\n";
+    std::vector<std::string> args;
+    args.push_back("--strict-schedule-slots");
+
+    std::string vsm = runEmitWithArgs(body, "vsmStrictLatencyFmand", args);
     REQUIRE(vsm.length() > 0);
     int d = cycleDistance(vsm, "opmsub", "fmand");
     REQUIRE(d > 0);

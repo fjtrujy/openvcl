@@ -1002,6 +1002,8 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 
 	if( m_strictScheduleSlots )
 	{
+		fillBranchDelaySlots(workTokens);
+		fillDeadFallthroughBranchDelaySlots(workTokens);
 		if( !emitStrictScheduledProgram(workTokens, exitWritten) )
 			return false;
 	}
@@ -1845,12 +1847,33 @@ bool CodeGenerator::emitStrictScheduledProgram( const std::list<Token>& tokens, 
 		const Token* branch = branchTokenInScheduledSlot(slot);
 		const Token* delayFiller = NULL;
 		unsigned int delayFillerSlot = i + 1;
-		if( branch && delayFillerSlot < slots.size() && !slots[delayFillerSlot]->padding )
+		while( branch && delayFillerSlot < slots.size() && slots[delayFillerSlot]->padding )
+			++delayFillerSlot;
+		if( branch && delayFillerSlot < slots.size() )
 			delayFiller = branchDelayFillerInScheduledSlot(*slots[delayFillerSlot]);
 
 		if( delayFiller && prepareStrictScheduledToken(*delayFiller, exitWritten, true) )
 		{
-			if( firstEmits && secondEmits )
+			const Token* branchPartner = NULL;
+			if( firstEmits && first != branch )
+				branchPartner = first;
+			if( secondEmits && second != branch )
+				branchPartner = second;
+
+			if( firstEmits && secondEmits
+			    && branch
+			    && branchPartner
+			    && vuTokensHaveDataDependency(*branchPartner, *delayFiller) )
+			{
+				emitSingleToken(*branchPartner);
+				while( readHazardDelay(*delayFiller, NULL) > 1 )
+				{
+					addNopLine();
+					m_currentCycle++;
+				}
+				emitBranchWithDelayFiller(*branch, *delayFiller);
+			}
+			else if( firstEmits && secondEmits )
 				emitPairedBranchWithDelayFiller(*first, *second, *delayFiller);
 			else if( branch == first && firstEmits )
 				emitBranchWithDelayFiller(*first, *delayFiller);

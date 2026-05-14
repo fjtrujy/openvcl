@@ -214,6 +214,33 @@ TEST_CASE("Scheduling: strict schedule slots omit unreachable exit after termina
     CHECK(countSubstrings(vsm, "nop[E]") == 0);
 }
 
+TEST_CASE("Scheduling: strict branch-delay filler waits for paired upper producer")
+{
+    const std::string body =
+        "\tloi 255.0\n"
+        "\tiaddiu vi03, vi00, 0\n"
+        "\tiaddiu vi02, vi00, 9\n"
+        "final_loop_lid:\n"
+        "\t--LoopCS 1,3\n"
+        "\t--LoopExtra 1\n"
+        "\tlq.xyz vf08, 1(vi03)\n"
+        "\tminii.xyz vf08, vf08, i\n"
+        "\tftoi0.xyz vf08, vf08\n"
+        "\tsq.xyz vf08, 1(vi03)\n"
+        "\tiaddiu vi03, vi03, 3\n"
+        "\tibne vi03, vi02, final_loop_lid\n";
+    std::vector<std::string> args;
+    args.push_back("--strict-schedule-slots");
+
+    std::string vsm = runEmitWithArgs(body, "vsmStrictBranchDelayFillerProducer", args);
+    REQUIRE(vsm.length() > 0);
+    CHECK(!linePairsSubstrings(vsm, "ftoi0.xyz VF08, VF08", "ibne VI03, VI02, final_loop_lid"));
+    const int branchLine = lineIndex(vsm, "ibne VI03, VI02, final_loop_lid");
+    const int storeLine = lineIndex(vsm, "sq.xyz VF08, -2(VI03)");
+    REQUIRE(branchLine >= 0);
+    CHECK(storeLine == branchLine + 1);
+}
+
 TEST_CASE("Pairing: strict schedule slots pair safe barrier tails")
 {
     std::vector<std::string> args;
@@ -469,6 +496,27 @@ TEST_CASE("Scheduling: independent integer op fills previous branch delay slot")
         "\tibne vi01, vi02, done_lid\n"
         "done_lid:\n";
     std::string vsm = runEmit(body, "vsmIntegerBranchDelayFiller");
+    REQUIRE(vsm.length() > 0);
+
+    int branchLine = lineIndex(vsm, "ibne");
+    int bumpLine = lineIndex(vsm, "iaddiu VI03");
+    REQUIRE(branchLine >= 0);
+    REQUIRE(bumpLine >= 0);
+    CHECK(bumpLine == branchLine + 1);
+}
+
+TEST_CASE("Scheduling: strict schedule slots preserve filled branch delay slots")
+{
+    const std::string body =
+        "\tiaddiu vi01, vi00, 1\n"
+        "\tiaddiu vi02, vi00, 2\n"
+        "\tiaddiu vi03, vi00, 3\n"
+        "\tibne vi01, vi02, done_lid\n"
+        "done_lid:\n";
+    std::vector<std::string> args;
+    args.push_back("--strict-schedule-slots");
+
+    std::string vsm = runEmitWithArgs(body, "vsmStrictIntegerBranchDelayFiller", args);
     REQUIRE(vsm.length() > 0);
 
     int branchLine = lineIndex(vsm, "ibne");

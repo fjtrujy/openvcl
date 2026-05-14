@@ -2,11 +2,29 @@
 
 #include "Operand.h"
 #include "VuSchedulingRules.h"
+#include "VuTokenResourceAccess.h"
 
 #include <list>
 
 namespace vcl
 {
+
+namespace
+{
+	bool tokenReadsImplicitResource( const Token& token, unsigned int resource )
+	{
+		VuTokenResourceAccess access;
+		return buildVuTokenResourceAccess( token, access )
+		    && (access.implicitReads & resource) != 0;
+	}
+
+	bool tokenWritesImplicitResource( const Token& token, unsigned int resource )
+	{
+		VuTokenResourceAccess access;
+		return buildVuTokenResourceAccess( token, access )
+		    && (access.implicitWrites & resource) != 0;
+	}
+}
 
 VuLatencyTracker::VuLatencyTracker()
 {
@@ -81,12 +99,12 @@ int VuLatencyTracker::readHazardDelay( const Token& token,
 	}
 
 	const int flagCycle = currentCycle + needed;
-	bool readsMac = token.operand() && isVuMacReader( token.operand()->name() );
-	bool readsClip = token.operand() && isVuClipReader( token.operand()->name() );
+	bool readsMac = tokenReadsImplicitResource( token, VU_RESOURCE_MAC );
+	bool readsClip = tokenReadsImplicitResource( token, VU_RESOURCE_CLIP );
 	if( partner && partner->operand() )
 	{
-		readsMac = readsMac || isVuMacReader( partner->operand()->name() );
-		readsClip = readsClip || isVuClipReader( partner->operand()->name() );
+		readsMac = readsMac || tokenReadsImplicitResource( *partner, VU_RESOURCE_MAC );
+		readsClip = readsClip || tokenReadsImplicitResource( *partner, VU_RESOURCE_CLIP );
 	}
 
 	int flagDelay = 0;
@@ -110,9 +128,9 @@ int VuLatencyTracker::readHazardDelay( const Token& token,
 
 void VuLatencyTracker::recordWrites( const Token& token, int issueCycle, bool forceMacFlagWrite )
 {
-	if( forceMacFlagWrite || (token.operand() && token.operand()->unit() == Operand::FMAC) )
+	if( forceMacFlagWrite || tokenWritesImplicitResource( token, VU_RESOURCE_MAC ) )
 		m_lastFMACCycle = issueCycle;
-	if( token.operand() && isVuClipw( token.operand()->name() ) )
+	if( tokenWritesImplicitResource( token, VU_RESOURCE_CLIP ) )
 		m_lastClipwCycle = issueCycle;
 
 	if( !token.operand() || token.operand()->latency() <= 1 )

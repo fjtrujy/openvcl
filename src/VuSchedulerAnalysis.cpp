@@ -662,13 +662,26 @@ namespace
 			                                 currentCycle );
 			segment.clear();
 			haveSegment = false;
-			if( !tryPairBarrierWithPreviousSlot( slots, token ) )
+			bool pairedWithPreviousSlot = false;
+			if( !slots.empty() )
 			{
+				const unsigned int pairedCycle = blockStartCycle + slots.back().issueCycle;
+				if( latencyTracker.readHazardDelay( token, NULL, static_cast<int>( pairedCycle ) ) <= 0 )
+					pairedWithPreviousSlot = tryPairBarrierWithPreviousSlot( slots, token );
+			}
+			if( !pairedWithPreviousSlot )
+			{
+				appendReadHazardPaddingSlots( slots,
+				                              token,
+				                              NULL,
+				                              latencyTracker,
+				                              blockStartCycle,
+				                              currentCycle );
 				slots.push_back( makeIssueSlot( &token, NULL, currentCycle - blockStartCycle ) );
 				latencyTracker.recordWrites( token, static_cast<int>( currentCycle ) );
 				++currentCycle;
 			}
-			else if( !slots.empty() )
+			else
 			{
 				const unsigned int pairedCycle = blockStartCycle + slots.back().issueCycle;
 				latencyTracker.recordWrites( token, static_cast<int>( pairedCycle ) );
@@ -1988,13 +2001,26 @@ namespace
 				                                currentCycle );
 			slots.insert( slots.end(), segmentSlots.begin(), segmentSlots.end() );
 			segment.clear();
-			if( !tryPairBarrierWithPreviousSlot( slots, **i ) )
+			bool pairedWithPreviousSlot = false;
+			if( !slots.empty() )
 			{
+				const unsigned int pairedCycle = blockStartCycle + slots.back().issueCycle;
+				if( latencyTracker.readHazardDelay( **i, NULL, static_cast<int>( pairedCycle ) ) <= 0 )
+					pairedWithPreviousSlot = tryPairBarrierWithPreviousSlot( slots, **i );
+			}
+			if( !pairedWithPreviousSlot )
+			{
+				appendReadHazardPaddingSlots( slots,
+				                              **i,
+				                              NULL,
+				                              latencyTracker,
+				                              blockStartCycle,
+				                              currentCycle );
 				slots.push_back( makeIssueSlot( *i, NULL, currentCycle - blockStartCycle ) );
 				latencyTracker.recordWrites( **i, static_cast<int>( currentCycle ) );
 				++currentCycle;
 			}
-			else if( !slots.empty() )
+			else
 			{
 				const unsigned int pairedCycle = blockStartCycle + slots.back().issueCycle;
 				latencyTracker.recordWrites( **i, static_cast<int>( pairedCycle ) );
