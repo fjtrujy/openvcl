@@ -1454,6 +1454,32 @@ TEST_CASE("VuSchedulerAnalysis: non-flag ready-set program exposes issue slots")
     CHECK(scheduled.blocks[0].issueSlots[0].secondTokenIndex == 2u);
 }
 
+TEST_CASE("VuSchedulerAnalysis: ready-set program pairs barrier tails when safe")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xyz vf01, vf00, vf00"));
+    REQUIRE(program.parse("b done_lid"));
+    REQUIRE(program.parse("done_lid:"));
+    REQUIRE(program.parse("add.xyz vf02, vf00, vf00"));
+    REQUIRE(program.parse("xgkick vi00"));
+
+    vcl::VuScheduledProgram scheduled =
+        vcl::scheduleVuProgramReadyIssueSlotsWithFlagLiveness(program.tokenizer.tokens());
+    REQUIRE(scheduled.blocks.size() == 2u);
+    REQUIRE(scheduled.blocks[0].issueSlots.size() == 1u);
+    CHECK(vcl::normalizeVuMnemonic(scheduled.blocks[0].issueSlots[0].upperToken->name()) == "add");
+    CHECK(vcl::normalizeVuMnemonic(scheduled.blocks[0].issueSlots[0].lowerToken->name()) == "b");
+    CHECK(scheduled.blocks[0].issueSlots[0].firstTokenIndex == 0u);
+    CHECK(scheduled.blocks[0].issueSlots[0].secondTokenIndex == 1u);
+
+    REQUIRE(scheduled.blocks[1].issueSlots.size() == 2u);
+    CHECK(vcl::normalizeVuMnemonic(scheduled.blocks[1].issueSlots[1].upperToken->name()) == "add");
+    CHECK(vcl::normalizeVuMnemonic(scheduled.blocks[1].issueSlots[1].lowerToken->name()) == "xgkick");
+    CHECK(scheduled.blocks[1].issueSlots[1].firstTokenIndex == 3u);
+    CHECK(scheduled.blocks[1].issueSlots[1].secondTokenIndex == 4u);
+}
+
 TEST_CASE("VuSchedulerAnalysis: ready-set scheduler prefers longer dependency chains")
 {
     vcl::Error::ResetErrorCount();

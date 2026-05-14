@@ -46,6 +46,10 @@
 - Added `--strict-schedule-slots` as an opt-in compiler mode that emits from
   scheduler-selected pairs without the older textual latency/pairing
   lookahead fallbacks.
+- Ready-scheduler issue slots now pair safe upper-pipe barrier tails with
+  following direct branches that do not own explicit delay-slot fillers, or
+  with `xgkick`, moving another legacy codegen pairing case into the generic
+  schedule model.
 - Added regression fixtures and unit/integration tests for cost analysis.
 - Added conservative VU scheduling improvements used by ps2gl:
   - upper/lower pairing lookahead;

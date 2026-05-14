@@ -262,6 +262,93 @@ namespace
 		}
 	}
 
+	bool tokenCanEnterBarrierTailPair( const Token& token )
+	{
+		if( !token.operand() )
+			return false;
+		if( token.flags() & Token::IGNORED )
+			return false;
+		if( token.flags() & Token::BRANCH_DELAY_FILLER )
+			return false;
+		if( token.flags() & Token::PREORDERED )
+			return false;
+		if( token.operand()->flags() & Operand::PREPROCESSOR )
+			return false;
+		if( token.operand()->flags() & Operand::FILTERED )
+			return false;
+		if( token.operand()->unit() == Operand::ENTER || token.operand()->unit() == Operand::EXIT )
+			return false;
+		if( !token.operand()->isUpperExecutionPath() && !token.operand()->isLowerExecutionPath() )
+			return false;
+		return true;
+	}
+
+	bool tokenCanPairWithBarrierTail( const Token& previous, const Token& barrier )
+	{
+		if( !tokenCanEnterBarrierTailPair( previous ) || !tokenCanEnterBarrierTailPair( barrier ) )
+			return false;
+		if( barrier.label().length() != 0 )
+			return false;
+		if( !isVuXgkick( barrier ) && vuTokenBranchDelaySlots( barrier ) == 0 )
+			return false;
+		if( isVuLowerPipe( previous ) == isVuLowerPipe( barrier ) )
+			return false;
+
+		VuTokenResourceAccess previousAccess;
+		VuTokenResourceAccess barrierAccess;
+		if( !buildVuTokenResourceAccess( previous, previousAccess )
+		    || !buildVuTokenResourceAccess( barrier, barrierAccess ) )
+			return false;
+		if( previousAccess.branchDelaySlots > 0 )
+			return false;
+		if( barrierAccess.branchDelaySlots > 0
+		    && (barrierAccess.instructionFlags & (VU_INSTR_LINK_BRANCH | VU_INSTR_REGISTER_BRANCH)) )
+			return false;
+		if( (previousAccess.instructionFlags & (VU_INSTR_WAIT_Q | VU_INSTR_WAIT_P))
+		    || (barrierAccess.instructionFlags & (VU_INSTR_WAIT_Q | VU_INSTR_WAIT_P)) )
+			return false;
+
+		const unsigned int previousReadsImplicit = previousAccess.implicitReads;
+		const unsigned int previousWritesImplicit = previousAccess.implicitWrites;
+		const unsigned int barrierReadsImplicit = barrierAccess.implicitReads;
+		const unsigned int barrierWritesImplicit = barrierAccess.implicitWrites;
+		if( previousWritesImplicit & (barrierReadsImplicit | barrierWritesImplicit) )
+			return false;
+		if( barrierWritesImplicit & (previousReadsImplicit | previousWritesImplicit) )
+			return false;
+
+		if( vuTokensHaveDataDependency( previous, barrier )
+		    || vuTokensHaveDataDependency( barrier, previous ) )
+			return false;
+
+		return true;
+	}
+
+	bool tryPairBarrierWithPreviousSlot( std::vector<VuScheduledIssueSlot>& slots,
+	                                     const Token& barrier,
+	                                     bool allowBranchTailPair )
+	{
+		if( slots.empty() )
+			return false;
+		if( vuTokenBranchDelaySlots( barrier ) > 0 && !allowBranchTailPair )
+			return false;
+
+		VuScheduledIssueSlot& previousSlot = slots.back();
+		if( previousSlot.padding || previousSlot.cycleCount != 1 )
+			return false;
+		if( !previousSlot.firstToken || previousSlot.secondToken )
+			return false;
+		if( !tokenCanPairWithBarrierTail( *previousSlot.firstToken, barrier ) )
+			return false;
+
+		previousSlot.secondToken = &barrier;
+		if( isVuLowerPipe( barrier ) )
+			previousSlot.lowerToken = &barrier;
+		else
+			previousSlot.upperToken = &barrier;
+		return true;
+	}
+
 	std::vector<VuScheduledIssueSlot> scheduleReadySegmentIssueSlots( const std::vector<const Token*>& segment,
 	                                                                  unsigned int ignoredImplicitWawResources )
 	{
@@ -481,7 +568,8 @@ namespace
 
 	std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlotsWithFlagLiveness(
 	    const VuBasicBlock& block,
-	    const VuFlagLiveness& liveness )
+	    const VuFlagLiveness& liveness,
+	    bool allowBranchTailPair )
 	{
 		std::vector<VuScheduledIssueSlot> slots;
 		std::vector<const Token*> segment;
@@ -526,7 +614,8 @@ namespace
 			appendReadyScheduledSegmentSlots( segment, slots, segmentMask );
 			segment.clear();
 			haveSegment = false;
-			slots.push_back( makeIssueSlot( &token, NULL ) );
+			if( !tryPairBarrierWithPreviousSlot( slots, token, allowBranchTailPair ) )
+				slots.push_back( makeIssueSlot( &token, NULL ) );
 		}
 
 		appendReadyScheduledSegmentSlots( segment, slots, segmentMask );
@@ -1832,7 +1921,8 @@ std::vector<VuDependencyEdge> buildVuDependencyGraph( const VuBasicBlock& block,
 }
 
 std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlots( const VuBasicBlock& block,
-                                                                       unsigned int ignoredImplicitWawResources )
+                                                                       unsigned int ignoredImplicitWawResources,
+                                                                       bool allowBranchTailPair )
 {
 	std::vector<VuScheduledIssueSlot> slots;
 	std::vector<const Token*> segment;
@@ -1849,7 +1939,8 @@ std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlots( const VuB
 			scheduleReadySegmentIssueSlots( segment, ignoredImplicitWawResources );
 		slots.insert( slots.end(), segmentSlots.begin(), segmentSlots.end() );
 		segment.clear();
-		slots.push_back( makeIssueSlot( *i, NULL ) );
+		if( !tryPairBarrierWithPreviousSlot( slots, **i, allowBranchTailPair ) )
+			slots.push_back( makeIssueSlot( *i, NULL ) );
 	}
 
 	std::vector<VuScheduledIssueSlot> segmentSlots =
@@ -1867,6 +1958,19 @@ std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlots( const VuB
 	return slots;
 }
 
+bool vuBasicBlockHasFollowingBranchDelayFiller( const std::vector<VuBasicBlock>& blocks,
+                                                std::vector<VuBasicBlock>::const_iterator block )
+{
+	if( block->terminatorKind != VU_BASIC_BLOCK_TERMINATOR_BRANCH )
+		return false;
+
+	std::vector<VuBasicBlock>::const_iterator next = block;
+	++next;
+	return next != blocks.end()
+	    && !next->tokens.empty()
+	    && ((*next->tokens.front()).flags() & Token::BRANCH_DELAY_FILLER) != 0;
+}
+
 VuScheduledProgram scheduleVuProgramReadyIssueSlots( const std::list<Token>& tokens,
                                                      unsigned int ignoredImplicitWawResources )
 {
@@ -1878,8 +1982,10 @@ VuScheduledProgram scheduleVuProgramReadyIssueSlots( const std::list<Token>& tok
 		VuScheduledBasicBlock scheduledBlock;
 		scheduledBlock.block = *block;
 		scheduledBlock.firstIssueCycle = program.cycleCount;
+		const bool allowBranchTailPair = !vuBasicBlockHasFollowingBranchDelayFiller( blocks, block );
 		scheduledBlock.issueSlots = scheduleVuBasicBlockReadyIssueSlots( *block,
-		                                                                 ignoredImplicitWawResources );
+		                                                                 ignoredImplicitWawResources,
+		                                                                 allowBranchTailPair );
 		for( std::vector<VuScheduledIssueSlot>::const_iterator slot = scheduledBlock.issueSlots.begin();
 		     slot != scheduledBlock.issueSlots.end(); ++slot )
 			scheduledBlock.cycleCount += slot->cycleCount;
@@ -1914,7 +2020,10 @@ VuScheduledProgram scheduleVuProgramReadyIssueSlotsWithFlagLiveness( const std::
 		VuScheduledBasicBlock scheduledBlock;
 		scheduledBlock.block = *block;
 		scheduledBlock.firstIssueCycle = program.cycleCount;
-		scheduledBlock.issueSlots = scheduleVuBasicBlockReadyIssueSlotsWithFlagLiveness( *block, liveness );
+		const bool allowBranchTailPair = !vuBasicBlockHasFollowingBranchDelayFiller( blocks, block );
+		scheduledBlock.issueSlots = scheduleVuBasicBlockReadyIssueSlotsWithFlagLiveness( *block,
+		                                                                                 liveness,
+		                                                                                 allowBranchTailPair );
 		for( std::vector<VuScheduledIssueSlot>::const_iterator slot = scheduledBlock.issueSlots.begin();
 		     slot != scheduledBlock.issueSlots.end(); ++slot )
 			scheduledBlock.cycleCount += slot->cycleCount;

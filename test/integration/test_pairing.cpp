@@ -182,6 +182,27 @@ TEST_CASE("Pairing: strict schedule slots honor ready-set pair tags")
     CHECK(linePairsSubstrings(vsm, "add.xy", "iaddiu"));
 }
 
+TEST_CASE("Pairing: strict schedule slots pair safe barrier tails")
+{
+    std::vector<std::string> args;
+    args.push_back("--strict-schedule-slots");
+
+    const std::string branchBody =
+        "\tadd.xyz vf01, vf00, vf00\n"
+        "\tb done_lid\n"
+        "done_lid:\n";
+    std::string branchVsm = runEmitWithArgs(branchBody, "vsmStrictBranchTailPair", args);
+    REQUIRE(branchVsm.length() > 0);
+    CHECK(linePairsSubstrings(branchVsm, "add.xyz", "b done_lid"));
+
+    const std::string xgkickBody =
+        "\tadd.xyz vf02, vf00, vf00\n"
+        "\txgkick vi00\n";
+    std::string xgkickVsm = runEmitWithArgs(xgkickBody, "vsmStrictXgkickTailPair", args);
+    REQUIRE(xgkickVsm.length() > 0);
+    CHECK(linePairsSubstrings(xgkickVsm, "add.xyz", "xgkick"));
+}
+
 TEST_CASE("Pairing: later LOI does not pair with current I reader")
 {
 	const std::string body =
