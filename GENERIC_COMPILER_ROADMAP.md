@@ -28,6 +28,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Split token streams by labels, branches, barriers, continuations, and memory/control boundaries.
    - Build dependency graphs from `VuTokenResourceAccess`.
    - Initially emit the same order to validate structure.
+   - Done: basic blocks now preserve explicit terminator kind and token pointer for branches, xgkick, compiler boundaries, and preordered barriers.
 
 5. **Implement Generic Dual-Pipe Scheduling**
    - Schedule upper/lower pipe instructions from a ready set.

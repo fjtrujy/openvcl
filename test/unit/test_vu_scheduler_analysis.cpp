@@ -80,6 +80,13 @@ namespace
         }
         return false;
     }
+
+    std::string terminatorName(const vcl::VuBasicBlock& block)
+    {
+        if (!block.terminator || !block.terminator->operand())
+            return "";
+        return block.terminator->operand()->name();
+    }
 }
 
 TEST_CASE("VuSchedulerAnalysis: basic blocks split on labels and barriers")
@@ -101,16 +108,56 @@ TEST_CASE("VuSchedulerAnalysis: basic blocks split on labels and barriers")
     CHECK(blocks[0].firstTokenIndex == 0u);
     CHECK(blocks[0].tokens.size() == 3u);
     CHECK(blocks[0].terminatedByBarrier == true);
+    CHECK(blocks[0].terminatorKind == vcl::VU_BASIC_BLOCK_TERMINATOR_BRANCH);
+    CHECK(blocks[0].terminator != 0);
     CHECK(blocks[1].firstTokenIndex == 3u);
     CHECK(blocks[1].tokens.size() == 1u);
+    CHECK(blocks[1].terminatorKind == vcl::VU_BASIC_BLOCK_TERMINATOR_NONE);
+    CHECK(blocks[1].terminator == 0);
     CHECK(blocks[2].firstTokenIndex == 4u);
     CHECK(blocks[2].tokens.size() == 2u);
     CHECK(blocks[2].terminatedByBarrier == true);
+    CHECK(blocks[2].terminatorKind == vcl::VU_BASIC_BLOCK_TERMINATOR_XGKICK);
+    CHECK(blocks[2].terminator != 0);
     CHECK(blocks[3].firstTokenIndex == 6u);
     CHECK(blocks[3].tokens.size() == 2u);
     CHECK(blocks[3].terminatedByBarrier == true);
+    CHECK(blocks[3].terminatorKind == vcl::VU_BASIC_BLOCK_TERMINATOR_BOUNDARY);
+    CHECK(terminatorName(blocks[3]) == "--barrier");
     CHECK(blocks[4].firstTokenIndex == 8u);
     CHECK(blocks[4].tokens.size() == 1u);
+    CHECK(blocks[4].terminatorKind == vcl::VU_BASIC_BLOCK_TERMINATOR_NONE);
+    CHECK(blocks[4].terminator == 0);
+}
+
+TEST_CASE("VuSchedulerAnalysis: basic blocks classify compiler boundary terminators")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("--cont"));
+    REQUIRE(program.parse("--enter"));
+    REQUIRE(program.parse("mul.xy vf04, vf05, vf06"));
+    REQUIRE(program.parse("--exit"));
+    REQUIRE(program.parse("add.xy vf07, vf08, vf09"));
+
+    std::vector<vcl::VuBasicBlock> blocks = vcl::buildVuBasicBlocks(program.tokenizer.tokens());
+    REQUIRE(blocks.size() == 4u);
+    CHECK(blocks[0].firstTokenIndex == 0u);
+    CHECK(blocks[0].tokens.size() == 2u);
+    CHECK(blocks[0].terminatorKind == vcl::VU_BASIC_BLOCK_TERMINATOR_BOUNDARY);
+    CHECK(terminatorName(blocks[0]) == "--cont");
+    CHECK(blocks[1].firstTokenIndex == 2u);
+    CHECK(blocks[1].tokens.size() == 1u);
+    CHECK(blocks[1].terminatorKind == vcl::VU_BASIC_BLOCK_TERMINATOR_BOUNDARY);
+    CHECK(terminatorName(blocks[1]) == "--enter");
+    CHECK(blocks[2].firstTokenIndex == 3u);
+    CHECK(blocks[2].tokens.size() == 2u);
+    CHECK(blocks[2].terminatorKind == vcl::VU_BASIC_BLOCK_TERMINATOR_BOUNDARY);
+    CHECK(terminatorName(blocks[2]) == "--exit");
+    CHECK(blocks[3].firstTokenIndex == 5u);
+    CHECK(blocks[3].tokens.size() == 1u);
+    CHECK(blocks[3].terminatorKind == vcl::VU_BASIC_BLOCK_TERMINATOR_NONE);
 }
 
 TEST_CASE("VuSchedulerAnalysis: dependency graph uses register and resource descriptors")

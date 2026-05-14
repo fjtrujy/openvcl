@@ -15,6 +15,15 @@
 namespace vcl
 {
 
+enum VuBasicBlockTerminatorKind
+{
+	VU_BASIC_BLOCK_TERMINATOR_NONE,
+	VU_BASIC_BLOCK_TERMINATOR_BRANCH,
+	VU_BASIC_BLOCK_TERMINATOR_XGKICK,
+	VU_BASIC_BLOCK_TERMINATOR_BOUNDARY,
+	VU_BASIC_BLOCK_TERMINATOR_PREORDERED
+};
+
 struct VuBasicBlock
 {
 	VuBasicBlock();
@@ -22,6 +31,8 @@ struct VuBasicBlock
 	unsigned int firstTokenIndex;
 	std::vector<const Token*> tokens;
 	bool terminatedByBarrier;
+	VuBasicBlockTerminatorKind terminatorKind;
+	const Token* terminator;
 };
 
 enum VuDependencyKind

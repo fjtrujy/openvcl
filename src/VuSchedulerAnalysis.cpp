@@ -48,6 +48,19 @@ namespace
 		return !vuTokenCanMoveBefore( after, before );
 	}
 
+	VuBasicBlockTerminatorKind vuBlockTerminatorKind( const Token& token )
+	{
+		if( isVuBoundaryOperand( token ) )
+			return VU_BASIC_BLOCK_TERMINATOR_BOUNDARY;
+		if( isVuXgkick( token ) )
+			return VU_BASIC_BLOCK_TERMINATOR_XGKICK;
+		if( vuTokenBranchDelaySlots( token ) > 0 )
+			return VU_BASIC_BLOCK_TERMINATOR_BRANCH;
+		if( token.flags() & Token::PREORDERED )
+			return VU_BASIC_BLOCK_TERMINATOR_PREORDERED;
+		return VU_BASIC_BLOCK_TERMINATOR_NONE;
+	}
+
 	int readyCandidateScore( unsigned int candidate,
 	                         bool haveLastPipe,
 	                         bool lastWasLower,
@@ -313,6 +326,8 @@ VuBasicBlock::VuBasicBlock()
 {
 	firstTokenIndex = 0;
 	terminatedByBarrier = false;
+	terminatorKind = VU_BASIC_BLOCK_TERMINATOR_NONE;
+	terminator = NULL;
 }
 
 VuDependencyEdge::VuDependencyEdge()
@@ -384,6 +399,8 @@ std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens )
 		if( isVuSchedulingBarrier( *i ) )
 		{
 			current.terminatedByBarrier = true;
+			current.terminatorKind = vuBlockTerminatorKind( *i );
+			current.terminator = &*i;
 			blocks.push_back( current );
 			current = VuBasicBlock();
 			hasCurrent = false;
