@@ -58,6 +58,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: the emittable subset is now limited to single-instruction Q prefetches that do not read induction registers or perform memory access, so automatic emission has an explicit safety boundary.
    - Done: the generic software-pipeline path can rewrite that safe single-Q subset into an automatic prolog plus main loop, while blocked loops continue through ordinary generic scheduling.
    - Done: generic software-pipeline emission now supports safe multi-instruction prefetch prefixes when cloned load offsets can be adjusted from induction-update metadata without clobbering the remaining suffix.
+   - Done: generic software-pipeline emission now supports the first single-consumer register-rotation case by cloning prefix work into assigned scratch VF registers and moving scratch back before the loop branch.
    - Done: generic software-pipelining is guarded by `--enable-generic-software-pipelining` until the generic modulo scheduler can prove the rewrite is profitable.
    - Done: generic software-pipeline emission now rejects Q live-out loops so the inserted next-iteration Q producer cannot change fallthrough semantics.
    - Done: generic software-pipeline rewrites now go through an explicit `VuSoftwarePipelineRewritePlan`, giving future rotation/drain work a typed plan instead of ad hoc token surgery.

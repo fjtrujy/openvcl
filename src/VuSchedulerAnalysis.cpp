@@ -691,6 +691,17 @@ namespace
 		}
 	}
 
+	const VuSoftwarePipelineRotation* findRotationForBase( const std::vector<VuSoftwarePipelineRotation>& rotations,
+	                                                       const std::string& base )
+	{
+		for( std::vector<VuSoftwarePipelineRotation>::const_iterator i = rotations.begin(); i != rotations.end(); ++i )
+		{
+			if( i->registerBase == base )
+				return &*i;
+		}
+		return NULL;
+	}
+
 	const VuLoopInductionUpdate* findInductionUpdate( const std::vector<VuLoopInductionUpdate>& updates,
 	                                                  const std::string& registerName )
 	{
@@ -789,8 +800,79 @@ namespace
 		return false;
 	}
 
+	bool rotationBaseListContains( const std::list<std::string>& bases, const std::string& base )
+	{
+		return containsKey( bases, base );
+	}
+
+	bool softwarePipelineRotationsCanEmit( const VuLoopPipelineOpportunity& opportunity,
+	                                       const std::vector<const Token*>& indexedTokens )
+	{
+		if( opportunity.softwarePipelineRotations.empty() )
+			return true;
+		if( opportunity.qConsumerTokenIndices.size() != 1 )
+			return false;
+
+		std::vector<unsigned int> prefetchTokenIndices;
+		for( std::vector<VuSoftwarePipelinePrefetch>::const_iterator i = opportunity.softwarePipelinePrefetches.begin();
+		     i != opportunity.softwarePipelinePrefetches.end(); ++i )
+			prefetchTokenIndices.push_back( i->tokenIndex );
+
+		std::list<std::string> prefetchWrites;
+		std::list<std::string> prefetchWriteBases;
+		collectTokenWriteKeys( prefetchTokenIndices, indexedTokens, prefetchWrites );
+		collectVfBaseKeys( prefetchWrites, prefetchWriteBases );
+
+		for( std::vector<VuSoftwarePipelineRotation>::const_iterator i = opportunity.softwarePipelineRotations.begin();
+		     i != opportunity.softwarePipelineRotations.end(); ++i )
+		{
+			if( !i->hasScratchRegister )
+				return false;
+			if( !rotationBaseListContains( prefetchWriteBases, i->registerBase ) )
+				return false;
+		}
+
+		if( opportunity.qConsumerTokenIndices.empty()
+		    || opportunity.qConsumerTokenIndices.back() + 1 > opportunity.branchTokenIndex )
+			return true;
+
+		std::list<std::string> rotatedBases;
+		for( std::vector<VuSoftwarePipelineRotation>::const_iterator i = opportunity.softwarePipelineRotations.begin();
+		     i != opportunity.softwarePipelineRotations.end(); ++i )
+			addUniqueString( rotatedBases, i->registerBase );
+
+		for( unsigned int tokenIndex = opportunity.qConsumerTokenIndices.back() + 1;
+		     tokenIndex <= opportunity.branchTokenIndex && tokenIndex < indexedTokens.size(); ++tokenIndex )
+		{
+			std::list<std::string> writes;
+			std::list<std::string> writeBases;
+			collectVuRegisterWriteKeys( *indexedTokens[tokenIndex], writes );
+			collectVfBaseKeys( writes, writeBases );
+			for( std::list<std::string>::const_iterator i = writeBases.begin(); i != writeBases.end(); ++i )
+			{
+				if( containsKey( rotatedBases, *i ) )
+					return false;
+			}
+		}
+
+		return true;
+	}
+
+	void removeRotationCoveredWrites( std::list<std::string>& writes,
+	                                  const std::vector<VuSoftwarePipelineRotation>& rotations )
+	{
+		for( std::list<std::string>::iterator i = writes.begin(); i != writes.end(); )
+		{
+			if( findRotationForBase( rotations, registerBaseKey( *i ) ) )
+				i = writes.erase( i );
+			else
+				++i;
+		}
+	}
+
 	bool softwarePipelinePrefetchesCanEmit( const VuLoopPipelineOpportunity& opportunity,
-	                                        const std::vector<const Token*>& indexedTokens )
+	                                        const std::vector<const Token*>& indexedTokens,
+	                                        bool rotationsWillUseScratch )
 	{
 		for( std::vector<VuSoftwarePipelinePrefetch>::const_iterator i = opportunity.softwarePipelinePrefetches.begin();
 		     i != opportunity.softwarePipelinePrefetches.end(); ++i )
@@ -815,6 +897,8 @@ namespace
 
 		std::list<std::string> prefetchWrites;
 		collectTokenWriteKeys( prefetchTokenIndices, indexedTokens, prefetchWrites );
+		if( rotationsWillUseScratch )
+			removeRotationCoveredWrites( prefetchWrites, opportunity.softwarePipelineRotations );
 		if( prefetchWrites.empty() )
 			return true;
 
@@ -892,7 +976,8 @@ namespace
 		                                            indexedTokens,
 		                                            opportunity );
 
-		if( !opportunity.softwarePipelineRotatedRegisters.empty() )
+		const bool canEmitRotations = softwarePipelineRotationsCanEmit( opportunity, indexedTokens );
+		if( !opportunity.softwarePipelineRotatedRegisters.empty() && !canEmitRotations )
 			addPipelineBlocker( opportunity, "requires_register_rotation" );
 		for( std::vector<VuSoftwarePipelineRotation>::const_iterator rotation = opportunity.softwarePipelineRotations.begin();
 		     rotation != opportunity.softwarePipelineRotations.end(); ++rotation )
@@ -901,7 +986,9 @@ namespace
 				addPipelineBlocker( opportunity, "missing_rotation_scratch" );
 		}
 
-		const bool canEmitPrefetches = softwarePipelinePrefetchesCanEmit( opportunity, indexedTokens );
+		const bool canEmitPrefetches = softwarePipelinePrefetchesCanEmit( opportunity,
+		                                                                  indexedTokens,
+		                                                                  canEmitRotations );
 		if( opportunity.prologTokenIndices.size() != 1
 		    || opportunity.prologTokenIndices.front() != opportunity.qProducerTokenIndex )
 		{
@@ -928,6 +1015,8 @@ namespace
 			     p != opportunity.softwarePipelinePrefetches.end(); ++p )
 				prefetchTokenIndices.push_back( p->tokenIndex );
 			collectTokenWriteKeys( prefetchTokenIndices, indexedTokens, prefetchWrites );
+			if( canEmitRotations )
+				removeRotationCoveredWrites( prefetchWrites, opportunity.softwarePipelineRotations );
 			if( !prefetchWrites.empty()
 			    && !opportunity.qConsumerTokenIndices.empty()
 			    && opportunity.qConsumerTokenIndices.back() + 1 <= opportunity.branchTokenIndex
@@ -972,6 +1061,90 @@ namespace
 		return copy;
 	}
 
+	const Operand* syntheticMoveOperand()
+	{
+		static const Operand moveOperand( "MOVE",
+		                                  2,
+		                                  Operand::LOWER | Operand::DEST,
+		                                  "vf:dest:write,vf:dest",
+		                                  Operand::INVALID,
+		                                  1,
+		                                  4 );
+		return &moveOperand;
+	}
+
+	unsigned int vfRegisterNumber( const std::string& reg )
+	{
+		if( reg.size() < 3 )
+			return 0;
+		return static_cast<unsigned int>( std::atoi( reg.substr( 2 ).c_str() ) );
+	}
+
+	unsigned int fieldMaskForFieldList( const std::list<std::string>& fields )
+	{
+		unsigned int mask = 0;
+		for( std::list<std::string>::const_iterator i = fields.begin(); i != fields.end(); ++i )
+		{
+			if( i->find( 'x' ) != std::string::npos ) mask |= Token::X;
+			if( i->find( 'y' ) != std::string::npos ) mask |= Token::Y;
+			if( i->find( 'z' ) != std::string::npos ) mask |= Token::Z;
+			if( i->find( 'w' ) != std::string::npos ) mask |= Token::W;
+		}
+		return mask;
+	}
+
+	unsigned int rotationFieldMask( const VuSoftwarePipelineRotation& rotation )
+	{
+		unsigned int mask = fieldMaskForFieldList( rotation.inputFields )
+		                  | fieldMaskForFieldList( rotation.outputFields );
+		return mask ? mask : (Token::X | Token::Y | Token::Z | Token::W);
+	}
+
+	void rewriteRotatedRegistersToScratch( Token& token,
+	                                       const std::vector<VuSoftwarePipelineRotation>& rotations )
+	{
+		for( std::list<Token::Argument>::iterator i = token.arguments().begin(); i != token.arguments().end(); ++i )
+		{
+			if( i->type() != Token::Argument::FLOAT_REGISTER )
+				continue;
+			std::string key;
+			if( !vuRegisterKey( *i, key ) )
+				continue;
+			const VuSoftwarePipelineRotation* rotation = findRotationForBase( rotations, registerBaseKey( key ) );
+			if( !rotation || !rotation->hasScratchRegister )
+				continue;
+			i->setRegNumber( static_cast<int>( vfRegisterNumber( rotation->scratchRegister ) ) );
+		}
+	}
+
+	Token makeRotationMoveToken( const Token& donor, const VuSoftwarePipelineRotation& rotation )
+	{
+		Token token( donor );
+		token.setLabel( "" );
+		token.setName( "move" );
+		token.setOperand( syntheticMoveOperand() );
+		token.setFlags( Token::PROCESSED );
+		token.setBroadcast( 0 );
+		token.setFields( rotationFieldMask( rotation ) );
+		token.arguments().clear();
+
+		Token::Argument dst( rotation.registerBase );
+		dst.setType( Token::Argument::FLOAT_REGISTER );
+		dst.setRegNumber( static_cast<int>( vfRegisterNumber( rotation.registerBase ) ) );
+		dst.setFlags( Token::Argument::WRITE | Token::Argument::DEST );
+		dst.setFields( rotationFieldMask( rotation ) );
+		token.arguments().push_back( dst );
+
+		Token::Argument src( rotation.scratchRegister );
+		src.setType( Token::Argument::FLOAT_REGISTER );
+		src.setRegNumber( static_cast<int>( vfRegisterNumber( rotation.scratchRegister ) ) );
+		src.setFlags( 0 );
+		src.setFields( 0 );
+		token.arguments().push_back( src );
+
+		return token;
+	}
+
 	const VuSoftwarePipelinePrefetch* findPrefetchForTokenIndex( const std::vector<VuSoftwarePipelinePrefetch>& prefetches,
 	                                                             unsigned int tokenIndex )
 	{
@@ -1001,12 +1174,34 @@ namespace
 		return false;
 	}
 
-	Token adjustedPrefetchToken( const Token& token, const VuSoftwarePipelinePrefetch* prefetch )
+	Token adjustedPrefetchToken( const Token& token,
+	                             const VuSoftwarePipelinePrefetch* prefetch,
+	                             const std::vector<VuSoftwarePipelineRotation>& rotations )
 	{
 		Token copy = tokenWithoutLabel( token );
 		if( prefetch && prefetch->hasNextIterationOffset && prefetch->hasMemoryBase )
 			setIndirectMemoryOffset( copy, prefetch->memoryBaseRegister, prefetch->nextIterationOffset );
+		rewriteRotatedRegistersToScratch( copy, rotations );
 		return copy;
+	}
+
+	Token adjustedQProducerToken( const Token& token,
+	                              const std::vector<VuSoftwarePipelineRotation>& rotations )
+	{
+		Token copy = tokenWithoutLabel( token );
+		rewriteRotatedRegistersToScratch( copy, rotations );
+		return copy;
+	}
+
+	void appendRotationMoves( std::list<Token>& output,
+	                          const Token& donor,
+	                          const std::vector<VuSoftwarePipelineRotation>& rotations )
+	{
+		for( std::vector<VuSoftwarePipelineRotation>::const_iterator i = rotations.begin(); i != rotations.end(); ++i )
+		{
+			if( i->hasScratchRegister )
+				output.push_back( makeRotationMoveToken( donor, *i ) );
+		}
 	}
 
 	void appendTokenRangeWithInsertedPrefetchAndQProducer( std::list<Token>& output,
@@ -1017,6 +1212,8 @@ namespace
 	{
 		for( unsigned int i = beginIndex; i <= endIndex && i < indexedTokens.size(); ++i )
 		{
+			if( i == rewrite.branchTokenIndex && !rewrite.rotations.empty() )
+				appendRotationMoves( output, *indexedTokens[i], rewrite.rotations );
 			output.push_back( tokenWithoutLabel( *indexedTokens[i] ) );
 			if( i == rewrite.qProducerInsertAfterTokenIndex )
 			{
@@ -1026,10 +1223,12 @@ namespace
 					if( *p >= indexedTokens.size() )
 						continue;
 					output.push_back( adjustedPrefetchToken( *indexedTokens[*p],
-					                                        findPrefetchForTokenIndex( rewrite.prefetches, *p ) ) );
+					                                        findPrefetchForTokenIndex( rewrite.prefetches, *p ),
+					                                        rewrite.rotations ) );
 				}
 				if( rewrite.qProducerTokenIndex < indexedTokens.size() )
-					output.push_back( tokenWithoutLabel( *indexedTokens[rewrite.qProducerTokenIndex] ) );
+					output.push_back( adjustedQProducerToken( *indexedTokens[rewrite.qProducerTokenIndex],
+					                                          rewrite.rotations ) );
 			}
 		}
 	}
@@ -1397,6 +1596,7 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		plan.qProducerTokenIndex = i->qProducerTokenIndex;
 		plan.qProducerInsertAfterTokenIndex = i->qConsumerTokenIndices.back();
 		plan.prefetches = i->softwarePipelinePrefetches;
+		plan.rotations = i->softwarePipelineRotations;
 		for( std::vector<VuSoftwarePipelinePrefetch>::const_iterator p = i->softwarePipelinePrefetches.begin();
 		     p != i->softwarePipelinePrefetches.end(); ++p )
 			plan.prefetchTokenIndices.push_back( p->tokenIndex );

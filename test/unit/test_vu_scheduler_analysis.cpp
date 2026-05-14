@@ -626,6 +626,63 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline rewrites next-iteratio
     CHECK(lqOffsetOneCount == 1u);
 }
 
+TEST_CASE("VuSchedulerAnalysis: generic software pipeline rewrites simple rotated registers")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 1"));
+    REQUIRE(program.parse("lq.xyz vf01, 0(vi01)"));
+    REQUIRE(program.parse("mul.xyz vf03, vf01, vf02"));
+    REQUIRE(program.parse("div q, vf00[w], vf03[w]"));
+    REQUIRE(program.parse("mulq.xyz vf03, vf03, q"));
+    REQUIRE(program.parse("sq.xyz vf03, 0(vi02)"));
+    REQUIRE(program.parse("add.xyz vf10, vf10, vf00"));
+    REQUIRE(program.parse("add.xyz vf11, vf11, vf00"));
+    REQUIRE(program.parse("add.xyz vf12, vf12, vf00"));
+    REQUIRE(program.parse("add.xyz vf13, vf13, vf00"));
+    REQUIRE(program.parse("add.xyz vf14, vf14, vf00"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
+    REQUIRE(program.parse("iaddiu vi02, vi02, 1"));
+    REQUIRE(program.parse("ibne vi01, vi04, loop_lid"));
+
+    std::vector<vcl::VuLoopPipelineOpportunity> opportunities = vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
+    REQUIRE(opportunities.size() == 1u);
+    CHECK(opportunities[0].eligibleSingleQSoftwarePipeline);
+    CHECK(opportunities[0].hasSoftwarePipelinePlan);
+    CHECK(opportunities[0].canEmitSoftwarePipeline);
+    CHECK(!hasString(opportunities[0].softwarePipelineBlockers, "requires_register_rotation"));
+    const vcl::VuSoftwarePipelineRotation* vf03Rotation = findRotation(opportunities[0].softwarePipelineRotations, "VF03");
+    REQUIRE(vf03Rotation != NULL);
+    CHECK(vf03Rotation->hasScratchRegister);
+    CHECK(vf03Rotation->scratchRegister == "VF31");
+
+    std::list<vcl::Token> transformed = vcl::applyVuSoftwarePipelinePlans(program.tokenizer.tokens());
+    unsigned int mulWritesScratch = 0;
+    unsigned int divReadsScratch = 0;
+    unsigned int moveScratchToOriginal = 0;
+    for (std::list<vcl::Token>::const_iterator i = transformed.begin(); i != transformed.end(); ++i)
+    {
+        if (!i->operand() || i->operand()->isPreprocessor())
+            continue;
+        vcl::VuTokenResourceAccess access;
+        REQUIRE(vcl::buildVuTokenResourceAccess(*i, access));
+        const std::string mnemonic = vcl::normalizeVuMnemonic(i->name());
+        if (mnemonic == "mul" && hasString(access.registerWrites, "VF31.x"))
+            ++mulWritesScratch;
+        if (mnemonic == "div" && hasString(access.registerReads, "VF31.w"))
+            ++divReadsScratch;
+        if (mnemonic == "move"
+            && hasString(access.registerReads, "VF31.x")
+            && hasString(access.registerWrites, "VF03.x"))
+            ++moveScratchToOriginal;
+    }
+
+    CHECK(mulWritesScratch == 1u);
+    CHECK(divReadsScratch == 1u);
+    CHECK(moveScratchToOriginal == 1u);
+}
+
 TEST_CASE("VuSchedulerAnalysis: multi-instruction prefetch reports suffix clobber blockers")
 {
     vcl::Error::ResetErrorCount();
