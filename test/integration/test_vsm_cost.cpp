@@ -176,10 +176,10 @@ TEST_CASE("VSM cost CLI: fixture file reports precomputed scheduled cost")
     CHECK(textMetric(r.stdout_data, "branch_cycles") == 1);
     CHECK(textMetric(r.stdout_data, "waitq_cycles") == 1);
     CHECK(textMetric(r.stdout_data, "e_bit_cycles") == 1);
-    CHECK(textMetric(r.stdout_data, "operation_latency_cycles") == 12);
+    CHECK(textMetric(r.stdout_data, "operation_latency_cycles") == 13);
     CHECK(textMetric(r.stdout_data, "long_latency_ops") == 3);
-    CHECK(textMetric(r.stdout_data, "long_latency_cycles") == 7);
-    CHECK(textMetric(r.stdout_data, "max_op_latency") == 4);
+    CHECK(textMetric(r.stdout_data, "long_latency_cycles") == 8);
+    CHECK(textMetric(r.stdout_data, "max_op_latency") == 5);
     CHECK(contains(r.stdout_data, "entry_lid: cycles=5"));
     CHECK(contains(r.stdout_data, "nop_slots=5"));
 }
@@ -191,8 +191,8 @@ TEST_CASE("VSM cost CLI: JSON fixture report is suitable for comparisons")
     CHECK(jsonMetric(r.stdout_data, "static_cycles") == 5);
     CHECK(jsonMetric(r.stdout_data, "instructions") == 5);
     CHECK(jsonMetric(r.stdout_data, "paired_cycles") == 1);
-    CHECK(jsonMetric(r.stdout_data, "operation_latency_cycles") == 12);
-    CHECK(jsonMetric(r.stdout_data, "long_latency_cycles") == 7);
+    CHECK(jsonMetric(r.stdout_data, "operation_latency_cycles") == 13);
+    CHECK(jsonMetric(r.stdout_data, "long_latency_cycles") == 8);
     CHECK(contains(r.stdout_data, "\"label_order\": [\"entry_lid\"]"));
     CHECK(contains(r.stdout_data, "\"cost_by_label\""));
     CHECK(contains(r.stdout_data, "\"entry_lid\": {\"canonical_label\": \"entry_lid\", \"affine_role\": \"base\""));
@@ -447,7 +447,7 @@ TEST_CASE("VSM cost CLI: fixture accepts SCE-style padded VSM output")
     CHECK(textMetric(r.stdout_data, "upper_instructions") == 1);
     CHECK(textMetric(r.stdout_data, "lower_instructions") == 2);
     CHECK(textMetric(r.stdout_data, "paired_cycles") == 1);
-    CHECK(textMetric(r.stdout_data, "operation_latency_cycles") == 9);
+    CHECK(textMetric(r.stdout_data, "operation_latency_cycles") == 10);
     CHECK(textMetric(r.stdout_data, "long_latency_ops") == 2);
     CHECK(contains(r.stdout_data, "sce_style_lid: cycles=2"));
 }

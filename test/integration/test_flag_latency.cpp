@@ -195,20 +195,35 @@ TEST_CASE("Latency: plain mul followed by fmand has at least 4 cycles between")
     CHECK(d >= 4);
 }
 
-TEST_CASE("Latency: lq followed by vf consumer has at least 5 cycles between")
+TEST_CASE("Latency: lq followed by vf consumer has at least 6 cycles between")
 {
-    // ps2gl's general renderer loads texture STQ with lq and then consumes the
-    // loaded VF.  Without a load-use delay, the consumer sees the old VF
-    // contents and emits corrupt perspective texture coordinates.
+	// ps2gl's general renderer loads texture STQ with lq and then consumes the
+	// loaded VF.  Without a load-use delay, the consumer sees the old VF
+	// contents and emits corrupt perspective texture coordinates.
     const std::string body =
         "\tlq.xyz vf01, 0(vi00)\n"
         "\tmul.xyz vf02, vf01, vf00\n";
 
     std::string vsm = runEmit(body, "vsmLatencyLqMul");
     REQUIRE(vsm.length() > 0);
-    int d = cycleDistance(vsm, "lq.xyz", "mul.xyz");
-    REQUIRE(d > 0);
-    CHECK(d >= 5);
+	int d = cycleDistance(vsm, "lq.xyz", "mul.xyz");
+	REQUIRE(d > 0);
+	CHECK(d >= 6);
+}
+
+TEST_CASE("Latency: strict schedule slots keep lq to fmac padding")
+{
+	const std::string body =
+	    "\tlq.xyz vf17, 0(vi00)\n"
+	    "\tmul.xyz vf18, vf17, vf00\n";
+	std::vector<std::string> args;
+	args.push_back("--strict-schedule-slots");
+
+	std::string vsm = runEmitWithArgs(body, "vsmStrictLatencyLqFmac", args);
+	REQUIRE(vsm.length() > 0);
+	int d = cycleDistance(vsm, "lq.xyz", "mul.xyz");
+	REQUIRE(d > 0);
+	CHECK(d >= 6);
 }
 
 TEST_CASE("Latency: lq result can feed ftoi on the next cycle")

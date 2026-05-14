@@ -1,6 +1,7 @@
 #include "VuLatencyTracker.h"
 
 #include "Operand.h"
+#include "VuInstructionInfo.h"
 #include "VuSchedulingRules.h"
 #include "VuTokenResourceAccess.h"
 
@@ -23,6 +24,12 @@ namespace
 		VuTokenResourceAccess access;
 		return buildVuTokenResourceAccess( token, access )
 		    && (access.implicitWrites & resource) != 0;
+	}
+
+	int bypassLatencyReduction( const std::string& mnemonic, int fallback )
+	{
+		const VuInstructionInfo* info = findVuInstructionInfo( mnemonic );
+		return info ? static_cast<int>( info->latency ) : fallback;
 	}
 }
 
@@ -72,13 +79,13 @@ int VuLatencyTracker::readHazardDelay( const Token& token,
 		    && isVuFtoiConversion( producer->second )
 		    && ( (isVuMtir( token ) && vuTokenReadsRegister( token, *i ))
 		         || (partner && isVuMtir( *partner ) && vuTokenReadsRegister( *partner, *i )) ) )
-			readyCycle -= 4;
+			readyCycle -= bypassLatencyReduction( producer->second, 4 );
 		if( producer != m_registerProducerMnemonic.end()
 		    && isVuLoadToFtoiBypassProducer( producer->second )
 		    && ( (isVuFtoiConversion( lowerVuTokenName( token ) ) && vuTokenReadsRegister( token, *i ))
 		         || (partner && isVuFtoiConversion( lowerVuTokenName( *partner ) )
 		             && vuTokenReadsRegister( *partner, *i )) ) )
-			readyCycle -= 4;
+			readyCycle -= bypassLatencyReduction( producer->second, 4 );
 
 		const int gap = readyCycle - currentCycle;
 		if( gap > needed )

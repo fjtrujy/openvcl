@@ -97,10 +97,10 @@ TEST_CASE("VsmCostAnalyzer fixture: simple scheduled VSM has precomputed issue c
     CHECK(textMetric(report, "branch_cycles") == 1);
     CHECK(textMetric(report, "waitq_cycles") == 1);
     CHECK(textMetric(report, "e_bit_cycles") == 1);
-    CHECK(textMetric(report, "operation_latency_cycles") == 12);
+    CHECK(textMetric(report, "operation_latency_cycles") == 13);
     CHECK(textMetric(report, "long_latency_ops") == 3);
-    CHECK(textMetric(report, "long_latency_cycles") == 7);
-    CHECK(textMetric(report, "max_op_latency") == 4);
+    CHECK(textMetric(report, "long_latency_cycles") == 8);
+    CHECK(textMetric(report, "max_op_latency") == 5);
     CHECK(contains(report, "entry_lid: cycles=5"));
     CHECK(contains(report, "nop_slots=5"));
 }
@@ -113,8 +113,8 @@ TEST_CASE("VsmCostAnalyzer fixture: JSON exposes the same precomputed cost")
     CHECK(jsonMetric(report, "static_cycles") == 5);
     CHECK(jsonMetric(report, "instructions") == 5);
     CHECK(jsonMetric(report, "paired_cycles") == 1);
-    CHECK(jsonMetric(report, "operation_latency_cycles") == 12);
-    CHECK(jsonMetric(report, "long_latency_cycles") == 7);
+    CHECK(jsonMetric(report, "operation_latency_cycles") == 13);
+    CHECK(jsonMetric(report, "long_latency_cycles") == 8);
     CHECK(contains(report, "\"label_order\": [\"entry_lid\"]"));
     CHECK(contains(report, "\"cost_by_label\""));
     CHECK(contains(report, "\"entry_lid\": {\"canonical_label\": \"entry_lid\", \"affine_role\": \"base\""));
@@ -421,10 +421,10 @@ TEST_CASE("VsmCostAnalyzer fixture: SCE padded columns have precomputed cost")
     CHECK(textMetric(report, "single_lower_cycles") == 1);
     CHECK(textMetric(report, "nop_only_cycles") == 0);
     CHECK(textMetric(report, "nop_slots") == 1);
-    CHECK(textMetric(report, "operation_latency_cycles") == 9);
+    CHECK(textMetric(report, "operation_latency_cycles") == 10);
     CHECK(textMetric(report, "long_latency_ops") == 2);
-    CHECK(textMetric(report, "long_latency_cycles") == 6);
-    CHECK(textMetric(report, "max_op_latency") == 4);
+    CHECK(textMetric(report, "long_latency_cycles") == 7);
+    CHECK(textMetric(report, "max_op_latency") == 5);
     CHECK(contains(report, "sce_style_lid: cycles=2"));
 }
 
