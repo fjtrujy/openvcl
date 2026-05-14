@@ -134,7 +134,9 @@ public:
 		T						= 0x00000008,	// [T]
 		IGNORED			= 0x00000010,	// ignored by the code-generator
 		PROCESSED		= 0x00000020,	// has been processed by the register allocator
-		BRANCH_DELAY_FILLER	= 0x00000040	// moved into the previous branch delay slot
+		BRANCH_DELAY_FILLER	= 0x00000040,	// moved into the previous branch delay slot
+		SCHEDULED_PAIR_FIRST	= 0x00000080,	// first token in a ready-scheduler issue pair
+		SCHEDULED_PAIR_SECOND	= 0x00000100	// second token in a ready-scheduler issue pair
 	};
 
 	enum Modifier

@@ -780,6 +780,16 @@ namespace
 		return line;
 	}
 
+	bool tokenIsScheduledPairFirst( const Token& token )
+	{
+		return (token.flags() & Token::SCHEDULED_PAIR_FIRST) != 0;
+	}
+
+	bool tokenIsScheduledPairSecond( const Token& token )
+	{
+		return (token.flags() & Token::SCHEDULED_PAIR_SECOND) != 0;
+	}
+
 	bool integerSelfImmediateAdd( const Token& token, std::string& reg, long& immediate )
 	{
 		if( !token.operand() || !vuInstrEquals( lowerVuTokenName(token), VU_OP_IADDIU ) )
@@ -1205,6 +1215,26 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 					emitSingleToken(*filler);
 
 				workTokens.erase(filler);
+				continue;
+			}
+		}
+
+		if( tokenIsScheduledPairFirst( token ) )
+		{
+			std::list<Token>::iterator scheduledPartner = k;
+			++scheduledPartner;
+			if( scheduledPartner != workTokens.end()
+			    && tokenIsScheduledPairSecond( *scheduledPartner )
+			    && tokensCanPair( token, *scheduledPartner )
+			    && readHazardDelay( token, &*scheduledPartner ) <= readHazardDelay( token, NULL ) )
+			{
+				padForReadHazards( token, &*scheduledPartner );
+				emitPairedTokens( token, *scheduledPartner );
+				if( isVuTerminalUnconditionalBranch(token)
+				    || isVuTerminalUnconditionalBranch(*scheduledPartner) )
+					exitWritten = true;
+				workTokens.erase( scheduledPartner );
+				++k;
 				continue;
 			}
 		}
@@ -1873,7 +1903,10 @@ bool CodeGenerator::movePreIncrementStoreIntoBranchDelaySlot( std::list<Token>& 
 
 	if( store->label().length() != 0 || increment->label().length() != 0 )
 		return false;
-	if( store->flags() & (Token::PREORDERED | Token::E | Token::D | Token::T | Token::BRANCH_DELAY_FILLER) )
+	if( store->flags() & (Token::PREORDERED | Token::E | Token::D | Token::T | Token::BRANCH_DELAY_FILLER
+	                      | Token::SCHEDULED_PAIR_FIRST | Token::SCHEDULED_PAIR_SECOND) )
+		return false;
+	if( increment->flags() & (Token::SCHEDULED_PAIR_FIRST | Token::SCHEDULED_PAIR_SECOND) )
 		return false;
 	if( !isVuPlainMemoryStore(*store) )
 		return false;
@@ -1939,7 +1972,10 @@ bool CodeGenerator::moveIndependentStoreIntoBranchDelaySlot( std::list<Token>& t
 
 	if( store->label().length() != 0 || increment->label().length() != 0 )
 		return false;
-	if( store->flags() & (Token::PREORDERED | Token::E | Token::D | Token::T | Token::BRANCH_DELAY_FILLER) )
+	if( store->flags() & (Token::PREORDERED | Token::E | Token::D | Token::T | Token::BRANCH_DELAY_FILLER
+	                      | Token::SCHEDULED_PAIR_FIRST | Token::SCHEDULED_PAIR_SECOND) )
+		return false;
+	if( increment->flags() & (Token::SCHEDULED_PAIR_FIRST | Token::SCHEDULED_PAIR_SECOND) )
 		return false;
 	if( !isVuPlainMemoryStore(*store) )
 		return false;
@@ -2012,7 +2048,8 @@ bool CodeGenerator::moveDeadFallthroughIntoBranchDelaySlot( std::list<Token>& to
 		return false;
 	if( candidate->label().length() != 0 )
 		return false;
-	if( candidate->flags() & (Token::PREORDERED | Token::E | Token::D | Token::T | Token::BRANCH_DELAY_FILLER) )
+	if( candidate->flags() & (Token::PREORDERED | Token::E | Token::D | Token::T | Token::BRANCH_DELAY_FILLER
+	                          | Token::SCHEDULED_PAIR_FIRST | Token::SCHEDULED_PAIR_SECOND) )
 		return false;
 	if( !isVuEmittableInstruction(*candidate) )
 		return false;
@@ -2081,7 +2118,8 @@ bool CodeGenerator::canMoveIntoBranchDelaySlot( const Token& candidate, const To
 {
 	if( candidate.label().length() != 0 )
 		return false;
-	if( candidate.flags() & (Token::PREORDERED | Token::E | Token::D | Token::T | Token::BRANCH_DELAY_FILLER) )
+	if( candidate.flags() & (Token::PREORDERED | Token::E | Token::D | Token::T | Token::BRANCH_DELAY_FILLER
+	                         | Token::SCHEDULED_PAIR_FIRST | Token::SCHEDULED_PAIR_SECOND) )
 		return false;
 	if( !isVuEmittableInstruction(candidate) )
 		return false;

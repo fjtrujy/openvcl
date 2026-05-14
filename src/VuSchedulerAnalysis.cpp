@@ -277,9 +277,20 @@ namespace
 		for( std::vector<VuScheduledIssueSlot>::const_iterator i = slots.begin(); i != slots.end(); ++i )
 		{
 			if( i->firstToken )
-				scheduled.push_back( *i->firstToken );
+			{
+				Token token( *i->firstToken );
+				token.setFlags( token.flags() & ~(Token::SCHEDULED_PAIR_FIRST | Token::SCHEDULED_PAIR_SECOND) );
+				if( i->secondToken )
+					token.setFlags( token.flags() | Token::SCHEDULED_PAIR_FIRST );
+				scheduled.push_back( token );
+			}
 			if( i->secondToken )
-				scheduled.push_back( *i->secondToken );
+			{
+				Token token( *i->secondToken );
+				token.setFlags( token.flags() & ~(Token::SCHEDULED_PAIR_FIRST | Token::SCHEDULED_PAIR_SECOND) );
+				token.setFlags( token.flags() | Token::SCHEDULED_PAIR_SECOND );
+				scheduled.push_back( token );
+			}
 		}
 	}
 

@@ -1012,6 +1012,34 @@ TEST_CASE("VuSchedulerAnalysis: issue slots expose generic dual-pipe pair choice
     CHECK(vcl::normalizeVuMnemonic(slots[1].upperToken->name()) == "mul");
 }
 
+TEST_CASE("VuSchedulerAnalysis: ready-set scheduler tags explicit issue-slot pairs")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("mul.xy vf04, vf01, vf05"));
+    REQUIRE(program.parse("iaddiu vi01, vi00, 1"));
+
+    std::list<vcl::Token> scheduled = vcl::scheduleVuTokensReadySet(program.tokenizer.tokens());
+    REQUIRE(scheduled.size() == 3u);
+
+    std::list<vcl::Token>::const_iterator i = scheduled.begin();
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "add");
+    CHECK((i->flags() & vcl::Token::SCHEDULED_PAIR_FIRST) != 0);
+    CHECK((i->flags() & vcl::Token::SCHEDULED_PAIR_SECOND) == 0);
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "iaddiu");
+    CHECK((i->flags() & vcl::Token::SCHEDULED_PAIR_FIRST) == 0);
+    CHECK((i->flags() & vcl::Token::SCHEDULED_PAIR_SECOND) != 0);
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "mul");
+    CHECK((i->flags() & vcl::Token::SCHEDULED_PAIR_FIRST) == 0);
+    CHECK((i->flags() & vcl::Token::SCHEDULED_PAIR_SECOND) == 0);
+}
+
 TEST_CASE("VuSchedulerAnalysis: ready-set scheduler prefers longer dependency chains")
 {
     vcl::Error::ResetErrorCount();
