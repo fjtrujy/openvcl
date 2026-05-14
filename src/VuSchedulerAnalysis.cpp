@@ -857,8 +857,6 @@ namespace
 	{
 		if( opportunity.softwarePipelineRotations.empty() )
 			return true;
-		if( opportunity.qConsumerTokenIndices.size() != 1 )
-			return false;
 
 		std::vector<unsigned int> prefetchTokenIndices;
 		for( std::vector<VuSoftwarePipelinePrefetch>::const_iterator i = opportunity.softwarePipelinePrefetches.begin();

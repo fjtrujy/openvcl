@@ -688,6 +688,43 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline rewrites simple rotate
     CHECK(moveScratchToOriginal == 1u);
 }
 
+TEST_CASE("VuSchedulerAnalysis: generic software pipeline rewrites multiple rotated Q consumers")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 1"));
+    REQUIRE(program.parse("lq.xy vf03, 0(vi01)"));
+    REQUIRE(program.parse("lq.xy vf05, 1(vi01)"));
+    REQUIRE(program.parse("div q, vf00[w], vf00[w]"));
+    REQUIRE(program.parse("mulq.xy vf03, vf03, q"));
+    REQUIRE(program.parse("mulq.xy vf05, vf05, q"));
+    REQUIRE(program.parse("add.xy vf20, vf21, vf22"));
+    REQUIRE(program.parse("sub.xy vf23, vf24, vf25"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 2"));
+    REQUIRE(program.parse("iaddiu vi02, vi02, 2"));
+    REQUIRE(program.parse("ibne vi01, vi03, loop_lid"));
+
+    std::vector<vcl::VuLoopPipelineOpportunity> opportunities = vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
+    REQUIRE(opportunities.size() == 1u);
+    CHECK(opportunities[0].eligibleSingleQSoftwarePipeline);
+    CHECK(opportunities[0].hasSoftwarePipelinePlan);
+    CHECK(opportunities[0].canEmitSoftwarePipeline);
+    CHECK(!hasString(opportunities[0].softwarePipelineBlockers, "requires_register_rotation"));
+    CHECK(opportunities[0].softwarePipelineRotations.size() == 2u);
+    CHECK(findRotation(opportunities[0].softwarePipelineRotations, "VF03") != NULL);
+    CHECK(findRotation(opportunities[0].softwarePipelineRotations, "VF05") != NULL);
+
+    std::list<vcl::Token> transformed = vcl::applyVuSoftwarePipelinePlans(program.tokenizer.tokens());
+    unsigned int moveCount = 0;
+    for (std::list<vcl::Token>::const_iterator i = transformed.begin(); i != transformed.end(); ++i)
+    {
+        if (vcl::normalizeVuMnemonic(i->name()) == "move")
+            ++moveCount;
+    }
+    CHECK(moveCount == 2u);
+}
+
 TEST_CASE("VuSchedulerAnalysis: multi-instruction prefetch reports suffix clobber blockers")
 {
     vcl::Error::ResetErrorCount();
