@@ -67,6 +67,12 @@ struct VuLoopCandidate
 	unsigned int lastBodyTokenIndex;
 	bool hasLoopDirective;
 	bool simpleCountedLoop;
+	unsigned int memoryLoadCount;
+	unsigned int memoryStoreCount;
+	bool hasMemoryPreOrPostIncrement;
+	bool hasXgkick;
+	std::list<std::string> inductionRegisters;
+	std::list<std::string> loopReadWriteRegisters;
 	std::vector<const Token*> bodyTokens;
 	const Token* branchToken;
 };
@@ -91,6 +97,12 @@ struct VuLoopPipelineOpportunity
 	std::vector<unsigned int> qConsumerTokenIndices;
 	std::list<std::string> carriedQInputRegisters;
 	std::list<std::string> carriedQOutputRegisters;
+	unsigned int memoryLoadCount;
+	unsigned int memoryStoreCount;
+	bool hasMemoryPreOrPostIncrement;
+	bool hasXgkick;
+	std::list<std::string> inductionRegisters;
+	std::list<std::string> loopReadWriteRegisters;
 };
 
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens );

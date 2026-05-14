@@ -311,6 +311,43 @@ namespace
 		return token.operand() && token.operand()->name() == "--LoopCS";
 	}
 
+	bool isSelfIntegerImmediateUpdate( const Token& token, std::string& reg )
+	{
+		if( !token.operand() )
+			return false;
+
+		const std::string name = lowerVuTokenName( token );
+		if( name != "iaddiu" && name != "isubiu" )
+			return false;
+
+		const std::list<Token::Argument>& args = token.arguments();
+		if( args.size() != 3 )
+			return false;
+
+		std::list<Token::Argument>::const_iterator dst = args.begin();
+		std::list<Token::Argument>::const_iterator src = dst;
+		++src;
+		std::list<Token::Argument>::const_iterator imm = src;
+		++imm;
+
+		if( (*dst).type() != Token::Argument::INTEGER_REGISTER
+		    || (*src).type() != Token::Argument::INTEGER_REGISTER
+		    || (*imm).type() != Token::Argument::IMMEDIATE )
+			return false;
+		if( !((*dst).flags() & Token::Argument::WRITE) )
+			return false;
+
+		std::string dstReg;
+		std::string srcReg;
+		if( !vuRegisterKey( *dst, dstReg ) || !vuRegisterKey( *src, srcReg ) )
+			return false;
+		if( dstReg != srcReg )
+			return false;
+
+		reg = dstReg;
+		return true;
+	}
+
 	bool loopTargetHasDirective( const std::vector<const Token*>& tokens, unsigned int labelIndex )
 	{
 		if( labelIndex < tokens.size() && tokenIsLoopDirective( *tokens[labelIndex] ) )
@@ -323,6 +360,55 @@ namespace
 	{
 		if( !containsKey( values, value ) )
 			values.push_back( value );
+	}
+
+	void collectRegisterIntersection( const std::list<std::string>& reads,
+	                                  const std::list<std::string>& writes,
+	                                  std::list<std::string>& intersection )
+	{
+		for( std::list<std::string>::const_iterator i = reads.begin(); i != reads.end(); ++i )
+		{
+			if( containsKey( writes, *i ) )
+				addUniqueString( intersection, *i );
+		}
+	}
+
+	void analyzeLoopCandidateResources( VuLoopCandidate& candidate )
+	{
+		std::list<std::string> reads;
+		std::list<std::string> writes;
+
+		for( std::vector<const Token*>::const_iterator i = candidate.bodyTokens.begin(); i != candidate.bodyTokens.end(); ++i )
+		{
+			VuTokenResourceAccess access;
+			if( buildVuTokenResourceAccess( **i, access ) )
+			{
+				if( access.memoryKind == VU_MEMORY_LOAD )
+					++candidate.memoryLoadCount;
+				else if( access.memoryKind == VU_MEMORY_STORE )
+					++candidate.memoryStoreCount;
+				else if( access.memoryKind == VU_MEMORY_XGKICK )
+					candidate.hasXgkick = true;
+
+				if( access.memoryFlags & (VU_MEMORY_FLAG_PREDEC | VU_MEMORY_FLAG_POSTINC) )
+					candidate.hasMemoryPreOrPostIncrement = true;
+			}
+
+			std::string inductionReg;
+			if( isSelfIntegerImmediateUpdate( **i, inductionReg ) )
+				addUniqueString( candidate.inductionRegisters, inductionReg );
+
+			std::list<std::string> tokenReads;
+			std::list<std::string> tokenWrites;
+			collectVuRegisterReadKeys( **i, tokenReads );
+			collectVuRegisterWriteKeys( **i, tokenWrites );
+			for( std::list<std::string>::const_iterator read = tokenReads.begin(); read != tokenReads.end(); ++read )
+				addUniqueString( reads, *read );
+			for( std::list<std::string>::const_iterator write = tokenWrites.begin(); write != tokenWrites.end(); ++write )
+				addUniqueString( writes, *write );
+		}
+
+		collectRegisterIntersection( reads, writes, candidate.loopReadWriteRegisters );
 	}
 
 	void collectLoopCarriedQInputs( const VuLoopCandidate& loop,
@@ -415,6 +501,10 @@ VuLoopCandidate::VuLoopCandidate()
 	lastBodyTokenIndex = 0;
 	hasLoopDirective = false;
 	simpleCountedLoop = false;
+	memoryLoadCount = 0;
+	memoryStoreCount = 0;
+	hasMemoryPreOrPostIncrement = false;
+	hasXgkick = false;
 	branchToken = NULL;
 }
 
@@ -432,6 +522,10 @@ VuLoopPipelineOpportunity::VuLoopPipelineOpportunity()
 	requiresPrologEpilog = false;
 	requiresLoopCarriedRegisters = false;
 	eligibleSingleQSoftwarePipeline = false;
+	memoryLoadCount = 0;
+	memoryStoreCount = 0;
+	hasMemoryPreOrPostIncrement = false;
+	hasXgkick = false;
 }
 
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens )
@@ -559,6 +653,7 @@ std::vector<VuLoopCandidate> findVuLoopCandidates( const std::list<Token>& token
 
 		for( unsigned int body = candidate.firstBodyTokenIndex; body <= candidate.lastBodyTokenIndex; ++body )
 			candidate.bodyTokens.push_back( indexedTokens[body] );
+		analyzeLoopCandidateResources( candidate );
 
 		result.push_back( candidate );
 	}
@@ -612,6 +707,12 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		opportunity.simpleCountedLoop = loop->simpleCountedLoop;
 		opportunity.hasSingleQProducer = qProducerCount == 1;
 		opportunity.requiresPrologEpilog = loop->simpleCountedLoop && qProducerCount == 1;
+		opportunity.memoryLoadCount = loop->memoryLoadCount;
+		opportunity.memoryStoreCount = loop->memoryStoreCount;
+		opportunity.hasMemoryPreOrPostIncrement = loop->hasMemoryPreOrPostIncrement;
+		opportunity.hasXgkick = loop->hasXgkick;
+		opportunity.inductionRegisters = loop->inductionRegisters;
+		opportunity.loopReadWriteRegisters = loop->loopReadWriteRegisters;
 
 		for( std::vector<unsigned int>::const_iterator q = qConsumerOffsets.begin(); q != qConsumerOffsets.end(); ++q )
 		{

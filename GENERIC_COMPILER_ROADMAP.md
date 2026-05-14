@@ -37,10 +37,11 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Improve cost while keeping output valid for arbitrary VCL.
    - Done: ready-set scheduling now keeps independent opposite-pipe ready instructions adjacent so the generic emitter can dual-issue them.
 
-6. **Implement Generic Loop Analysis**
+6. **Implement Generic Loop Analysis** - started
    - Detect induction registers, loop-carried dependencies, loads/stores, branch targets, and loop bodies.
    - Report cost by label and as `fixed + loop*n`.
    - Emit machine-readable JSON for comparisons.
+   - Done: loop-pipeline analysis now reports memory load/store counts, pre/post-increment memory use, xgkick presence, induction registers, and read/write loop-carried registers in text and JSON.
 
 7. **Implement Generic Software Pipelining**
    - Start with simple affine loops.

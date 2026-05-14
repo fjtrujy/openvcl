@@ -204,6 +204,12 @@ TEST_CASE("VuSchedulerAnalysis: loop candidates find LoopCS back-edge loops")
     CHECK(loops[0].lastBodyTokenIndex == 6u);
     CHECK(loops[0].hasLoopDirective);
     CHECK(loops[0].simpleCountedLoop);
+    CHECK(loops[0].memoryLoadCount == 1u);
+    CHECK(loops[0].memoryStoreCount == 0u);
+    CHECK(!loops[0].hasMemoryPreOrPostIncrement);
+    CHECK(!loops[0].hasXgkick);
+    CHECK(hasString(loops[0].inductionRegisters, "VI02"));
+    CHECK(hasString(loops[0].loopReadWriteRegisters, "VI02"));
     REQUIRE(loops[0].branchToken != NULL);
     CHECK(vcl::normalizeVuMnemonic(loops[0].branchToken->name()) == "ibne");
     REQUIRE(loops[0].bodyTokens.size() == 5u);
@@ -264,6 +270,12 @@ TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose loop-carried Q sta
     CHECK(opportunities[0].simpleCountedLoop);
     CHECK(opportunities[0].hasSingleQProducer);
     CHECK(opportunities[0].requiresPrologEpilog);
+    CHECK(opportunities[0].memoryLoadCount == 2u);
+    CHECK(opportunities[0].memoryStoreCount == 1u);
+    CHECK(!opportunities[0].hasMemoryPreOrPostIncrement);
+    CHECK(!opportunities[0].hasXgkick);
+    CHECK(hasString(opportunities[0].inductionRegisters, "VI01"));
+    CHECK(hasString(opportunities[0].loopReadWriteRegisters, "VI01"));
     CHECK(opportunities[0].requiresLoopCarriedRegisters);
     CHECK(opportunities[0].eligibleSingleQSoftwarePipeline);
     REQUIRE(opportunities[0].qConsumerTokenIndices.size() == 2u);

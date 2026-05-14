@@ -408,8 +408,16 @@ namespace
 			       << " single_q_producer=" << (i->hasSingleQProducer ? "yes" : "no")
 			       << " requires_prolog_epilog=" << (i->requiresPrologEpilog ? "yes" : "no")
 			       << " requires_loop_carried_registers=" << (i->requiresLoopCarriedRegisters ? "yes" : "no")
+			       << " memory_loads=" << i->memoryLoadCount
+			       << " memory_stores=" << i->memoryStoreCount
+			       << " memory_pre_post_increment=" << (i->hasMemoryPreOrPostIncrement ? "yes" : "no")
+			       << " xgkick=" << (i->hasXgkick ? "yes" : "no")
 			       << " eligible_single_q_pipeline=" << (i->eligibleSingleQSoftwarePipeline ? "yes" : "no")
-			       << " carried_q_inputs=";
+			       << " induction_registers=";
+			writeStringListText( stream, i->inductionRegisters );
+			stream << " loop_read_write_registers=";
+			writeStringListText( stream, i->loopReadWriteRegisters );
+			stream << " carried_q_inputs=";
 			writeStringListText( stream, i->carriedQInputRegisters );
 			stream << " carried_q_outputs=";
 			writeStringListText( stream, i->carriedQOutputRegisters );
@@ -440,7 +448,13 @@ namespace
 			stream << "      \"single_q_producer\": " << (opportunity.hasSingleQProducer ? "true" : "false") << ",\n";
 			stream << "      \"requires_prolog_epilog\": " << (opportunity.requiresPrologEpilog ? "true" : "false") << ",\n";
 			stream << "      \"requires_loop_carried_registers\": " << (opportunity.requiresLoopCarriedRegisters ? "true" : "false") << ",\n";
+			stream << "      \"memory_loads\": " << opportunity.memoryLoadCount << ",\n";
+			stream << "      \"memory_stores\": " << opportunity.memoryStoreCount << ",\n";
+			stream << "      \"memory_pre_post_increment\": " << (opportunity.hasMemoryPreOrPostIncrement ? "true" : "false") << ",\n";
+			stream << "      \"xgkick\": " << (opportunity.hasXgkick ? "true" : "false") << ",\n";
 			stream << "      \"eligible_single_q_pipeline\": " << (opportunity.eligibleSingleQSoftwarePipeline ? "true" : "false") << ",\n";
+			stream << "      \"induction_registers\": "; writeStringListJson( stream, opportunity.inductionRegisters ); stream << ",\n";
+			stream << "      \"loop_read_write_registers\": "; writeStringListJson( stream, opportunity.loopReadWriteRegisters ); stream << ",\n";
 			stream << "      \"carried_q_input_registers\": "; writeStringListJson( stream, opportunity.carriedQInputRegisters ); stream << ",\n";
 			stream << "      \"carried_q_output_registers\": "; writeStringListJson( stream, opportunity.carriedQOutputRegisters ); stream << "\n";
 			stream << "    }";
