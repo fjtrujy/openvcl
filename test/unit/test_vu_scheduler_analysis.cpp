@@ -1714,6 +1714,8 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q cyclic prefixes can guard plain store si
     CHECK(opportunities[0].canEmitMultiQSoftwarePipeline);
     CHECK(opportunities[0].multiQCyclicPrefixNeedsGuard);
     CHECK(opportunities[0].multiQSoftwarePipelineBlockers.empty());
+    REQUIRE(!opportunities[0].drainTokenIndices.empty());
+    CHECK(opportunities[0].drainTokenIndices.back() < opportunities[0].branchTokenIndex);
 
     std::vector<vcl::VuSoftwarePipelineRewritePlan> plans =
         vcl::buildVuSoftwarePipelineRewritePlans(program.tokenizer.tokens());
@@ -1721,6 +1723,7 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q cyclic prefixes can guard plain store si
     CHECK(plans[0].cyclicPrefixBeforeBranch);
     CHECK(plans[0].cyclicPrefixNeedsGuard);
     CHECK(plans[0].emitsDrain);
+    CHECK(plans[0].drainTokenIndices == opportunities[0].drainTokenIndices);
 
     std::list<vcl::Token> transformed =
         vcl::applyVuSoftwarePipelinePlans(program.tokenizer.tokens());
@@ -1730,6 +1733,7 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q cyclic prefixes can guard plain store si
     bool sawGuardBranch = false;
     bool sawGuardedStore = false;
     bool sawLoopBranchAfterGuardedStore = false;
+    bool sawDrainIndexUpdate = false;
     bool sawDivAfterDrain = false;
     unsigned int storeCount = 0;
     for (std::list<vcl::Token>::const_iterator i = transformed.begin(); i != transformed.end(); ++i)
@@ -1752,6 +1756,8 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q cyclic prefixes can guard plain store si
         }
         if (inMain && sawGuardedStore && mnemonic == "ibne" && tokenBranchesTo(*i, "loop_lid"))
             sawLoopBranchAfterGuardedStore = true;
+        if (inDrain && mnemonic == "iaddiu")
+            sawDrainIndexUpdate = true;
         if (inDrain && mnemonic == "div")
             sawDivAfterDrain = true;
     }
@@ -1759,6 +1765,7 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q cyclic prefixes can guard plain store si
     CHECK(sawGuardBranch);
     CHECK(sawGuardedStore);
     CHECK(sawLoopBranchAfterGuardedStore);
+    CHECK(sawDrainIndexUpdate);
     CHECK(!sawDivAfterDrain);
     CHECK(storeCount == 1u);
 }

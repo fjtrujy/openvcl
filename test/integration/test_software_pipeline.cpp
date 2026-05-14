@@ -80,6 +80,32 @@ namespace
         return count;
     }
 
+    bool blockContains(const std::string& text, const std::string& label, const std::string& needle)
+    {
+        const std::string marker = label + ":\n";
+        std::string::size_type begin = text.find(marker);
+        if (begin == std::string::npos)
+            return false;
+        begin += marker.size();
+
+        std::string::size_type lineBegin = begin;
+        while (lineBegin < text.size())
+        {
+            std::string::size_type lineEnd = text.find('\n', lineBegin);
+            if (lineEnd == std::string::npos)
+                lineEnd = text.size();
+            std::string line = text.substr(lineBegin, lineEnd - lineBegin);
+            if (!line.empty() && line[0] != ' ' && line[0] != '\t')
+                break;
+            if (line.find(needle) != std::string::npos)
+                return true;
+            if (lineEnd == text.size())
+                break;
+            lineBegin = lineEnd + 1;
+        }
+        return false;
+    }
+
     std::string runEmitWithExtraArgs(const std::string& source, const std::vector<std::string>& extraArgs)
     {
         char tmpl[] = "/tmp/openvcl_pipe_XXXXXX.vsm";
@@ -349,6 +375,34 @@ namespace
             "\tmulq.xyz vf05, vf00, q\n"
             "\tadd.xyz vf19, vf00, vf00\n"
             "\tiaddiu vi01, vi01, 1\n"
+            "\tibne vi01, vi02, loop_lid\n"
+            "\t--exit\n"
+            "\t--endexit\n";
+    }
+
+    std::string genericMultiQGuardedStorePipelineSource()
+    {
+        return
+            "\t.init_vf_all\n"
+            "\t.init_vi_all\n"
+            "\t--enter\n"
+            "\t--endenter\n"
+            "\tiaddiu vi01, vi00, 0\n"
+            "\tiaddiu vi02, vi00, 3\n"
+            "\tiaddiu vi03, vi00, 0\n"
+            "loop_lid:\n"
+            "\t--LoopCS 1,1\n"
+            "\tadd.xyz vf02, vf00, vf00\n"
+            "\tsq.xyz vf02, 0(vi03)\n"
+            "\tdiv q, vf00w, vf00w\n"
+            "\tmulq.xyz vf03, vf00, q\n"
+            "\tadd.xyz vf20, vf00, vf00\n"
+            "\tadd.xyz vf21, vf00, vf00\n"
+            "\tdiv q, vf00w, vf00w\n"
+            "\tmulq.xyz vf06, vf00, q\n"
+            "\tadd.xyz vf22, vf00, vf00\n"
+            "\tiaddiu vi01, vi01, 1\n"
+            "\tiaddiu vi03, vi03, 1\n"
             "\tibne vi01, vi02, loop_lid\n"
             "\t--exit\n"
             "\t--endexit\n";
@@ -1212,6 +1266,27 @@ TEST_CASE("Software pipeline: generic path emits multi-Q producer-side prefixes"
                              "loop_lid:",
                              "ibne VI01, VI02, loop_lid",
                              "add.xyz VF16, VF00, VF00"));
+}
+
+TEST_CASE("Software pipeline: generic path guards cloned multi-Q store prefixes")
+{
+    std::vector<std::string> args;
+    args.push_back("--enable-generic-software-pipelining");
+    std::string vsm = runEmitWithExtraArgs(genericMultiQGuardedStorePipelineSource(), args);
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(contains(vsm, "loop_lid__PROLOG:"));
+    CHECK(contains(vsm, "loop_lid__DRAIN:"));
+    CHECK(contains(vsm, "ibeq VI01, VI02, loop_lid__DRAIN"));
+    CHECK(appearsBeforeAfter(vsm,
+                             "loop_lid:",
+                             "ibeq VI01, VI02, loop_lid__DRAIN",
+                             "sq.xyz VF31, 0(VI03)"));
+    CHECK(appearsBeforeAfter(vsm,
+                             "loop_lid:",
+                             "sq.xyz VF31, 0(VI03)",
+                             "ibne VI01, VI02, loop_lid"));
+    CHECK(!blockContains(vsm, "loop_lid__DRAIN", "sq.xyz VF31, 0(VI03)"));
 }
 
 TEST_CASE("Software pipeline: generic software-pipelining is default and can be disabled")
