@@ -63,13 +63,24 @@ namespace
 		return VU_BASIC_BLOCK_TERMINATOR_NONE;
 	}
 
+	struct ReadyLatencyState;
+	int scheduledReadHazardDelay( const Token& token,
+	                              const Token* partner,
+	                              const ReadyLatencyState& state,
+	                              unsigned int currentCycle );
+
 	int readyCandidateScore( unsigned int candidate,
 	                         bool haveLastPipe,
 	                         bool lastWasLower,
 	                         const VuBasicBlock& block,
-	                         const std::vector<unsigned int>& priority )
+	                         const std::vector<unsigned int>& priority,
+	                         const ReadyLatencyState& latencyState,
+	                         unsigned int currentCycle )
 	{
 		int score = static_cast<int>( candidate );
+		const int delay =
+		    scheduledReadHazardDelay( *block.tokens[candidate], NULL, latencyState, currentCycle );
+		score += delay * 1000;
 
 		if( isVuLongLatencyProducer( *block.tokens[candidate] ) )
 			score -= 500;
@@ -116,16 +127,151 @@ namespace
 		return (access.implicitWrites & VU_RESOURCE_MAC) != 0;
 	}
 
+	struct ReadyLatencyState
+	{
+		ReadyLatencyState()
+		{
+			qReadyCycle = -10;
+			pReadyCycle = -10;
+			lastFMACCycle = -10;
+			lastClipwCycle = -10;
+		}
+
+		std::map<std::string, int> registerReadyCycle;
+		std::map<std::string, std::string> registerProducerMnemonic;
+		int qReadyCycle;
+		int pReadyCycle;
+		int lastFMACCycle;
+		int lastClipwCycle;
+	};
+
+	int scheduledReadHazardDelay( const Token& token,
+	                              const Token* partner,
+	                              const ReadyLatencyState& state,
+	                              unsigned int currentCycle )
+	{
+		std::list<std::string> reads;
+		collectVuRegisterReadKeys( token, reads );
+		if( partner )
+			collectVuRegisterReadKeys( *partner, reads );
+
+		bool readsQ = vuTokenReadsQ( token );
+		bool readsP = vuTokenReadsP( token );
+		if( partner )
+		{
+			readsQ = readsQ || vuTokenReadsQ( *partner );
+			readsP = readsP || vuTokenReadsP( *partner );
+		}
+
+		int needed = 0;
+		for( std::list<std::string>::const_iterator i = reads.begin(); i != reads.end(); ++i )
+		{
+			std::map<std::string, int>::const_iterator ready = state.registerReadyCycle.find( *i );
+			if( ready == state.registerReadyCycle.end() )
+				continue;
+
+			int readyCycle = ready->second;
+			std::map<std::string, std::string>::const_iterator producer =
+			    state.registerProducerMnemonic.find( *i );
+			if( producer != state.registerProducerMnemonic.end()
+			    && isVuFtoiConversion( producer->second )
+			    && ( (isVuMtir( token ) && vuTokenReadsRegister( token, *i ))
+			         || (partner && isVuMtir( *partner ) && vuTokenReadsRegister( *partner, *i )) ) )
+				readyCycle -= 4;
+			if( producer != state.registerProducerMnemonic.end()
+			    && isVuLoadToFtoiBypassProducer( producer->second )
+			    && ( (isVuFtoiConversion( lowerVuTokenName( token ) ) && vuTokenReadsRegister( token, *i ))
+			         || (partner && isVuFtoiConversion( lowerVuTokenName( *partner ) )
+			             && vuTokenReadsRegister( *partner, *i )) ) )
+				readyCycle -= 4;
+
+			const int gap = readyCycle - static_cast<int>( currentCycle );
+			if( gap > needed )
+				needed = gap;
+		}
+
+		if( readsQ )
+		{
+			const int gap = state.qReadyCycle - static_cast<int>( currentCycle );
+			if( gap > needed )
+				needed = gap;
+		}
+		if( readsP )
+		{
+			const int gap = state.pReadyCycle - static_cast<int>( currentCycle );
+			if( gap > needed )
+				needed = gap;
+		}
+
+		const int flagCycle = static_cast<int>( currentCycle ) + needed;
+		bool readsMac = token.operand() && isVuMacReader( token.operand()->name() );
+		bool readsClip = token.operand() && isVuClipReader( token.operand()->name() );
+		if( partner && partner->operand() )
+		{
+			readsMac = readsMac || isVuMacReader( partner->operand()->name() );
+			readsClip = readsClip || isVuClipReader( partner->operand()->name() );
+		}
+
+		int flagDelay = 0;
+		if( readsMac )
+		{
+			const int gap = flagCycle - state.lastFMACCycle;
+			if( 4 - gap > flagDelay )
+				flagDelay = 4 - gap;
+		}
+		if( readsClip )
+		{
+			const int gap = flagCycle - state.lastClipwCycle;
+			if( 4 - gap > flagDelay )
+				flagDelay = 4 - gap;
+		}
+		if( flagDelay > 0 )
+			needed += flagDelay;
+
+		return needed;
+	}
+
+	void recordReadyLatencyWrites( const Token& token,
+	                               unsigned int issueCycle,
+	                               ReadyLatencyState& state )
+	{
+		if( token.operand() && token.operand()->unit() == Operand::FMAC )
+			state.lastFMACCycle = static_cast<int>( issueCycle );
+		if( token.operand() && isVuClipw( token.operand()->name() ) )
+			state.lastClipwCycle = static_cast<int>( issueCycle );
+
+		if( !token.operand() || token.operand()->latency() <= 1 )
+			return;
+
+		const int readyCycle = static_cast<int>( issueCycle + token.operand()->latency() + 1 );
+		std::list<std::string> writes;
+		collectVuRegisterWriteKeys( token, writes );
+		for( std::list<std::string>::const_iterator i = writes.begin(); i != writes.end(); ++i )
+		{
+			state.registerReadyCycle[*i] = readyCycle;
+			state.registerProducerMnemonic[*i] = lowerVuTokenName( token );
+		}
+
+		if( vuTokenWritesQ( token ) )
+			state.qReadyCycle = readyCycle;
+		if( vuTokenWritesP( token ) )
+			state.pReadyCycle = readyCycle;
+	}
+
 	unsigned int chooseReadyPairPartner( unsigned int primary,
 	                                     const VuBasicBlock& block,
 	                                     const std::vector<unsigned int>& incoming,
 	                                     const std::vector<bool>& emitted,
-	                                     const std::vector<unsigned int>& priority )
+	                                     const std::vector<unsigned int>& priority,
+	                                     const ReadyLatencyState& latencyState,
+	                                     unsigned int currentCycle )
 	{
 		unsigned int best = static_cast<unsigned int>( block.tokens.size() );
 		int bestScore = 0;
 		const bool primaryIsLower = isVuLowerPipe( *block.tokens[primary] );
 		const bool primaryWritesMac = tokenWritesMacForPair( *block.tokens[primary] );
+		const int primaryDelay =
+		    scheduledReadHazardDelay( *block.tokens[primary], NULL, latencyState, currentCycle );
 
 		for( unsigned int i = 0; i < block.tokens.size(); ++i )
 		{
@@ -138,8 +284,19 @@ namespace
 			                                         primaryWritesMac,
 			                                         tokenWritesMacForPair( *block.tokens[i] ) ) )
 				continue;
+			if( scheduledReadHazardDelay( *block.tokens[primary],
+			                              block.tokens[i],
+			                              latencyState,
+			                              currentCycle ) > primaryDelay )
+				continue;
 
-			const int score = readyCandidateScore( i, false, false, block, priority );
+			const int score = readyCandidateScore( i,
+			                                       false,
+			                                       false,
+			                                       block,
+			                                       priority,
+			                                       latencyState,
+			                                       currentCycle );
 			if( best == block.tokens.size() || score < bestScore )
 			{
 				best = i;
@@ -220,11 +377,13 @@ namespace
 		const std::vector<unsigned int> priority = buildDependencyPriorities( block, outgoing );
 		std::vector<bool> emitted( block.tokens.size(), false );
 		unsigned int emittedCount = 0;
+		ReadyLatencyState latencyState;
 		bool haveLastPipe = false;
 		bool lastWasLower = false;
 
 		while( emittedCount < block.tokens.size() )
 		{
+			const unsigned int currentCycle = static_cast<unsigned int>( slots.size() );
 			unsigned int best = static_cast<unsigned int>( block.tokens.size() );
 			int bestScore = 0;
 
@@ -233,7 +392,13 @@ namespace
 				if( emitted[i] || incoming[i] != 0 )
 					continue;
 
-				const int score = readyCandidateScore( i, haveLastPipe, lastWasLower, block, priority );
+				const int score = readyCandidateScore( i,
+				                                       haveLastPipe,
+				                                       lastWasLower,
+				                                       block,
+				                                       priority,
+				                                       latencyState,
+				                                       currentCycle );
 				if( best == block.tokens.size() || score < bestScore )
 				{
 					best = i;
@@ -251,14 +416,22 @@ namespace
 				return slots;
 			}
 
-			const unsigned int partner = chooseReadyPairPartner( best, block, incoming, emitted, priority );
+			const unsigned int partner = chooseReadyPairPartner( best,
+			                                                     block,
+			                                                     incoming,
+			                                                     emitted,
+			                                                     priority,
+			                                                     latencyState,
+			                                                     currentCycle );
 			slots.push_back( makeIssueSlot( block.tokens[best],
 			                                (partner < block.tokens.size()) ? block.tokens[partner] : NULL ) );
 
 			markReadyTokenScheduled( best, incoming, outgoing, emitted, emittedCount );
+			recordReadyLatencyWrites( *block.tokens[best], currentCycle, latencyState );
 			if( partner < block.tokens.size() )
 			{
 				markReadyTokenScheduled( partner, incoming, outgoing, emitted, emittedCount );
+				recordReadyLatencyWrites( *block.tokens[partner], currentCycle, latencyState );
 				haveLastPipe = false;
 			}
 			else

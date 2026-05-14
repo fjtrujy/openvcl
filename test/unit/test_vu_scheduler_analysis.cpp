@@ -1000,6 +1000,32 @@ TEST_CASE("VuSchedulerAnalysis: ready-set scheduler pulls plain loads before ind
     CHECK(vcl::normalizeVuMnemonic(i->name()) == "mul");
 }
 
+TEST_CASE("VuSchedulerAnalysis: ready-set scheduler fills register latency with independent work")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("mul.xy vf04, vf01, vf05"));
+    REQUIRE(program.parse("iaddiu vi01, vi00, 1"));
+    REQUIRE(program.parse("iaddiu vi02, vi00, 2"));
+
+    std::list<vcl::Token> scheduled = vcl::scheduleVuTokensReadySet(program.tokenizer.tokens());
+    REQUIRE(scheduled.size() == program.tokenizer.tokens().size());
+
+    std::list<vcl::Token>::const_iterator i = scheduled.begin();
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "add");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "iaddiu");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "iaddiu");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "mul");
+}
+
 TEST_CASE("VuSchedulerAnalysis: ready-set scheduler keeps independent dual-pipe partners adjacent")
 {
     vcl::Error::ResetErrorCount();
@@ -1144,10 +1170,10 @@ TEST_CASE("VuSchedulerAnalysis: ready-set scheduler moves distinct-address loads
     CHECK(vcl::normalizeVuMnemonic(i->name()) == "lq");
     ++i;
     REQUIRE(i != scheduled.end());
-    CHECK(vcl::normalizeVuMnemonic(i->name()) == "mul");
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "sq");
     ++i;
     REQUIRE(i != scheduled.end());
-    CHECK(vcl::normalizeVuMnemonic(i->name()) == "sq");
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "mul");
 }
 
 TEST_CASE("VuSchedulerAnalysis: ready-set scheduler keeps same-address loads behind stores")
@@ -1233,6 +1259,32 @@ TEST_CASE("VuSchedulerAnalysis: ready-set scheduler can move Q producers before 
     ++i;
     REQUIRE(i != scheduled.end());
     CHECK(vcl::normalizeVuMnemonic(i->name()) == "sq");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "mulq");
+}
+
+TEST_CASE("VuSchedulerAnalysis: ready-set scheduler fills Q latency before Q consumers")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("div q, vf01[w], vf02[w]"));
+    REQUIRE(program.parse("mulq.xy vf03, vf04, q"));
+    REQUIRE(program.parse("iaddiu vi01, vi00, 1"));
+    REQUIRE(program.parse("iaddiu vi02, vi00, 2"));
+
+    std::list<vcl::Token> scheduled = vcl::scheduleVuTokensReadySet(program.tokenizer.tokens());
+    REQUIRE(scheduled.size() == program.tokenizer.tokens().size());
+
+    std::list<vcl::Token>::const_iterator i = scheduled.begin();
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "div");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "iaddiu");
+    ++i;
+    REQUIRE(i != scheduled.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "iaddiu");
     ++i;
     REQUIRE(i != scheduled.end());
     CHECK(vcl::normalizeVuMnemonic(i->name()) == "mulq");
