@@ -710,6 +710,15 @@ VuLoopPipelineOpportunity::VuLoopPipelineOpportunity()
 	hasXgkick = false;
 }
 
+VuSoftwarePipelineRewritePlan::VuSoftwarePipelineRewritePlan()
+{
+	labelTokenIndex = 0;
+	branchTokenIndex = 0;
+	qProducerTokenIndex = 0;
+	qProducerInsertAfterTokenIndex = 0;
+	emitsDrain = false;
+}
+
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens )
 {
 	std::vector<VuBasicBlock> blocks;
@@ -961,20 +970,45 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 	return result;
 }
 
+std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( const std::list<Token>& tokens )
+{
+	std::vector<VuSoftwarePipelineRewritePlan> plans;
+	const std::vector<VuLoopPipelineOpportunity> opportunities = findVuLoopPipelineOpportunities( tokens );
+	for( std::vector<VuLoopPipelineOpportunity>::const_iterator i = opportunities.begin(); i != opportunities.end(); ++i )
+	{
+		if( !i->canEmitSoftwarePipeline || i->qConsumerTokenIndices.empty() )
+			continue;
+
+		VuSoftwarePipelineRewritePlan plan;
+		plan.label = i->label;
+		plan.prologLabel = i->label + "__PROLOG";
+		plan.mainLabel = i->label;
+		plan.drainLabel = i->label + "__DRAIN";
+		plan.labelTokenIndex = i->labelTokenIndex;
+		plan.branchTokenIndex = i->branchTokenIndex;
+		plan.qProducerTokenIndex = i->qProducerTokenIndex;
+		plan.qProducerInsertAfterTokenIndex = i->qConsumerTokenIndices.back();
+		plan.prologTokenIndices = i->prologTokenIndices;
+		plan.mainTokenIndices = i->mainTokenIndices;
+		plan.drainTokenIndices = i->drainTokenIndices;
+		plan.qConsumerTokenIndices = i->qConsumerTokenIndices;
+		plans.push_back( plan );
+	}
+
+	return plans;
+}
+
 std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens )
 {
 	std::vector<const Token*> indexedTokens;
 	for( std::list<Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i )
 		indexedTokens.push_back( &*i );
 
-	std::map<unsigned int, VuLoopPipelineOpportunity> plansByLabelIndex;
-	const std::vector<VuLoopPipelineOpportunity> opportunities = findVuLoopPipelineOpportunities( tokens );
-	for( std::vector<VuLoopPipelineOpportunity>::const_iterator i = opportunities.begin(); i != opportunities.end(); ++i )
+	std::map<unsigned int, VuSoftwarePipelineRewritePlan> plansByLabelIndex;
+	const std::vector<VuSoftwarePipelineRewritePlan> plans = buildVuSoftwarePipelineRewritePlans( tokens );
+	for( std::vector<VuSoftwarePipelineRewritePlan>::const_iterator i = plans.begin(); i != plans.end(); ++i )
 	{
-		if( i->canEmitSoftwarePipeline
-		    && i->labelTokenIndex < indexedTokens.size()
-		    && i->branchTokenIndex < indexedTokens.size()
-		    && !i->qConsumerTokenIndices.empty() )
+		if( i->labelTokenIndex < indexedTokens.size() && i->branchTokenIndex < indexedTokens.size() )
 			plansByLabelIndex[i->labelTokenIndex] = *i;
 	}
 
@@ -986,7 +1020,7 @@ std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens )
 	std::list<Token>::const_iterator i = tokens.begin();
 	while( i != tokens.end() )
 	{
-		std::map<unsigned int, VuLoopPipelineOpportunity>::const_iterator plan = plansByLabelIndex.find( index );
+		std::map<unsigned int, VuSoftwarePipelineRewritePlan>::const_iterator plan = plansByLabelIndex.find( index );
 		if( plan == plansByLabelIndex.end() )
 		{
 			output.push_back( *i );
@@ -995,7 +1029,7 @@ std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens )
 			continue;
 		}
 
-		const VuLoopPipelineOpportunity& opportunity = plan->second;
+		const VuSoftwarePipelineRewritePlan& rewrite = plan->second;
 		if( i->operand() )
 		{
 			output.push_back( *i );
@@ -1005,29 +1039,28 @@ std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens )
 		}
 
 		Token prologLabel( *i );
-		prologLabel.setLabel( opportunity.label + "__PROLOG" );
+		prologLabel.setLabel( rewrite.prologLabel );
 		output.push_back( prologLabel );
 
-		for( std::vector<unsigned int>::const_iterator p = opportunity.prologTokenIndices.begin();
-		     p != opportunity.prologTokenIndices.end(); ++p )
+		for( std::vector<unsigned int>::const_iterator p = rewrite.prologTokenIndices.begin();
+		     p != rewrite.prologTokenIndices.end(); ++p )
 		{
 			if( *p < indexedTokens.size() )
 				output.push_back( tokenWithoutLabel( *indexedTokens[*p] ) );
 		}
 
 		Token mainLabel( *i );
-		mainLabel.setLabel( opportunity.label );
+		mainLabel.setLabel( rewrite.mainLabel );
 		output.push_back( mainLabel );
 
-		const unsigned int insertAfterIndex = opportunity.qConsumerTokenIndices.back();
 		appendTokenRangeWithInsertedQProducer( output,
 		                                       indexedTokens,
-		                                       opportunity.firstQConsumerTokenIndex,
-		                                       opportunity.branchTokenIndex,
-		                                       insertAfterIndex,
-		                                       opportunity.qProducerTokenIndex );
+		                                       rewrite.mainTokenIndices.empty() ? rewrite.branchTokenIndex : rewrite.mainTokenIndices.front(),
+		                                       rewrite.branchTokenIndex,
+		                                       rewrite.qProducerInsertAfterTokenIndex,
+		                                       rewrite.qProducerTokenIndex );
 
-		while( index <= opportunity.branchTokenIndex && i != tokens.end() )
+		while( index <= rewrite.branchTokenIndex && i != tokens.end() )
 		{
 			++i;
 			++index;

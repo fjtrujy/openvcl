@@ -348,6 +348,23 @@ TEST_CASE("VuSchedulerAnalysis: apply software pipeline plans rewrites emittable
     REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
     REQUIRE(program.parse("ibne vi01, vi02, loop_lid"));
 
+    std::vector<vcl::VuSoftwarePipelineRewritePlan> plans = vcl::buildVuSoftwarePipelineRewritePlans(program.tokenizer.tokens());
+    REQUIRE(plans.size() == 1u);
+    CHECK(plans[0].label == "loop_lid");
+    CHECK(plans[0].prologLabel == "loop_lid__PROLOG");
+    CHECK(plans[0].mainLabel == "loop_lid");
+    CHECK(plans[0].drainLabel == "loop_lid__DRAIN");
+    CHECK(plans[0].labelTokenIndex == 0u);
+    CHECK(plans[0].branchTokenIndex == 11u);
+    CHECK(plans[0].qProducerTokenIndex == 2u);
+    CHECK(plans[0].qProducerInsertAfterTokenIndex == 3u);
+    CHECK(!plans[0].emitsDrain);
+    REQUIRE(plans[0].prologTokenIndices.size() == 1u);
+    CHECK(plans[0].prologTokenIndices[0] == 2u);
+    REQUIRE(plans[0].mainTokenIndices.size() == 9u);
+    CHECK(plans[0].mainTokenIndices[0] == 3u);
+    CHECK(plans[0].mainTokenIndices[8] == 11u);
+
     std::list<vcl::Token> transformed = vcl::applyVuSoftwarePipelinePlans(program.tokenizer.tokens());
 
     unsigned int prologLabels = 0;

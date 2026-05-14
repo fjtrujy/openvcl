@@ -123,6 +123,25 @@ struct VuLoopPipelineOpportunity
 	std::list<std::string> loopReadWriteRegisters;
 };
 
+struct VuSoftwarePipelineRewritePlan
+{
+	VuSoftwarePipelineRewritePlan();
+
+	std::string label;
+	std::string prologLabel;
+	std::string mainLabel;
+	std::string drainLabel;
+	unsigned int labelTokenIndex;
+	unsigned int branchTokenIndex;
+	unsigned int qProducerTokenIndex;
+	unsigned int qProducerInsertAfterTokenIndex;
+	bool emitsDrain;
+	std::vector<unsigned int> prologTokenIndices;
+	std::vector<unsigned int> mainTokenIndices;
+	std::vector<unsigned int> drainTokenIndices;
+	std::vector<unsigned int> qConsumerTokenIndices;
+};
+
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens );
 std::vector<VuDependencyEdge> buildVuDependencyGraph( const VuBasicBlock& block,
                                                       unsigned int ignoredImplicitWawResources = 0 );
@@ -130,6 +149,7 @@ std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlots( const VuB
                                                                        unsigned int ignoredImplicitWawResources = 0 );
 std::vector<VuLoopCandidate> findVuLoopCandidates( const std::list<Token>& tokens );
 std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const std::list<Token>& tokens );
+std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( const std::list<Token>& tokens );
 std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens );
 std::list<Token> scheduleVuTokensPreservingOrder( const std::list<Token>& tokens );
 std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens,
