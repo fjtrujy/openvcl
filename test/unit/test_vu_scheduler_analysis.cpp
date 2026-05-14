@@ -1432,6 +1432,28 @@ TEST_CASE("VuSchedulerAnalysis: ready-set scheduler tags explicit issue-slot pai
     CHECK((i->flags() & vcl::Token::SCHEDULED_PAIR_SECOND) == 0);
 }
 
+TEST_CASE("VuSchedulerAnalysis: non-flag ready-set program exposes issue slots")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("mul.xy vf04, vf01, vf05"));
+    REQUIRE(program.parse("iaddiu vi01, vi00, 1"));
+
+    vcl::VuScheduledProgram scheduled =
+        vcl::scheduleVuProgramReadyIssueSlots(program.tokenizer.tokens());
+    REQUIRE(scheduled.blocks.size() == 1u);
+    REQUIRE(scheduled.blocks[0].issueSlots.size() == 6u);
+    CHECK(scheduled.blocks[0].firstIssueCycle == 0u);
+    CHECK(scheduled.blocks[0].cycleCount == 6u);
+    REQUIRE(scheduled.blocks[0].issueSlots[0].firstToken != NULL);
+    REQUIRE(scheduled.blocks[0].issueSlots[0].secondToken != NULL);
+    CHECK(vcl::normalizeVuMnemonic(scheduled.blocks[0].issueSlots[0].firstToken->name()) == "add");
+    CHECK(vcl::normalizeVuMnemonic(scheduled.blocks[0].issueSlots[0].secondToken->name()) == "iaddiu");
+    CHECK(scheduled.blocks[0].issueSlots[0].firstTokenIndex == 0u);
+    CHECK(scheduled.blocks[0].issueSlots[0].secondTokenIndex == 2u);
+}
+
 TEST_CASE("VuSchedulerAnalysis: ready-set scheduler prefers longer dependency chains")
 {
     vcl::Error::ResetErrorCount();

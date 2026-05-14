@@ -422,36 +422,6 @@ namespace
 		}
 	}
 
-	void appendReadyScheduledSegment( const std::vector<const Token*>& segment,
-	                                  std::list<Token>& scheduled,
-	                                  unsigned int ignoredImplicitWawResources )
-	{
-		appendIssueSlotsFlat( scheduleReadySegmentIssueSlots( segment, ignoredImplicitWawResources ),
-		                      scheduled );
-	}
-
-	void appendReadyScheduledBlock( const VuBasicBlock& block,
-	                                std::list<Token>& scheduled,
-	                                unsigned int ignoredImplicitWawResources )
-	{
-		std::vector<const Token*> segment;
-
-		for( std::vector<const Token*>::const_iterator i = block.tokens.begin(); i != block.tokens.end(); ++i )
-		{
-			if( isVuReadyScheduleCandidate( **i ) )
-			{
-				segment.push_back( *i );
-				continue;
-			}
-
-			appendReadyScheduledSegment( segment, scheduled, ignoredImplicitWawResources );
-			segment.clear();
-			scheduled.push_back( **i );
-		}
-
-		appendReadyScheduledSegment( segment, scheduled, ignoredImplicitWawResources );
-	}
-
 	struct VuFlagLiveness
 	{
 		VuFlagLiveness()
@@ -1897,6 +1867,29 @@ std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlots( const VuB
 	return slots;
 }
 
+VuScheduledProgram scheduleVuProgramReadyIssueSlots( const std::list<Token>& tokens,
+                                                     unsigned int ignoredImplicitWawResources )
+{
+	VuScheduledProgram program;
+	const std::vector<VuBasicBlock> blocks = buildVuBasicBlocks( tokens );
+
+	for( std::vector<VuBasicBlock>::const_iterator block = blocks.begin(); block != blocks.end(); ++block )
+	{
+		VuScheduledBasicBlock scheduledBlock;
+		scheduledBlock.block = *block;
+		scheduledBlock.firstIssueCycle = program.cycleCount;
+		scheduledBlock.issueSlots = scheduleVuBasicBlockReadyIssueSlots( *block,
+		                                                                 ignoredImplicitWawResources );
+		for( std::vector<VuScheduledIssueSlot>::const_iterator slot = scheduledBlock.issueSlots.begin();
+		     slot != scheduledBlock.issueSlots.end(); ++slot )
+			scheduledBlock.cycleCount += slot->cycleCount;
+		program.cycleCount += scheduledBlock.cycleCount;
+		program.blocks.push_back( scheduledBlock );
+	}
+
+	return program;
+}
+
 std::vector< std::vector<VuScheduledIssueSlot> > scheduleVuBasicBlocksReadyIssueSlotsWithFlagLiveness(
     const std::list<Token>& tokens )
 {
@@ -2349,13 +2342,9 @@ std::list<Token> scheduleVuTokensPreservingOrder( const std::list<Token>& tokens
 std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens,
                                            unsigned int ignoredImplicitWawResources )
 {
-	std::list<Token> scheduled;
-	std::vector<VuBasicBlock> blocks = buildVuBasicBlocks( tokens );
-
-	for( std::vector<VuBasicBlock>::const_iterator block = blocks.begin(); block != blocks.end(); ++block )
-		appendReadyScheduledBlock( *block, scheduled, ignoredImplicitWawResources );
-
-	return scheduled;
+	const VuScheduledProgram program =
+		scheduleVuProgramReadyIssueSlots( tokens, ignoredImplicitWawResources );
+	return flattenVuScheduledProgramTokens( program );
 }
 
 std::list<Token> scheduleVuTokensReadySetWithFlagLiveness( const std::list<Token>& tokens )

@@ -56,6 +56,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: ready-scheduler analysis now exposes a typed scheduled-program wrapper with block-level cycle ranges and program-relative issue cycles.
    - Done: ready-set token scheduling now flattens the typed scheduled-program wrapper, keeping generic codegen and scheduler dumps on the same plan.
    - Done: scheduled issue slots now store their first/second/upper/lower token indices directly, making the typed schedule model self-contained for future direct emission.
+   - Done: the non-flag ready-set API now also routes through a typed scheduled-program wrapper instead of maintaining a separate token-only scheduler path.
 
 6. **Implement Generic Loop Analysis** - done
    - Detect induction registers, loop-carried dependencies, loads/stores, branch targets, and loop bodies.

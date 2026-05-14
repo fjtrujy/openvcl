@@ -41,6 +41,8 @@
 - Scheduled issue slots now carry first/second/upper/lower token indices in
   the scheduler model itself, so text and JSON dumps no longer reconstruct
   those indices from raw token pointers.
+- The non-flag ready-set scheduling API now also builds and flattens a typed
+  `VuScheduledProgram`, removing another parallel token-only scheduler path.
 - Added regression fixtures and unit/integration tests for cost analysis.
 - Added conservative VU scheduling improvements used by ps2gl:
   - upper/lower pairing lookahead;
