@@ -137,6 +137,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: generic no-Q counted loops can use the same cyclic-prefix scratch-rotation path, giving W-power/final-color style loops a non-pattern modulo-scheduling route.
    - Done: no-Q cyclic-prefix planning now searches safe insertion points inside the main loop, letting rotated next-iteration loads/fma work fill value-chain latency instead of always sitting at the branch.
    - Done: ACC dependency graphs now track the last live ACC writer before ACC readers, reducing false cross-chain serialization while preserving accumulator read/write order.
+   - Done: no-Q cyclic-prefix rewrites now support single-store `--LoopExtra` loops while keeping the suffix store inside the loop instead of letting legacy branch-delay passes move it to fallthrough.
 
 8. **Retire Pattern Emitters Incrementally** - started
    - Replace each hand emitter only after generic scheduling/software pipelining matches correctness and reaches equal or better loop cost.

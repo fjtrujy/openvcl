@@ -3197,14 +3197,16 @@ namespace
 	                                          const std::vector<const Token*>& indexedTokens,
 	                                          VuSoftwarePipelineRewritePlan& plan )
 	{
+		const bool hasLoopExtra = loopUsesLoopExtraDirective( loop, indexedTokens );
 		if( !loop.simpleCountedLoop
 		    || loopBodyHasQProducer( loop )
-		    || loopUsesLoopExtraDirective( loop, indexedTokens )
 		    || loop.hasMemoryPreOrPostIncrement
 		    || loop.hasXgkick
 		    || loop.inductionRegisters.empty()
 		    || loop.branchTokenIndex >= indexedTokens.size()
 		    || loop.firstBodyTokenIndex >= loop.branchTokenIndex )
+			return false;
+		if( hasLoopExtra && loop.memoryStoreCount > 1 )
 			return false;
 
 		VuLoopPipelineOpportunity base;

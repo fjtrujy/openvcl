@@ -618,6 +618,7 @@ namespace
             "\tloi 255.0\n"
             "final_loop_lid:\n"
             "\t--LoopCS 1,3\n"
+            "\t--LoopExtra 1\n"
             "\tlq.xyz vf08, 1(vi03)\n"
             "\tminii.xyz vf08, vf08, i\n"
             "\tftoi0.xyz vf08, vf08\n"
@@ -1220,6 +1221,20 @@ TEST_CASE("Software pipeline: generic path emits delayed suffix store drains")
     CHECK(contains(vsm, "ibeq VI01, VI04, loop_lid__DRAIN"));
     CHECK(contains(vsm, "sq.xyz VF03, -1(VI02)"));
     CHECK(contains(vsm, "sq.xyz VF03, -2(VI02)"));
+}
+
+TEST_CASE("Software pipeline: generic final color suffix store stays inside the loop")
+{
+    std::string vsm = runEmit(finalColorPipelineSource());
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(contains(vsm, "final_loop_lid__PROLOG:"));
+    CHECK(contains(vsm, "final_loop_lid:"));
+    CHECK(countSubstrings(vsm, "sq VF08") == 1);
+    CHECK(appearsBeforeAfter(vsm,
+                             "final_loop_lid:",
+                             "sq VF08",
+                             "ibne VI03, VI02, final_loop_lid"));
 }
 
 TEST_CASE("Software pipeline: generic path emits multi-Q cyclic prefixes")

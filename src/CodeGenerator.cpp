@@ -990,7 +990,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 
 	std::list<Token> workTokens = tokens;
 	coalesceAdjacentVuIntegerAdds(workTokens);
-	fillPreIncrementStoreBranchDelaySlots(workTokens);
+	bool appliedGenericSoftwarePipeline = false;
 	if( !m_knownLoopOptimizations && m_genericSoftwarePipelining )
 	{
 		const std::vector<VuSoftwarePipelineRewritePlan> pipelinePlans =
@@ -1000,8 +1000,11 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			std::list<Token> pipelinedTokens =
 				applyVuSoftwarePipelinePlansWithSafeStoreBaseAdvance(workTokens);
 			workTokens.swap(pipelinedTokens);
+			appliedGenericSoftwarePipeline = true;
 		}
 	}
+	if( !appliedGenericSoftwarePipeline )
+		fillPreIncrementStoreBranchDelaySlots(workTokens);
 	const bool macFlagsDead = !vuTokenListReadsMac(workTokens);
 	m_enableUpperMoves = macFlagsDead;
 	m_ignoredImplicitWawResources = VU_RESOURCE_NONE;
@@ -1009,8 +1012,11 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 	const bool emitTypedScheduleDirectly = m_strictScheduleSlots || !m_knownLoopOptimizations;
 	if( emitTypedScheduleDirectly )
 	{
-		fillBranchDelaySlots(workTokens);
-		fillDeadFallthroughBranchDelaySlots(workTokens);
+		if( !appliedGenericSoftwarePipeline )
+		{
+			fillBranchDelaySlots(workTokens);
+			fillDeadFallthroughBranchDelaySlots(workTokens);
+		}
 		if( !emitStrictScheduledProgram(workTokens, exitWritten) )
 			return false;
 	}
@@ -1781,9 +1787,6 @@ bool CodeGenerator::prepareStrictScheduledToken( const Token& token,
 	}
 
 	if( token.operand()->flags()&Operand::FILTERED )
-		return false;
-
-	if( (token.flags() & Token::BRANCH_DELAY_FILLER) && !allowBranchDelayFiller )
 		return false;
 
 	return true;

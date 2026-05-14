@@ -214,7 +214,7 @@ TEST_CASE("Scheduling: strict schedule slots omit unreachable exit after termina
     CHECK(countSubstrings(vsm, "nop[E]") == 0);
 }
 
-TEST_CASE("Scheduling: strict branch-delay filler waits for paired upper producer")
+TEST_CASE("Scheduling: strict software-pipelined store stays before loop branch")
 {
     const std::string body =
         "\tloi 255.0\n"
@@ -238,7 +238,8 @@ TEST_CASE("Scheduling: strict branch-delay filler waits for paired upper produce
     const int branchLine = lineIndex(vsm, "ibne VI03, VI02, final_loop_lid");
     const int storeLine = lineIndex(vsm, "sq.xyz VF08, -2(VI03)");
     REQUIRE(branchLine >= 0);
-    CHECK(storeLine == branchLine + 1);
+    REQUIRE(storeLine >= 0);
+    CHECK(storeLine < branchLine);
 }
 
 TEST_CASE("Pairing: strict schedule slots pair safe barrier tails")

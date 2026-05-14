@@ -1847,7 +1847,7 @@ TEST_CASE("VuSchedulerAnalysis: generic cyclic prefixes can rotate no-Q counted 
     CHECK(sawClonedLoadAfterMain);
 }
 
-TEST_CASE("VuSchedulerAnalysis: no-Q cyclic prefixes skip LoopExtra store-bearing loops")
+TEST_CASE("VuSchedulerAnalysis: no-Q cyclic prefixes keep LoopExtra suffix stores")
 {
     vcl::Error::ResetErrorCount();
     ParsedProgram program;
@@ -1866,7 +1866,33 @@ TEST_CASE("VuSchedulerAnalysis: no-Q cyclic prefixes skip LoopExtra store-bearin
 
     std::vector<vcl::VuSoftwarePipelineRewritePlan> plans =
         vcl::buildVuSoftwarePipelineRewritePlans(program.tokenizer.tokens());
-    CHECK(plans.empty());
+    REQUIRE(plans.size() == 1u);
+    CHECK(plans[0].cyclicPrefixBeforeBranch);
+    CHECK(!plans[0].cyclicPrefixTokenIndices.empty());
+
+    std::list<vcl::Token> transformed =
+        vcl::applyVuSoftwarePipelinePlans(program.tokenizer.tokens());
+
+    unsigned int storeCount = 0;
+    bool sawMain = false;
+    bool sawMainStore = false;
+    for (std::list<vcl::Token>::const_iterator i = transformed.begin(); i != transformed.end(); ++i)
+    {
+        if (i->label() == "loop_lid")
+            sawMain = true;
+
+        vcl::VuTokenResourceAccess access;
+        if (!vcl::buildVuTokenResourceAccess(*i, access)
+            || access.memoryKind != vcl::VU_MEMORY_STORE)
+            continue;
+
+        ++storeCount;
+        if (sawMain)
+            sawMainStore = true;
+    }
+
+    CHECK(storeCount == 1u);
+    CHECK(sawMainStore);
 }
 
 TEST_CASE("VuSchedulerAnalysis: no-Q cyclic prefixes can fill value-chain latency")
