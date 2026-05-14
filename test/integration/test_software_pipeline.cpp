@@ -946,17 +946,18 @@ TEST_CASE("Software pipeline: no-spec directional light loop emits an 8-cycle st
     CHECK(contains(vsm, "sq.xyz VF18, -2(VI03)"));
 }
 
-TEST_CASE("Software pipeline: specular directional light loop stays scalar until W power chain is safe")
+TEST_CASE("Software pipeline: plain specular directional light loop pipelines shared W power chains")
 {
     std::string vsm = runEmit(dirLightSpecPipelineSource());
     REQUIRE(vsm.length() > 0);
 
-    CHECK(!contains(vsm, "dir_light_vert_loop_lid__SPEC_ENTRY_POINT:"));
-    CHECK(!contains(vsm, "dir_light_vert_loop_lid__MAIN_LOOP:"));
-    CHECK(contains(vsm, "dir_light_vert_loop_lid:"));
-    CHECK(contains(vsm, "ibne VI13, VI04, dir_light_vert_loop_lid"));
-    CHECK(contains(vsm, "maddx.z VF17, VF11, VF17x"));
-    CHECK(contains(vsm, "sq.xyz VF30, 1(VI03)"));
+    CHECK(contains(vsm, "dir_light_vert_loop_lid__SPEC_ENTRY_POINT:"));
+    CHECK(contains(vsm, "dir_light_vert_loop_lid__MAIN_LOOP:"));
+    CHECK(contains(vsm, "ibne VI13, VI04, dir_light_vert_loop_lid__MAIN_LOOP"));
+    CHECK(contains(vsm, "maxx.z VF28, VF29, VF00x"));
+    CHECK(contains(vsm, "mulz.xyz VF27, VF13, VF28z"));
+    CHECK(contains(vsm, "maddaw.xyz ACC, VF15, VF22w"));
+    CHECK(contains(vsm, "sq.xyz VF20, -2(VI03)"));
 }
 
 TEST_CASE("Software pipeline: indexed specular directional light loop keeps postincrement stores")
@@ -980,8 +981,8 @@ TEST_CASE("Software pipeline: pv-diff specular directional light loop keeps per-
     CHECK(contains(vsm, "dir_light_vert_loop_lid__MAIN_LOOP:"));
     CHECK(contains(vsm, "ibne VI13, VI04, dir_light_vert_loop_lid__MAIN_LOOP"));
     CHECK(contains(vsm, "iaddiu VI13, VI13, 4"));
-    CHECK(contains(vsm, "lq.xyz VF16, -1(VI13)"));
-    CHECK(contains(vsm, "lq.xyz VF16, -5(VI13)"));
+    CHECK(contains(vsm, "lq.xyz VF19, -1(VI13)"));
+    CHECK(contains(vsm, "lq.xyz VF19, -5(VI13)"));
 }
 
 TEST_CASE("Software pipeline: no-spec point light loop emits a 26-cycle steady state")

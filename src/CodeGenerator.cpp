@@ -6047,8 +6047,6 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 		return false;
 	}
 
-	// The plain material-diffuse form has shown bad specular highlights in
-	// ps2gl logo; keep only indexed/PV-diff variants enabled here.
 	bool ok = haveBranch
 	    && haveInputIncrement
 	    && (haveOutputIncrement || pattern.postIncrementStore)
@@ -6078,7 +6076,6 @@ bool CodeGenerator::collectDirLightSpecLoopPipelinePattern( std::list<Token>::it
 	    && pattern.normalOffset == 1
 	    && ((pattern.postIncrementStore && pattern.colorOffset == 0 && pattern.storeOffset == 0)
 	        || (!pattern.postIncrementStore && pattern.colorOffset == 1 && pattern.storeOffset == 1))
-	    && (pattern.materialDiffFromInput || pattern.postIncrementStore)
 	    && !pattern.inputReg.empty()
 	    && !pattern.lastInputReg.empty()
 	    && !pattern.outputReg.empty()
@@ -6109,32 +6106,47 @@ void CodeGenerator::emitDirLightSpecSoftwarePipelineLoop( const DirLightSpecLoop
 	const std::string in = p.inputReg;
 	const std::string out = p.outputReg;
 	const std::string last = p.lastInputReg;
-	const std::string normal = p.normalReg;
-	const std::string color = p.colorReg;
-	const std::string diff = p.diffProductReg;
-	const std::string localDiff = p.localDiffReg;
-	const std::string specProd = p.specProductReg;
-	const std::string specScratch = p.specScratchReg;
-	const std::string specIntensity = p.specIntensityReg;
-	const std::string specPower = p.specPowerReg;
-	const std::string lit = p.litReg;
-	const std::string result = p.resultReg;
 	const std::string vf00 = "VF00";
 	const std::string inputStep = integerText(p.inputStep);
 	const std::string inputStepOne = integerText(p.inputStep);
 	const std::string inputStepTwo = integerText(p.inputStep * 2);
 	const std::string inputStepThree = integerText(p.inputStep * 3);
+	std::list<std::string> reserved;
+	addScratchReservation(reserved, p.lightDirReg);
+	addScratchReservation(reserved, p.onesReg);
+	addScratchReservation(reserved, p.lightDiffReg);
+	if( !p.materialDiffFromInput )
+		addScratchReservation(reserved, p.materialDiffReg);
+	addScratchReservation(reserved, p.halfAngleReg);
+	addScratchReservation(reserved, p.localSpecReg);
+	addScratchReservation(reserved, p.lightAmbReg);
+	addScratchReservation(reserved, p.materialAmbReg);
+
+	const std::string normal = reserveScratchReg(reserved);
+	const std::string color = reserveScratchReg(reserved);
+	const std::string diff = reserveScratchReg(reserved);
+	const std::string diffClamp = reserveScratchReg(reserved);
+	const std::string localDiff = reserveScratchReg(reserved);
+	const std::string specProd = reserveScratchReg(reserved);
+	const std::string specSwizzle = reserveScratchReg(reserved);
+	const std::string specScratch = reserveScratchReg(reserved);
+	const std::string specIntensity = reserveScratchReg(reserved);
+	const std::string specPower = reserveScratchReg(reserved);
+	const std::string lit = reserveScratchReg(reserved);
+	const std::string result = reserveScratchReg(reserved);
+	const std::string materialDiff = p.materialDiffFromInput ? reserveScratchReg(reserved)
+	                                                        : p.materialDiffReg;
 	const std::string mainOutputStep = p.postIncrementStore ? "nop" : "iaddiu " + out + ", " + out + ", 3";
 	const std::string mainColorLoad = p.postIncrementStore ? offsetBase(0, out) : offsetBase(-2, out);
 	const std::string mainStore = p.postIncrementStore
 	                            ? "sqi.xyz " + result + ", (" + out + "++)"
 	                            : "sq.xyz " + result + ", " + offsetBase(-2, out);
 	const std::string prologOneMaterialLoad = p.materialDiffFromInput
-	                                        ? "lq.xyz " + p.materialDiffReg + ", "
+	                                        ? "lq.xyz " + materialDiff + ", "
 	                                          + offsetBase(p.materialDiffOffset - p.inputStep, in)
 	                                        : "nop";
 	const std::string pipelinedMaterialLoad = p.materialDiffFromInput
-	                                        ? "lq.xyz " + p.materialDiffReg + ", "
+	                                        ? "lq.xyz " + materialDiff + ", "
 	                                          + offsetBase(p.materialDiffOffset - (2 * p.inputStep), in)
 	                                        : "nop";
 
@@ -6143,63 +6155,63 @@ void CodeGenerator::emitDirLightSpecSoftwarePipelineLoop( const DirLightSpecLoop
 	emitRawPairedLine("nop", "iaddiu " + in + ", " + in + ", " + inputStep);
 	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, "nop");
 	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal, "nop");
-	emitRawPairedLine("nop", "mr32.xyw " + p.specSwizzleReg + ", " + specProd);
+	emitRawPairedLine("nop", "mr32.xyw " + specSwizzle + ", " + specProd);
 	emitRawPairedLine("nop", "ibeq " + in + ", " + last + ", " + p.fallbackOneLabel);
-	emitRawPairedLine("addax.w ACC, " + p.specSwizzleReg + ", " + fieldArg(p.specSwizzleReg, "x"), "nop");
+	emitRawPairedLine("addax.w ACC, " + specSwizzle + ", " + fieldArg(specSwizzle, "x"), "nop");
 
 	m_codeLines.push_back(p.prologOneLabel + ":");
-	emitRawPairedLine("maddy.w " + specScratch + ", " + vf00 + ", " + fieldArg(p.specSwizzleReg, "y"),
+	emitRawPairedLine("maddy.w " + specScratch + ", " + vf00 + ", " + fieldArg(specSwizzle, "y"),
 	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
 	emitRawPairedLine("adday.z ACC, " + diff + ", " + fieldArg(diff, "y"), "nop");
 	emitRawPairedLine("maddx.z " + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), "nop");
 	emitRawPairedLine("maxx.w " + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), "nop");
-	emitRawPairedLine("maxx.z " + diff + ", " + diff + ", " + fieldArg(vf00, "x"), "nop");
+	emitRawPairedLine("maxx.z " + diffClamp + ", " + diff + ", " + fieldArg(vf00, "x"), "nop");
 	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, "nop");
 	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, "nop");
-	emitRawPairedLine("nop", "mr32.xyw " + p.specSwizzleReg + ", " + specProd);
+	emitRawPairedLine("nop", "mr32.xyw " + specSwizzle + ", " + specProd);
 	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity,
 	                  prologOneMaterialLoad);
 	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal,
 	                  "iaddiu " + in + ", " + in + ", " + inputStep);
-	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diff, "z"), "nop");
-	emitRawPairedLine("addax.w ACC, " + p.specSwizzleReg + ", " + fieldArg(p.specSwizzleReg, "x"),
+	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diffClamp, "z"), "nop");
+	emitRawPairedLine("addax.w ACC, " + specSwizzle + ", " + fieldArg(specSwizzle, "x"),
 	                  "ibeq " + in + ", " + last + ", " + p.fallbackTwoLabel);
 	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, "nop");
 
 	m_codeLines.push_back(p.prologTwoLabel + ":");
-	emitRawPairedLine("maddy.w " + specScratch + ", " + vf00 + ", " + fieldArg(p.specSwizzleReg, "y"), "nop");
+	emitRawPairedLine("maddy.w " + specScratch + ", " + vf00 + ", " + fieldArg(specSwizzle, "y"), "nop");
 	emitRawPairedLine("adday.z ACC, " + diff + ", " + fieldArg(diff, "y"), "nop");
 	emitRawPairedLine("maddx.z " + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), "nop");
 	emitRawPairedLine("mul.w " + specPower + ", " + specIntensity + ", " + specIntensity, "nop");
 	emitRawPairedLine("maxx.w " + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), "nop");
-	emitRawPairedLine("mula.xyz ACC, " + localDiff + ", " + p.materialDiffReg,
+	emitRawPairedLine("mula.xyz ACC, " + localDiff + ", " + materialDiff,
 	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("maxx.z " + diff + ", " + diff + ", " + fieldArg(vf00, "x"), "nop");
+	emitRawPairedLine("maxx.z " + diffClamp + ", " + diff + ", " + fieldArg(vf00, "x"), "nop");
 	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, "nop");
 	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, "nop");
 	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, "nop");
 	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(specPower, "w"), "nop");
 	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, "nop");
 	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg,
-	                  "mr32.xyw " + p.specSwizzleReg + ", " + specProd);
+	                  "mr32.xyw " + specSwizzle + ", " + specProd);
 	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal,
 	                  "iaddiu " + in + ", " + in + ", " + inputStep);
-	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diff, "z"),
+	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diffClamp, "z"),
 	                  pipelinedMaterialLoad);
 	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity,
 	                  "ibeq " + in + ", " + last + ", " + p.fallbackThreeLabel);
-	emitRawPairedLine("addax.w ACC, " + p.specSwizzleReg + ", " + fieldArg(p.specSwizzleReg, "x"), "nop");
+	emitRawPairedLine("addax.w ACC, " + specSwizzle + ", " + fieldArg(specSwizzle, "x"), "nop");
 
 	m_codeLines.push_back(p.mainLabel + ":");
-	emitRawPairedLine("maddy.w " + specScratch + ", " + vf00 + ", " + fieldArg(p.specSwizzleReg, "y"),
+	emitRawPairedLine("maddy.w " + specScratch + ", " + vf00 + ", " + fieldArg(specSwizzle, "y"),
 	                  mainOutputStep);
 	emitRawPairedLine("adday.z ACC, " + diff + ", " + fieldArg(diff, "y"), "nop");
 	emitRawPairedLine("maddx.z " + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), "nop");
 	emitRawPairedLine("mul.w " + specPower + ", " + specIntensity + ", " + specIntensity, "nop");
 	emitRawPairedLine("maxx.w " + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), "nop");
-	emitRawPairedLine("mula.xyz ACC, " + localDiff + ", " + p.materialDiffReg,
+	emitRawPairedLine("mula.xyz ACC, " + localDiff + ", " + materialDiff,
 	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("maxx.z " + diff + ", " + diff + ", " + fieldArg(vf00, "x"),
+	emitRawPairedLine("maxx.z " + diffClamp + ", " + diff + ", " + fieldArg(vf00, "x"),
 	                  "lq.xyz " + color + ", " + mainColorLoad);
 	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, "nop");
 	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, "nop");
@@ -6209,14 +6221,14 @@ void CodeGenerator::emitDirLightSpecSoftwarePipelineLoop( const DirLightSpecLoop
 	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity,
 	                  "iaddiu " + in + ", " + in + ", " + inputStep);
 	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg,
-	                  "mr32.xyw " + p.specSwizzleReg + ", " + specProd);
+	                  "mr32.xyw " + specSwizzle + ", " + specProd);
 	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal,
 	                  mainStore);
-	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diff, "z"),
+	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diffClamp, "z"),
 	                  pipelinedMaterialLoad);
 	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity,
 	                  "ibne " + in + ", " + last + ", " + p.mainLabel);
-	emitRawPairedLine("addax.w ACC, " + p.specSwizzleReg + ", " + fieldArg(p.specSwizzleReg, "x"), "nop");
+	emitRawPairedLine("addax.w ACC, " + specSwizzle + ", " + fieldArg(specSwizzle, "x"), "nop");
 
 	m_codeLines.push_back(p.drainLabel + ":");
 	emitRawPairedLine("nop", "isubiu " + in + ", " + in + ", " + inputStepThree);
