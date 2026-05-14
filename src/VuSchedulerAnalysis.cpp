@@ -3182,6 +3182,19 @@ namespace
 		return scheduleVuProgramReadyIssueSlotsWithFlagLiveness( bodyTokens ).cycleCount;
 	}
 
+	bool cyclicPrefixMainStartsWithStore( const VuLoopPipelineOpportunity& candidate,
+	                                      const std::vector<const Token*>& indexedTokens )
+	{
+		if( candidate.multiQMainTokenIndices.empty() )
+			return false;
+		const unsigned int tokenIndex = candidate.multiQMainTokenIndices.front();
+		if( tokenIndex >= indexedTokens.size() )
+			return false;
+		VuTokenResourceAccess access;
+		return buildVuTokenResourceAccess( *indexedTokens[tokenIndex], access )
+		    && access.memoryKind == VU_MEMORY_STORE;
+	}
+
 	bool loopBodyHasQProducer( const VuLoopCandidate& loop )
 	{
 		for( std::vector<const Token*>::const_iterator i = loop.bodyTokens.begin();
@@ -3240,6 +3253,7 @@ namespace
 
 		unsigned int bestCycles = scheduledLoopBodyCycles( originalTokenIndices, indexedTokens );
 		VuLoopPipelineOpportunity bestCandidate;
+		bool bestStartsWithStore = false;
 		bool found = false;
 
 		for( unsigned int splitOffset = 1; splitOffset < branchOffset; ++splitOffset )
@@ -3272,10 +3286,14 @@ namespace
 				    cyclicPrefixLastTokenCanMoveToBranchDelaySlot( insertedCandidate, indexedTokens );
 				evaluatedInsertion = true;
 				const unsigned int cycles = multiQPipelineCandidateMainCycles( insertedCandidate, indexedTokens );
-				if( cycles < bestCycles )
+				const bool startsWithStore =
+				    hasLoopExtra && cyclicPrefixMainStartsWithStore( insertedCandidate, indexedTokens );
+				if( cycles < bestCycles
+				    || (startsWithStore && !bestStartsWithStore && cycles == bestCycles) )
 				{
 					bestCycles = cycles;
 					bestCandidate = insertedCandidate;
+					bestStartsWithStore = startsWithStore;
 					found = true;
 				}
 			}
@@ -3285,10 +3303,14 @@ namespace
 				candidate.multiQCyclicPrefixLastTokenInBranchDelaySlot =
 				    cyclicPrefixLastTokenCanMoveToBranchDelaySlot( candidate, indexedTokens );
 				const unsigned int cycles = multiQPipelineCandidateMainCycles( candidate, indexedTokens );
-				if( cycles < bestCycles )
+				const bool startsWithStore =
+				    hasLoopExtra && cyclicPrefixMainStartsWithStore( candidate, indexedTokens );
+				if( cycles < bestCycles
+				    || (startsWithStore && !bestStartsWithStore && cycles == bestCycles) )
 				{
 					bestCycles = cycles;
 					bestCandidate = candidate;
+					bestStartsWithStore = startsWithStore;
 					found = true;
 				}
 			}

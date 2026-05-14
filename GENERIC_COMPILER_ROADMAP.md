@@ -138,6 +138,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: no-Q cyclic-prefix planning now searches safe insertion points inside the main loop, letting rotated next-iteration loads/fma work fill value-chain latency instead of always sitting at the branch.
    - Done: ACC dependency graphs now track the last live ACC writer before ACC readers, reducing false cross-chain serialization while preserving accumulator read/write order.
    - Done: no-Q cyclic-prefix rewrites now support single-store `--LoopExtra` loops while keeping the suffix store inside the loop instead of letting legacy branch-delay passes move it to fallthrough.
+   - Done: no-Q cyclic-prefix selection now prefers a store-at-top value-rotation shape when it is cost-neutral, moving final-color conversion work into the prolog/cyclic prefix.
 
 8. **Retire Pattern Emitters Incrementally** - started
    - Replace each hand emitter only after generic scheduling/software pipelining matches correctness and reaches equal or better loop cost.

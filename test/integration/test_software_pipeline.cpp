@@ -1230,6 +1230,10 @@ TEST_CASE("Software pipeline: generic final color suffix store stays inside the 
 
     CHECK(contains(vsm, "final_loop_lid__PROLOG:"));
     CHECK(contains(vsm, "final_loop_lid:"));
+    CHECK(appearsBeforeAfter(vsm,
+                             "final_loop_lid__PROLOG:",
+                             "ftoi0.xyz VF31, VF31",
+                             "final_loop_lid:"));
     CHECK(countSubstrings(vsm, "sq VF08") == 1);
     CHECK(appearsBeforeAfter(vsm,
                              "final_loop_lid:",
