@@ -26,12 +26,11 @@
 - Schedule issue-slot dumps now expose the implicit WAW resources ignored by
   each ready-scheduler segment.
 - Generic software-pipeline rewrites can now place the next-iteration Q
-  producer in the loop branch delay slot even when the plan has safe cloned
-  prefetch work or scratch-register rotation, while preserving better
-  ordinary suffix fillers when they exist.
-- Loop-pipeline text and JSON dumps now expose when an ordinary suffix
-  instruction blocks moving the next-iteration Q producer into the branch
-  delay slot.
+  producer in the loop branch delay slot when safe, even when the plan has
+  cloned prefetch work, scratch-register rotation, or ordinary suffix work
+  that can remain before the branch.
+- Loop-pipeline text and JSON dumps expose the chosen next-iteration Q
+  producer insertion point and whether it occupies the branch delay slot.
 - Ready-scheduler analysis now has a typed `VuScheduledProgram` wrapper with
   block-level cycle ranges, and schedule dumps expose program-relative issue
   cycles.

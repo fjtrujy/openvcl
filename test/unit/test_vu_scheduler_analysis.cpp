@@ -640,7 +640,7 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline rewrites next-iteratio
     CHECK(branchDelayDivCount == 1u);
 }
 
-TEST_CASE("VuSchedulerAnalysis: generic software pipeline preserves useful branch-delay suffix fillers")
+TEST_CASE("VuSchedulerAnalysis: generic software pipeline prefers Q producers over ordinary branch-delay suffix fillers")
 {
     vcl::Error::ResetErrorCount();
     ParsedProgram program;
@@ -661,10 +661,32 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline preserves useful branc
 
     std::vector<vcl::VuSoftwarePipelineRewritePlan> plans = vcl::buildVuSoftwarePipelineRewritePlans(program.tokenizer.tokens());
     REQUIRE(plans.size() == 1u);
-    CHECK(plans[0].qProducerInsertAfterTokenIndex == 4u);
-    CHECK(!plans[0].qProducerInBranchDelaySlot);
-    CHECK(plans[0].qProducerBranchDelayBlockedBySuffixFiller);
-    CHECK(plans[0].qProducerBranchDelaySuffixFillerTokenIndex == 11u);
+    CHECK(plans[0].qProducerInsertAfterTokenIndex == 13u);
+    CHECK(plans[0].qProducerInBranchDelaySlot);
+    CHECK(!plans[0].qProducerBranchDelayBlockedBySuffixFiller);
+    CHECK(plans[0].qProducerBranchDelaySuffixFillerTokenIndex == 0u);
+
+    std::list<vcl::Token> transformed = vcl::applyVuSoftwarePipelinePlans(program.tokenizer.tokens());
+    bool sawOrdinarySuffixBeforeBranch = false;
+    bool sawBranch = false;
+    bool sawBranchDelayDiv = false;
+    for (std::list<vcl::Token>::const_iterator i = transformed.begin(); i != transformed.end(); ++i)
+    {
+        const std::string mnemonic = vcl::normalizeVuMnemonic(i->name());
+        if (!sawBranch && mnemonic == "iaddiu")
+        {
+            vcl::VuTokenResourceAccess access;
+            REQUIRE(vcl::buildVuTokenResourceAccess(*i, access));
+            if (hasString(access.registerWrites, "VI03"))
+                sawOrdinarySuffixBeforeBranch = true;
+        }
+        if (mnemonic == "ibne")
+            sawBranch = true;
+        if (sawBranch && mnemonic == "div" && (i->flags() & vcl::Token::BRANCH_DELAY_FILLER))
+            sawBranchDelayDiv = true;
+    }
+    CHECK(sawOrdinarySuffixBeforeBranch);
+    CHECK(sawBranchDelayDiv);
 }
 
 TEST_CASE("VuSchedulerAnalysis: generic software pipeline rewrites simple rotated registers")
