@@ -796,6 +796,8 @@ namespace
 			       << (rewritePlan && rewritePlan->cyclicPrefixBeforeBranch ? "yes" : "no")
 			       << " rewrite_cyclic_prefix_guarded="
 			       << (rewritePlan && rewritePlan->cyclicPrefixNeedsGuard ? "yes" : "no")
+			       << " rewrite_cyclic_prefix_branch_delay="
+			       << (rewritePlan && rewritePlan->cyclicPrefixLastTokenInBranchDelaySlot ? "yes" : "no")
 			       << " rewrite_cyclic_prefix_insert_before="
 			       << (rewritePlan ? rewritePlan->cyclicPrefixInsertBeforeTokenIndex : 0)
 			       << " rewrite_prefetch_tokens=";
@@ -828,6 +830,8 @@ namespace
 			       << i->multiQCyclicPrefixInsertBeforeTokenIndex;
 			stream << " multi_q_cyclic_prefix_guarded="
 			       << (i->multiQCyclicPrefixNeedsGuard ? "yes" : "no");
+			stream << " multi_q_cyclic_prefix_branch_delay="
+			       << (i->multiQCyclicPrefixLastTokenInBranchDelaySlot ? "yes" : "no");
 			stream << " multi_q_blockers=";
 			writeStringListText( stream, i->multiQSoftwarePipelineBlockers );
 			stream << " suffix_store_drain_blockers=";
@@ -923,7 +927,9 @@ namespace
 			stream << "        \"cyclic_prefix_insert_before_token_index\": "
 			       << opportunity.multiQCyclicPrefixInsertBeforeTokenIndex << ",\n";
 			stream << "        \"cyclic_prefix_guarded\": "
-			       << (opportunity.multiQCyclicPrefixNeedsGuard ? "true" : "false") << "\n";
+			       << (opportunity.multiQCyclicPrefixNeedsGuard ? "true" : "false") << ",\n";
+			stream << "        \"cyclic_prefix_last_token_in_branch_delay_slot\": "
+			       << (opportunity.multiQCyclicPrefixLastTokenInBranchDelaySlot ? "true" : "false") << "\n";
 			stream << "      },\n";
 			stream << "      \"rewrite_plan\": {\n";
 			stream << "        \"available\": " << (rewritePlan ? "true" : "false") << ",\n";
@@ -936,6 +942,8 @@ namespace
 			       << (rewritePlan && rewritePlan->cyclicPrefixBeforeBranch ? "true" : "false") << ",\n";
 			stream << "        \"cyclic_prefix_guarded\": "
 			       << (rewritePlan && rewritePlan->cyclicPrefixNeedsGuard ? "true" : "false") << ",\n";
+			stream << "        \"cyclic_prefix_last_token_in_branch_delay_slot\": "
+			       << (rewritePlan && rewritePlan->cyclicPrefixLastTokenInBranchDelaySlot ? "true" : "false") << ",\n";
 			stream << "        \"cyclic_prefix_insert_before_token_index\": "
 			       << (rewritePlan ? rewritePlan->cyclicPrefixInsertBeforeTokenIndex : 0) << ",\n";
 			stream << "        \"prefetch_insert_after_token_index\": "

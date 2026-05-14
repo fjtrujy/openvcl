@@ -254,6 +254,7 @@ struct VuLoopPipelineOpportunity
 	std::vector<VuSoftwarePipelineRotation> multiQCyclicPrefixRotations;
 	unsigned int multiQCyclicPrefixInsertBeforeTokenIndex;
 	bool multiQCyclicPrefixNeedsGuard;
+	bool multiQCyclicPrefixLastTokenInBranchDelaySlot;
 	std::list<std::string> softwarePipelineBlockers;
 	std::list<std::string> multiQSoftwarePipelineBlockers;
 	std::list<std::string> suffixStoreDrainBlockers;
@@ -291,6 +292,7 @@ struct VuSoftwarePipelineRewritePlan
 	bool cyclicPrefixBeforeBranch;
 	unsigned int cyclicPrefixInsertBeforeTokenIndex;
 	bool cyclicPrefixNeedsGuard;
+	bool cyclicPrefixLastTokenInBranchDelaySlot;
 	bool drainsSuffixStores;
 	bool emitsDrain;
 	std::vector<unsigned int> prefetchTokenIndices;

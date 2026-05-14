@@ -1210,8 +1210,8 @@ TEST_CASE("Software pipeline: generic path emits multi-Q producer-side prefixes"
                              "add.xyz VF16, VF00, VF00"));
     CHECK(appearsBeforeAfter(vsm,
                              "loop_lid:",
-                             "add.xyz VF16, VF00, VF00",
-                             "ibne VI01, VI02, loop_lid"));
+                             "ibne VI01, VI02, loop_lid",
+                             "add.xyz VF16, VF00, VF00"));
 }
 
 TEST_CASE("Software pipeline: generic software-pipelining is default and can be disabled")

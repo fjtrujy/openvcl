@@ -29,6 +29,7 @@ namespace
         ops.push_back(vcl::Operand("--exit", 0, vcl::Operand::PREPROCESSOR | vcl::Operand::FILTERED, "", vcl::Operand::EXIT));
         ops.push_back(vcl::Operand("--endexit", 0, vcl::Operand::PREPROCESSOR | vcl::Operand::FILTERED, "", vcl::Operand::EXIT));
         ops.push_back(vcl::Operand("--LoopCS", 2, vcl::Operand::PREPROCESSOR | vcl::Operand::FILTERED, "imm:integer,imm:integer"));
+        ops.push_back(vcl::Operand("--LoopExtra", 1, vcl::Operand::PREPROCESSOR | vcl::Operand::FILTERED, "imm:integer"));
 
         for (const vcl::VuInstructionInfo* info = vcl::allVuInstructionInfos(); info->mnemonic; ++info)
         {
@@ -1833,6 +1834,28 @@ TEST_CASE("VuSchedulerAnalysis: generic cyclic prefixes can rotate no-Q counted 
     CHECK(sawMain);
     CHECK(sawRotationMove);
     CHECK(sawClonedLoadAfterMain);
+}
+
+TEST_CASE("VuSchedulerAnalysis: no-Q cyclic prefixes skip LoopExtra store-bearing loops")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loi 255.0"));
+    REQUIRE(program.parse("iaddiu vi03, vi00, 0"));
+    REQUIRE(program.parse("iaddiu vi02, vi00, 9"));
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 3"));
+    REQUIRE(program.parse("--LoopExtra 1"));
+    REQUIRE(program.parse("lq.xyz vf08, 1(vi03)"));
+    REQUIRE(program.parse("minii.xyz vf08, vf08, i"));
+    REQUIRE(program.parse("ftoi0.xyz vf08, vf08"));
+    REQUIRE(program.parse("sq.xyz vf08, 1(vi03)"));
+    REQUIRE(program.parse("iaddiu vi03, vi03, 3"));
+    REQUIRE(program.parse("ibne vi03, vi02, loop_lid"));
+
+    std::vector<vcl::VuSoftwarePipelineRewritePlan> plans =
+        vcl::buildVuSoftwarePipelineRewritePlans(program.tokenizer.tokens());
+    CHECK(plans.empty());
 }
 
 TEST_CASE("VuSchedulerAnalysis: no-Q cyclic prefixes can fill value-chain latency")
