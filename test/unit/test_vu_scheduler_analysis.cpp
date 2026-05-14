@@ -281,6 +281,7 @@ TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose loop-carried Q sta
     CHECK(opportunities[0].hasSoftwarePipelinePlan);
     CHECK(!opportunities[0].canEmitSoftwarePipeline);
     CHECK(hasString(opportunities[0].softwarePipelineBlockers, "requires_register_rotation"));
+    CHECK(hasString(opportunities[0].softwarePipelineBlockers, "multi_instruction_prefetch"));
     CHECK(hasString(opportunities[0].softwarePipelineRotatedRegisters, "VF03"));
     CHECK(hasString(opportunities[0].softwarePipelineRotatedRegisters, "VF06"));
     REQUIRE(opportunities[0].qConsumerTokenIndices.size() == 2u);

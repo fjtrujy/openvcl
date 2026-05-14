@@ -98,7 +98,7 @@ TEST_CASE("CLI: loop pipeline JSON dump is stable enough for scheduler tooling")
     CHECK(contains(r.stdout_data, "\"pipeline_plan\": {"));
     CHECK(contains(r.stdout_data, "\"available\": true"));
     CHECK(contains(r.stdout_data, "\"emittable\": false"));
-    CHECK(contains(r.stdout_data, "\"blockers\": [\"requires_register_rotation\"]"));
+    CHECK(contains(r.stdout_data, "\"blockers\": [\"requires_register_rotation\", \"multi_instruction_prefetch\"]"));
     CHECK(contains(r.stdout_data, "\"rotated_registers\": [\"VF03\", \"VF06\"]"));
     CHECK(contains(r.stdout_data, "\"prolog_token_indices\": [2, 3, 4]"));
     CHECK(contains(r.stdout_data, "\"main_token_indices\": [5, 6, 7, 8, 9, 10, 11]"));

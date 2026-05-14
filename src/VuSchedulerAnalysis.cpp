@@ -561,7 +561,9 @@ namespace
 			addUniqueString( rotatedRegisters, registerBaseKey( *i ) );
 	}
 
-	void classifySoftwarePipelineEmissionSafety( VuLoopPipelineOpportunity& opportunity )
+	void classifySoftwarePipelineEmissionSafety( VuLoopPipelineOpportunity& opportunity,
+	                                             const VuLoopCandidate& loop,
+	                                             unsigned int qProducerOffset )
 	{
 		if( !opportunity.simpleCountedLoop )
 			addPipelineBlocker( opportunity, "not_simple_counted_loop" );
@@ -584,6 +586,22 @@ namespace
 
 		if( !opportunity.softwarePipelineRotatedRegisters.empty() )
 			addPipelineBlocker( opportunity, "requires_register_rotation" );
+
+		if( opportunity.prologTokenIndices.size() != 1
+		    || opportunity.prologTokenIndices.front() != opportunity.qProducerTokenIndex )
+			addPipelineBlocker( opportunity, "multi_instruction_prefetch" );
+
+		if( qProducerOffset < loop.bodyTokens.size() )
+		{
+			VuTokenResourceAccess access;
+			if( buildVuTokenResourceAccess( *loop.bodyTokens[qProducerOffset], access ) )
+			{
+				if( access.memoryKind != VU_MEMORY_NONE )
+					addPipelineBlocker( opportunity, "q_producer_memory" );
+				if( intersects( access.registerReads, opportunity.inductionRegisters ) )
+					addPipelineBlocker( opportunity, "q_producer_reads_induction" );
+			}
+		}
 
 		opportunity.canEmitSoftwarePipeline =
 		    opportunity.hasSoftwarePipelinePlan && opportunity.softwarePipelineBlockers.empty();
@@ -895,7 +913,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			appendPipelineInstructionIndices( *loop, firstConsumerOffset, branchOffset, opportunity.drainTokenIndices );
 		}
 
-		classifySoftwarePipelineEmissionSafety( opportunity );
+		classifySoftwarePipelineEmissionSafety( opportunity, *loop, qProducerOffset );
 
 		result.push_back( opportunity );
 	}
