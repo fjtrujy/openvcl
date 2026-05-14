@@ -1480,6 +1480,33 @@ TEST_CASE("VuSchedulerAnalysis: ready-set program pairs barrier tails when safe"
     CHECK(scheduled.blocks[1].issueSlots[1].secondTokenIndex == 4u);
 }
 
+TEST_CASE("VuSchedulerAnalysis: ready-set program can pair branch tails before delay fillers")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xyz vf01, vf00, vf00"));
+    REQUIRE(program.parse("b done_lid"));
+    REQUIRE(program.parse("iaddiu vi01, vi00, 1"));
+    REQUIRE(program.parse("done_lid:"));
+
+    std::list<vcl::Token>::iterator filler = program.tokenizer.tokens().begin();
+    ++filler;
+    ++filler;
+    filler->setFlags(filler->flags() | vcl::Token::BRANCH_DELAY_FILLER);
+
+    vcl::VuScheduledProgram scheduled =
+        vcl::scheduleVuProgramReadyIssueSlotsWithFlagLiveness(program.tokenizer.tokens());
+    REQUIRE(scheduled.blocks.size() >= 2u);
+    REQUIRE(scheduled.blocks[0].issueSlots.size() == 1u);
+    CHECK(vcl::normalizeVuMnemonic(scheduled.blocks[0].issueSlots[0].upperToken->name()) == "add");
+    CHECK(vcl::normalizeVuMnemonic(scheduled.blocks[0].issueSlots[0].lowerToken->name()) == "b");
+    CHECK(scheduled.blocks[0].issueSlots[0].firstTokenIndex == 0u);
+    CHECK(scheduled.blocks[0].issueSlots[0].secondTokenIndex == 1u);
+    REQUIRE(scheduled.blocks[1].issueSlots.size() >= 1u);
+    CHECK(scheduled.blocks[1].issueSlots[0].firstTokenIndex == 2u);
+    CHECK(scheduled.blocks[1].issueSlots[0].secondTokenIndex == vcl::VU_SCHEDULED_TOKEN_INDEX_NONE);
+}
+
 TEST_CASE("VuSchedulerAnalysis: ready-set scheduler prefers longer dependency chains")
 {
     vcl::Error::ResetErrorCount();

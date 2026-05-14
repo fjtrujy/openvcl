@@ -72,6 +72,7 @@ private:
 	void emitSingleToken( const Token& token );
 	void emitBranchWithDelayFiller( const Token& branch, const Token& filler );
 	void emitPairedTokens( const Token& a, const Token& b );
+	void emitPairedBranchWithDelayFiller( const Token& a, const Token& b, const Token& filler );
 	int readHazardDelay( const Token& token, const Token* partner ) const;
 	void padForReadHazards( const Token& token, const Token* partner );
 	void recordRegisterWrites( const Token& token, int issueCycle );

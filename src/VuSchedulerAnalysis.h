@@ -264,8 +264,7 @@ std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens );
 std::vector<VuDependencyEdge> buildVuDependencyGraph( const VuBasicBlock& block,
                                                       unsigned int ignoredImplicitWawResources = 0 );
 std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlots( const VuBasicBlock& block,
-                                                                       unsigned int ignoredImplicitWawResources = 0,
-                                                                       bool allowBranchTailPair = true );
+                                                                       unsigned int ignoredImplicitWawResources = 0 );
 VuScheduledProgram scheduleVuProgramReadyIssueSlots( const std::list<Token>& tokens,
                                                      unsigned int ignoredImplicitWawResources = 0 );
 std::vector< std::vector<VuScheduledIssueSlot> > scheduleVuBasicBlocksReadyIssueSlotsWithFlagLiveness(

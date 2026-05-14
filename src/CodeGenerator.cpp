@@ -1224,7 +1224,22 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			    && readHazardDelay( token, &*scheduledPartner ) <= readHazardDelay( token, NULL ) )
 			{
 				padForReadHazards( token, &*scheduledPartner );
-				emitPairedTokens( token, *scheduledPartner );
+				std::list<Token>::iterator branchDelayFiller = scheduledPartner;
+				++branchDelayFiller;
+				if( vuTokenBranchDelaySlots( *scheduledPartner ) == 1
+				    && branchDelayFiller != workTokens.end()
+				    && (branchDelayFiller->flags() & Token::BRANCH_DELAY_FILLER) )
+				{
+					while( readHazardDelay( *branchDelayFiller, NULL ) > 1 )
+					{
+						addNopLine();
+						m_currentCycle++;
+					}
+					emitPairedBranchWithDelayFiller( token, *scheduledPartner, *branchDelayFiller );
+					workTokens.erase( branchDelayFiller );
+				}
+				else
+					emitPairedTokens( token, *scheduledPartner );
 				if( isVuTerminalUnconditionalBranch(token)
 				    || isVuTerminalUnconditionalBranch(*scheduledPartner) )
 					exitWritten = true;
@@ -1631,6 +1646,54 @@ void CodeGenerator::emitPairedTokens( const Token& a, const Token& b )
 		addNopLine();
 		m_currentCycle++;
 	}
+}
+
+void CodeGenerator::emitPairedBranchWithDelayFiller( const Token& a, const Token& b, const Token& filler )
+{
+	std::string pairedLine;
+	if( tokenIsLowerExecutionPath(a) )
+		pairedLine = formatPairedLine(b, a);
+	else
+		pairedLine = formatPairedLine(a, b);
+	if( branchNeedsPreBubble(a) )
+		padForBranchPreBubble(a);
+	if( branchNeedsPreBubble(b) )
+		padForBranchPreBubble(b);
+	m_codeLines.push_back(pairedLine);
+
+	recordRegisterWrites(a, m_currentCycle);
+	recordRegisterWrites(b, m_currentCycle);
+	m_currentCycle++;
+
+	std::string fillerInstruction = generateInstruction(filler);
+	std::string fillerLine = "";
+	const int instructionLength = 32;
+	for(int d = 0; d < 20; d++)
+		fillerLine += " ";
+
+	if(tokenIsLowerExecutionPath(filler))
+	{
+		fillerLine += vuInstr(VU_OP_NOP);
+		for(int d = 0; d < instructionLength-3; d++)
+			fillerLine += " ";
+		fillerLine += fillerInstruction;
+	}
+	else
+	{
+		fillerLine += fillerInstruction;
+		if( !filler.operand()->isPreprocessor() )
+		{
+			if( (instructionLength-int(fillerInstruction.length())) <= 0 )
+				fillerLine += " ";
+			for(int d = 0; d < instructionLength-int(fillerInstruction.length()); d++)
+				fillerLine += " ";
+			fillerLine += vuInstr(VU_OP_NOP);
+		}
+	}
+
+	m_codeLines.push_back(fillerLine);
+	recordRegisterWrites(filler, m_currentCycle);
+	m_currentCycle++;
 }
 
 bool CodeGenerator::emitsAsUpperZeroMove( const Token& token ) const
