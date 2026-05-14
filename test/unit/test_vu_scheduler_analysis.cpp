@@ -285,6 +285,8 @@ TEST_CASE("VuSchedulerAnalysis: loop candidates find LoopCS back-edge loops")
     CHECK(loops[0].firstBodyTokenIndex == 2u);
     CHECK(loops[0].lastBodyTokenIndex == 6u);
     CHECK(loops[0].hasLoopDirective);
+    CHECK(loops[0].loopCsClid == 1u);
+    CHECK(loops[0].loopCsMlid == 3u);
     CHECK(loops[0].simpleCountedLoop);
     CHECK(loops[0].memoryLoadCount == 1u);
     CHECK(loops[0].memoryStoreCount == 0u);
@@ -449,6 +451,8 @@ TEST_CASE("VuSchedulerAnalysis: pipeline plans report loops that are safe for ge
 
     std::vector<vcl::VuLoopPipelineOpportunity> opportunities = vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
     REQUIRE(opportunities.size() == 1u);
+    CHECK(opportunities[0].loopCsClid == 1u);
+    CHECK(opportunities[0].loopCsMlid == 1u);
     CHECK(opportunities[0].eligibleSingleQSoftwarePipeline);
     CHECK(opportunities[0].hasSoftwarePipelinePlan);
     CHECK(opportunities[0].canEmitSoftwarePipeline);

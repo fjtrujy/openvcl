@@ -1033,6 +1033,50 @@ namespace
 		return end && *end == '\0';
 	}
 
+	bool parseImmediateUnsigned( const std::string& text, unsigned int& value )
+	{
+		long parsed = 0;
+		if( !parseImmediateLong( text, parsed ) || parsed < 0 )
+			return false;
+		value = static_cast<unsigned int>( parsed );
+		return true;
+	}
+
+	bool describeLoopCsDirective( const Token& token,
+	                              unsigned int& clid,
+	                              unsigned int& mlid )
+	{
+		if( !tokenIsLoopDirective( token ) )
+			return false;
+
+		const std::list<Token::Argument>& args = token.arguments();
+		if( args.size() != 2 )
+			return false;
+
+		std::list<Token::Argument>::const_iterator first = args.begin();
+		std::list<Token::Argument>::const_iterator second = first;
+		++second;
+		if( first->type() != Token::Argument::IMMEDIATE
+		    || second->type() != Token::Argument::IMMEDIATE )
+			return false;
+
+		return parseImmediateUnsigned( first->immediate(), clid )
+		    && parseImmediateUnsigned( second->immediate(), mlid );
+	}
+
+	bool describeLoopCsDirectiveAtLabel( const std::vector<const Token*>& tokens,
+	                                     unsigned int labelIndex,
+	                                     unsigned int& clid,
+	                                     unsigned int& mlid )
+	{
+		if( labelIndex < tokens.size()
+		    && describeLoopCsDirective( *tokens[labelIndex], clid, mlid ) )
+			return true;
+		const unsigned int next = labelIndex + 1;
+		return next < tokens.size()
+		    && describeLoopCsDirective( *tokens[next], clid, mlid );
+	}
+
 	bool describeSelfIntegerImmediateUpdate( const Token& token,
 	                                         unsigned int tokenIndex,
 	                                         VuLoopInductionUpdate& update )
@@ -3168,6 +3212,8 @@ namespace
 		base.labelTokenIndex = loop.labelTokenIndex;
 		base.branchTokenIndex = loop.branchTokenIndex;
 		base.branchDelaySlots = loop.branchToken ? vuTokenBranchDelaySlots( *loop.branchToken ) : 0;
+		base.loopCsClid = loop.loopCsClid;
+		base.loopCsMlid = loop.loopCsMlid;
 		base.simpleCountedLoop = loop.simpleCountedLoop;
 		base.memoryLoadCount = loop.memoryLoadCount;
 		base.memoryStoreCount = loop.memoryStoreCount;
@@ -4032,6 +4078,8 @@ VuLoopCandidate::VuLoopCandidate()
 	firstBodyTokenIndex = 0;
 	lastBodyTokenIndex = 0;
 	hasLoopDirective = false;
+	loopCsClid = 0;
+	loopCsMlid = 0;
 	simpleCountedLoop = false;
 	memoryLoadCount = 0;
 	memoryStoreCount = 0;
@@ -4069,6 +4117,8 @@ VuLoopPipelineOpportunity::VuLoopPipelineOpportunity()
 	sourcePrefixCycles = 0;
 	sourceSuffixCycles = 0;
 	branchDelaySlots = 0;
+	loopCsClid = 0;
+	loopCsMlid = 0;
 	simpleCountedLoop = false;
 	hasSingleQProducer = false;
 	requiresPrologEpilog = false;
@@ -4470,6 +4520,10 @@ std::vector<VuLoopCandidate> findVuLoopCandidates( const std::list<Token>& token
 		candidate.firstBodyTokenIndex = target->second;
 		candidate.lastBodyTokenIndex = branchIndex;
 		candidate.hasLoopDirective = loopTargetHasDirective( indexedTokens, target->second );
+		describeLoopCsDirectiveAtLabel( indexedTokens,
+		                                target->second,
+		                                candidate.loopCsClid,
+		                                candidate.loopCsMlid );
 		candidate.simpleCountedLoop = candidate.hasLoopDirective
 		                           && !isVuTerminalUnconditionalBranch( token )
 		                           && vuTokenBranchDelaySlots( token ) > 0;
@@ -4603,6 +4657,8 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		                                                       primaryQConsumerOffsets.front() + 1,
 		                                                       static_cast<unsigned int>( loop->bodyTokens.size() - 1 ) );
 		opportunity.branchDelaySlots = branchDelaySlots;
+		opportunity.loopCsClid = loop->loopCsClid;
+		opportunity.loopCsMlid = loop->loopCsMlid;
 		opportunity.qProducerConsumerGapDeficitCycles =
 			opportunity.qProducerLatency > opportunity.qProducerConsumerGapCycles
 			? opportunity.qProducerLatency - opportunity.qProducerConsumerGapCycles

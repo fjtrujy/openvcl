@@ -762,6 +762,8 @@ namespace
 			       << " source_prefix_cycles=" << i->sourcePrefixCycles
 			       << " source_suffix_cycles=" << i->sourceSuffixCycles
 			       << " branch_delay_slots=" << i->branchDelaySlots
+			       << " loop_cs_clid=" << i->loopCsClid
+			       << " loop_cs_mlid=" << i->loopCsMlid
 			       << " simple_counted_loop=" << (i->simpleCountedLoop ? "yes" : "no")
 			       << " single_q_producer=" << (i->hasSingleQProducer ? "yes" : "no")
 			       << " requires_prolog_epilog=" << (i->requiresPrologEpilog ? "yes" : "no")
@@ -888,6 +890,8 @@ namespace
 			stream << "      \"source_prefix_cycles\": " << opportunity.sourcePrefixCycles << ",\n";
 			stream << "      \"source_suffix_cycles\": " << opportunity.sourceSuffixCycles << ",\n";
 			stream << "      \"branch_delay_slots\": " << opportunity.branchDelaySlots << ",\n";
+			stream << "      \"loop_cs_clid\": " << opportunity.loopCsClid << ",\n";
+			stream << "      \"loop_cs_mlid\": " << opportunity.loopCsMlid << ",\n";
 			stream << "      \"simple_counted_loop\": " << (opportunity.simpleCountedLoop ? "true" : "false") << ",\n";
 			stream << "      \"single_q_producer\": " << (opportunity.hasSingleQProducer ? "true" : "false") << ",\n";
 			stream << "      \"requires_prolog_epilog\": " << (opportunity.requiresPrologEpilog ? "true" : "false") << ",\n";

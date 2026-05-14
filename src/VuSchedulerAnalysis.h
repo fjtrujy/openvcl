@@ -148,6 +148,8 @@ struct VuLoopCandidate
 	unsigned int firstBodyTokenIndex;
 	unsigned int lastBodyTokenIndex;
 	bool hasLoopDirective;
+	unsigned int loopCsClid;
+	unsigned int loopCsMlid;
 	bool simpleCountedLoop;
 	unsigned int memoryLoadCount;
 	unsigned int memoryStoreCount;
@@ -231,6 +233,8 @@ struct VuLoopPipelineOpportunity
 	unsigned int sourcePrefixCycles;
 	unsigned int sourceSuffixCycles;
 	unsigned int branchDelaySlots;
+	unsigned int loopCsClid;
+	unsigned int loopCsMlid;
 	bool simpleCountedLoop;
 	bool hasSingleQProducer;
 	bool requiresPrologEpilog;

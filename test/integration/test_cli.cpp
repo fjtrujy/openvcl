@@ -88,6 +88,8 @@ TEST_CASE("CLI: loop pipeline text dump exposes Q software-pipeline candidates")
     CHECK(contains(r.stdout_data, "q_producer_insertion_gap_cycles=5"));
     CHECK(contains(r.stdout_data, "q_producer_insertion_gap_deficit_cycles=2"));
     CHECK(contains(r.stdout_data, "q_scheduling_strategy=loop_carried"));
+    CHECK(contains(r.stdout_data, "loop_cs_clid=1"));
+    CHECK(contains(r.stdout_data, "loop_cs_mlid=3"));
     CHECK(contains(r.stdout_data, "requires_prolog_epilog=yes"));
     CHECK(contains(r.stdout_data, "eligible_single_q_pipeline=yes"));
     CHECK(contains(r.stdout_data, "pipeline_plan=yes"));
@@ -129,6 +131,8 @@ TEST_CASE("CLI: loop pipeline JSON dump is stable enough for scheduler tooling")
     CHECK(contains(r.stdout_data, "\"q_producer_insertion_gap_cycles\": 5"));
     CHECK(contains(r.stdout_data, "\"q_producer_insertion_gap_deficit_cycles\": 2"));
     CHECK(contains(r.stdout_data, "\"q_scheduling_strategy\": \"loop_carried\""));
+    CHECK(contains(r.stdout_data, "\"loop_cs_clid\": 1"));
+    CHECK(contains(r.stdout_data, "\"loop_cs_mlid\": 3"));
     CHECK(contains(r.stdout_data, "\"requires_loop_carried_registers\": true"));
     CHECK(contains(r.stdout_data, "\"memory_loads\": 2"));
     CHECK(contains(r.stdout_data, "\"memory_stores\": 1"));
