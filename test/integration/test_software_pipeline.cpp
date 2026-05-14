@@ -253,6 +253,32 @@ namespace
             "\t--endexit\n";
     }
 
+    std::string genericMultiQPipelineSource()
+    {
+        return
+            "\t.init_vf_all\n"
+            "\t.init_vi_all\n"
+            "\t--enter\n"
+            "\t--endenter\n"
+            "\tiaddiu vi01, vi00, 0\n"
+            "\tiaddiu vi02, vi00, 3\n"
+            "loop_lid:\n"
+            "\t--LoopCS 1,1\n"
+            "\tdiv q, vf00w, vf00w\n"
+            "\tmulq.xyz vf02, vf00, q\n"
+            "\tadd.xyz vf10, vf00, vf00\n"
+            "\tadd.xyz vf11, vf00, vf00\n"
+            "\tdiv q, vf00w, vf00w\n"
+            "\tadd.xyz vf12, vf00, vf00\n"
+            "\tadd.xyz vf13, vf00, vf00\n"
+            "\tmulq.xyz vf05, vf00, q\n"
+            "\tadd.xyz vf14, vf00, vf00\n"
+            "\tiaddiu vi01, vi01, 1\n"
+            "\tibne vi01, vi02, loop_lid\n"
+            "\t--exit\n"
+            "\t--endexit\n";
+    }
+
     std::string fastNoLightsPipelineSource()
     {
         return
@@ -1051,6 +1077,21 @@ TEST_CASE("Software pipeline: generic path emits simple rotated register prefetc
     CHECK(contains(vsm, "div q, VF00w, VF31w"));
     CHECK(contains(vsm, "move.xyz VF03, VF31")
           || contains(vsm, "max.xyz VF03, VF31, VF31"));
+}
+
+TEST_CASE("Software pipeline: generic path emits multi-Q cyclic prefixes")
+{
+    std::vector<std::string> args;
+    args.push_back("--enable-generic-software-pipelining");
+    std::string vsm = runEmitWithExtraArgs(genericMultiQPipelineSource(), args);
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(contains(vsm, "loop_lid__PROLOG:"));
+    CHECK(contains(vsm, "loop_lid:"));
+    CHECK(contains(vsm, "ibne VI01, VI02, loop_lid"));
+    CHECK(countSubstrings(vsm, "div q, VF00w, VF00w") == 3);
+    CHECK(countSubstrings(vsm, "mulq.xyz VF02, VF00, q") == 2);
+    CHECK(countSubstrings(vsm, "mulq.xyz VF05, VF00, q") == 1);
 }
 
 TEST_CASE("Software pipeline: generic software-pipelining is default and can be disabled")

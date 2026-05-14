@@ -1184,6 +1184,12 @@ namespace
 			opportunity.softwarePipelineBlockers.push_back( blocker );
 	}
 
+	void addMultiQPipelineBlocker( VuLoopPipelineOpportunity& opportunity, const std::string& blocker )
+	{
+		if( !containsKey( opportunity.multiQSoftwarePipelineBlockers, blocker ) )
+			opportunity.multiQSoftwarePipelineBlockers.push_back( blocker );
+	}
+
 	std::string registerBaseKey( const std::string& key )
 	{
 		std::string::size_type field = key.find( '.' );
@@ -1949,6 +1955,136 @@ namespace
 		}
 	}
 
+	bool tokenHasUnsafeMultiQCyclicPrefixSideEffect( const Token& token )
+	{
+		if( token.flags() & (Token::PREORDERED | Token::BRANCH_DELAY_FILLER) )
+			return true;
+
+		VuTokenResourceAccess access;
+		if( !buildVuTokenResourceAccess( token, access ) )
+			return true;
+		if( access.branchDelaySlots > 0 )
+			return true;
+		if( access.memoryFlags & (VU_MEMORY_FLAG_PREDEC | VU_MEMORY_FLAG_POSTINC) )
+			return true;
+		return access.memoryKind == VU_MEMORY_STORE
+		    || access.memoryKind == VU_MEMORY_XGKICK;
+	}
+
+	bool tokenIndicesHaveUnsafeMultiQCyclicPrefixSideEffects( const std::vector<unsigned int>& tokenIndices,
+	                                                          const std::vector<const Token*>& indexedTokens )
+	{
+		for( std::vector<unsigned int>::const_iterator i = tokenIndices.begin(); i != tokenIndices.end(); ++i )
+		{
+			if( *i >= indexedTokens.size()
+			    || tokenHasUnsafeMultiQCyclicPrefixSideEffect( *indexedTokens[*i] ) )
+				return true;
+		}
+		return false;
+	}
+
+	bool tokenIndicesContainVisibleLabel( const std::vector<unsigned int>& tokenIndices,
+	                                      const std::vector<const Token*>& indexedTokens,
+	                                      unsigned int allowedLabelTokenIndex )
+	{
+		for( std::vector<unsigned int>::const_iterator i = tokenIndices.begin(); i != tokenIndices.end(); ++i )
+		{
+			if( *i >= indexedTokens.size() )
+				return true;
+			if( *i != allowedLabelTokenIndex && indexedTokens[*i]->label().length() != 0 )
+				return true;
+		}
+		return false;
+	}
+
+	bool loopBodyContainsVisibleInternalLabel( const VuLoopPipelineOpportunity& opportunity,
+	                                           const std::vector<const Token*>& indexedTokens )
+	{
+		if( opportunity.labelTokenIndex >= indexedTokens.size()
+		    || opportunity.branchTokenIndex >= indexedTokens.size()
+		    || opportunity.labelTokenIndex + 1 >= opportunity.branchTokenIndex )
+			return false;
+		for( unsigned int i = opportunity.labelTokenIndex + 1; i < opportunity.branchTokenIndex; ++i )
+		{
+			if( indexedTokens[i]->label().length() != 0 )
+				return true;
+		}
+		return false;
+	}
+
+	bool cyclicPrefixClobbersBranch( const VuLoopPipelineOpportunity& opportunity,
+	                                 const std::vector<const Token*>& indexedTokens )
+	{
+		if( opportunity.branchTokenIndex >= indexedTokens.size() )
+			return true;
+
+		VuTokenResourceAccess branchAccess;
+		if( !buildVuTokenResourceAccess( *indexedTokens[opportunity.branchTokenIndex], branchAccess ) )
+			return true;
+
+		std::list<std::string> prefixWrites;
+		unsigned int prefixImplicitWrites = VU_RESOURCE_NONE;
+		for( std::vector<unsigned int>::const_iterator i = opportunity.multiQCyclicPrefixTokenIndices.begin();
+		     i != opportunity.multiQCyclicPrefixTokenIndices.end(); ++i )
+		{
+			if( *i >= indexedTokens.size() )
+				return true;
+			VuTokenResourceAccess access;
+			if( !buildVuTokenResourceAccess( *indexedTokens[*i], access ) )
+				return true;
+			for( std::list<std::string>::const_iterator write = access.registerWrites.begin();
+			     write != access.registerWrites.end(); ++write )
+				addUniqueString( prefixWrites, *write );
+			prefixImplicitWrites |= access.implicitWrites;
+		}
+
+		if( intersects( prefixWrites, branchAccess.registerReads )
+		    || intersects( prefixWrites, branchAccess.registerWrites ) )
+			return true;
+		return (prefixImplicitWrites & (branchAccess.implicitReads | branchAccess.implicitWrites)) != 0;
+	}
+
+	bool cyclicPrefixReadsSuffixClobbers( const VuLoopPipelineOpportunity& opportunity,
+	                                      const std::vector<const Token*>& indexedTokens )
+	{
+		std::list<std::string> suffixWrites;
+		for( std::vector<unsigned int>::const_iterator i = opportunity.multiQMainTokenIndices.begin();
+		     i != opportunity.multiQMainTokenIndices.end(); ++i )
+		{
+			if( *i >= indexedTokens.size() || *i == opportunity.branchTokenIndex )
+				continue;
+			std::list<std::string> writes;
+			collectVuRegisterWriteKeys( *indexedTokens[*i], writes );
+			for( std::list<std::string>::const_iterator write = writes.begin(); write != writes.end(); ++write )
+				addUniqueString( suffixWrites, *write );
+		}
+
+		std::list<std::string> prefixWritesSoFar;
+		for( std::vector<unsigned int>::const_iterator i = opportunity.multiQCyclicPrefixTokenIndices.begin();
+		     i != opportunity.multiQCyclicPrefixTokenIndices.end(); ++i )
+		{
+			if( *i >= indexedTokens.size() )
+				return true;
+			VuTokenResourceAccess access;
+			if( !buildVuTokenResourceAccess( *indexedTokens[*i], access ) )
+				return true;
+			for( std::list<std::string>::const_iterator read = access.registerReads.begin();
+			     read != access.registerReads.end(); ++read )
+			{
+				if( !containsKey( suffixWrites, *read )
+				    || containsKey( prefixWritesSoFar, *read )
+				    || containsKey( opportunity.inductionRegisters, *read ) )
+					continue;
+				return true;
+			}
+			for( std::list<std::string>::const_iterator write = access.registerWrites.begin();
+			     write != access.registerWrites.end(); ++write )
+				addUniqueString( prefixWritesSoFar, *write );
+		}
+
+		return false;
+	}
+
 	VuLoopQSchedulingStrategy classifyLoopQSchedulingStrategy( unsigned int qProducerConsumerGapDeficitCycles,
 	                                                           unsigned int loopCarriedQGapCycles,
 	                                                           unsigned int qProducerLatency )
@@ -2099,6 +2235,60 @@ namespace
 
 		opportunity.canEmitSoftwarePipeline =
 		    opportunity.hasSoftwarePipelinePlan && opportunity.softwarePipelineBlockers.empty();
+	}
+
+	void classifyMultiQSoftwarePipelineOpportunity( VuLoopPipelineOpportunity& opportunity,
+	                                                unsigned int qProducerCount,
+	                                                const std::vector<const Token*>& indexedTokens )
+	{
+		if( qProducerCount <= 1 )
+			return;
+
+		opportunity.hasMultiQSoftwarePipelinePlan =
+		    !opportunity.multiQPrologTokenIndices.empty()
+		    && !opportunity.multiQMainTokenIndices.empty()
+		    && !opportunity.multiQCyclicPrefixTokenIndices.empty();
+		if( !opportunity.hasMultiQSoftwarePipelinePlan )
+			addMultiQPipelineBlocker( opportunity, "missing_cyclic_prefix" );
+		if( !opportunity.simpleCountedLoop )
+			addMultiQPipelineBlocker( opportunity, "not_simple_counted_loop" );
+		if( opportunity.branchDelaySlots == 0 )
+			addMultiQPipelineBlocker( opportunity, "missing_branch_delay_slot" );
+		if( opportunity.hasMemoryPreOrPostIncrement )
+			addMultiQPipelineBlocker( opportunity, "pre_or_post_increment_memory" );
+		if( opportunity.hasXgkick )
+			addMultiQPipelineBlocker( opportunity, "xgkick_barrier" );
+		if( opportunity.inductionRegisters.empty() )
+			addMultiQPipelineBlocker( opportunity, "missing_induction_register" );
+		if( opportunity.qLiveOut )
+			addMultiQPipelineBlocker( opportunity, "q_live_out" );
+		if( tokenIndicesHaveUnsafeMultiQCyclicPrefixSideEffects( opportunity.multiQCyclicPrefixTokenIndices,
+		                                                         indexedTokens ) )
+			addMultiQPipelineBlocker( opportunity, "cyclic_prefix_side_effect" );
+		if( tokenIndicesContainVisibleLabel( opportunity.multiQCyclicPrefixTokenIndices,
+		                                     indexedTokens,
+		                                     opportunity.labelTokenIndex )
+		    || tokenIndicesContainVisibleLabel( opportunity.multiQMainTokenIndices,
+		                                        indexedTokens,
+		                                        opportunity.labelTokenIndex )
+		    || loopBodyContainsVisibleInternalLabel( opportunity, indexedTokens ) )
+			addMultiQPipelineBlocker( opportunity, "cyclic_prefix_or_main_label" );
+		if( cyclicPrefixReadsSuffixClobbers( opportunity, indexedTokens ) )
+			addMultiQPipelineBlocker( opportunity, "cyclic_prefix_reads_suffix_clobber" );
+		if( cyclicPrefixClobbersBranch( opportunity, indexedTokens ) )
+			addMultiQPipelineBlocker( opportunity, "cyclic_prefix_clobbers_branch" );
+
+		for( std::vector<VuLoopQStage>::const_iterator stage = opportunity.qStages.begin();
+		     stage != opportunity.qStages.end(); ++stage )
+		{
+			if( stage->qConsumerTokenIndices.empty() )
+				addMultiQPipelineBlocker( opportunity, "stage_without_consumers" );
+		}
+
+		opportunity.eligibleMultiQSoftwarePipeline =
+		    opportunity.hasMultiQSoftwarePipelinePlan
+		    && opportunity.multiQSoftwarePipelineBlockers.empty();
+		opportunity.canEmitMultiQSoftwarePipeline = opportunity.eligibleMultiQSoftwarePipeline;
 	}
 
 	Token tokenWithoutLabel( const Token& token )
@@ -2522,6 +2712,9 @@ VuLoopPipelineOpportunity::VuLoopPipelineOpportunity()
 	eligibleSingleQSoftwarePipeline = false;
 	hasSoftwarePipelinePlan = false;
 	canEmitSoftwarePipeline = false;
+	eligibleMultiQSoftwarePipeline = false;
+	hasMultiQSoftwarePipelinePlan = false;
+	canEmitMultiQSoftwarePipeline = false;
 	memoryLoadCount = 0;
 	memoryStoreCount = 0;
 	hasMemoryPreOrPostIncrement = false;
@@ -2538,6 +2731,7 @@ VuSoftwarePipelineRewritePlan::VuSoftwarePipelineRewritePlan()
 	qProducerInBranchDelaySlot = false;
 	qProducerBranchDelayBlockedBySuffixDependency = false;
 	qProducerBranchDelaySuffixBlockerTokenIndex = 0;
+	cyclicPrefixBeforeBranch = false;
 	emitsDrain = false;
 }
 
@@ -3087,7 +3281,29 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			                                               opportunity );
 		}
 
+		if( qProducerCount > 1
+		    && !opportunity.qStages.empty()
+		    && !opportunity.qStages.front().qConsumerTokenIndices.empty() )
+		{
+			const unsigned int firstStageLastConsumerOffset =
+			    opportunity.qStages.front().qConsumerTokenIndices.back() - loop->firstBodyTokenIndex;
+			const unsigned int branchOffset = loop->branchTokenIndex - loop->firstBodyTokenIndex;
+			if( firstStageLastConsumerOffset < branchOffset )
+			{
+				appendPipelineInstructionIndices( *loop,
+				                                  0,
+				                                  firstStageLastConsumerOffset + 1,
+				                                  opportunity.multiQPrologTokenIndices );
+				opportunity.multiQCyclicPrefixTokenIndices = opportunity.multiQPrologTokenIndices;
+				appendPipelineInstructionIndices( *loop,
+				                                  firstStageLastConsumerOffset + 1,
+				                                  branchOffset + 1,
+				                                  opportunity.multiQMainTokenIndices );
+			}
+		}
+
 		classifySoftwarePipelineEmissionSafety( opportunity, *loop, qProducerOffset, indexedTokens );
+		classifyMultiQSoftwarePipelineOpportunity( opportunity, qProducerCount, indexedTokens );
 
 		result.push_back( opportunity );
 	}
@@ -3105,7 +3321,8 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 	const std::vector<VuLoopPipelineOpportunity> opportunities = findVuLoopPipelineOpportunities( tokens );
 	for( std::vector<VuLoopPipelineOpportunity>::const_iterator i = opportunities.begin(); i != opportunities.end(); ++i )
 	{
-		if( !i->canEmitSoftwarePipeline || i->qConsumerTokenIndices.empty() )
+		if( !i->canEmitSoftwarePipeline
+		    && !i->canEmitMultiQSoftwarePipeline )
 			continue;
 
 		VuSoftwarePipelineRewritePlan plan;
@@ -3116,6 +3333,22 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		plan.labelTokenIndex = i->labelTokenIndex;
 		plan.branchTokenIndex = i->branchTokenIndex;
 		plan.qProducerTokenIndex = i->qProducerTokenIndex;
+
+		if( i->canEmitMultiQSoftwarePipeline )
+		{
+			if( !i->qProducerTokenIndices.empty() )
+				plan.qProducerTokenIndex = i->qProducerTokenIndices.front();
+			plan.cyclicPrefixBeforeBranch = true;
+			plan.prologTokenIndices = i->multiQPrologTokenIndices;
+			plan.mainTokenIndices = i->multiQMainTokenIndices;
+			plan.cyclicPrefixTokenIndices = i->multiQCyclicPrefixTokenIndices;
+			plans.push_back( plan );
+			continue;
+		}
+
+		if( i->qConsumerTokenIndices.empty() )
+			continue;
+
 		plan.prefetchInsertAfterTokenIndex = i->qConsumerTokenIndices.back();
 		plan.qProducerInsertAfterTokenIndex = i->qConsumerTokenIndices.back();
 		unsigned int suffixBlockerTokenIndex = 0;
@@ -3201,12 +3434,32 @@ std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens )
 		mainLabel.setLabel( rewrite.mainLabel );
 		output.push_back( mainLabel );
 
-		appendTokenRangeWithInsertedPrefetchAndQProducer(
-		    output,
-		    indexedTokens,
-		    rewrite,
-		    rewrite.mainTokenIndices.empty() ? rewrite.branchTokenIndex : rewrite.mainTokenIndices.front(),
-		    rewrite.branchTokenIndex );
+		if( rewrite.cyclicPrefixBeforeBranch )
+		{
+			for( std::vector<unsigned int>::const_iterator m = rewrite.mainTokenIndices.begin();
+			     m != rewrite.mainTokenIndices.end(); ++m )
+			{
+				if( *m < indexedTokens.size() && *m != rewrite.branchTokenIndex )
+					output.push_back( tokenWithoutLabel( *indexedTokens[*m] ) );
+			}
+			for( std::vector<unsigned int>::const_iterator p = rewrite.cyclicPrefixTokenIndices.begin();
+			     p != rewrite.cyclicPrefixTokenIndices.end(); ++p )
+			{
+				if( *p < indexedTokens.size() )
+					output.push_back( tokenWithoutLabel( *indexedTokens[*p] ) );
+			}
+			if( rewrite.branchTokenIndex < indexedTokens.size() )
+				output.push_back( tokenWithoutLabel( *indexedTokens[rewrite.branchTokenIndex] ) );
+		}
+		else
+		{
+			appendTokenRangeWithInsertedPrefetchAndQProducer(
+			    output,
+			    indexedTokens,
+			    rewrite,
+			    rewrite.mainTokenIndices.empty() ? rewrite.branchTokenIndex : rewrite.mainTokenIndices.front(),
+			    rewrite.branchTokenIndex );
+		}
 
 		while( index <= rewrite.branchTokenIndex && i != tokens.end() )
 		{

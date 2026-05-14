@@ -766,6 +766,9 @@ namespace
 			       << " eligible_single_q_pipeline=" << (i->eligibleSingleQSoftwarePipeline ? "yes" : "no")
 			       << " pipeline_plan=" << (i->hasSoftwarePipelinePlan ? "yes" : "no")
 			       << " pipeline_emittable=" << (i->canEmitSoftwarePipeline ? "yes" : "no")
+			       << " eligible_multi_q_pipeline=" << (i->eligibleMultiQSoftwarePipeline ? "yes" : "no")
+			       << " multi_q_pipeline_plan=" << (i->hasMultiQSoftwarePipelinePlan ? "yes" : "no")
+			       << " multi_q_pipeline_emittable=" << (i->canEmitMultiQSoftwarePipeline ? "yes" : "no")
 			       << " rewrite_plan=" << (rewritePlan ? "yes" : "no")
 			       << " rewrite_prolog_label=" << (rewritePlan ? rewritePlan->prologLabel : "")
 			       << " rewrite_main_label=" << (rewritePlan ? rewritePlan->mainLabel : "")
@@ -778,6 +781,8 @@ namespace
 			       << " rewrite_q_branch_delay_suffix_blocker="
 			       << (rewritePlan ? rewritePlan->qProducerBranchDelaySuffixBlockerTokenIndex : 0)
 			       << " rewrite_emits_drain=" << (rewritePlan && rewritePlan->emitsDrain ? "yes" : "no")
+			       << " rewrite_cyclic_prefix_before_branch="
+			       << (rewritePlan && rewritePlan->cyclicPrefixBeforeBranch ? "yes" : "no")
 			       << " rewrite_prefetch_tokens=";
 			if( rewritePlan )
 				writeUnsignedVectorText( stream, rewritePlan->prefetchTokenIndices );
@@ -796,6 +801,14 @@ namespace
 			writeUnsignedVectorText( stream, i->drainTokenIndices );
 			stream << " blockers=";
 			writeStringListText( stream, i->softwarePipelineBlockers );
+			stream << " multi_q_prolog_tokens=";
+			writeUnsignedVectorText( stream, i->multiQPrologTokenIndices );
+			stream << " multi_q_main_tokens=";
+			writeUnsignedVectorText( stream, i->multiQMainTokenIndices );
+			stream << " multi_q_cyclic_prefix_tokens=";
+			writeUnsignedVectorText( stream, i->multiQCyclicPrefixTokenIndices );
+			stream << " multi_q_blockers=";
+			writeStringListText( stream, i->multiQSoftwarePipelineBlockers );
 			stream << " rotated_registers=";
 			writeStringListText( stream, i->softwarePipelineRotatedRegisters );
 			stream << " rotation_descriptors=";
@@ -870,12 +883,23 @@ namespace
 			stream << "        \"main_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.mainTokenIndices ); stream << ",\n";
 			stream << "        \"drain_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.drainTokenIndices ); stream << "\n";
 			stream << "      },\n";
+			stream << "      \"multi_q_pipeline_plan\": {\n";
+			stream << "        \"available\": " << (opportunity.hasMultiQSoftwarePipelinePlan ? "true" : "false") << ",\n";
+			stream << "        \"eligible\": " << (opportunity.eligibleMultiQSoftwarePipeline ? "true" : "false") << ",\n";
+			stream << "        \"emittable\": " << (opportunity.canEmitMultiQSoftwarePipeline ? "true" : "false") << ",\n";
+			stream << "        \"blockers\": "; writeStringListJson( stream, opportunity.multiQSoftwarePipelineBlockers ); stream << ",\n";
+			stream << "        \"prolog_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.multiQPrologTokenIndices ); stream << ",\n";
+			stream << "        \"main_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.multiQMainTokenIndices ); stream << ",\n";
+			stream << "        \"cyclic_prefix_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.multiQCyclicPrefixTokenIndices ); stream << "\n";
+			stream << "      },\n";
 			stream << "      \"rewrite_plan\": {\n";
 			stream << "        \"available\": " << (rewritePlan ? "true" : "false") << ",\n";
 			stream << "        \"prolog_label\": "; writeJsonString( stream, rewritePlan ? rewritePlan->prologLabel.c_str() : "" ); stream << ",\n";
 			stream << "        \"main_label\": "; writeJsonString( stream, rewritePlan ? rewritePlan->mainLabel.c_str() : "" ); stream << ",\n";
 			stream << "        \"drain_label\": "; writeJsonString( stream, rewritePlan ? rewritePlan->drainLabel.c_str() : "" ); stream << ",\n";
 			stream << "        \"emits_drain\": " << (rewritePlan && rewritePlan->emitsDrain ? "true" : "false") << ",\n";
+			stream << "        \"cyclic_prefix_before_branch\": "
+			       << (rewritePlan && rewritePlan->cyclicPrefixBeforeBranch ? "true" : "false") << ",\n";
 			stream << "        \"prefetch_insert_after_token_index\": "
 			       << (rewritePlan ? rewritePlan->prefetchInsertAfterTokenIndex : 0) << ",\n";
 			stream << "        \"q_producer_insert_after_token_index\": "
@@ -887,6 +911,7 @@ namespace
 			stream << "        \"q_producer_branch_delay_suffix_blocker_token_index\": "
 			       << (rewritePlan ? rewritePlan->qProducerBranchDelaySuffixBlockerTokenIndex : 0) << ",\n";
 			stream << "        \"prefetch_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->prefetchTokenIndices ); else stream << "[]"; stream << ",\n";
+			stream << "        \"cyclic_prefix_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->cyclicPrefixTokenIndices ); else stream << "[]"; stream << ",\n";
 			stream << "        \"suffix_store_descriptors\": "; if( rewritePlan ) writeSuffixStoreListJson( stream, rewritePlan->suffixStores ); else stream << "[]"; stream << ",\n";
 			stream << "        \"prolog_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->prologTokenIndices ); else stream << "[]"; stream << ",\n";
 			stream << "        \"main_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->mainTokenIndices ); else stream << "[]"; stream << ",\n";
