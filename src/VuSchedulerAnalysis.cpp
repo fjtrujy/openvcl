@@ -591,8 +591,8 @@ namespace
 			addPipelineBlocker( opportunity, "pre_or_post_increment_memory" );
 		if( opportunity.hasXgkick )
 			addPipelineBlocker( opportunity, "xgkick_barrier" );
-		if( opportunity.inductionRegisters.size() != 1 )
-			addPipelineBlocker( opportunity, "requires_single_induction_register" );
+		if( opportunity.inductionRegisters.empty() )
+			addPipelineBlocker( opportunity, "missing_induction_register" );
 		collectRotatedRegisterBaseKeys( opportunity.carriedQInputRegisters,
 		                                opportunity.softwarePipelineRotatedRegisters );
 		collectRotatedRegisterBaseKeys( opportunity.carriedQOutputRegisters,
