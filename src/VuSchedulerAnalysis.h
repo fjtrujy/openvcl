@@ -109,6 +109,7 @@ struct VuScheduledIssueSlot
 	const Token* lowerToken;
 	bool padding;
 	VuScheduledPaddingKind paddingKind;
+	unsigned int ignoredImplicitWawResources;
 	unsigned int issueCycle;
 	unsigned int cycleCount;
 };

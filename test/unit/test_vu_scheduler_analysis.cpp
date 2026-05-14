@@ -1538,8 +1538,11 @@ TEST_CASE("VuSchedulerAnalysis: flag-liveness issue slots match ready-set schedu
     REQUIRE(blockSlots[0].size() >= 2u);
     REQUIRE(blockSlots[0][0].firstToken != NULL);
     CHECK(vcl::normalizeVuMnemonic(blockSlots[0][0].firstToken->name()) == "fmand");
+    CHECK(blockSlots[0][0].ignoredImplicitWawResources == vcl::VU_RESOURCE_NONE);
     REQUIRE(blockSlots[0][1].firstToken != NULL);
     CHECK(vcl::normalizeVuMnemonic(blockSlots[0][1].firstToken->name()) == "ftoi0");
+    CHECK((blockSlots[0][1].ignoredImplicitWawResources & vcl::VU_RESOURCE_MAC) != 0u);
+    CHECK((blockSlots[0][1].ignoredImplicitWawResources & vcl::VU_RESOURCE_CLIP) != 0u);
 }
 
 TEST_CASE("VuSchedulerAnalysis: remaining flag WAW helper reports dead MAC and CLIP flags")

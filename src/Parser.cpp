@@ -927,6 +927,8 @@ namespace
 				writeScheduleTokenText( stream, tokenIndices, slot.lowerToken );
 				stream << " padding=" << (slot.padding ? "yes" : "no");
 				stream << " padding_kind=" << scheduledPaddingKindName( slot.paddingKind );
+				stream << " ignored_waw_resources=";
+				writeFlagListText( stream, slot.ignoredImplicitWawResources, kResourceFlags );
 				stream << std::endl;
 			}
 		}
@@ -969,7 +971,8 @@ namespace
 				stream << "          \"upper\": "; writeNullableTokenNameJson( stream, slot.upperToken ); stream << ",\n";
 				stream << "          \"lower\": "; writeNullableTokenNameJson( stream, slot.lowerToken ); stream << ",\n";
 				stream << "          \"padding\": " << (slot.padding ? "true" : "false") << ",\n";
-				stream << "          \"padding_kind\": "; writeJsonString( stream, scheduledPaddingKindName( slot.paddingKind ) ); stream << "\n";
+				stream << "          \"padding_kind\": "; writeJsonString( stream, scheduledPaddingKindName( slot.paddingKind ) ); stream << ",\n";
+				stream << "          \"ignored_waw_resources\": "; writeFlagArrayJson( stream, slot.ignoredImplicitWawResources, kResourceFlags ); stream << "\n";
 				stream << "        }";
 			}
 			stream << "\n      ]\n";

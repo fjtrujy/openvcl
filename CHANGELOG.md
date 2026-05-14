@@ -23,6 +23,8 @@
   segmentation as generic code emission.
 - Code emission now reuses the shared scheduler-analysis helper for deciding
   when remaining MAC/CLIP WAW dependencies are dead.
+- Schedule issue-slot dumps now expose the implicit WAW resources ignored by
+  each ready-scheduler segment.
 - Added regression fixtures and unit/integration tests for cost analysis.
 - Added conservative VU scheduling improvements used by ps2gl:
   - upper/lower pairing lookahead;

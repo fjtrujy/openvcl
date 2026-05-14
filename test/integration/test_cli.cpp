@@ -200,6 +200,7 @@ TEST_CASE("CLI: schedule text dump exposes ready-set issue slots")
     CHECK(contains(r.stdout_data, "block 0 first_token=0 terminator=none slots=6"));
     CHECK(contains(r.stdout_data, "slot 0 issue_cycle=0 cycle_count=1 first=0:add second=2:iaddiu upper=0:add lower=2:iaddiu padding=no padding_kind=none"));
     CHECK(contains(r.stdout_data, "slot 1 issue_cycle=1 cycle_count=1 first=- second=- upper=- lower=- padding=yes padding_kind=nop"));
+    CHECK(contains(r.stdout_data, "ignored_waw_resources=mac|clip"));
     CHECK(contains(r.stdout_data, "slot 5 issue_cycle=5 cycle_count=1 first=1:mul second=- upper=1:mul lower=- padding=no padding_kind=none"));
 }
 
@@ -239,6 +240,7 @@ TEST_CASE("CLI: schedule JSON dump is stable enough for generic emission tooling
     CHECK(contains(r.stdout_data, "\"padding\": false"));
     CHECK(contains(r.stdout_data, "\"padding_kind\": \"none\""));
     CHECK(contains(r.stdout_data, "\"padding_kind\": \"nop\""));
+    CHECK(contains(r.stdout_data, "\"ignored_waw_resources\": [\"mac\", \"clip\"]"));
 }
 
 TEST_CASE("CLI: schedule JSON dump honors generic software-pipeline rewrites")

@@ -52,6 +52,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: code emission and scheduler analysis now share one helper for selecting NOP vs `waitq`/`waitp` hazard padding.
    - Done: schedule issue-slot dumps now use the same MAC/CLIP flag-liveness segmentation as generic code emission.
    - Done: code emission and scheduler analysis now share the helper for deciding when remaining MAC/CLIP WAW dependencies are dead.
+   - Done: schedule issue-slot dumps now expose the ignored implicit WAW resources for each scheduler segment.
 
 6. **Implement Generic Loop Analysis** - done
    - Detect induction registers, loop-carried dependencies, loads/stores, branch targets, and loop bodies.

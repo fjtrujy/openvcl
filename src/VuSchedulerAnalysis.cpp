@@ -227,6 +227,13 @@ namespace
 		return slot;
 	}
 
+	void assignIgnoredImplicitWawResources( std::vector<VuScheduledIssueSlot>& slots,
+	                                        unsigned int ignoredImplicitWawResources )
+	{
+		for( std::vector<VuScheduledIssueSlot>::iterator i = slots.begin(); i != slots.end(); ++i )
+			i->ignoredImplicitWawResources = ignoredImplicitWawResources;
+	}
+
 	std::vector<VuScheduledIssueSlot> scheduleReadySegmentIssueSlots( const std::vector<const Token*>& segment,
 	                                                                  unsigned int ignoredImplicitWawResources )
 	{
@@ -236,6 +243,7 @@ namespace
 			unsigned int issueCycle = 0;
 			for( std::vector<const Token*>::const_iterator i = segment.begin(); i != segment.end(); ++i )
 				slots.push_back( makeIssueSlot( *i, NULL, issueCycle++ ) );
+			assignIgnoredImplicitWawResources( slots, ignoredImplicitWawResources );
 			return slots;
 		}
 
@@ -359,6 +367,7 @@ namespace
 			++currentCycle;
 		}
 
+		assignIgnoredImplicitWawResources( slots, ignoredImplicitWawResources );
 		return slots;
 	}
 
@@ -1616,17 +1625,18 @@ VuDependencyEdge::VuDependencyEdge( unsigned int beforeToken, unsigned int after
 	kind = dependencyKind;
 }
 
-VuScheduledIssueSlot::VuScheduledIssueSlot()
-{
-	firstToken = NULL;
-	secondToken = NULL;
-	upperToken = NULL;
-	lowerToken = NULL;
-	padding = false;
-	paddingKind = VU_SCHEDULED_PADDING_NONE;
-	issueCycle = 0;
-	cycleCount = 1;
-}
+	VuScheduledIssueSlot::VuScheduledIssueSlot()
+	{
+		firstToken = NULL;
+		secondToken = NULL;
+		upperToken = NULL;
+		lowerToken = NULL;
+		padding = false;
+		paddingKind = VU_SCHEDULED_PADDING_NONE;
+		ignoredImplicitWawResources = VU_RESOURCE_NONE;
+		issueCycle = 0;
+		cycleCount = 1;
+	}
 
 VuLoopCandidate::VuLoopCandidate()
 {
