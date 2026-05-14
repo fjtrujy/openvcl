@@ -1523,6 +1523,25 @@ TEST_CASE("VuSchedulerAnalysis: flag liveness ignores MAC WAW after the last rea
     CHECK(vcl::normalizeVuMnemonic(i->name()) == "ftoi0");
 }
 
+TEST_CASE("VuSchedulerAnalysis: flag-liveness issue slots match ready-set scheduling")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("fmand vi01, vi02"));
+    REQUIRE(program.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("ftoi0.xy vf10, vf00"));
+    REQUIRE(program.parse("mul.xy vf11, vf10, vf00"));
+
+    std::vector< std::vector<vcl::VuScheduledIssueSlot> > blockSlots =
+        vcl::scheduleVuBasicBlocksReadyIssueSlotsWithFlagLiveness(program.tokenizer.tokens());
+    REQUIRE(blockSlots.size() == 1u);
+    REQUIRE(blockSlots[0].size() >= 2u);
+    REQUIRE(blockSlots[0][0].firstToken != NULL);
+    CHECK(vcl::normalizeVuMnemonic(blockSlots[0][0].firstToken->name()) == "fmand");
+    REQUIRE(blockSlots[0][1].firstToken != NULL);
+    CHECK(vcl::normalizeVuMnemonic(blockSlots[0][1].firstToken->name()) == "ftoi0");
+}
+
 TEST_CASE("VuSchedulerAnalysis: ready-set scheduler can move Q producers before independent plain stores")
 {
     vcl::Error::ResetErrorCount();

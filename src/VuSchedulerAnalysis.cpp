@@ -415,6 +415,18 @@ namespace
 		appendReadyScheduledSegment( segment, scheduled, ignoredImplicitWawResources );
 	}
 
+	struct VuFlagLiveness
+	{
+		VuFlagLiveness()
+		{
+			lastMacReader = -1;
+			lastClipReader = -1;
+		}
+
+		int lastMacReader;
+		int lastClipReader;
+	};
+
 	bool tokenReadsMac( const Token& token )
 	{
 		return token.operand() && isVuMacReader( token.operand()->name() );
@@ -435,6 +447,91 @@ namespace
 		if( lastClipReader < 0 || index > static_cast<unsigned int>( lastClipReader ) )
 			mask |= VU_RESOURCE_CLIP;
 		return mask;
+	}
+
+	VuFlagLiveness analyzeFlagLiveness( const std::list<Token>& tokens )
+	{
+		VuFlagLiveness liveness;
+		unsigned int index = 0;
+		for( std::list<Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i, ++index )
+		{
+			if( tokenReadsMac( *i ) )
+				liveness.lastMacReader = static_cast<int>( index );
+			if( tokenReadsClip( *i ) )
+				liveness.lastClipReader = static_cast<int>( index );
+		}
+		return liveness;
+	}
+
+	void appendReadyScheduledSegmentSlots( const std::vector<const Token*>& segment,
+	                                       std::vector<VuScheduledIssueSlot>& slots,
+	                                       unsigned int ignoredImplicitWawResources )
+	{
+		std::vector<VuScheduledIssueSlot> segmentSlots =
+			scheduleReadySegmentIssueSlots( segment, ignoredImplicitWawResources );
+		slots.insert( slots.end(), segmentSlots.begin(), segmentSlots.end() );
+	}
+
+	std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlotsWithFlagLiveness(
+	    const VuBasicBlock& block,
+	    const VuFlagLiveness& liveness )
+	{
+		std::vector<VuScheduledIssueSlot> slots;
+		std::vector<const Token*> segment;
+		unsigned int segmentMask = VU_RESOURCE_NONE;
+		bool haveSegment = false;
+
+		for( unsigned int offset = 0; offset < block.tokens.size(); ++offset )
+		{
+			const unsigned int tokenIndex = block.firstTokenIndex + offset;
+			const Token& token = *block.tokens[offset];
+			if( isVuReadyScheduleCandidate( token ) )
+			{
+				const unsigned int tokenMask =
+					ignoredFlagWawMaskForIndex( tokenIndex,
+					                            liveness.lastMacReader,
+					                            liveness.lastClipReader );
+				if( haveSegment && tokenMask != segmentMask )
+				{
+					appendReadyScheduledSegmentSlots( segment, slots, segmentMask );
+					segment.clear();
+					haveSegment = false;
+				}
+
+				if( !haveSegment )
+				{
+					segmentMask = tokenMask;
+					haveSegment = true;
+				}
+
+				segment.push_back( &token );
+
+				if( tokenIndex == static_cast<unsigned int>( liveness.lastMacReader )
+				    || tokenIndex == static_cast<unsigned int>( liveness.lastClipReader ) )
+				{
+					appendReadyScheduledSegmentSlots( segment, slots, segmentMask );
+					segment.clear();
+					haveSegment = false;
+				}
+				continue;
+			}
+
+			appendReadyScheduledSegmentSlots( segment, slots, segmentMask );
+			segment.clear();
+			haveSegment = false;
+			slots.push_back( makeIssueSlot( &token, NULL ) );
+		}
+
+		appendReadyScheduledSegmentSlots( segment, slots, segmentMask );
+
+		unsigned int issueCycle = 0;
+		for( std::vector<VuScheduledIssueSlot>::iterator slot = slots.begin(); slot != slots.end(); ++slot )
+		{
+			slot->issueCycle = issueCycle;
+			issueCycle += slot->cycleCount;
+		}
+
+		return slots;
 	}
 
 	bool branchTargetLabel( const Token& token, std::string& label )
@@ -1721,6 +1818,19 @@ std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlots( const VuB
 	return slots;
 }
 
+std::vector< std::vector<VuScheduledIssueSlot> > scheduleVuBasicBlocksReadyIssueSlotsWithFlagLiveness(
+    const std::list<Token>& tokens )
+{
+	std::vector< std::vector<VuScheduledIssueSlot> > result;
+	const std::vector<VuBasicBlock> blocks = buildVuBasicBlocks( tokens );
+	const VuFlagLiveness liveness = analyzeFlagLiveness( tokens );
+
+	for( std::vector<VuBasicBlock>::const_iterator block = blocks.begin(); block != blocks.end(); ++block )
+		result.push_back( scheduleVuBasicBlockReadyIssueSlotsWithFlagLiveness( *block, liveness ) );
+
+	return result;
+}
+
 std::vector<VuLoopCandidate> findVuLoopCandidates( const std::list<Token>& tokens )
 {
 	std::vector<const Token*> indexedTokens;
@@ -2113,26 +2223,18 @@ std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens,
 
 std::list<Token> scheduleVuTokensReadySetWithFlagLiveness( const std::list<Token>& tokens )
 {
-	int lastMacReader = -1;
-	int lastClipReader = -1;
-	unsigned int index = 0;
-	for( std::list<Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i, ++index )
-	{
-		if( tokenReadsMac( *i ) )
-			lastMacReader = static_cast<int>( index );
-		if( tokenReadsClip( *i ) )
-			lastClipReader = static_cast<int>( index );
-	}
+	const VuFlagLiveness liveness = analyzeFlagLiveness( tokens );
 
 	std::list<Token> scheduled;
 	std::list<Token> segment;
 	unsigned int segmentMask = VU_RESOURCE_NONE;
 	bool haveSegment = false;
-	index = 0;
+	unsigned int index = 0;
 
 	for( std::list<Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i, ++index )
 	{
-		const unsigned int tokenMask = ignoredFlagWawMaskForIndex( index, lastMacReader, lastClipReader );
+		const unsigned int tokenMask =
+			ignoredFlagWawMaskForIndex( index, liveness.lastMacReader, liveness.lastClipReader );
 		if( haveSegment && tokenMask != segmentMask )
 		{
 			std::list<Token> scheduledSegment = scheduleVuTokensReadySet( segment, segmentMask );
@@ -2148,8 +2250,8 @@ std::list<Token> scheduleVuTokensReadySetWithFlagLiveness( const std::list<Token
 		}
 		segment.push_back( *i );
 
-		if( index == static_cast<unsigned int>( lastMacReader )
-		    || index == static_cast<unsigned int>( lastClipReader ) )
+		if( index == static_cast<unsigned int>( liveness.lastMacReader )
+		    || index == static_cast<unsigned int>( liveness.lastClipReader ) )
 		{
 			std::list<Token> scheduledSegment = scheduleVuTokensReadySet( segment, segmentMask );
 			scheduled.insert( scheduled.end(), scheduledSegment.begin(), scheduledSegment.end() );

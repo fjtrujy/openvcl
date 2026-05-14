@@ -897,13 +897,15 @@ namespace
 	void writeScheduleInfoText( std::ostream& stream, const std::list<Token>& tokens )
 	{
 		const std::vector<VuBasicBlock> blocks = buildVuBasicBlocks( tokens );
+		const std::vector< std::vector<VuScheduledIssueSlot> > blockSlots =
+			scheduleVuBasicBlocksReadyIssueSlotsWithFlagLiveness( tokens );
 		const std::map<const Token*, unsigned int> tokenIndices = buildTokenIndexMap( tokens );
 
 		stream << "OpenVCL VU ready scheduler issue slots" << std::endl;
 		for( unsigned int blockIndex = 0; blockIndex < blocks.size(); ++blockIndex )
 		{
 			const VuBasicBlock& block = blocks[blockIndex];
-			const std::vector<VuScheduledIssueSlot> slots = scheduleVuBasicBlockReadyIssueSlots( block );
+			const std::vector<VuScheduledIssueSlot>& slots = blockSlots[blockIndex];
 			stream << "block " << blockIndex
 			       << " first_token=" << block.firstTokenIndex
 			       << " terminator=" << basicBlockTerminatorKindName( block.terminatorKind )
@@ -933,13 +935,15 @@ namespace
 	void writeScheduleInfoJson( std::ostream& stream, const std::list<Token>& tokens )
 	{
 		const std::vector<VuBasicBlock> blocks = buildVuBasicBlocks( tokens );
+		const std::vector< std::vector<VuScheduledIssueSlot> > blockSlots =
+			scheduleVuBasicBlocksReadyIssueSlotsWithFlagLiveness( tokens );
 		const std::map<const Token*, unsigned int> tokenIndices = buildTokenIndexMap( tokens );
 
 		stream << "{\n  \"scheduled_blocks\": [\n";
 		for( unsigned int blockIndex = 0; blockIndex < blocks.size(); ++blockIndex )
 		{
 			const VuBasicBlock& block = blocks[blockIndex];
-			const std::vector<VuScheduledIssueSlot> slots = scheduleVuBasicBlockReadyIssueSlots( block );
+			const std::vector<VuScheduledIssueSlot>& slots = blockSlots[blockIndex];
 			if( blockIndex != 0 )
 				stream << ",\n";
 			stream << "    {\n";
