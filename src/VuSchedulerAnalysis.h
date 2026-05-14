@@ -262,6 +262,7 @@ std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlots( const VuB
 std::vector< std::vector<VuScheduledIssueSlot> > scheduleVuBasicBlocksReadyIssueSlotsWithFlagLiveness(
     const std::list<Token>& tokens );
 VuScheduledProgram scheduleVuProgramReadyIssueSlotsWithFlagLiveness( const std::list<Token>& tokens );
+std::list<Token> flattenVuScheduledProgramTokens( const VuScheduledProgram& program );
 unsigned int vuIgnoredFlagWawResourcesForRemaining( std::list<Token>::const_iterator begin,
                                                     std::list<Token>::const_iterator end );
 VuScheduledPaddingKind vuScheduledPaddingKindForReadHazard( const Token& token,

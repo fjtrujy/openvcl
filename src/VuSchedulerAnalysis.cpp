@@ -1898,6 +1898,17 @@ VuScheduledProgram scheduleVuProgramReadyIssueSlotsWithFlagLiveness( const std::
 	return program;
 }
 
+std::list<Token> flattenVuScheduledProgramTokens( const VuScheduledProgram& program )
+{
+	std::list<Token> scheduled;
+
+	for( std::vector<VuScheduledBasicBlock>::const_iterator block = program.blocks.begin();
+	     block != program.blocks.end(); ++block )
+		appendIssueSlotsFlat( block->issueSlots, scheduled );
+
+	return scheduled;
+}
+
 unsigned int vuIgnoredFlagWawResourcesForRemaining( std::list<Token>::const_iterator begin,
                                                     std::list<Token>::const_iterator end )
 {
@@ -2315,50 +2326,8 @@ std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens,
 
 std::list<Token> scheduleVuTokensReadySetWithFlagLiveness( const std::list<Token>& tokens )
 {
-	const VuFlagLiveness liveness = analyzeFlagLiveness( tokens );
-
-	std::list<Token> scheduled;
-	std::list<Token> segment;
-	unsigned int segmentMask = VU_RESOURCE_NONE;
-	bool haveSegment = false;
-	unsigned int index = 0;
-
-	for( std::list<Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i, ++index )
-	{
-		const unsigned int tokenMask =
-			ignoredFlagWawMaskForIndex( index, liveness.lastMacReader, liveness.lastClipReader );
-		if( haveSegment && tokenMask != segmentMask )
-		{
-			std::list<Token> scheduledSegment = scheduleVuTokensReadySet( segment, segmentMask );
-			scheduled.insert( scheduled.end(), scheduledSegment.begin(), scheduledSegment.end() );
-			segment.clear();
-			haveSegment = false;
-		}
-
-		if( !haveSegment )
-		{
-			segmentMask = tokenMask;
-			haveSegment = true;
-		}
-		segment.push_back( *i );
-
-		if( index == static_cast<unsigned int>( liveness.lastMacReader )
-		    || index == static_cast<unsigned int>( liveness.lastClipReader ) )
-		{
-			std::list<Token> scheduledSegment = scheduleVuTokensReadySet( segment, segmentMask );
-			scheduled.insert( scheduled.end(), scheduledSegment.begin(), scheduledSegment.end() );
-			segment.clear();
-			haveSegment = false;
-		}
-	}
-
-	if( haveSegment )
-	{
-		std::list<Token> scheduledSegment = scheduleVuTokensReadySet( segment, segmentMask );
-		scheduled.insert( scheduled.end(), scheduledSegment.begin(), scheduledSegment.end() );
-	}
-
-	return scheduled;
+	const VuScheduledProgram program = scheduleVuProgramReadyIssueSlotsWithFlagLiveness( tokens );
+	return flattenVuScheduledProgramTokens( program );
 }
 
 }

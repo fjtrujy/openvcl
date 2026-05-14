@@ -1604,6 +1604,50 @@ TEST_CASE("VuSchedulerAnalysis: scheduled program exposes block cycle ranges")
     CHECK(scheduled.cycleCount == 9u);
 }
 
+TEST_CASE("VuSchedulerAnalysis: scheduled program flattens to scheduled token order")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("entry_lid:"));
+    REQUIRE(program.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("mul.xy vf04, vf01, vf05"));
+    REQUIRE(program.parse("iaddiu vi01, vi00, 1"));
+    REQUIRE(program.parse("next_lid:"));
+
+    vcl::VuScheduledProgram scheduled =
+        vcl::scheduleVuProgramReadyIssueSlotsWithFlagLiveness(program.tokenizer.tokens());
+    std::list<vcl::Token> flattened = vcl::flattenVuScheduledProgramTokens(scheduled);
+    REQUIRE(flattened.size() == 5u);
+
+    std::list<vcl::Token>::const_iterator i = flattened.begin();
+    REQUIRE(i != flattened.end());
+    CHECK(i->label() == "entry_lid");
+    CHECK(i->operand() == NULL);
+
+    ++i;
+    REQUIRE(i != flattened.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "add");
+    CHECK((i->flags() & vcl::Token::SCHEDULED_PAIR_FIRST) != 0);
+    CHECK((i->flags() & vcl::Token::SCHEDULED_PAIR_SECOND) == 0);
+
+    ++i;
+    REQUIRE(i != flattened.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "iaddiu");
+    CHECK((i->flags() & vcl::Token::SCHEDULED_PAIR_FIRST) == 0);
+    CHECK((i->flags() & vcl::Token::SCHEDULED_PAIR_SECOND) != 0);
+
+    ++i;
+    REQUIRE(i != flattened.end());
+    CHECK(vcl::normalizeVuMnemonic(i->name()) == "mul");
+    CHECK((i->flags() & vcl::Token::SCHEDULED_PAIR_FIRST) == 0);
+    CHECK((i->flags() & vcl::Token::SCHEDULED_PAIR_SECOND) == 0);
+
+    ++i;
+    REQUIRE(i != flattened.end());
+    CHECK(i->label() == "next_lid");
+    CHECK(i->operand() == NULL);
+}
+
 TEST_CASE("VuSchedulerAnalysis: remaining flag WAW helper reports dead MAC and CLIP flags")
 {
     vcl::Error::ResetErrorCount();

@@ -35,6 +35,9 @@
 - Ready-scheduler analysis now has a typed `VuScheduledProgram` wrapper with
   block-level cycle ranges, and schedule dumps expose program-relative issue
   cycles.
+- Ready-set token scheduling now flattens that typed `VuScheduledProgram`
+  wrapper, keeping codegen token order and schedule dumps on the same
+  scheduler plan.
 - Added regression fixtures and unit/integration tests for cost analysis.
 - Added conservative VU scheduling improvements used by ps2gl:
   - upper/lower pairing lookahead;
