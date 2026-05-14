@@ -46,6 +46,8 @@ public:
 	bool knownLoopOptimizations() const;
 	void setGenericSoftwarePipelining( bool enabled );
 	bool genericSoftwarePipelining() const;
+	void setStrictScheduleSlots( bool enabled );
+	bool strictScheduleSlots() const;
 
 	void setName( const std::string& name );
 	const std::string& name() const;
@@ -184,6 +186,7 @@ private:
 	bool m_emitSource;
 	bool m_knownLoopOptimizations;
 	bool m_genericSoftwarePipelining;
+	bool m_strictScheduleSlots;
 	bool m_enableUpperZeroMoves;
 	unsigned int m_ignoredImplicitWawResources;
 	std::string m_name;

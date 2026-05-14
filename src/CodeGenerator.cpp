@@ -942,6 +942,7 @@ CodeGenerator::CodeGenerator()
 	m_currentCycle    = 0;
 	m_knownLoopOptimizations = false;
 	m_genericSoftwarePipelining = false;
+	m_strictScheduleSlots = false;
 	m_enableUpperZeroMoves = false;
 	m_ignoredImplicitWawResources = VU_RESOURCE_NONE;
 }
@@ -1081,7 +1082,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			continue;
 		}
 
-		if( token.label().length() == 0 && readHazardDelay(token, NULL) > 0 )
+		if( !m_strictScheduleSlots && token.label().length() == 0 && readHazardDelay(token, NULL) > 0 )
 		{
 			enum { FillerLookaheadLimit = 96 };
 			const bool waitsForQ = vuTokenReadsQ(token);
@@ -1259,6 +1260,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 		// pass may pull a later partner into the current cycle, but only if
 		// every crossed instruction has no register/resource conflict and
 		// no memory/control side effect that would make reordering risky.
+		if( !m_strictScheduleSlots )
 		{
 			enum { PairLookaheadLimit = 96 };
 			std::list<Token>::iterator p = k;
@@ -1348,6 +1350,8 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			}
 		}
 
+		if( m_strictScheduleSlots )
+			padForReadHazards(token, NULL);
 		emitSingleToken(token);
 		if( isVuTerminalUnconditionalBranch(token) )
 			exitWritten = true;

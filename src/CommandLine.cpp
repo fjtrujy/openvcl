@@ -76,6 +76,7 @@ CommandLine::CommandLine()
 	m_dumpScheduleInfoJson = false;
 	m_knownLoopOptimizations = false;
 	m_genericSoftwarePipelining = true;
+	m_strictScheduleSlots = false;
 
 	m_gasp = "gasp";
 	m_cpp = "cpp";
@@ -127,6 +128,7 @@ CommandLine::CommandLine()
 	m_options.push_back(Option('\0',"disable-known-loop-optimizations",DISABLE_KNOWN_LOOP_OPTIMIZATIONS,false));
 	m_options.push_back(Option('\0',"enable-generic-software-pipelining",ENABLE_GENERIC_SOFTWARE_PIPELINING,false));
 	m_options.push_back(Option('\0',"disable-generic-software-pipelining",DISABLE_GENERIC_SOFTWARE_PIPELINING,false));
+	m_options.push_back(Option('\0',"strict-schedule-slots",STRICT_SCHEDULE_SLOTS,false));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -240,6 +242,7 @@ bool CommandLine::parse( int argc, char* argv[] )
 				case DISABLE_KNOWN_LOOP_OPTIMIZATIONS: m_knownLoopOptimizations = false; break;
 				case ENABLE_GENERIC_SOFTWARE_PIPELINING: m_genericSoftwarePipelining = true; break;
 				case DISABLE_GENERIC_SOFTWARE_PIPELINING: m_genericSoftwarePipelining = false; break;
+				case STRICT_SCHEDULE_SLOTS: m_strictScheduleSlots = true; break;
 				case ANALYZE_VSM_COST_LOOP:
 				{
 					std::string::size_type separator = argument.find('=');
@@ -330,6 +333,7 @@ void CommandLine::showUsage( std::ostream& stream )
 	stream << "  --disable-known-loop-optimizations  Kept for compatibility; generic compilation is the default." << std::endl;
 	stream << "  --enable-generic-software-pipelining  Enable generic software-pipeline rewrites. (Default)" << std::endl;
 	stream << "  --disable-generic-software-pipelining  Disable generic software-pipeline rewrites." << std::endl;
+	stream << "  --strict-schedule-slots  Emit from scheduler-selected pairs without legacy lookahead fallbacks." << std::endl;
 
 	stream << std::endl << "  If no input or output file are specified, standard I/O will be used instead." << std::endl;
 

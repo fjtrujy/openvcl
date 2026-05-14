@@ -19,6 +19,7 @@
 #include <fstream>
 #include <sstream>
 #include <unistd.h>
+#include <vector>
 
 namespace
 {
@@ -38,7 +39,9 @@ namespace
     // Run openvcl, capturing the EMITTED VSM into the returned string.
     // openvcl's `-o -` doesn't actually write to stdout (it creates a
     // literal file named `-`) so we use a temp file per test.
-    std::string runEmit(const std::string& body, const std::string& name)
+    std::string runEmitWithArgs(const std::string& body,
+                                const std::string& name,
+                                const std::vector<std::string>& extraArgs)
     {
         char tmpl[] = "/tmp/openvcl_test_XXXXXX.vsm";
         int fd = mkstemps(tmpl, 4);
@@ -47,6 +50,8 @@ namespace
         close(fd);
 
         std::vector<std::string> args;
+        for( std::vector<std::string>::const_iterator arg = extraArgs.begin(); arg != extraArgs.end(); ++arg )
+            args.push_back(*arg);
         args.push_back("-o");
         args.push_back(tmpl);
         ::test::RunResult r = ::test::run_openvcl(args, skeleton(name, body));
@@ -60,6 +65,12 @@ namespace
         ss << f.rdbuf();
         std::remove(tmpl);
         return ss.str();
+    }
+
+    std::string runEmit(const std::string& body, const std::string& name)
+    {
+        std::vector<std::string> args;
+        return runEmitWithArgs(body, name, args);
     }
 
     // Find the first VSM line that mentions `pattern`.
@@ -155,6 +166,20 @@ TEST_CASE("Pairing: independent upper+lower ops pair into one cycle")
     std::string vsm = runEmit(body, "vsmPairIndependent");
     REQUIRE(vsm.length() > 0);
     CHECK(linePairsSubstrings(vsm, "mulax", "lq.xyz"));
+}
+
+TEST_CASE("Pairing: strict schedule slots honor ready-set pair tags")
+{
+    const std::string body =
+        "\tadd.xy vf01, vf00, vf00\n"
+        "\tmul.xy vf04, vf01, vf00\n"
+        "\tiaddiu vi01, vi00, 1\n";
+    std::vector<std::string> args;
+    args.push_back("--strict-schedule-slots");
+
+    std::string vsm = runEmitWithArgs(body, "vsmStrictScheduleSlotsPair", args);
+    REQUIRE(vsm.length() > 0);
+    CHECK(linePairsSubstrings(vsm, "add.xy", "iaddiu"));
 }
 
 TEST_CASE("Pairing: later LOI does not pair with current I reader")

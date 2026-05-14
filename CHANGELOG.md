@@ -43,6 +43,9 @@
   those indices from raw token pointers.
 - The non-flag ready-set scheduling API now also builds and flattens a typed
   `VuScheduledProgram`, removing another parallel token-only scheduler path.
+- Added `--strict-schedule-slots` as an opt-in compiler mode that emits from
+  scheduler-selected pairs without the older textual latency/pairing
+  lookahead fallbacks.
 - Added regression fixtures and unit/integration tests for cost analysis.
 - Added conservative VU scheduling improvements used by ps2gl:
   - upper/lower pairing lookahead;
