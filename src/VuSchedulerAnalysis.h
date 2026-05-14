@@ -92,6 +92,7 @@ struct VuLoopPipelineOpportunity
 	VuLoopPipelineOpportunity();
 
 	std::string label;
+	unsigned int labelTokenIndex;
 	unsigned int branchTokenIndex;
 	unsigned int qProducerTokenIndex;
 	unsigned int firstQConsumerTokenIndex;
@@ -129,6 +130,7 @@ std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlots( const VuB
                                                                        unsigned int ignoredImplicitWawResources = 0 );
 std::vector<VuLoopCandidate> findVuLoopCandidates( const std::list<Token>& tokens );
 std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const std::list<Token>& tokens );
+std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens );
 std::list<Token> scheduleVuTokensPreservingOrder( const std::list<Token>& tokens );
 std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens,
                                            unsigned int ignoredImplicitWawResources = 0 );

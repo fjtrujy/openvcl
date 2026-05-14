@@ -146,6 +146,31 @@ namespace
             "\t--endexit\n";
     }
 
+    std::string simpleGenericSingleQPipelineSource()
+    {
+        return
+            "\t.init_vf_all\n"
+            "\t.init_vi_all\n"
+            "\t--enter\n"
+            "\t--endenter\n"
+            "\tiaddiu vi01, vi00, 0\n"
+            "\tiaddiu vi02, vi00, 3\n"
+            "loop_lid:\n"
+            "\t--LoopCS 1,1\n"
+            "\tdiv q, vf00w, vf00w\n"
+            "\tmulq.xyz vf02, vf00, q\n"
+            "\tadd.xyz vf10, vf00, vf00\n"
+            "\tadd.xyz vf11, vf00, vf00\n"
+            "\tadd.xyz vf12, vf00, vf00\n"
+            "\tadd.xyz vf13, vf00, vf00\n"
+            "\tadd.xyz vf14, vf00, vf00\n"
+            "\tadd.xyz vf15, vf00, vf00\n"
+            "\tiaddiu vi01, vi01, 1\n"
+            "\tibne vi01, vi02, loop_lid\n"
+            "\t--exit\n"
+            "\t--endexit\n";
+    }
+
     std::string fastNoLightsPipelineSource()
     {
         return
@@ -864,6 +889,18 @@ TEST_CASE("Software pipeline: fast_nolights transform loop emits a 12-cycle stea
     CHECK(contains(vsm, "ibne VI02, VI05, xform_loop_lid__MAIN_LOOP"));
     CHECK(contains(vsm, "mulq.xyz VF10, VF10, q          div q, VF00w, VF07w"));
     CHECK(countSubstrings(vsm, "waitq") == 0);
+}
+
+TEST_CASE("Software pipeline: generic path emits safe single-Q loop prologs")
+{
+    std::string vsm = runEmit(simpleGenericSingleQPipelineSource());
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(contains(vsm, "loop_lid__PROLOG:"));
+    CHECK(contains(vsm, "loop_lid:"));
+    CHECK(contains(vsm, "ibne VI01, VI02, loop_lid"));
+    CHECK(countSubstrings(vsm, "div q, VF00w, VF00w") == 2);
+    CHECK(!contains(vsm, "loop_lid__MAIN_LOOP:"));
 }
 
 TEST_CASE("Software pipeline: generic compiler path is the default")

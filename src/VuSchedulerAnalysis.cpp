@@ -606,6 +606,28 @@ namespace
 		opportunity.canEmitSoftwarePipeline =
 		    opportunity.hasSoftwarePipelinePlan && opportunity.softwarePipelineBlockers.empty();
 	}
+
+	Token tokenWithoutLabel( const Token& token )
+	{
+		Token copy( token );
+		copy.setLabel( "" );
+		return copy;
+	}
+
+	void appendTokenRangeWithInsertedQProducer( std::list<Token>& output,
+	                                            const std::vector<const Token*>& indexedTokens,
+	                                            unsigned int beginIndex,
+	                                            unsigned int endIndex,
+	                                            unsigned int insertAfterIndex,
+	                                            unsigned int qProducerIndex )
+	{
+		for( unsigned int i = beginIndex; i <= endIndex && i < indexedTokens.size(); ++i )
+		{
+			output.push_back( tokenWithoutLabel( *indexedTokens[i] ) );
+			if( i == insertAfterIndex && qProducerIndex < indexedTokens.size() )
+				output.push_back( tokenWithoutLabel( *indexedTokens[qProducerIndex] ) );
+		}
+	}
 }
 
 VuBasicBlock::VuBasicBlock()
@@ -655,6 +677,7 @@ VuLoopCandidate::VuLoopCandidate()
 
 VuLoopPipelineOpportunity::VuLoopPipelineOpportunity()
 {
+	labelTokenIndex = 0;
 	branchTokenIndex = 0;
 	qProducerTokenIndex = 0;
 	firstQConsumerTokenIndex = 0;
@@ -868,6 +891,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 
 		VuLoopPipelineOpportunity opportunity;
 		opportunity.label = loop->label;
+		opportunity.labelTokenIndex = loop->labelTokenIndex;
 		opportunity.branchTokenIndex = loop->branchTokenIndex;
 		opportunity.qProducerTokenIndex = loop->firstBodyTokenIndex + qProducerOffset;
 		opportunity.firstQConsumerTokenIndex = loop->firstBodyTokenIndex + qConsumerOffsets.front();
@@ -919,6 +943,82 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 	}
 
 	return result;
+}
+
+std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens )
+{
+	std::vector<const Token*> indexedTokens;
+	for( std::list<Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i )
+		indexedTokens.push_back( &*i );
+
+	std::map<unsigned int, VuLoopPipelineOpportunity> plansByLabelIndex;
+	const std::vector<VuLoopPipelineOpportunity> opportunities = findVuLoopPipelineOpportunities( tokens );
+	for( std::vector<VuLoopPipelineOpportunity>::const_iterator i = opportunities.begin(); i != opportunities.end(); ++i )
+	{
+		if( i->canEmitSoftwarePipeline
+		    && i->labelTokenIndex < indexedTokens.size()
+		    && i->branchTokenIndex < indexedTokens.size()
+		    && !i->qConsumerTokenIndices.empty() )
+			plansByLabelIndex[i->labelTokenIndex] = *i;
+	}
+
+	if( plansByLabelIndex.empty() )
+		return tokens;
+
+	std::list<Token> output;
+	unsigned int index = 0;
+	std::list<Token>::const_iterator i = tokens.begin();
+	while( i != tokens.end() )
+	{
+		std::map<unsigned int, VuLoopPipelineOpportunity>::const_iterator plan = plansByLabelIndex.find( index );
+		if( plan == plansByLabelIndex.end() )
+		{
+			output.push_back( *i );
+			++i;
+			++index;
+			continue;
+		}
+
+		const VuLoopPipelineOpportunity& opportunity = plan->second;
+		if( i->operand() )
+		{
+			output.push_back( *i );
+			++i;
+			++index;
+			continue;
+		}
+
+		Token prologLabel( *i );
+		prologLabel.setLabel( opportunity.label + "__PROLOG" );
+		output.push_back( prologLabel );
+
+		for( std::vector<unsigned int>::const_iterator p = opportunity.prologTokenIndices.begin();
+		     p != opportunity.prologTokenIndices.end(); ++p )
+		{
+			if( *p < indexedTokens.size() )
+				output.push_back( tokenWithoutLabel( *indexedTokens[*p] ) );
+		}
+
+		Token mainLabel( *i );
+		mainLabel.setLabel( opportunity.label );
+		output.push_back( mainLabel );
+
+		const unsigned int insertAfterIndex = opportunity.qConsumerTokenIndices.back();
+		appendTokenRangeWithInsertedQProducer( output,
+		                                       indexedTokens,
+		                                       opportunity.firstQConsumerTokenIndex,
+		                                       opportunity.branchTokenIndex,
+		                                       insertAfterIndex,
+		                                       opportunity.qProducerTokenIndex );
+
+		while( index <= opportunity.branchTokenIndex && i != tokens.end() )
+		{
+			++i;
+			++index;
+		}
+	}
+
+	return output;
 }
 
 std::list<Token> scheduleVuTokensPreservingOrder( const std::list<Token>& tokens )

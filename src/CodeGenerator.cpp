@@ -984,6 +984,11 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 	std::list<Token> workTokens = tokens;
 	coalesceAdjacentVuIntegerAdds(workTokens);
 	fillPreIncrementStoreBranchDelaySlots(workTokens);
+	if( !m_knownLoopOptimizations )
+	{
+		std::list<Token> pipelinedTokens = applyVuSoftwarePipelinePlans(workTokens);
+		workTokens.swap(pipelinedTokens);
+	}
 	const bool macFlagsDead = !vuTokenListReadsMac(workTokens);
 	std::list<Token> scheduledTokens = scheduleVuTokensReadySetWithFlagLiveness(workTokens);
 	workTokens.swap(scheduledTokens);
