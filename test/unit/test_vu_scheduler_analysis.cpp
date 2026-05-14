@@ -923,12 +923,20 @@ TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose all Q producers")
     CHECK(opportunities[0].qStages[0].qProducerLatency == 7u);
     CHECK(opportunities[0].qStages[0].qProducerConsumerGapCycles == 0u);
     CHECK(opportunities[0].qStages[0].qProducerConsumerGapDeficitCycles == 7u);
+    CHECK(opportunities[0].qStages[0].loopCarriedQGapCycles == 6u);
+    CHECK(opportunities[0].qStages[0].qProducerInsertionGapCycles == 6u);
+    CHECK(opportunities[0].qStages[0].qProducerInsertionGapDeficitCycles == 1u);
+    CHECK(opportunities[0].qStages[0].qSchedulingStrategy == vcl::VU_LOOP_Q_SCHEDULE_INSUFFICIENT);
     CHECK(opportunities[0].qStages[1].qProducerTokenIndex == 5u);
     REQUIRE(opportunities[0].qStages[1].qConsumerTokenIndices.size() == 1u);
     CHECK(opportunities[0].qStages[1].qConsumerTokenIndices[0] == 6u);
     CHECK(opportunities[0].qStages[1].qProducerLatency == 7u);
     CHECK(opportunities[0].qStages[1].qProducerConsumerGapCycles == 0u);
     CHECK(opportunities[0].qStages[1].qProducerConsumerGapDeficitCycles == 7u);
+    CHECK(opportunities[0].qStages[1].loopCarriedQGapCycles == 6u);
+    CHECK(opportunities[0].qStages[1].qProducerInsertionGapCycles == 6u);
+    CHECK(opportunities[0].qStages[1].qProducerInsertionGapDeficitCycles == 1u);
+    CHECK(opportunities[0].qStages[1].qSchedulingStrategy == vcl::VU_LOOP_Q_SCHEDULE_INSUFFICIENT);
     CHECK(hasString(opportunities[0].softwarePipelineBlockers, "multiple_q_producers"));
 }
 

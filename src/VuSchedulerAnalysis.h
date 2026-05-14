@@ -46,6 +46,13 @@ struct VuLoopInductionUpdate
 	unsigned int tokenIndex;
 };
 
+enum VuLoopQSchedulingStrategy
+{
+	VU_LOOP_Q_SCHEDULE_LOCAL,
+	VU_LOOP_Q_SCHEDULE_LOOP_CARRIED,
+	VU_LOOP_Q_SCHEDULE_INSUFFICIENT
+};
+
 struct VuLoopQStage
 {
 	VuLoopQStage();
@@ -55,6 +62,10 @@ struct VuLoopQStage
 	unsigned int qProducerLatency;
 	unsigned int qProducerConsumerGapCycles;
 	unsigned int qProducerConsumerGapDeficitCycles;
+	unsigned int loopCarriedQGapCycles;
+	unsigned int qProducerInsertionGapCycles;
+	unsigned int qProducerInsertionGapDeficitCycles;
+	VuLoopQSchedulingStrategy qSchedulingStrategy;
 };
 
 enum VuDependencyKind
@@ -108,13 +119,6 @@ struct VuLoopCandidate
 	std::list<std::string> loopReadWriteRegisters;
 	std::vector<const Token*> bodyTokens;
 	const Token* branchToken;
-};
-
-enum VuLoopQSchedulingStrategy
-{
-	VU_LOOP_Q_SCHEDULE_LOCAL,
-	VU_LOOP_Q_SCHEDULE_LOOP_CARRIED,
-	VU_LOOP_Q_SCHEDULE_INSUFFICIENT
 };
 
 struct VuSoftwarePipelineRotation

@@ -138,6 +138,8 @@
   keeping `--disable-generic-software-pipelining` for comparison and debugging.
 - Delayed dependency-chain priority for latency-blocked ready-set candidates,
   so independent work fills Q/P latency before consumers are selected.
+- Extended loop-pipeline diagnostics so every Q stage reports its loop-carried
+  gap, next-producer insertion gap, deficit, and scheduling strategy.
 
 ## 0.3.3
 

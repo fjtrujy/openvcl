@@ -420,6 +420,17 @@ namespace
 		stream << "]";
 	}
 
+	const char* loopQSchedulingStrategyName( VuLoopQSchedulingStrategy strategy )
+	{
+		switch( strategy )
+		{
+			case VU_LOOP_Q_SCHEDULE_LOCAL: return "local";
+			case VU_LOOP_Q_SCHEDULE_LOOP_CARRIED: return "loop_carried";
+			case VU_LOOP_Q_SCHEDULE_INSUFFICIENT: return "insufficient";
+		}
+		return "insufficient";
+	}
+
 	void writeQStageListText( std::ostream& stream, const std::vector<VuLoopQStage>& stages )
 	{
 		if( stages.empty() )
@@ -447,6 +458,10 @@ namespace
 			stream << "(latency=" << stages[i].qProducerLatency
 			       << ",gap=" << stages[i].qProducerConsumerGapCycles
 			       << ",deficit=" << stages[i].qProducerConsumerGapDeficitCycles
+			       << ",loop_gap=" << stages[i].loopCarriedQGapCycles
+			       << ",insert_gap=" << stages[i].qProducerInsertionGapCycles
+			       << ",insert_deficit=" << stages[i].qProducerInsertionGapDeficitCycles
+			       << ",strategy=" << loopQSchedulingStrategyName( stages[i].qSchedulingStrategy )
 			       << ")";
 		}
 	}
@@ -464,6 +479,12 @@ namespace
 			stream << ", \"producer_latency\": " << stages[i].qProducerLatency
 			       << ", \"producer_consumer_gap_cycles\": " << stages[i].qProducerConsumerGapCycles
 			       << ", \"producer_consumer_gap_deficit_cycles\": " << stages[i].qProducerConsumerGapDeficitCycles
+			       << ", \"loop_carried_q_gap_cycles\": " << stages[i].loopCarriedQGapCycles
+			       << ", \"producer_insertion_gap_cycles\": " << stages[i].qProducerInsertionGapCycles
+			       << ", \"producer_insertion_gap_deficit_cycles\": " << stages[i].qProducerInsertionGapDeficitCycles
+			       << ", \"q_scheduling_strategy\": ";
+			writeJsonString( stream, loopQSchedulingStrategyName( stages[i].qSchedulingStrategy ) );
+			stream
 			       << "}";
 		}
 		stream << "]";
@@ -629,17 +650,6 @@ namespace
 				return &*i;
 		}
 		return NULL;
-	}
-
-	const char* loopQSchedulingStrategyName( VuLoopQSchedulingStrategy strategy )
-	{
-		switch( strategy )
-		{
-			case VU_LOOP_Q_SCHEDULE_LOCAL: return "local";
-			case VU_LOOP_Q_SCHEDULE_LOOP_CARRIED: return "loop_carried";
-			case VU_LOOP_Q_SCHEDULE_INSUFFICIENT: return "insufficient";
-		}
-		return "insufficient";
 	}
 
 	void writeLoopPipelineInfoText( std::ostream& stream,

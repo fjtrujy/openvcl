@@ -1092,13 +1092,22 @@ namespace
 		}
 	}
 
-	VuLoopQSchedulingStrategy classifyLoopQSchedulingStrategy( const VuLoopPipelineOpportunity& opportunity )
+	VuLoopQSchedulingStrategy classifyLoopQSchedulingStrategy( unsigned int qProducerConsumerGapDeficitCycles,
+	                                                           unsigned int loopCarriedQGapCycles,
+	                                                           unsigned int qProducerLatency )
 	{
-		if( opportunity.qProducerConsumerGapDeficitCycles == 0 )
+		if( qProducerConsumerGapDeficitCycles == 0 )
 			return VU_LOOP_Q_SCHEDULE_LOCAL;
-		if( opportunity.loopCarriedQGapCycles >= opportunity.qProducerLatency )
+		if( loopCarriedQGapCycles >= qProducerLatency )
 			return VU_LOOP_Q_SCHEDULE_LOOP_CARRIED;
 		return VU_LOOP_Q_SCHEDULE_INSUFFICIENT;
+	}
+
+	VuLoopQSchedulingStrategy classifyLoopQSchedulingStrategy( const VuLoopPipelineOpportunity& opportunity )
+	{
+		return classifyLoopQSchedulingStrategy( opportunity.qProducerConsumerGapDeficitCycles,
+		                                        opportunity.loopCarriedQGapCycles,
+		                                        opportunity.qProducerLatency );
 	}
 
 	void classifySoftwarePipelineEmissionSafety( VuLoopPipelineOpportunity& opportunity,
@@ -1462,6 +1471,10 @@ VuLoopQStage::VuLoopQStage()
 	qProducerLatency = 0;
 	qProducerConsumerGapCycles = 0;
 	qProducerConsumerGapDeficitCycles = 0;
+	loopCarriedQGapCycles = 0;
+	qProducerInsertionGapCycles = 0;
+	qProducerInsertionGapDeficitCycles = 0;
+	qSchedulingStrategy = VU_LOOP_Q_SCHEDULE_INSUFFICIENT;
 }
 
 VuLoopPipelineOpportunity::VuLoopPipelineOpportunity()
@@ -1703,6 +1716,11 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		if( qConsumerOffsets.empty() )
 			continue;
 
+		const unsigned int branchDelaySlots = loop->branchToken ? vuTokenBranchDelaySlots( *loop->branchToken ) : 0;
+		const unsigned int branchOffset = loop->bodyTokens.empty()
+		                                ? 0
+		                                : static_cast<unsigned int>( loop->bodyTokens.size() - 1 );
+
 		VuLoopPipelineOpportunity opportunity;
 		opportunity.label = loop->label;
 		opportunity.labelTokenIndex = loop->labelTokenIndex;
@@ -1734,12 +1752,30 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			{
 				const unsigned int firstConsumerOffset =
 				    stage.qConsumerTokenIndices.front() - loop->firstBodyTokenIndex;
+				const unsigned int lastConsumerOffset =
+				    stage.qConsumerTokenIndices.back() - loop->firstBodyTokenIndex;
 				stage.qProducerConsumerGapCycles =
 				    countEmittableTokens( *loop, producerOffset + 1, firstConsumerOffset );
 				stage.qProducerConsumerGapDeficitCycles =
 				    stage.qProducerLatency > stage.qProducerConsumerGapCycles
 				    ? stage.qProducerLatency - stage.qProducerConsumerGapCycles
 				    : 0;
+				stage.loopCarriedQGapCycles =
+				    countEmittableTokens( *loop, firstConsumerOffset + 1, branchOffset )
+				    + branchDelaySlots
+				    + countEmittableTokens( *loop, 0, producerOffset );
+				stage.qProducerInsertionGapCycles =
+				    countEmittableTokens( *loop, lastConsumerOffset + 1, branchOffset )
+				    + branchDelaySlots
+				    + countEmittableTokens( *loop, 0, producerOffset );
+				stage.qProducerInsertionGapDeficitCycles =
+				    stage.qProducerLatency > stage.qProducerInsertionGapCycles
+				    ? stage.qProducerLatency - stage.qProducerInsertionGapCycles
+				    : 0;
+				stage.qSchedulingStrategy =
+				    classifyLoopQSchedulingStrategy( stage.qProducerConsumerGapDeficitCycles,
+				                                     stage.loopCarriedQGapCycles,
+				                                     stage.qProducerLatency );
 			}
 			opportunity.qStages.push_back( stage );
 		}
@@ -1755,7 +1791,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		opportunity.sourceSuffixCycles = countEmittableTokens( *loop,
 		                                                       qConsumerOffsets.front() + 1,
 		                                                       static_cast<unsigned int>( loop->bodyTokens.size() - 1 ) );
-		opportunity.branchDelaySlots = loop->branchToken ? vuTokenBranchDelaySlots( *loop->branchToken ) : 0;
+		opportunity.branchDelaySlots = branchDelaySlots;
 		opportunity.qProducerConsumerGapDeficitCycles =
 			opportunity.qProducerLatency > opportunity.qProducerConsumerGapCycles
 			? opportunity.qProducerLatency - opportunity.qProducerConsumerGapCycles

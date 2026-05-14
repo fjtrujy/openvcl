@@ -79,7 +79,7 @@ TEST_CASE("CLI: loop pipeline text dump exposes Q software-pipeline candidates")
     CHECK(contains(r.stdout_data, "OpenVCL VU loop pipeline opportunities"));
     CHECK(contains(r.stdout_data, "loop_lid q_producer_token=4"));
     CHECK(contains(r.stdout_data, "q_producer_tokens=4"));
-    CHECK(contains(r.stdout_data, "q_stages=4->5,8(latency=7,gap=0,deficit=7)"));
+    CHECK(contains(r.stdout_data, "q_stages=4->5,8(latency=7,gap=0,deficit=7,loop_gap=8,insert_gap=5,insert_deficit=2,strategy=loop_carried)"));
     CHECK(contains(r.stdout_data, "last_q_consumer_token=8"));
     CHECK(contains(r.stdout_data, "q_latency=7"));
     CHECK(contains(r.stdout_data, "q_producer_consumer_gap_cycles=0"));
@@ -121,6 +121,7 @@ TEST_CASE("CLI: loop pipeline JSON dump is stable enough for scheduler tooling")
     CHECK(contains(r.stdout_data, "\"q_producer_token_index\": 4"));
     CHECK(contains(r.stdout_data, "\"q_producer_token_indices\": [4]"));
     CHECK(contains(r.stdout_data, "\"q_stages\": [{\"producer_token_index\": 4, \"consumer_token_indices\": [5, 8], \"producer_latency\": 7"));
+    CHECK(contains(r.stdout_data, "\"loop_carried_q_gap_cycles\": 8, \"producer_insertion_gap_cycles\": 5, \"producer_insertion_gap_deficit_cycles\": 2, \"q_scheduling_strategy\": \"loop_carried\""));
     CHECK(contains(r.stdout_data, "\"q_producer_latency\": 7"));
     CHECK(contains(r.stdout_data, "\"q_producer_consumer_gap_cycles\": 0"));
     CHECK(contains(r.stdout_data, "\"q_producer_consumer_gap_deficit_cycles\": 7"));
