@@ -583,6 +583,10 @@ namespace
 			addPipelineBlocker( opportunity, "missing_branch_delay_slot" );
 		if( (opportunity.sourcePrefixCycles + opportunity.sourceSuffixCycles) < opportunity.qProducerLatency )
 			addPipelineBlocker( opportunity, "insufficient_independent_cycles" );
+		if( opportunity.qSchedulingStrategy == VU_LOOP_Q_SCHEDULE_LOCAL )
+			addPipelineBlocker( opportunity, "q_latency_already_local" );
+		if( opportunity.qSchedulingStrategy == VU_LOOP_Q_SCHEDULE_INSUFFICIENT )
+			addPipelineBlocker( opportunity, "insufficient_loop_carried_q_gap" );
 		if( opportunity.hasMemoryPreOrPostIncrement )
 			addPipelineBlocker( opportunity, "pre_or_post_increment_memory" );
 		if( opportunity.hasXgkick )

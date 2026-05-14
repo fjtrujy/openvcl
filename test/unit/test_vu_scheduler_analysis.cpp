@@ -394,6 +394,44 @@ TEST_CASE("VuSchedulerAnalysis: apply software pipeline plans rewrites emittable
     CHECK(transformed.size() == program.tokenizer.tokens().size() + 1u);
 }
 
+TEST_CASE("VuSchedulerAnalysis: generic software pipeline skips loops with local Q latency hidden")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 1"));
+    REQUIRE(program.parse("div q, vf00[w], vf01[w]"));
+    REQUIRE(program.parse("add.xyz vf10, vf10, vf00"));
+    REQUIRE(program.parse("add.xyz vf11, vf11, vf00"));
+    REQUIRE(program.parse("add.xyz vf12, vf12, vf00"));
+    REQUIRE(program.parse("add.xyz vf13, vf13, vf00"));
+    REQUIRE(program.parse("add.xyz vf14, vf14, vf00"));
+    REQUIRE(program.parse("add.xyz vf15, vf15, vf00"));
+    REQUIRE(program.parse("add.xyz vf16, vf16, vf00"));
+    REQUIRE(program.parse("mulq.xyz vf02, vf03, q"));
+    REQUIRE(program.parse("add.xyz vf20, vf20, vf00"));
+    REQUIRE(program.parse("add.xyz vf21, vf21, vf00"));
+    REQUIRE(program.parse("add.xyz vf22, vf22, vf00"));
+    REQUIRE(program.parse("add.xyz vf23, vf23, vf00"));
+    REQUIRE(program.parse("add.xyz vf24, vf24, vf00"));
+    REQUIRE(program.parse("add.xyz vf25, vf25, vf00"));
+    REQUIRE(program.parse("add.xyz vf26, vf26, vf00"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
+    REQUIRE(program.parse("ibne vi01, vi02, loop_lid"));
+
+    std::vector<vcl::VuLoopPipelineOpportunity> opportunities = vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
+    REQUIRE(opportunities.size() == 1u);
+    CHECK(opportunities[0].eligibleSingleQSoftwarePipeline);
+    CHECK(opportunities[0].hasSoftwarePipelinePlan);
+    CHECK(!opportunities[0].canEmitSoftwarePipeline);
+    CHECK(opportunities[0].qProducerConsumerGapDeficitCycles == 0u);
+    CHECK(opportunities[0].qSchedulingStrategy == vcl::VU_LOOP_Q_SCHEDULE_LOCAL);
+    CHECK(hasString(opportunities[0].softwarePipelineBlockers, "q_latency_already_local"));
+
+    std::vector<vcl::VuSoftwarePipelineRewritePlan> plans = vcl::buildVuSoftwarePipelineRewritePlans(program.tokenizer.tokens());
+    CHECK(plans.empty());
+}
+
 TEST_CASE("VuSchedulerAnalysis: generic software pipeline blocks Q live-out loops")
 {
     vcl::Error::ResetErrorCount();
