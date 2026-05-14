@@ -739,6 +739,12 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline reports suffix store d
     CHECK(store->inductionRegister == "VI03");
     CHECK(store->hasNextIterationOffset);
     CHECK(store->nextIterationOffset == -1);
+    CHECK(store->hasStoredValueRegister);
+    CHECK(store->storedValueRegister == "VF02");
+    CHECK(hasString(store->storedValueFields, "x"));
+    CHECK(hasString(store->storedValueFields, "y"));
+    CHECK(hasString(store->storedValueFields, "z"));
+    CHECK(!hasString(store->storedValueFields, "w"));
     CHECK(store->drainCandidate);
 }
 

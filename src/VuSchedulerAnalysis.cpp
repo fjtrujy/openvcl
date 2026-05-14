@@ -1200,6 +1200,37 @@ namespace
 		return key.substr( field + 1 );
 	}
 
+	void appendFieldNames( unsigned int fieldMask, std::list<std::string>& fields )
+	{
+		if( fieldMask == 0 )
+			fieldMask = Token::X | Token::Y | Token::Z | Token::W;
+		if( fieldMask & Token::X ) addUniqueString( fields, "x" );
+		if( fieldMask & Token::Y ) addUniqueString( fields, "y" );
+		if( fieldMask & Token::Z ) addUniqueString( fields, "z" );
+		if( fieldMask & Token::W ) addUniqueString( fields, "w" );
+	}
+
+	bool describeStoreValueRegister( const Token& token,
+	                                 std::string& registerName,
+	                                 std::list<std::string>& fields )
+	{
+		for( std::list<Token::Argument>::const_iterator i = token.arguments().begin();
+		     i != token.arguments().end(); ++i )
+		{
+			if( (*i).flags() & (Token::Argument::INDIRECT | Token::Argument::WRITE) )
+				continue;
+			if( (*i).type() != Token::Argument::FLOAT_REGISTER
+			    && (*i).type() != Token::Argument::INTEGER_REGISTER )
+				continue;
+			if( !vuRegisterKey( *i, registerName ) )
+				return false;
+			if( (*i).type() == Token::Argument::FLOAT_REGISTER )
+				appendFieldNames( vuReadFieldMask( token, *i ), fields );
+			return true;
+		}
+		return false;
+	}
+
 	void collectRotatedRegisterBaseKeys( const std::list<std::string>& keys,
 	                                     std::list<std::string>& rotatedRegisters )
 	{
@@ -1396,6 +1427,8 @@ namespace
 		suffixStore.hasNextIterationOffset = false;
 		suffixStore.nextIterationOffset = 0;
 		suffixStore.drainCandidate = false;
+		suffixStore.hasStoredValueRegister = false;
+		suffixStore.storedValueRegister = "";
 
 		VuTokenResourceAccess access;
 		if( buildVuTokenResourceAccess( token, access )
@@ -1428,6 +1461,11 @@ namespace
 				suffixStore.nextIterationOffset = access.memoryOffset - update->step;
 				suffixStore.drainCandidate = suffixStore.usesInductionRegister;
 			}
+
+			suffixStore.hasStoredValueRegister =
+			    describeStoreValueRegister( token,
+			                                suffixStore.storedValueRegister,
+			                                suffixStore.storedValueFields );
 		}
 
 		suffixStores.push_back( suffixStore );

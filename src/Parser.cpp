@@ -669,6 +669,15 @@ namespace
 				stream << ",next_offset=";
 				writeSignedLongText( stream, stores[i].nextIterationOffset );
 			}
+			if( stores[i].hasStoredValueRegister )
+			{
+				stream << ",value=" << stores[i].storedValueRegister << ",fields=";
+				writeStringListText( stream, stores[i].storedValueFields );
+			}
+			else
+			{
+				stream << ",value=?";
+			}
 			stream << ",drain_candidate=" << (stores[i].drainCandidate ? "yes" : "no");
 			stream << ")";
 		}
@@ -691,6 +700,8 @@ namespace
 			stream << "\"induction_register\": "; writeJsonString( stream, stores[i].inductionRegister.c_str() ); stream << ", ";
 			stream << "\"next_iteration_offset_known\": " << (stores[i].hasNextIterationOffset ? "true" : "false") << ", ";
 			stream << "\"next_iteration_offset\": " << stores[i].nextIterationOffset << ", ";
+			stream << "\"stored_value_register\": "; writeJsonString( stream, stores[i].hasStoredValueRegister ? stores[i].storedValueRegister.c_str() : "" ); stream << ", ";
+			stream << "\"stored_value_fields\": "; writeStringListJson( stream, stores[i].storedValueFields ); stream << ", ";
 			stream << "\"drain_candidate\": " << (stores[i].drainCandidate ? "true" : "false");
 			stream << "}";
 		}

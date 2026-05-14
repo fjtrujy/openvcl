@@ -198,6 +198,9 @@ struct VuSoftwarePipelineSuffixStore
 	bool hasNextIterationOffset;
 	long nextIterationOffset;
 	bool drainCandidate;
+	bool hasStoredValueRegister;
+	std::string storedValueRegister;
+	std::list<std::string> storedValueFields;
 };
 
 struct VuLoopPipelineOpportunity

@@ -117,6 +117,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: rewrite-plan dumps now report the suffix dependency blocker when a cloned next-Q producer cannot safely move into the branch delay slot.
    - Done: generic software-pipelined loops can now try moving trailing store-base induction updates before their stores while rewriting store offsets; codegen keeps the normalized form only when the typed scheduler reports no cycle-count regression.
    - Done: loop-pipeline text/JSON dumps now expose suffix store descriptors, including induction base, next-iteration offset, and drain-candidate status for the future modulo drain/prolog rewrite.
+   - Done: suffix store descriptors now also expose the stored value register and vector fields, giving the future generic drain rewrite enough value metadata without rereading raw token text.
 
 8. **Retire Pattern Emitters Incrementally** - started
    - Replace each hand emitter only after generic scheduling/software pipelining matches correctness and reaches equal or better loop cost.
