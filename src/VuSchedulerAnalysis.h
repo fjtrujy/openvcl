@@ -105,10 +105,12 @@ struct VuLoopPipelineOpportunity
 	bool requiresLoopCarriedRegisters;
 	bool eligibleSingleQSoftwarePipeline;
 	bool hasSoftwarePipelinePlan;
+	bool canEmitSoftwarePipeline;
 	std::vector<unsigned int> qConsumerTokenIndices;
 	std::vector<unsigned int> prologTokenIndices;
 	std::vector<unsigned int> mainTokenIndices;
 	std::vector<unsigned int> drainTokenIndices;
+	std::list<std::string> softwarePipelineBlockers;
 	std::list<std::string> carriedQInputRegisters;
 	std::list<std::string> carriedQOutputRegisters;
 	unsigned int memoryLoadCount;

@@ -539,6 +539,35 @@ namespace
 				indices.push_back( loop.firstBodyTokenIndex + i );
 		}
 	}
+
+	void addPipelineBlocker( VuLoopPipelineOpportunity& opportunity, const std::string& blocker )
+	{
+		if( !containsKey( opportunity.softwarePipelineBlockers, blocker ) )
+			opportunity.softwarePipelineBlockers.push_back( blocker );
+	}
+
+	void classifySoftwarePipelineEmissionSafety( VuLoopPipelineOpportunity& opportunity )
+	{
+		if( !opportunity.simpleCountedLoop )
+			addPipelineBlocker( opportunity, "not_simple_counted_loop" );
+		if( !opportunity.hasSingleQProducer )
+			addPipelineBlocker( opportunity, "multiple_q_producers" );
+		if( opportunity.branchDelaySlots == 0 )
+			addPipelineBlocker( opportunity, "missing_branch_delay_slot" );
+		if( (opportunity.sourcePrefixCycles + opportunity.sourceSuffixCycles) < opportunity.qProducerLatency )
+			addPipelineBlocker( opportunity, "insufficient_independent_cycles" );
+		if( opportunity.hasMemoryPreOrPostIncrement )
+			addPipelineBlocker( opportunity, "pre_or_post_increment_memory" );
+		if( opportunity.hasXgkick )
+			addPipelineBlocker( opportunity, "xgkick_barrier" );
+		if( opportunity.inductionRegisters.size() != 1 )
+			addPipelineBlocker( opportunity, "requires_single_induction_register" );
+		if( opportunity.requiresLoopCarriedRegisters )
+			addPipelineBlocker( opportunity, "requires_register_rotation" );
+
+		opportunity.canEmitSoftwarePipeline =
+		    opportunity.hasSoftwarePipelinePlan && opportunity.softwarePipelineBlockers.empty();
+	}
 }
 
 VuBasicBlock::VuBasicBlock()
@@ -601,6 +630,7 @@ VuLoopPipelineOpportunity::VuLoopPipelineOpportunity()
 	requiresLoopCarriedRegisters = false;
 	eligibleSingleQSoftwarePipeline = false;
 	hasSoftwarePipelinePlan = false;
+	canEmitSoftwarePipeline = false;
 	memoryLoadCount = 0;
 	memoryStoreCount = 0;
 	hasMemoryPreOrPostIncrement = false;
@@ -844,6 +874,8 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			appendPipelineInstructionIndices( *loop, firstConsumerOffset, branchOffset + 1, opportunity.mainTokenIndices );
 			appendPipelineInstructionIndices( *loop, firstConsumerOffset, branchOffset, opportunity.drainTokenIndices );
 		}
+
+		classifySoftwarePipelineEmissionSafety( opportunity );
 
 		result.push_back( opportunity );
 	}

@@ -444,12 +444,15 @@ namespace
 			       << " xgkick=" << (i->hasXgkick ? "yes" : "no")
 			       << " eligible_single_q_pipeline=" << (i->eligibleSingleQSoftwarePipeline ? "yes" : "no")
 			       << " pipeline_plan=" << (i->hasSoftwarePipelinePlan ? "yes" : "no")
+			       << " pipeline_emittable=" << (i->canEmitSoftwarePipeline ? "yes" : "no")
 			       << " prolog_tokens=";
 			writeUnsignedVectorText( stream, i->prologTokenIndices );
 			stream << " main_tokens=";
 			writeUnsignedVectorText( stream, i->mainTokenIndices );
 			stream << " drain_tokens=";
 			writeUnsignedVectorText( stream, i->drainTokenIndices );
+			stream << " blockers=";
+			writeStringListText( stream, i->softwarePipelineBlockers );
 			stream << " induction_registers=";
 			writeStringListText( stream, i->inductionRegisters );
 			stream << " loop_read_write_registers=";
@@ -492,6 +495,8 @@ namespace
 			stream << "      \"eligible_single_q_pipeline\": " << (opportunity.eligibleSingleQSoftwarePipeline ? "true" : "false") << ",\n";
 			stream << "      \"pipeline_plan\": {\n";
 			stream << "        \"available\": " << (opportunity.hasSoftwarePipelinePlan ? "true" : "false") << ",\n";
+			stream << "        \"emittable\": " << (opportunity.canEmitSoftwarePipeline ? "true" : "false") << ",\n";
+			stream << "        \"blockers\": "; writeStringListJson( stream, opportunity.softwarePipelineBlockers ); stream << ",\n";
 			stream << "        \"prolog_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.prologTokenIndices ); stream << ",\n";
 			stream << "        \"main_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.mainTokenIndices ); stream << ",\n";
 			stream << "        \"drain_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.drainTokenIndices ); stream << "\n";

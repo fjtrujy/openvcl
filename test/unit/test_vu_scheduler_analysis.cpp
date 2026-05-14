@@ -279,6 +279,8 @@ TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose loop-carried Q sta
     CHECK(opportunities[0].requiresLoopCarriedRegisters);
     CHECK(opportunities[0].eligibleSingleQSoftwarePipeline);
     CHECK(opportunities[0].hasSoftwarePipelinePlan);
+    CHECK(!opportunities[0].canEmitSoftwarePipeline);
+    CHECK(hasString(opportunities[0].softwarePipelineBlockers, "requires_register_rotation"));
     REQUIRE(opportunities[0].qConsumerTokenIndices.size() == 2u);
     CHECK(opportunities[0].qConsumerTokenIndices[0] == 5u);
     CHECK(opportunities[0].qConsumerTokenIndices[1] == 8u);
@@ -296,6 +298,33 @@ TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose loop-carried Q sta
     CHECK(hasString(opportunities[0].carriedQInputRegisters, "VF06.x"));
     CHECK(hasString(opportunities[0].carriedQOutputRegisters, "VF03.x"));
     CHECK(hasString(opportunities[0].carriedQOutputRegisters, "VF06.x"));
+}
+
+TEST_CASE("VuSchedulerAnalysis: pipeline plans report loops that are safe for generic emission")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 1"));
+    REQUIRE(program.parse("div q, vf00[w], vf01[w]"));
+    REQUIRE(program.parse("mulq.xyz vf02, vf03, q"));
+    REQUIRE(program.parse("add.xyz vf10, vf10, vf00"));
+    REQUIRE(program.parse("add.xyz vf11, vf11, vf00"));
+    REQUIRE(program.parse("add.xyz vf12, vf12, vf00"));
+    REQUIRE(program.parse("add.xyz vf13, vf13, vf00"));
+    REQUIRE(program.parse("add.xyz vf14, vf14, vf00"));
+    REQUIRE(program.parse("add.xyz vf15, vf15, vf00"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
+    REQUIRE(program.parse("ibne vi01, vi02, loop_lid"));
+
+    std::vector<vcl::VuLoopPipelineOpportunity> opportunities = vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
+    REQUIRE(opportunities.size() == 1u);
+    CHECK(opportunities[0].eligibleSingleQSoftwarePipeline);
+    CHECK(opportunities[0].hasSoftwarePipelinePlan);
+    CHECK(opportunities[0].canEmitSoftwarePipeline);
+    CHECK(opportunities[0].softwarePipelineBlockers.empty());
+    CHECK(!opportunities[0].requiresLoopCarriedRegisters);
+    CHECK(hasString(opportunities[0].inductionRegisters, "VI01"));
 }
 
 TEST_CASE("VuSchedulerAnalysis: pipeline opportunities require Q consumers")
