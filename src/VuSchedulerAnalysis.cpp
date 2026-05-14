@@ -1787,8 +1787,21 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		for( std::vector<unsigned int>::const_iterator q = qConsumerOffsets.begin(); q != qConsumerOffsets.end(); ++q )
 		{
 			opportunity.qConsumerTokenIndices.push_back( loop->firstBodyTokenIndex + *q );
-			collectLoopCarriedQInputs( *loop, *q, opportunity.carriedQInputRegisters );
-			collectLoopCarriedQOutputs( *loop, *q, opportunity.carriedQOutputRegisters );
+		}
+
+		for( std::vector<VuLoopQStage>::const_iterator stage = opportunity.qStages.begin();
+		     stage != opportunity.qStages.end(); ++stage )
+		{
+			for( std::vector<unsigned int>::const_iterator q = stage->qConsumerTokenIndices.begin();
+			     q != stage->qConsumerTokenIndices.end(); ++q )
+			{
+				if( *q >= loop->firstBodyTokenIndex )
+				{
+					const unsigned int qOffset = *q - loop->firstBodyTokenIndex;
+					collectLoopCarriedQInputs( *loop, qOffset, opportunity.carriedQInputRegisters );
+					collectLoopCarriedQOutputs( *loop, qOffset, opportunity.carriedQOutputRegisters );
+				}
+			}
 		}
 
 		opportunity.requiresLoopCarriedRegisters = !opportunity.carriedQInputRegisters.empty()

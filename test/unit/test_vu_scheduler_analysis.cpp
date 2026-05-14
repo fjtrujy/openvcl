@@ -932,6 +932,32 @@ TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose all Q producers")
     CHECK(hasString(opportunities[0].softwarePipelineBlockers, "multiple_q_producers"));
 }
 
+TEST_CASE("VuSchedulerAnalysis: multi-Q stages contribute carried register sets")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 1"));
+    REQUIRE(program.parse("add.xyz vf20, vf21, vf22"));
+    REQUIRE(program.parse("div q, vf00[w], vf01[w]"));
+    REQUIRE(program.parse("mulq.xyz vf20, vf20, q"));
+    REQUIRE(program.parse("add.xyz vf30, vf20, vf00"));
+    REQUIRE(program.parse("add.xyz vf24, vf25, vf26"));
+    REQUIRE(program.parse("div q, vf00[w], vf04[w]"));
+    REQUIRE(program.parse("mulq.xyz vf24, vf24, q"));
+    REQUIRE(program.parse("add.xyz vf31, vf24, vf00"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
+    REQUIRE(program.parse("ibne vi01, vi02, loop_lid"));
+
+    std::vector<vcl::VuLoopPipelineOpportunity> opportunities = vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
+    REQUIRE(opportunities.size() == 1u);
+    REQUIRE(opportunities[0].qStages.size() == 2u);
+    CHECK(hasString(opportunities[0].carriedQInputRegisters, "VF20.x"));
+    CHECK(hasString(opportunities[0].carriedQInputRegisters, "VF24.x"));
+    CHECK(hasString(opportunities[0].carriedQOutputRegisters, "VF20.x"));
+    CHECK(hasString(opportunities[0].carriedQOutputRegisters, "VF24.x"));
+}
+
 TEST_CASE("VuSchedulerAnalysis: pipeline opportunities require Q consumers")
 {
     vcl::Error::ResetErrorCount();

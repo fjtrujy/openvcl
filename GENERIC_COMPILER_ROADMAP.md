@@ -54,6 +54,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: loop-pipeline analysis reports Q latency strategy, blockers, rotated registers, rewrite plans, and machine-readable token ranges for future modulo scheduling.
    - Done: loop-pipeline analysis now reports every Q producer token, not only the last one, so multi-Q loops can be diagnosed and scheduled explicitly.
    - Done: loop-pipeline analysis now groups each Q producer with the Q consumers it feeds, exposing per-stage latency gaps for future multi-Q modulo scheduling.
+   - Done: loop-carried Q register analysis now covers every Q stage, not only the final producer/consumer pair in multi-Q loops.
 
 7. **Implement Generic Software Pipelining** - started
    - Start with simple affine loops.
