@@ -115,6 +115,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: rewrite-plan dumps expose the selected next-Q insertion point and whether it occupies the branch delay slot.
    - Done: generic software-pipeline rewrites now prefer safe next-Q branch-delay placement over using the branch delay for ordinary suffix work, improving the generic modulo-scheduling shape without ps2gl-specific pattern emitters.
    - Done: rewrite-plan dumps now report the suffix dependency blocker when a cloned next-Q producer cannot safely move into the branch delay slot.
+   - Done: generic software-pipelined loops can now try moving trailing store-base induction updates before their stores while rewriting store offsets; codegen keeps the normalized form only when the typed scheduler reports no cycle-count regression.
 
 8. **Retire Pattern Emitters Incrementally** - started
    - Replace each hand emitter only after generic scheduling/software pipelining matches correctness and reaches equal or better loop cost.

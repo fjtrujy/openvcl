@@ -281,6 +281,7 @@ std::vector<VuLoopCandidate> findVuLoopCandidates( const std::list<Token>& token
 std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const std::list<Token>& tokens );
 std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( const std::list<Token>& tokens );
 std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens );
+bool advanceVuStoreBaseUpdates( std::list<Token>& tokens );
 std::list<Token> scheduleVuTokensPreservingOrder( const std::list<Token>& tokens );
 std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens,
                                            unsigned int ignoredImplicitWawResources = 0 );

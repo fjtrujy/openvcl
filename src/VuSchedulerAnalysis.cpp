@@ -1923,6 +1923,47 @@ namespace
 		return false;
 	}
 
+	bool tokenHasSchedulingBoundaryForStoreBaseAdvance( const Token& token )
+	{
+		if( token.label().length() != 0 )
+			return true;
+		if( isVuSchedulingBarrier( token ) )
+			return true;
+		if( token.flags() & (Token::BRANCH_DELAY_FILLER | Token::PREORDERED) )
+			return true;
+		if( token.operand() && token.operand()->isPreprocessor() )
+			return true;
+		return false;
+	}
+
+	bool storeUsesBaseWithKnownOffset( const Token& token,
+	                                   const std::string& baseRegister,
+	                                   long& offset )
+	{
+		VuTokenResourceAccess access;
+		if( !buildVuTokenResourceAccess( token, access ) )
+			return false;
+		if( access.memoryKind != VU_MEMORY_STORE )
+			return false;
+		if( access.memoryFlags != VU_MEMORY_FLAG_NONE )
+			return false;
+		if( !access.hasMemoryBase || !access.hasMemoryOffset )
+			return false;
+		if( access.memoryBaseRegister != baseRegister )
+			return false;
+		offset = access.memoryOffset;
+		return true;
+	}
+
+	bool tokenReadsOrWritesRegisterKey( const Token& token, const std::string& registerKey )
+	{
+		VuTokenResourceAccess access;
+		if( !buildVuTokenResourceAccess( token, access ) )
+			return false;
+		return containsKey( access.registerReads, registerKey )
+		    || containsKey( access.registerWrites, registerKey );
+	}
+
 	Token adjustedPrefetchToken( const Token& token,
 	                             const VuSoftwarePipelinePrefetch* prefetch,
 	                             const std::vector<VuSoftwarePipelineRotation>& rotations )
@@ -2815,6 +2856,97 @@ std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens )
 	}
 
 	return output;
+}
+
+bool advanceVuStoreBaseUpdates( std::list<Token>& tokens )
+{
+	bool changed = false;
+
+	for( std::list<Token>::iterator update = tokens.begin(); update != tokens.end(); )
+	{
+		if( update->label().length() != 0
+		    || (update->flags() & (Token::BRANCH_DELAY_FILLER | Token::PREORDERED)) )
+		{
+			++update;
+			continue;
+		}
+
+		VuLoopInductionUpdate induction;
+		if( !describeSelfIntegerImmediateUpdate( *update, 0, induction )
+		    || !induction.stepKnown
+		    || induction.step == 0
+		    || update == tokens.begin() )
+		{
+			++update;
+			continue;
+		}
+
+		std::list<Token>::iterator firstStore = update;
+		bool foundStore = false;
+		std::list<Token>::iterator scan = update;
+		while( scan != tokens.begin() )
+		{
+			--scan;
+			if( tokenHasSchedulingBoundaryForStoreBaseAdvance( *scan ) )
+				break;
+
+			long offset = 0;
+			if( storeUsesBaseWithKnownOffset( *scan, induction.registerName, offset ) )
+			{
+				(void)offset;
+				firstStore = scan;
+				foundStore = true;
+				continue;
+			}
+
+			if( tokenReadsOrWritesRegisterKey( *scan, induction.registerName ) )
+				break;
+		}
+
+		if( !foundStore )
+		{
+			++update;
+			continue;
+		}
+
+		bool canMove = true;
+		for( std::list<Token>::iterator i = firstStore; i != update; ++i )
+		{
+			long offset = 0;
+			if( storeUsesBaseWithKnownOffset( *i, induction.registerName, offset ) )
+			{
+				(void)offset;
+				continue;
+			}
+			if( tokenReadsOrWritesRegisterKey( *i, induction.registerName ) )
+			{
+				canMove = false;
+				break;
+			}
+		}
+		if( !canMove )
+		{
+			++update;
+			continue;
+		}
+
+		for( std::list<Token>::iterator i = firstStore; i != update; ++i )
+		{
+			long offset = 0;
+			if( storeUsesBaseWithKnownOffset( *i, induction.registerName, offset ) )
+				setIndirectMemoryOffset( *i, induction.registerName, offset - induction.step );
+		}
+
+		Token movedUpdate( *update );
+		std::list<Token>::iterator next = update;
+		++next;
+		tokens.erase( update );
+		tokens.insert( firstStore, movedUpdate );
+		update = next;
+		changed = true;
+	}
+
+	return changed;
 }
 
 std::list<Token> scheduleVuTokensPreservingOrder( const std::list<Token>& tokens )

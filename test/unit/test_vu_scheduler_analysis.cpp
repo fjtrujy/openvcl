@@ -514,6 +514,58 @@ TEST_CASE("VuSchedulerAnalysis: apply software pipeline plans rewrites emittable
     CHECK(transformed.size() == program.tokenizer.tokens().size() + 1u);
 }
 
+TEST_CASE("VuSchedulerAnalysis: store base updates move before trailing stores")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("sq.xyz vf01, 0(vi03)"));
+    REQUIRE(program.parse("add.xyz vf04, vf05, vf06"));
+    REQUIRE(program.parse("sq.xyz vf02, 2(vi03)"));
+    REQUIRE(program.parse("iaddiu vi03, vi03, 3"));
+    REQUIRE(program.parse("ibne vi01, vi02, loop_lid"));
+
+    std::list<vcl::Token> tokens = program.tokenizer.tokens();
+    CHECK(vcl::advanceVuStoreBaseUpdates(tokens));
+    REQUIRE(tokens.size() == 5u);
+
+    std::list<vcl::Token>::const_iterator i = tokens.begin();
+    REQUIRE(vcl::normalizeVuMnemonic(i->name()) == "iaddiu");
+
+    unsigned int storeCount = 0;
+    bool sawOffsetMinusThree = false;
+    bool sawOffsetMinusOne = false;
+    for (; i != tokens.end(); ++i)
+    {
+        if (vcl::normalizeVuMnemonic(i->name()) != "sq")
+            continue;
+        vcl::VuTokenResourceAccess access;
+        REQUIRE(vcl::buildVuTokenResourceAccess(*i, access));
+        ++storeCount;
+        if (access.hasMemoryOffset && access.memoryOffset == -3)
+            sawOffsetMinusThree = true;
+        if (access.hasMemoryOffset && access.memoryOffset == -1)
+            sawOffsetMinusOne = true;
+    }
+
+    CHECK(storeCount == 2u);
+    CHECK(sawOffsetMinusThree);
+    CHECK(sawOffsetMinusOne);
+}
+
+TEST_CASE("VuSchedulerAnalysis: store base updates do not cross visible base reads")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("sq.xyz vf01, 0(vi03)"));
+    REQUIRE(program.parse("iadd vi05, vi03, vi00"));
+    REQUIRE(program.parse("iaddiu vi03, vi03, 3"));
+
+    std::list<vcl::Token> tokens = program.tokenizer.tokens();
+    CHECK(!vcl::advanceVuStoreBaseUpdates(tokens));
+    REQUIRE(tokens.size() == 3u);
+    CHECK(vcl::normalizeVuMnemonic(tokens.front().name()) == "sq");
+}
+
 TEST_CASE("VuSchedulerAnalysis: generic software pipeline skips loops with local Q latency hidden")
 {
     vcl::Error::ResetErrorCount();
