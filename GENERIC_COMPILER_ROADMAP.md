@@ -120,6 +120,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: suffix store descriptors now also expose the stored value register and vector fields, giving the future generic drain rewrite enough value metadata without rereading raw token text.
    - Done: concrete software-pipeline rewrite plans now carry suffix store descriptors through to text/JSON dumps, so the future emitter can consume typed store-drain metadata directly.
    - Done: software-pipeline rewrite application now uses one shared helper for safe store-base advancement, keeping codegen and scheduler dumps on the same transformed token stream.
+   - Done: generic software-pipeline rewrites can now rotate suffix-store source values into scratch VF registers before cloned prefetches overwrite them, then rewrite the store to use the scratch value.
 
 8. **Retire Pattern Emitters Incrementally** - started
    - Replace each hand emitter only after generic scheduling/software pipelining matches correctness and reaches equal or better loop cost.

@@ -1333,6 +1333,109 @@ namespace
 		}
 	}
 
+	bool isVfRegisterName( const std::string& reg )
+	{
+		return reg.size() >= 2 && reg[0] == 'V' && reg[1] == 'F';
+	}
+
+	void collectSuffixStoreValueKeys( const VuSoftwarePipelineSuffixStore& store,
+	                                  std::list<std::string>& keys )
+	{
+		if( !store.hasStoredValueRegister )
+			return;
+		if( !isVfRegisterName( store.storedValueRegister ) )
+		{
+			addUniqueString( keys, store.storedValueRegister );
+			return;
+		}
+		if( store.storedValueFields.empty() )
+		{
+			addUniqueString( keys, store.storedValueRegister + ".x" );
+			addUniqueString( keys, store.storedValueRegister + ".y" );
+			addUniqueString( keys, store.storedValueRegister + ".z" );
+			addUniqueString( keys, store.storedValueRegister + ".w" );
+			return;
+		}
+		for( std::list<std::string>::const_iterator field = store.storedValueFields.begin();
+		     field != store.storedValueFields.end(); ++field )
+			addUniqueString( keys, store.storedValueRegister + "." + *field );
+	}
+
+	bool suffixStoreNeedsValueRotation( const VuSoftwarePipelineSuffixStore& store,
+	                                    const std::list<std::string>& clobberedKeys )
+	{
+		std::list<std::string> valueKeys;
+		collectSuffixStoreValueKeys( store, valueKeys );
+		return intersects( valueKeys, clobberedKeys );
+	}
+
+	bool tokenRangeWritesAny( unsigned int beginIndex,
+	                          unsigned int endIndex,
+	                          const std::vector<const Token*>& indexedTokens,
+	                          const std::list<std::string>& keys )
+	{
+		for( unsigned int i = beginIndex; i <= endIndex && i < indexedTokens.size(); ++i )
+		{
+			std::list<std::string> writes;
+			collectVuRegisterWriteKeys( *indexedTokens[i], writes );
+			if( intersects( writes, keys ) )
+				return true;
+		}
+		return false;
+	}
+
+	void assignSuffixStoreValueScratchRegisters( const VuLoopCandidate& loop,
+	                                             const std::list<std::string>& clobberedKeys,
+	                                             const std::vector<VuSoftwarePipelineRotation>& rotations,
+	                                             const std::vector<const Token*>& indexedTokens,
+	                                             unsigned int insertionTokenIndex,
+	                                             std::vector<VuSoftwarePipelineSuffixStore>& stores )
+	{
+		std::list<std::string> used;
+		collectLoopVfBaseKeys( loop, used );
+		for( std::vector<VuSoftwarePipelineRotation>::const_iterator i = rotations.begin();
+		     i != rotations.end(); ++i )
+		{
+			addUniqueString( used, i->registerBase );
+			if( i->hasScratchRegister )
+				addUniqueString( used, i->scratchRegister );
+		}
+
+		for( std::vector<VuSoftwarePipelineSuffixStore>::iterator store = stores.begin();
+		     store != stores.end(); ++store )
+		{
+			store->requiresValueRotation = false;
+			store->hasValueScratchRegister = false;
+			store->valueScratchRegister = "";
+
+			if( !store->hasStoredValueRegister
+			    || !isVfRegisterName( store->storedValueRegister )
+			    || !suffixStoreNeedsValueRotation( *store, clobberedKeys ) )
+				continue;
+
+			std::list<std::string> valueKeys;
+			collectSuffixStoreValueKeys( *store, valueKeys );
+			if( insertionTokenIndex + 1 < store->tokenIndex
+			    && tokenRangeWritesAny( insertionTokenIndex + 1,
+			                            store->tokenIndex - 1,
+			                            indexedTokens,
+			                            valueKeys ) )
+				continue;
+
+			store->requiresValueRotation = true;
+			for( unsigned int reverse = 32; reverse > 1; --reverse )
+			{
+				const std::string scratch = vfRegisterName( reverse - 1 );
+				if( containsKey( used, scratch ) )
+					continue;
+				store->hasValueScratchRegister = true;
+				store->valueScratchRegister = scratch;
+				addUniqueString( used, scratch );
+				break;
+			}
+		}
+	}
+
 	const VuSoftwarePipelineRotation* findRotationForBase( const std::vector<VuSoftwarePipelineRotation>& rotations,
 	                                                       const std::string& base )
 	{
@@ -1429,6 +1532,9 @@ namespace
 		suffixStore.drainCandidate = false;
 		suffixStore.hasStoredValueRegister = false;
 		suffixStore.storedValueRegister = "";
+		suffixStore.requiresValueRotation = false;
+		suffixStore.hasValueScratchRegister = false;
+		suffixStore.valueScratchRegister = "";
 
 		VuTokenResourceAccess access;
 		if( buildVuTokenResourceAccess( token, access )
@@ -1525,23 +1631,6 @@ namespace
 		}
 	}
 
-	bool tokenRangeReadsOrWritesAny( unsigned int beginIndex,
-	                                 unsigned int endIndex,
-	                                 const std::vector<const Token*>& indexedTokens,
-	                                 const std::list<std::string>& keys )
-	{
-		for( unsigned int i = beginIndex; i <= endIndex && i < indexedTokens.size(); ++i )
-		{
-			std::list<std::string> reads;
-			std::list<std::string> writes;
-			collectVuRegisterReadKeys( *indexedTokens[i], reads );
-			collectVuRegisterWriteKeys( *indexedTokens[i], writes );
-			if( intersects( reads, keys ) || intersects( writes, keys ) )
-				return true;
-		}
-		return false;
-	}
-
 	bool rotationBaseListContains( const std::list<std::string>& bases, const std::string& base )
 	{
 		return containsKey( bases, base );
@@ -1624,6 +1713,87 @@ namespace
 		}
 	}
 
+	void collectSoftwarePipelinePrefetchWrites( const VuLoopPipelineOpportunity& opportunity,
+	                                            const std::vector<const Token*>& indexedTokens,
+	                                            bool rotationsWillUseScratch,
+	                                            std::list<std::string>& prefetchWrites )
+	{
+		std::vector<unsigned int> prefetchTokenIndices;
+		for( std::vector<VuSoftwarePipelinePrefetch>::const_iterator i = opportunity.softwarePipelinePrefetches.begin();
+		     i != opportunity.softwarePipelinePrefetches.end(); ++i )
+			prefetchTokenIndices.push_back( i->tokenIndex );
+
+		collectTokenWriteKeys( prefetchTokenIndices, indexedTokens, prefetchWrites );
+		if( rotationsWillUseScratch )
+			removeRotationCoveredWrites( prefetchWrites, opportunity.softwarePipelineRotations );
+	}
+
+	const VuSoftwarePipelineSuffixStore* findSuffixStoreForTokenIndex(
+	    const std::vector<VuSoftwarePipelineSuffixStore>& stores,
+	    unsigned int tokenIndex )
+	{
+		for( std::vector<VuSoftwarePipelineSuffixStore>::const_iterator i = stores.begin();
+		     i != stores.end(); ++i )
+		{
+			if( i->tokenIndex == tokenIndex )
+				return &*i;
+		}
+		return NULL;
+	}
+
+	bool suffixStoreRotationCoversReads( const VuSoftwarePipelineSuffixStore& store,
+	                                     const VuTokenResourceAccess& access,
+	                                     const std::list<std::string>& clobberedKeys )
+	{
+		if( !store.requiresValueRotation || !store.hasValueScratchRegister )
+			return false;
+		if( intersects( access.registerWrites, clobberedKeys ) )
+			return false;
+
+		std::list<std::string> valueKeys;
+		collectSuffixStoreValueKeys( store, valueKeys );
+		for( std::list<std::string>::const_iterator read = access.registerReads.begin();
+		     read != access.registerReads.end(); ++read )
+		{
+			if( containsKey( clobberedKeys, *read ) && !containsKey( valueKeys, *read ) )
+				return false;
+		}
+
+		return true;
+	}
+
+	bool prefetchWritesClobberSuffix( const VuLoopPipelineOpportunity& opportunity,
+	                                  const std::vector<const Token*>& indexedTokens,
+	                                  const std::list<std::string>& prefetchWrites )
+	{
+		if( prefetchWrites.empty() )
+			return false;
+
+		const unsigned int insertAfter = opportunity.qConsumerTokenIndices.back();
+		if( insertAfter + 1 > opportunity.branchTokenIndex )
+			return false;
+
+		for( unsigned int tokenIndex = insertAfter + 1;
+		     tokenIndex <= opportunity.branchTokenIndex && tokenIndex < indexedTokens.size();
+		     ++tokenIndex )
+		{
+			VuTokenResourceAccess access;
+			if( !buildVuTokenResourceAccess( *indexedTokens[tokenIndex], access ) )
+				continue;
+			if( !intersects( access.registerReads, prefetchWrites )
+			    && !intersects( access.registerWrites, prefetchWrites ) )
+				continue;
+
+			const VuSoftwarePipelineSuffixStore* store =
+			    findSuffixStoreForTokenIndex( opportunity.softwarePipelineSuffixStores, tokenIndex );
+			if( store && suffixStoreRotationCoversReads( *store, access, prefetchWrites ) )
+				continue;
+			return true;
+		}
+
+		return false;
+	}
+
 	bool softwarePipelinePrefetchesCanEmit( const VuLoopPipelineOpportunity& opportunity,
 	                                        const std::vector<const Token*>& indexedTokens,
 	                                        bool rotationsWillUseScratch )
@@ -1644,25 +1814,12 @@ namespace
 		if( opportunity.qConsumerTokenIndices.empty() )
 			return false;
 
-		std::vector<unsigned int> prefetchTokenIndices;
-		for( std::vector<VuSoftwarePipelinePrefetch>::const_iterator i = opportunity.softwarePipelinePrefetches.begin();
-		     i != opportunity.softwarePipelinePrefetches.end(); ++i )
-			prefetchTokenIndices.push_back( i->tokenIndex );
-
 		std::list<std::string> prefetchWrites;
-		collectTokenWriteKeys( prefetchTokenIndices, indexedTokens, prefetchWrites );
-		if( rotationsWillUseScratch )
-			removeRotationCoveredWrites( prefetchWrites, opportunity.softwarePipelineRotations );
-		if( prefetchWrites.empty() )
-			return true;
-
-		const unsigned int insertAfter = opportunity.qConsumerTokenIndices.back();
-		if( insertAfter + 1 > opportunity.branchTokenIndex )
-			return true;
-		return !tokenRangeReadsOrWritesAny( insertAfter + 1,
-		                                    opportunity.branchTokenIndex,
-		                                    indexedTokens,
-		                                    prefetchWrites );
+		collectSoftwarePipelinePrefetchWrites( opportunity,
+		                                       indexedTokens,
+		                                       rotationsWillUseScratch,
+		                                       prefetchWrites );
+		return !prefetchWritesClobberSuffix( opportunity, indexedTokens, prefetchWrites );
 	}
 
 	bool softwarePipelineQDrainCanEmit( const VuLoopPipelineOpportunity& opportunity,
@@ -1862,6 +2019,27 @@ namespace
 				addPipelineBlocker( opportunity, "missing_rotation_scratch" );
 		}
 
+		std::list<std::string> prefetchWritesForSuffixStores;
+		collectSoftwarePipelinePrefetchWrites( opportunity,
+		                                       indexedTokens,
+		                                       canEmitRotations,
+		                                       prefetchWritesForSuffixStores );
+		if( !opportunity.qConsumerTokenIndices.empty() )
+		{
+			assignSuffixStoreValueScratchRegisters( loop,
+			                                        prefetchWritesForSuffixStores,
+			                                        opportunity.softwarePipelineRotations,
+			                                        indexedTokens,
+			                                        opportunity.qConsumerTokenIndices.back(),
+			                                        opportunity.softwarePipelineSuffixStores );
+		}
+		for( std::vector<VuSoftwarePipelineSuffixStore>::const_iterator store = opportunity.softwarePipelineSuffixStores.begin();
+		     store != opportunity.softwarePipelineSuffixStores.end(); ++store )
+		{
+			if( store->requiresValueRotation && !store->hasValueScratchRegister )
+				addPipelineBlocker( opportunity, "missing_suffix_store_value_scratch" );
+		}
+
 		const bool canEmitPrefetches = softwarePipelinePrefetchesCanEmit( opportunity,
 		                                                                  indexedTokens,
 		                                                                  canEmitRotations );
@@ -1886,20 +2064,11 @@ namespace
 			}
 
 			std::list<std::string> prefetchWrites;
-			std::vector<unsigned int> prefetchTokenIndices;
-			for( std::vector<VuSoftwarePipelinePrefetch>::const_iterator p = opportunity.softwarePipelinePrefetches.begin();
-			     p != opportunity.softwarePipelinePrefetches.end(); ++p )
-				prefetchTokenIndices.push_back( p->tokenIndex );
-			collectTokenWriteKeys( prefetchTokenIndices, indexedTokens, prefetchWrites );
-			if( canEmitRotations )
-				removeRotationCoveredWrites( prefetchWrites, opportunity.softwarePipelineRotations );
-			if( !prefetchWrites.empty()
-			    && !opportunity.qConsumerTokenIndices.empty()
-			    && opportunity.qConsumerTokenIndices.back() + 1 <= opportunity.branchTokenIndex
-			    && tokenRangeReadsOrWritesAny( opportunity.qConsumerTokenIndices.back() + 1,
-			                                   opportunity.branchTokenIndex,
-			                                   indexedTokens,
-			                                   prefetchWrites ) )
+			collectSoftwarePipelinePrefetchWrites( opportunity,
+			                                       indexedTokens,
+			                                       canEmitRotations,
+			                                       prefetchWrites );
+			if( prefetchWritesClobberSuffix( opportunity, indexedTokens, prefetchWrites ) )
 				addPipelineBlocker( opportunity, "prefetch_clobbers_suffix" );
 		}
 
@@ -2023,6 +2192,35 @@ namespace
 		return token;
 	}
 
+	Token makeSuffixStoreValueMoveToken( const Token& donor,
+	                                     const VuSoftwarePipelineSuffixStore& store )
+	{
+		Token token( donor );
+		token.setLabel( "" );
+		token.setName( "move" );
+		token.setOperand( syntheticMoveOperand() );
+		token.setFlags( Token::PROCESSED );
+		token.setBroadcast( 0 );
+		token.setFields( fieldMaskForFieldList( store.storedValueFields ) );
+		token.arguments().clear();
+
+		Token::Argument dst( store.valueScratchRegister );
+		dst.setType( Token::Argument::FLOAT_REGISTER );
+		dst.setRegNumber( static_cast<int>( vfRegisterNumber( store.valueScratchRegister ) ) );
+		dst.setFlags( Token::Argument::WRITE | Token::Argument::DEST );
+		dst.setFields( fieldMaskForFieldList( store.storedValueFields ) );
+		token.arguments().push_back( dst );
+
+		Token::Argument src( store.storedValueRegister );
+		src.setType( Token::Argument::FLOAT_REGISTER );
+		src.setRegNumber( static_cast<int>( vfRegisterNumber( store.storedValueRegister ) ) );
+		src.setFlags( 0 );
+		src.setFields( 0 );
+		token.arguments().push_back( src );
+
+		return token;
+	}
+
 	const VuSoftwarePipelinePrefetch* findPrefetchForTokenIndex( const std::vector<VuSoftwarePipelinePrefetch>& prefetches,
 	                                                             unsigned int tokenIndex )
 	{
@@ -2112,6 +2310,25 @@ namespace
 		return copy;
 	}
 
+	void rewriteSuffixStoreValueToScratch( Token& token,
+	                                       const VuSoftwarePipelineSuffixStore& store )
+	{
+		if( !store.requiresValueRotation || !store.hasValueScratchRegister )
+			return;
+		for( std::list<Token::Argument>::iterator i = token.arguments().begin();
+		     i != token.arguments().end(); ++i )
+		{
+			if( i->type() != Token::Argument::FLOAT_REGISTER
+			    || (i->flags() & (Token::Argument::INDIRECT | Token::Argument::WRITE)) )
+				continue;
+			std::string key;
+			if( !vuRegisterKey( *i, key ) || key != store.storedValueRegister )
+				continue;
+			i->setRegNumber( static_cast<int>( vfRegisterNumber( store.valueScratchRegister ) ) );
+			return;
+		}
+	}
+
 	void appendRotationMoves( std::list<Token>& output,
 	                          const Token& donor,
 	                          const std::vector<VuSoftwarePipelineRotation>& rotations )
@@ -2120,6 +2337,18 @@ namespace
 		{
 			if( i->hasScratchRegister )
 				output.push_back( makeRotationMoveToken( donor, *i ) );
+		}
+	}
+
+	void appendSuffixStoreValueRotationMoves( std::list<Token>& output,
+	                                          const Token& donor,
+	                                          const std::vector<VuSoftwarePipelineSuffixStore>& stores )
+	{
+		for( std::vector<VuSoftwarePipelineSuffixStore>::const_iterator i = stores.begin();
+		     i != stores.end(); ++i )
+		{
+			if( i->requiresValueRotation && i->hasValueScratchRegister )
+				output.push_back( makeSuffixStoreValueMoveToken( donor, *i ) );
 		}
 	}
 
@@ -2133,9 +2362,17 @@ namespace
 		{
 			if( i == rewrite.branchTokenIndex && !rewrite.rotations.empty() )
 				appendRotationMoves( output, *indexedTokens[i], rewrite.rotations );
-			output.push_back( tokenWithoutLabel( *indexedTokens[i] ) );
+			Token token = tokenWithoutLabel( *indexedTokens[i] );
+			const VuSoftwarePipelineSuffixStore* suffixStore =
+			    findSuffixStoreForTokenIndex( rewrite.suffixStores, i );
+			if( suffixStore )
+				rewriteSuffixStoreValueToScratch( token, *suffixStore );
+			output.push_back( token );
 			if( i == rewrite.prefetchInsertAfterTokenIndex )
 			{
+				appendSuffixStoreValueRotationMoves( output,
+				                                     *indexedTokens[i],
+				                                     rewrite.suffixStores );
 				for( std::vector<unsigned int>::const_iterator p = rewrite.prefetchTokenIndices.begin();
 				     p != rewrite.prefetchTokenIndices.end(); ++p )
 				{

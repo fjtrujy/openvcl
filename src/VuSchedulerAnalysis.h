@@ -201,6 +201,9 @@ struct VuSoftwarePipelineSuffixStore
 	bool hasStoredValueRegister;
 	std::string storedValueRegister;
 	std::list<std::string> storedValueFields;
+	bool requiresValueRotation;
+	bool hasValueScratchRegister;
+	std::string valueScratchRegister;
 };
 
 struct VuLoopPipelineOpportunity

@@ -678,6 +678,9 @@ namespace
 			{
 				stream << ",value=?";
 			}
+			stream << ",value_rotation=" << (stores[i].requiresValueRotation ? "yes" : "no");
+			if( stores[i].hasValueScratchRegister )
+				stream << ":" << stores[i].valueScratchRegister;
 			stream << ",drain_candidate=" << (stores[i].drainCandidate ? "yes" : "no");
 			stream << ")";
 		}
@@ -702,6 +705,8 @@ namespace
 			stream << "\"next_iteration_offset\": " << stores[i].nextIterationOffset << ", ";
 			stream << "\"stored_value_register\": "; writeJsonString( stream, stores[i].hasStoredValueRegister ? stores[i].storedValueRegister.c_str() : "" ); stream << ", ";
 			stream << "\"stored_value_fields\": "; writeStringListJson( stream, stores[i].storedValueFields ); stream << ", ";
+			stream << "\"value_rotation_required\": " << (stores[i].requiresValueRotation ? "true" : "false") << ", ";
+			stream << "\"value_scratch_register\": "; writeJsonString( stream, stores[i].hasValueScratchRegister ? stores[i].valueScratchRegister.c_str() : "" ); stream << ", ";
 			stream << "\"drain_candidate\": " << (stores[i].drainCandidate ? "true" : "false");
 			stream << "}";
 		}
