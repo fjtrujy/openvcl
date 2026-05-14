@@ -104,6 +104,8 @@ Useful options:
 | `--cost-compare-list-check <metric>` | fail if any listed candidate is slower than its baseline |
 | `--dump-instruction-info` | print the VU instruction metadata table |
 | `--dump-instruction-info-json` | print the VU instruction metadata table as JSON |
+| `--enable-generic-software-pipelining` | enable safe generic software-pipeline rewrites, currently the default |
+| `--disable-generic-software-pipelining` | disable generic software-pipeline rewrites for comparison/debugging |
 
 `-M`, `-P`, and `-Z` are accepted for VCL command-line compatibility.
 
@@ -272,22 +274,25 @@ Current ps2gl pure-OpenVCL aggregate cost baseline:
 
 | metric | SCE/reference | OpenVCL | delta |
 |---|---:|---:|---:|
-| static scheduled cycles | 6308 | 5054 | -1254 |
-| estimated cycles | 6820 | 5749 | -1071 |
-| ps2gl-loop weighted static cycles | 100358 | 321062 | +220704 |
-| ps2gl-loop weighted estimated cycles | 100870 | 371851 | +270981 |
+| static scheduled cycles | 6308 | 5271 | -1037 |
+| estimated cycles | 6820 | 5841 | -979 |
+| ps2gl-loop weighted static cycles | 100358 | 335238 | +234880 |
+| ps2gl-loop weighted estimated cycles | 100870 | 373527 | +272657 |
 
 `estimated cycles` includes modeled FDIV/EFU producer issue stalls and
 explicit `waitq`/`waitp` stalls. These are static VSM estimates, not measured
 runtime per draw call. The loop-weighted rows apply `--cost-loop-preset ps2gl`
 to the 13 matched ps2gl renderer pairs; they better expose the remaining
 hot-loop gap caused by SCE/reference prolog/main/epilog software-pipelined
-loops versus OpenVCL's current single-iteration scheduling.
+loops versus OpenVCL's current generic scheduling and limited generic
+software-pipeline coverage.
 
 This baseline uses corrected ACC dependencies for multiply-add/subtract
-instructions plus conservative branch-delay filling for independent integer
-instructions immediately before direct branches. Standalone branches no longer
-emit an extra pre-branch bubble once normal read-hazard padding is satisfied.
+instructions plus safe generic software-pipeline rewrites where loop analysis
+can prove the cloned prolog/main/drain structure. Conservative branch-delay
+filling handles independent integer instructions immediately before direct
+branches. Standalone branches no longer emit an extra pre-branch bubble once
+normal read-hazard padding is satisfied.
 Eligible pre-increment stores can also move into branch delay slots by
 adjusting their offsets against the incremented base register. Dead VI-only
 fallthrough integer instructions can fill forward conditional branch delay

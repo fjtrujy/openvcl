@@ -134,6 +134,8 @@
 - Extended VF lifetimes inside `--LoopCS`-marked loops when register pressure
   allows, so loop temporaries that need scheduler overlap are not prematurely
   coalesced onto one physical register.
+- Enabled the safe generic software-pipeline rewrite pass by default while
+  keeping `--disable-generic-software-pipelining` for comparison and debugging.
 
 ## 0.3.3
 

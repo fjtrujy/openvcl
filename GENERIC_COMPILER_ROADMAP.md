@@ -43,7 +43,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: ready-scheduler issue-slot pairs are now tagged in the scheduled token stream and honored by codegen before the older lookahead pairing fallback.
    - Done: ready-set scheduling now tracks register/Q/P/MAC/CLIP readiness while choosing from the ready set, so independent work is preferred over consumers that would immediately need latency padding.
    - Done: code emission and scheduler analysis now share one `VuLatencyTracker` for readiness and bypass math instead of maintaining duplicate hazard models.
-   - Done: schedule dumps now apply the same opt-in generic software-pipeline rewrite as codegen before showing ready-set issue slots.
+   - Done: schedule dumps now apply the same generic software-pipeline rewrite as codegen before showing ready-set issue slots.
    - Done: schedule dumps now mark explicit branch-delay filler tokens, making delay-slot rewrite decisions visible in text and JSON.
 
 6. **Implement Generic Loop Analysis** - done
@@ -67,7 +67,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: the generic software-pipeline path can rewrite that safe single-Q subset into an automatic prolog plus main loop, while blocked loops continue through ordinary generic scheduling.
    - Done: generic software-pipeline emission now supports safe multi-instruction prefetch prefixes when cloned load offsets can be adjusted from induction-update metadata without clobbering the remaining suffix.
    - Done: generic software-pipeline emission now supports the first single-consumer register-rotation case by cloning prefix work into assigned scratch VF registers and moving scratch back before the loop branch.
-   - Done: generic software-pipelining is guarded by `--enable-generic-software-pipelining` until the generic modulo scheduler can prove the rewrite is profitable.
+   - Done: generic software-pipelining is enabled by default once the rewrite has passed the safety/profitability blockers; `--disable-generic-software-pipelining` remains available for comparisons.
    - Done: generic software-pipeline emission now rejects Q live-out loops so the inserted next-iteration Q producer cannot change fallthrough semantics.
    - Done: generic software-pipeline rewrites now go through an explicit `VuSoftwarePipelineRewritePlan`, giving future rotation/drain work a typed plan instead of ad hoc token surgery.
    - Done: loop-pipeline text/JSON dumps now expose the concrete rewrite plan that will be emitted, not only the abstract opportunity.

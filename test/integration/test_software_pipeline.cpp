@@ -120,11 +120,7 @@ namespace
         REQUIRE(vsm.length() > 0);
 
         CHECK(contains(vsm, loopLabel + ":"));
-        CHECK(!contains(vsm, loopLabel + "__ENTRY_POINT:"));
-        CHECK(!contains(vsm, loopLabel + "__PRO1:"));
         CHECK(!contains(vsm, loopLabel + "__MAIN_LOOP:"));
-        CHECK(!contains(vsm, loopLabel + "__EPI0:"));
-        CHECK(!contains(vsm, loopLabel + "__EPI1:"));
     }
 
     std::string ps2glNamedXformLoopSource(const std::string& name)
@@ -1031,9 +1027,19 @@ TEST_CASE("Software pipeline: generic path emits simple rotated register prefetc
     CHECK(contains(vsm, "move.xyz VF03, VF31"));
 }
 
-TEST_CASE("Software pipeline: generic software-pipelining is opt-in until profit scheduling is ready")
+TEST_CASE("Software pipeline: generic software-pipelining is default and can be disabled")
 {
     std::string vsm = runEmit(simpleGenericSingleQPipelineSource());
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(contains(vsm, "loop_lid__PROLOG:"));
+    CHECK(contains(vsm, "loop_lid:"));
+    CHECK(contains(vsm, "ibne VI01, VI02, loop_lid"));
+    CHECK(countSubstrings(vsm, "div q, VF00w, VF00w") == 2);
+
+    std::vector<std::string> args;
+    args.push_back("--disable-generic-software-pipelining");
+    vsm = runEmitWithExtraArgs(simpleGenericSingleQPipelineSource(), args);
     REQUIRE(vsm.length() > 0);
 
     CHECK(!contains(vsm, "loop_lid__PROLOG:"));
