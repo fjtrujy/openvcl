@@ -1163,9 +1163,9 @@ TEST_CASE("Software pipeline: generic path emits multi-Q cyclic prefixes")
     CHECK(contains(vsm, "loop_lid__PROLOG:"));
     CHECK(contains(vsm, "loop_lid:"));
     CHECK(contains(vsm, "ibne VI01, VI02, loop_lid"));
-    CHECK(countSubstrings(vsm, "div q, VF00w, VF00w") == 4);
+    CHECK(countSubstrings(vsm, "div q, VF00w, VF00w") == 3);
     CHECK(countSubstrings(vsm, "mulq.xyz VF02, VF00, q") == 2);
-    CHECK(countSubstrings(vsm, "mulq.xyz VF05, VF00, q") == 2);
+    CHECK(countSubstrings(vsm, "mulq.xyz VF05, VF00, q") == 1);
 }
 
 TEST_CASE("Software pipeline: generic path emits multi-Q producer-side prefixes")

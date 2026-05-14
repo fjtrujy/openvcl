@@ -2352,6 +2352,108 @@ namespace
 	}
 
 	bool cyclicPrefixReadsSuffixClobbers( const VuLoopPipelineOpportunity& opportunity,
+	                                      const std::vector<const Token*>& indexedTokens );
+
+	void assignMultiQPipelineCandidate( const VuLoopCandidate& loop,
+	                                    unsigned int prefixEndOffset,
+	                                    unsigned int mainBeginOffset,
+	                                    unsigned int branchOffset,
+	                                    VuLoopPipelineOpportunity& opportunity )
+	{
+		opportunity.multiQPrologTokenIndices.clear();
+		opportunity.multiQMainTokenIndices.clear();
+		opportunity.multiQCyclicPrefixTokenIndices.clear();
+		appendPipelineInstructionIndices( loop,
+		                                  0,
+		                                  prefixEndOffset,
+		                                  opportunity.multiQPrologTokenIndices );
+		opportunity.multiQCyclicPrefixTokenIndices = opportunity.multiQPrologTokenIndices;
+		appendPipelineInstructionIndices( loop,
+		                                  mainBeginOffset,
+		                                  branchOffset + 1,
+		                                  opportunity.multiQMainTokenIndices );
+	}
+
+	bool multiQPipelineCandidateStructurallySafe( const VuLoopPipelineOpportunity& candidate,
+	                                              const std::vector<const Token*>& indexedTokens )
+	{
+		if( candidate.multiQPrologTokenIndices.empty()
+		    || candidate.multiQMainTokenIndices.empty()
+		    || candidate.multiQCyclicPrefixTokenIndices.empty() )
+			return false;
+		if( tokenIndicesHaveUnsafeMultiQCyclicPrefixSideEffects( candidate.multiQCyclicPrefixTokenIndices,
+		                                                         indexedTokens ) )
+			return false;
+		if( tokenIndicesContainVisibleLabel( candidate.multiQCyclicPrefixTokenIndices,
+		                                     indexedTokens,
+		                                     candidate.labelTokenIndex )
+		    || tokenIndicesContainVisibleLabel( candidate.multiQMainTokenIndices,
+		                                        indexedTokens,
+		                                        candidate.labelTokenIndex )
+		    || loopBodyContainsVisibleInternalLabel( candidate, indexedTokens ) )
+			return false;
+		if( cyclicPrefixReadsSuffixClobbers( candidate, indexedTokens ) )
+			return false;
+		if( cyclicPrefixClobbersBranch( candidate, indexedTokens ) )
+			return false;
+		return true;
+	}
+
+	void appendUnlabeledTokenForScheduleCost( std::list<Token>& tokens, const Token& token )
+	{
+		Token copy( token );
+		copy.setLabel( "" );
+		tokens.push_back( copy );
+	}
+
+	unsigned int multiQPipelineCandidateMainCycles( const VuLoopPipelineOpportunity& candidate,
+	                                                const std::vector<const Token*>& indexedTokens )
+	{
+		std::list<Token> mainTokens;
+		for( std::vector<unsigned int>::const_iterator i = candidate.multiQMainTokenIndices.begin();
+		     i != candidate.multiQMainTokenIndices.end(); ++i )
+		{
+			if( *i < indexedTokens.size() && *i != candidate.branchTokenIndex )
+				appendUnlabeledTokenForScheduleCost( mainTokens, *indexedTokens[*i] );
+		}
+		for( std::vector<unsigned int>::const_iterator i = candidate.multiQCyclicPrefixTokenIndices.begin();
+		     i != candidate.multiQCyclicPrefixTokenIndices.end(); ++i )
+		{
+			if( *i < indexedTokens.size() )
+				appendUnlabeledTokenForScheduleCost( mainTokens, *indexedTokens[*i] );
+		}
+		if( candidate.branchTokenIndex < indexedTokens.size() )
+			appendUnlabeledTokenForScheduleCost( mainTokens, *indexedTokens[candidate.branchTokenIndex] );
+		return scheduleVuProgramReadyIssueSlotsWithFlagLiveness( mainTokens ).cycleCount;
+	}
+
+	bool considerMultiQPipelineCandidate( const VuLoopCandidate& loop,
+	                                      const std::vector<const Token*>& indexedTokens,
+	                                      const VuLoopPipelineOpportunity& baseOpportunity,
+	                                      unsigned int prefixEndOffset,
+	                                      unsigned int mainBeginOffset,
+	                                      unsigned int branchOffset,
+	                                      unsigned int& bestMainCycles,
+	                                      VuLoopPipelineOpportunity& bestOpportunity )
+	{
+		VuLoopPipelineOpportunity candidate = baseOpportunity;
+		assignMultiQPipelineCandidate( loop,
+		                               prefixEndOffset,
+		                               mainBeginOffset,
+		                               branchOffset,
+		                               candidate );
+		if( !multiQPipelineCandidateStructurallySafe( candidate, indexedTokens ) )
+			return false;
+		const unsigned int cycles = multiQPipelineCandidateMainCycles( candidate, indexedTokens );
+		if( cycles < bestMainCycles )
+		{
+			bestMainCycles = cycles;
+			bestOpportunity = candidate;
+		}
+		return true;
+	}
+
+	bool cyclicPrefixReadsSuffixClobbers( const VuLoopPipelineOpportunity& opportunity,
 	                                      const std::vector<const Token*>& indexedTokens )
 	{
 		std::list<std::string> suffixWrites;
@@ -3644,54 +3746,67 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		    && !opportunity.qStages.front().qConsumerTokenIndices.empty() )
 		{
 			const unsigned int branchOffset = loop->branchTokenIndex - loop->firstBodyTokenIndex;
-			bool foundCyclicPrefix = false;
 			const VuLoopQStage& firstStage = opportunity.qStages.front();
 			const unsigned int firstConsumerOffset =
 			    firstStage.qConsumerTokenIndices.front() - loop->firstBodyTokenIndex;
+			bool foundSafeCyclicPrefix = false;
+			unsigned int bestMainCycles = ~0u;
+			VuLoopPipelineOpportunity bestOpportunity = opportunity;
 			if( firstConsumerOffset < branchOffset
 			    && firstStage.qProducerConsumerGapDeficitCycles == 0
 			    && countEmittableTokens( *loop, firstConsumerOffset, branchOffset ) != 0 )
 			{
-				foundCyclicPrefix = true;
-				appendPipelineInstructionIndices( *loop,
-				                                  0,
-				                                  firstConsumerOffset,
-				                                  opportunity.multiQPrologTokenIndices );
-				opportunity.multiQCyclicPrefixTokenIndices = opportunity.multiQPrologTokenIndices;
-				appendPipelineInstructionIndices( *loop,
-				                                  firstConsumerOffset,
-				                                  branchOffset + 1,
-				                                  opportunity.multiQMainTokenIndices );
+				foundSafeCyclicPrefix =
+				    considerMultiQPipelineCandidate( *loop,
+				                                     indexedTokens,
+				                                     opportunity,
+				                                     firstConsumerOffset,
+				                                     firstConsumerOffset,
+				                                     branchOffset,
+				                                     bestMainCycles,
+				                                     bestOpportunity )
+				    || foundSafeCyclicPrefix;
 			}
-			else
+
+			unsigned int cyclicPrefixLastConsumerOffset = 0;
+			bool foundFallbackCyclicPrefix = false;
+			for( std::vector<VuLoopQStage>::const_iterator stage = opportunity.qStages.begin();
+			     stage != opportunity.qStages.end(); ++stage )
 			{
-				unsigned int cyclicPrefixLastConsumerOffset = 0;
-				for( std::vector<VuLoopQStage>::const_iterator stage = opportunity.qStages.begin();
-				     stage != opportunity.qStages.end(); ++stage )
-				{
-					if( stage->qConsumerTokenIndices.empty() )
-						continue;
-					const unsigned int lastConsumerOffset =
-					    stage->qConsumerTokenIndices.back() - loop->firstBodyTokenIndex;
-					if( lastConsumerOffset >= branchOffset )
-						continue;
-					if( countEmittableTokens( *loop, lastConsumerOffset + 1, branchOffset ) == 0 )
-						continue;
-					cyclicPrefixLastConsumerOffset = lastConsumerOffset;
-					foundCyclicPrefix = true;
-				}
-				if( foundCyclicPrefix )
-				{
-					appendPipelineInstructionIndices( *loop,
-					                                  0,
-					                                  cyclicPrefixLastConsumerOffset + 1,
-					                                  opportunity.multiQPrologTokenIndices );
-					opportunity.multiQCyclicPrefixTokenIndices = opportunity.multiQPrologTokenIndices;
-					appendPipelineInstructionIndices( *loop,
-					                                  cyclicPrefixLastConsumerOffset + 1,
-					                                  branchOffset + 1,
-					                                  opportunity.multiQMainTokenIndices );
-				}
+				if( stage->qConsumerTokenIndices.empty() )
+					continue;
+				const unsigned int lastConsumerOffset =
+				    stage->qConsumerTokenIndices.back() - loop->firstBodyTokenIndex;
+				if( lastConsumerOffset >= branchOffset )
+					continue;
+				if( countEmittableTokens( *loop, lastConsumerOffset + 1, branchOffset ) == 0 )
+					continue;
+				cyclicPrefixLastConsumerOffset = lastConsumerOffset;
+				foundFallbackCyclicPrefix = true;
+				foundSafeCyclicPrefix =
+				    considerMultiQPipelineCandidate( *loop,
+				                                     indexedTokens,
+				                                     opportunity,
+				                                     lastConsumerOffset + 1,
+				                                     lastConsumerOffset + 1,
+				                                     branchOffset,
+				                                     bestMainCycles,
+				                                     bestOpportunity )
+				    || foundSafeCyclicPrefix;
+			}
+			if( foundSafeCyclicPrefix )
+			{
+				opportunity.multiQPrologTokenIndices = bestOpportunity.multiQPrologTokenIndices;
+				opportunity.multiQMainTokenIndices = bestOpportunity.multiQMainTokenIndices;
+				opportunity.multiQCyclicPrefixTokenIndices = bestOpportunity.multiQCyclicPrefixTokenIndices;
+			}
+			else if( foundFallbackCyclicPrefix )
+			{
+				assignMultiQPipelineCandidate( *loop,
+				                               cyclicPrefixLastConsumerOffset + 1,
+				                               cyclicPrefixLastConsumerOffset + 1,
+				                               branchOffset,
+				                               opportunity );
 			}
 		}
 

@@ -44,6 +44,8 @@
 - Multi-Q cyclic-prefix planning can also split before the first Q consumer
   when the producer-side gap is already latency-safe, avoiding unnecessary
   duplication of consumed Q work in that subset.
+- Multi-Q cyclic-prefix planning now evaluates safe split candidates with the
+  shared scheduler model and emits the lowest-cycle main-loop shape it finds.
 - Ready-scheduler analysis now has a typed `VuScheduledProgram` wrapper with
   block-level cycle ranges, and schedule dumps expose program-relative issue
   cycles.

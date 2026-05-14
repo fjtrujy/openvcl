@@ -1442,7 +1442,7 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q stages contribute carried register sets"
     CHECK(hasString(opportunities[0].carriedQOutputRegisters, "VF24.x"));
 }
 
-TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline emits cyclic multi-stage prefixes")
+TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline chooses the cheaper cyclic prefix")
 {
     vcl::Error::ResetErrorCount();
     ParsedProgram program;
@@ -1468,15 +1468,15 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline emits cyclic multi-sta
     CHECK(opportunities[0].eligibleMultiQSoftwarePipeline);
     CHECK(opportunities[0].canEmitMultiQSoftwarePipeline);
     CHECK(opportunities[0].multiQSoftwarePipelineBlockers.empty());
-    REQUIRE(opportunities[0].multiQPrologTokenIndices.size() == 8u);
+    REQUIRE(opportunities[0].multiQPrologTokenIndices.size() == 2u);
     CHECK(opportunities[0].multiQPrologTokenIndices[0] == 2u);
-    CHECK(opportunities[0].multiQPrologTokenIndices[7] == 9u);
-    REQUIRE(opportunities[0].multiQMainTokenIndices.size() == 3u);
-    CHECK(opportunities[0].multiQMainTokenIndices.front() == 10u);
+    CHECK(opportunities[0].multiQPrologTokenIndices[1] == 3u);
+    REQUIRE(opportunities[0].multiQMainTokenIndices.size() == 9u);
+    CHECK(opportunities[0].multiQMainTokenIndices.front() == 4u);
     CHECK(opportunities[0].multiQMainTokenIndices.back() == 12u);
-    REQUIRE(opportunities[0].multiQCyclicPrefixTokenIndices.size() == 8u);
+    REQUIRE(opportunities[0].multiQCyclicPrefixTokenIndices.size() == 2u);
     CHECK(opportunities[0].multiQCyclicPrefixTokenIndices[0] == 2u);
-    CHECK(opportunities[0].multiQCyclicPrefixTokenIndices[7] == 9u);
+    CHECK(opportunities[0].multiQCyclicPrefixTokenIndices[1] == 3u);
 
     std::vector<vcl::VuSoftwarePipelineRewritePlan> plans =
         vcl::buildVuSoftwarePipelineRewritePlans(program.tokenizer.tokens());
@@ -1524,8 +1524,8 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline emits cyclic multi-sta
 
     CHECK(prologLabels == 1u);
     CHECK(mainLabels == 1u);
-    CHECK(divCount == 4u);
-    CHECK(mulqCount == 4u);
+    CHECK(divCount == 3u);
+    CHECK(mulqCount == 3u);
     CHECK(sawCyclicPrefixBeforeBranch);
 }
 
