@@ -603,6 +603,9 @@ namespace
 			const VuSoftwarePipelineRewritePlan* rewritePlan = findRewritePlanForOpportunity( rewritePlans, *i );
 			stream << i->label
 			       << " q_producer_token=" << i->qProducerTokenIndex
+			       << " q_producer_tokens=";
+			writeUnsignedVectorText( stream, i->qProducerTokenIndices );
+			stream
 			       << " first_q_consumer_token=" << i->firstQConsumerTokenIndex
 			       << " last_q_consumer_token=" << i->lastQConsumerTokenIndex
 			       << " q_consumers=" << i->qConsumerTokenIndices.size()
@@ -684,6 +687,7 @@ namespace
 			stream << "      \"label\": "; writeJsonString( stream, opportunity.label.c_str() ); stream << ",\n";
 			stream << "      \"branch_token_index\": " << opportunity.branchTokenIndex << ",\n";
 			stream << "      \"q_producer_token_index\": " << opportunity.qProducerTokenIndex << ",\n";
+			stream << "      \"q_producer_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.qProducerTokenIndices ); stream << ",\n";
 			stream << "      \"first_q_consumer_token_index\": " << opportunity.firstQConsumerTokenIndex << ",\n";
 			stream << "      \"last_q_consumer_token_index\": " << opportunity.lastQConsumerTokenIndex << ",\n";
 			stream << "      \"q_consumer_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.qConsumerTokenIndices ); stream << ",\n";

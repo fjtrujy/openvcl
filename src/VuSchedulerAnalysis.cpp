@@ -1672,12 +1672,14 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 	{
 		unsigned int qProducerCount = 0;
 		unsigned int qProducerOffset = 0;
+		std::vector<unsigned int> qProducerOffsets;
 		for( unsigned int i = 0; i < loop->bodyTokens.size(); ++i )
 		{
 			if( vuTokenWritesQ( *loop->bodyTokens[i] ) )
 			{
 				++qProducerCount;
 				qProducerOffset = i;
+				qProducerOffsets.push_back( i );
 			}
 		}
 
@@ -1698,6 +1700,9 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		opportunity.labelTokenIndex = loop->labelTokenIndex;
 		opportunity.branchTokenIndex = loop->branchTokenIndex;
 		opportunity.qProducerTokenIndex = loop->firstBodyTokenIndex + qProducerOffset;
+		for( std::vector<unsigned int>::const_iterator producer = qProducerOffsets.begin();
+		     producer != qProducerOffsets.end(); ++producer )
+			opportunity.qProducerTokenIndices.push_back( loop->firstBodyTokenIndex + *producer );
 		opportunity.firstQConsumerTokenIndex = loop->firstBodyTokenIndex + qConsumerOffsets.front();
 		opportunity.lastQConsumerTokenIndex = loop->firstBodyTokenIndex + qConsumerOffsets.back();
 		opportunity.qProducerLatency = loop->bodyTokens[qProducerOffset]->operand()

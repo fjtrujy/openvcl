@@ -50,6 +50,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Emit machine-readable JSON for comparisons.
    - Done: loop-pipeline analysis now reports memory load/store counts, pre/post-increment memory use, xgkick presence, induction registers, and read/write loop-carried registers in text and JSON.
    - Done: loop-pipeline analysis reports Q latency strategy, blockers, rotated registers, rewrite plans, and machine-readable token ranges for future modulo scheduling.
+   - Done: loop-pipeline analysis now reports every Q producer token, not only the last one, so multi-Q loops can be diagnosed and scheduled explicitly.
 
 7. **Implement Generic Software Pipelining** - started
    - Start with simple affine loops.

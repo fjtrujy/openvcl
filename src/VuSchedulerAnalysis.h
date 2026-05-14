@@ -139,6 +139,7 @@ struct VuLoopPipelineOpportunity
 	unsigned int labelTokenIndex;
 	unsigned int branchTokenIndex;
 	unsigned int qProducerTokenIndex;
+	std::vector<unsigned int> qProducerTokenIndices;
 	unsigned int firstQConsumerTokenIndex;
 	unsigned int lastQConsumerTokenIndex;
 	unsigned int qProducerLatency;
