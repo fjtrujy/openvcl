@@ -9,6 +9,7 @@
 #include "../../src/VuInstructionInfo.h"
 #include "../../src/VuLatencyTracker.h"
 #include "../../src/VuSchedulerAnalysis.h"
+#include "../../src/VuSchedulingRules.h"
 #include "../../src/VuTokenResourceAccess.h"
 
 #include <list>
@@ -575,6 +576,65 @@ TEST_CASE("VuSchedulerAnalysis: store base updates do not cross visible base rea
     CHECK(!vcl::advanceVuStoreBaseUpdates(tokens));
     REQUIRE(tokens.size() == 3u);
     CHECK(vcl::normalizeVuMnemonic(tokens.front().name()) == "sq");
+}
+
+TEST_CASE("VuSchedulerAnalysis: software pipeline helper applies safe store-base advance")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 1"));
+    REQUIRE(program.parse("lq.xyz vf01, 0(vi01)"));
+    REQUIRE(program.parse("div q, vf00[w], vf01[w]"));
+    REQUIRE(program.parse("mulq.xyz vf02, vf03, q"));
+    REQUIRE(program.parse("sq.xyz vf02, 0(vi03)"));
+    REQUIRE(program.parse("add.xyz vf10, vf10, vf00"));
+    REQUIRE(program.parse("add.xyz vf11, vf11, vf00"));
+    REQUIRE(program.parse("add.xyz vf12, vf12, vf00"));
+    REQUIRE(program.parse("add.xyz vf13, vf13, vf00"));
+    REQUIRE(program.parse("add.xyz vf14, vf14, vf00"));
+    REQUIRE(program.parse("add.xyz vf15, vf15, vf00"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
+    REQUIRE(program.parse("iaddiu vi03, vi03, 1"));
+    REQUIRE(program.parse("ibne vi01, vi02, loop_lid"));
+
+    std::list<vcl::Token> transformed =
+        vcl::applyVuSoftwarePipelinePlansWithSafeStoreBaseAdvance(program.tokenizer.tokens());
+
+    bool inMainLoop = false;
+    bool sawStoreBaseAdvance = false;
+    bool sawAdjustedStore = false;
+    for (std::list<vcl::Token>::const_iterator i = transformed.begin(); i != transformed.end(); ++i)
+    {
+        if (i->label() == "loop_lid")
+            inMainLoop = true;
+        if (!inMainLoop)
+            continue;
+
+        if (vcl::normalizeVuMnemonic(i->name()) == "iaddiu")
+        {
+            std::list<std::string> writes;
+            vcl::collectVuRegisterWriteKeys(*i, writes);
+            if (hasString(writes, "VI03"))
+                sawStoreBaseAdvance = true;
+        }
+
+        vcl::VuTokenResourceAccess access;
+        if (!vcl::buildVuTokenResourceAccess(*i, access)
+            || access.memoryKind != vcl::VU_MEMORY_STORE
+            || !access.hasMemoryBase
+            || access.memoryBaseRegister != "VI03")
+            continue;
+
+        CHECK(sawStoreBaseAdvance);
+        CHECK(access.hasMemoryOffset);
+        CHECK(access.memoryOffset == -1);
+        sawAdjustedStore = true;
+        break;
+    }
+
+    CHECK(sawStoreBaseAdvance);
+    CHECK(sawAdjustedStore);
 }
 
 TEST_CASE("VuSchedulerAnalysis: generic software pipeline skips loops with local Q latency hidden")

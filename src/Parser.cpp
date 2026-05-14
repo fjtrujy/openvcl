@@ -1661,7 +1661,8 @@ bool Parser::dumpScheduleInfo()
 	std::list<Token> scheduleTokens = m_tokenizer.tokens();
 	if( !m_cmdLine.knownLoopOptimizations() && m_cmdLine.genericSoftwarePipelining() )
 	{
-		std::list<Token> transformedTokens = applyVuSoftwarePipelinePlans( scheduleTokens );
+		std::list<Token> transformedTokens =
+			applyVuSoftwarePipelinePlansWithSafeStoreBaseAdvance( scheduleTokens );
 		scheduleTokens.swap( transformedTokens );
 	}
 

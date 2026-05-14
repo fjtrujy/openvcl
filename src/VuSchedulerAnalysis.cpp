@@ -1547,6 +1547,20 @@ namespace
 		return containsKey( bases, base );
 	}
 
+	bool scheduledBlockLabel( const VuScheduledBasicBlock& block, std::string& label )
+	{
+		for( std::vector<const Token*>::const_iterator i = block.block.tokens.begin();
+		     i != block.block.tokens.end(); ++i )
+		{
+			if( (*i)->label().length() != 0 )
+			{
+				label = (*i)->label();
+				return true;
+			}
+		}
+		return false;
+	}
+
 	bool softwarePipelineRotationsCanEmit( const VuLoopPipelineOpportunity& opportunity,
 	                                       const std::vector<const Token*>& indexedTokens )
 	{
@@ -3066,6 +3080,54 @@ bool advanceVuStoreBaseUpdates( std::list<Token>& tokens )
 	}
 
 	return changed;
+}
+
+bool vuScheduledProgramHasNoCycleRegression( const VuScheduledProgram& original,
+                                             const VuScheduledProgram& candidate )
+{
+	if( candidate.cycleCount > original.cycleCount )
+		return false;
+
+	for( std::vector<VuScheduledBasicBlock>::const_iterator c = candidate.blocks.begin();
+	     c != candidate.blocks.end(); ++c )
+	{
+		std::string label;
+		if( !scheduledBlockLabel( *c, label ) )
+			continue;
+
+		for( std::vector<VuScheduledBasicBlock>::const_iterator o = original.blocks.begin();
+		     o != original.blocks.end(); ++o )
+		{
+			std::string originalLabel;
+			if( scheduledBlockLabel( *o, originalLabel ) && originalLabel == label )
+			{
+				if( c->cycleCount > o->cycleCount )
+					return false;
+				break;
+			}
+		}
+	}
+
+	return true;
+}
+
+std::list<Token> applyVuSoftwarePipelinePlansWithSafeStoreBaseAdvance( const std::list<Token>& tokens )
+{
+	if( buildVuSoftwarePipelineRewritePlans( tokens ).empty() )
+		return tokens;
+
+	std::list<Token> pipelinedTokens = applyVuSoftwarePipelinePlans( tokens );
+	std::list<Token> advancedTokens = pipelinedTokens;
+	if( !advanceVuStoreBaseUpdates( advancedTokens ) )
+		return pipelinedTokens;
+
+	const VuScheduledProgram originalSchedule =
+		scheduleVuProgramReadyIssueSlotsWithFlagLiveness( pipelinedTokens );
+	const VuScheduledProgram advancedSchedule =
+		scheduleVuProgramReadyIssueSlotsWithFlagLiveness( advancedTokens );
+	if( vuScheduledProgramHasNoCycleRegression( originalSchedule, advancedSchedule ) )
+		return advancedTokens;
+	return pipelinedTokens;
 }
 
 std::list<Token> scheduleVuTokensPreservingOrder( const std::list<Token>& tokens )

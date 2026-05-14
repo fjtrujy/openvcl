@@ -934,49 +934,6 @@ namespace
 		return true;
 	}
 
-	bool scheduledBlockLabel( const VuScheduledBasicBlock& block, std::string& label )
-	{
-		for( std::vector<const Token*>::const_iterator i = block.block.tokens.begin();
-		     i != block.block.tokens.end(); ++i )
-		{
-			if( (*i)->label().length() != 0 )
-			{
-				label = (*i)->label();
-				return true;
-			}
-		}
-		return false;
-	}
-
-	bool scheduledProgramHasNoCycleRegression( const VuScheduledProgram& original,
-	                                           const VuScheduledProgram& candidate )
-	{
-		if( candidate.cycleCount > original.cycleCount )
-			return false;
-
-		for( std::vector<VuScheduledBasicBlock>::const_iterator c = candidate.blocks.begin();
-		     c != candidate.blocks.end(); ++c )
-		{
-			std::string label;
-			if( !scheduledBlockLabel( *c, label ) )
-				continue;
-
-			for( std::vector<VuScheduledBasicBlock>::const_iterator o = original.blocks.begin();
-			     o != original.blocks.end(); ++o )
-			{
-				std::string originalLabel;
-				if( scheduledBlockLabel( *o, originalLabel ) && originalLabel == label )
-				{
-					if( c->cycleCount > o->cycleCount )
-						return false;
-					break;
-				}
-			}
-		}
-
-		return true;
-	}
-
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1040,17 +997,8 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			buildVuSoftwarePipelineRewritePlans(workTokens);
 		if( !pipelinePlans.empty() )
 		{
-			std::list<Token> pipelinedTokens = applyVuSoftwarePipelinePlans(workTokens);
-			std::list<Token> advancedTokens = pipelinedTokens;
-			if( advanceVuStoreBaseUpdates(advancedTokens) )
-			{
-				const VuScheduledProgram originalSchedule =
-					scheduleVuProgramReadyIssueSlotsWithFlagLiveness(pipelinedTokens);
-				const VuScheduledProgram advancedSchedule =
-					scheduleVuProgramReadyIssueSlotsWithFlagLiveness(advancedTokens);
-				if( scheduledProgramHasNoCycleRegression(originalSchedule, advancedSchedule) )
-					pipelinedTokens.swap(advancedTokens);
-			}
+			std::list<Token> pipelinedTokens =
+				applyVuSoftwarePipelinePlansWithSafeStoreBaseAdvance(workTokens);
 			workTokens.swap(pipelinedTokens);
 		}
 	}
