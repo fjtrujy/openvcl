@@ -125,6 +125,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: multi-Q loop analysis now exposes a dedicated cyclic-prefix plan with text/JSON blockers for unsafe prefix side effects, suffix clobbers, branch clobbers, and Q live-out cases.
    - Done: generic software-pipeline rewrites can now emit the first multi-Q cyclic-prefix subset by priming the first Q stage in a prolog, running the suffix in the main loop, and cloning that first-stage prefix before the branch.
    - Done: generic multi-Q cyclic-prefix rewrites can now rotate through the latest safe Q stage that still leaves a real loop suffix, allowing multiple Q stages to be primed and cloned without a ps2gl-specific emitter.
+   - Done: multi-Q cyclic-prefix planning can now split before the first Q consumer when the first Q producer already has enough independent producer-side gap, rotating only producer-side work instead of duplicating consumed Q work.
 
 8. **Retire Pattern Emitters Incrementally** - started
    - Replace each hand emitter only after generic scheduling/software pipelining matches correctness and reaches equal or better loop cost.

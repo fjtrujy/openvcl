@@ -41,6 +41,9 @@
 - Generic multi-Q software-pipeline rewrites can now rotate through the latest
   safe Q stage that still leaves a real loop suffix, instead of being limited
   to the first Q stage.
+- Multi-Q cyclic-prefix planning can also split before the first Q consumer
+  when the producer-side gap is already latency-safe, avoiding unnecessary
+  duplication of consumed Q work in that subset.
 - Ready-scheduler analysis now has a typed `VuScheduledProgram` wrapper with
   block-level cycle ranges, and schedule dumps expose program-relative issue
   cycles.

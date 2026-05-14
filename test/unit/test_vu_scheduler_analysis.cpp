@@ -1529,6 +1529,78 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline emits cyclic multi-sta
     CHECK(sawCyclicPrefixBeforeBranch);
 }
 
+TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline can rotate producer-side prefixes")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 1"));
+    REQUIRE(program.parse("div q, vf00[w], vf01[w]"));
+    REQUIRE(program.parse("add.xyz vf10, vf10, vf00"));
+    REQUIRE(program.parse("add.xyz vf11, vf11, vf00"));
+    REQUIRE(program.parse("add.xyz vf12, vf12, vf00"));
+    REQUIRE(program.parse("add.xyz vf13, vf13, vf00"));
+    REQUIRE(program.parse("add.xyz vf14, vf14, vf00"));
+    REQUIRE(program.parse("add.xyz vf15, vf15, vf00"));
+    REQUIRE(program.parse("add.xyz vf16, vf16, vf00"));
+    REQUIRE(program.parse("mulq.xyz vf02, vf03, q"));
+    REQUIRE(program.parse("div q, vf00[w], vf04[w]"));
+    REQUIRE(program.parse("add.xyz vf17, vf17, vf00"));
+    REQUIRE(program.parse("add.xyz vf18, vf18, vf00"));
+    REQUIRE(program.parse("mulq.xyz vf05, vf06, q"));
+    REQUIRE(program.parse("add.xyz vf19, vf19, vf00"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
+    REQUIRE(program.parse("ibne vi01, vi02, loop_lid"));
+
+    std::vector<vcl::VuLoopPipelineOpportunity> opportunities =
+        vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
+    REQUIRE(opportunities.size() == 1u);
+    CHECK(!opportunities[0].hasSingleQProducer);
+    CHECK(opportunities[0].hasMultiQSoftwarePipelinePlan);
+    CHECK(opportunities[0].eligibleMultiQSoftwarePipeline);
+    CHECK(opportunities[0].canEmitMultiQSoftwarePipeline);
+    CHECK(opportunities[0].multiQSoftwarePipelineBlockers.empty());
+    REQUIRE(opportunities[0].multiQPrologTokenIndices.size() == 8u);
+    CHECK(opportunities[0].multiQPrologTokenIndices.front() == 2u);
+    CHECK(opportunities[0].multiQPrologTokenIndices.back() == 9u);
+    REQUIRE(opportunities[0].multiQMainTokenIndices.size() == 8u);
+    CHECK(opportunities[0].multiQMainTokenIndices.front() == 10u);
+    CHECK(opportunities[0].multiQMainTokenIndices.back() == 17u);
+    CHECK(opportunities[0].multiQCyclicPrefixTokenIndices == opportunities[0].multiQPrologTokenIndices);
+
+    std::list<vcl::Token> transformed = vcl::applyVuSoftwarePipelinePlans(program.tokenizer.tokens());
+    unsigned int divCount = 0;
+    unsigned int mulqCount = 0;
+    bool sawStageTwoConsumer = false;
+    bool sawProducerPrefixBeforeBranch = false;
+    for (std::list<vcl::Token>::const_iterator i = transformed.begin(); i != transformed.end(); ++i)
+    {
+        const std::string mnemonic = vcl::normalizeVuMnemonic(i->name());
+        if (mnemonic == "div")
+        {
+            ++divCount;
+            vcl::VuTokenResourceAccess access;
+            REQUIRE(vcl::buildVuTokenResourceAccess(*i, access));
+            if (sawStageTwoConsumer && hasString(access.registerReads, "VF01.w"))
+                sawProducerPrefixBeforeBranch = true;
+        }
+        if (mnemonic == "mulq")
+        {
+            ++mulqCount;
+            vcl::VuTokenResourceAccess access;
+            REQUIRE(vcl::buildVuTokenResourceAccess(*i, access));
+            if (hasString(access.registerWrites, "VF05.x"))
+                sawStageTwoConsumer = true;
+            if (sawProducerPrefixBeforeBranch)
+                CHECK(!hasString(access.registerWrites, "VF02.x"));
+        }
+    }
+
+    CHECK(divCount == 3u);
+    CHECK(mulqCount == 2u);
+    CHECK(sawProducerPrefixBeforeBranch);
+}
+
 TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline blocks cyclic prefixes that read clobbered suffix values")
 {
     vcl::Error::ResetErrorCount();
