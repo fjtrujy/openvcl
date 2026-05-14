@@ -45,10 +45,11 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Emit machine-readable JSON for comparisons.
    - Done: loop-pipeline analysis now reports memory load/store counts, pre/post-increment memory use, xgkick presence, induction registers, and read/write loop-carried registers in text and JSON.
 
-7. **Implement Generic Software Pipelining**
+7. **Implement Generic Software Pipelining** - started
    - Start with simple affine loops.
    - Generate prolog/main/drain automatically.
    - Compare against current hand emitters and SCEI output per shader.
+   - Done: loop analysis now exposes an automatic prolog/main/drain token plan for eligible single-Q affine loops in text and JSON.
 
 8. **Retire Pattern Emitters Incrementally**
    - Replace each hand emitter only after generic scheduling/software pipelining matches correctness and reaches equal or better loop cost.

@@ -515,6 +515,30 @@ namespace
 		}
 		return count;
 	}
+
+	bool tokenIsPipelineInstruction( const Token& token )
+	{
+		return token.operand()
+		    && !token.operand()->isPreprocessor()
+		    && !(token.flags() & Token::IGNORED)
+		    && (token.operand()->isUpperExecutionPath() || token.operand()->isLowerExecutionPath());
+	}
+
+	void appendPipelineInstructionIndices( const VuLoopCandidate& loop,
+	                                       unsigned int beginOffset,
+	                                       unsigned int endOffset,
+	                                       std::vector<unsigned int>& indices )
+	{
+		if( beginOffset > loop.bodyTokens.size() )
+			return;
+		if( endOffset > loop.bodyTokens.size() )
+			endOffset = static_cast<unsigned int>( loop.bodyTokens.size() );
+		for( unsigned int i = beginOffset; i < endOffset; ++i )
+		{
+			if( tokenIsPipelineInstruction( *loop.bodyTokens[i] ) )
+				indices.push_back( loop.firstBodyTokenIndex + i );
+		}
+	}
 }
 
 VuBasicBlock::VuBasicBlock()
@@ -576,6 +600,7 @@ VuLoopPipelineOpportunity::VuLoopPipelineOpportunity()
 	requiresPrologEpilog = false;
 	requiresLoopCarriedRegisters = false;
 	eligibleSingleQSoftwarePipeline = false;
+	hasSoftwarePipelinePlan = false;
 	memoryLoadCount = 0;
 	memoryStoreCount = 0;
 	hasMemoryPreOrPostIncrement = false;
@@ -809,6 +834,16 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		                                           && opportunity.hasSingleQProducer
 		                                           && opportunity.branchDelaySlots > 0
 		                                           && (opportunity.sourcePrefixCycles + opportunity.sourceSuffixCycles) >= opportunity.qProducerLatency;
+
+		if( opportunity.eligibleSingleQSoftwarePipeline )
+		{
+			const unsigned int firstConsumerOffset = qConsumerOffsets.front();
+			const unsigned int branchOffset = loop->branchTokenIndex - loop->firstBodyTokenIndex;
+			opportunity.hasSoftwarePipelinePlan = true;
+			appendPipelineInstructionIndices( *loop, 0, firstConsumerOffset, opportunity.prologTokenIndices );
+			appendPipelineInstructionIndices( *loop, firstConsumerOffset, branchOffset + 1, opportunity.mainTokenIndices );
+			appendPipelineInstructionIndices( *loop, firstConsumerOffset, branchOffset, opportunity.drainTokenIndices );
+		}
 
 		result.push_back( opportunity );
 	}

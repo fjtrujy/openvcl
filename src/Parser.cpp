@@ -378,6 +378,22 @@ namespace
 			stream << "-";
 	}
 
+	void writeUnsignedVectorText( std::ostream& stream, const std::vector<unsigned int>& values )
+	{
+		if( values.empty() )
+		{
+			stream << "-";
+			return;
+		}
+
+		for( unsigned int i = 0; i < values.size(); ++i )
+		{
+			if( i != 0 )
+				stream << "|";
+			stream << values[i];
+		}
+	}
+
 	void writeStringListJson( std::ostream& stream, const std::list<std::string>& values )
 	{
 		stream << "[";
@@ -427,7 +443,14 @@ namespace
 			       << " memory_pre_post_increment=" << (i->hasMemoryPreOrPostIncrement ? "yes" : "no")
 			       << " xgkick=" << (i->hasXgkick ? "yes" : "no")
 			       << " eligible_single_q_pipeline=" << (i->eligibleSingleQSoftwarePipeline ? "yes" : "no")
-			       << " induction_registers=";
+			       << " pipeline_plan=" << (i->hasSoftwarePipelinePlan ? "yes" : "no")
+			       << " prolog_tokens=";
+			writeUnsignedVectorText( stream, i->prologTokenIndices );
+			stream << " main_tokens=";
+			writeUnsignedVectorText( stream, i->mainTokenIndices );
+			stream << " drain_tokens=";
+			writeUnsignedVectorText( stream, i->drainTokenIndices );
+			stream << " induction_registers=";
 			writeStringListText( stream, i->inductionRegisters );
 			stream << " loop_read_write_registers=";
 			writeStringListText( stream, i->loopReadWriteRegisters );
@@ -467,6 +490,12 @@ namespace
 			stream << "      \"memory_pre_post_increment\": " << (opportunity.hasMemoryPreOrPostIncrement ? "true" : "false") << ",\n";
 			stream << "      \"xgkick\": " << (opportunity.hasXgkick ? "true" : "false") << ",\n";
 			stream << "      \"eligible_single_q_pipeline\": " << (opportunity.eligibleSingleQSoftwarePipeline ? "true" : "false") << ",\n";
+			stream << "      \"pipeline_plan\": {\n";
+			stream << "        \"available\": " << (opportunity.hasSoftwarePipelinePlan ? "true" : "false") << ",\n";
+			stream << "        \"prolog_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.prologTokenIndices ); stream << ",\n";
+			stream << "        \"main_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.mainTokenIndices ); stream << ",\n";
+			stream << "        \"drain_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.drainTokenIndices ); stream << "\n";
+			stream << "      },\n";
 			stream << "      \"induction_registers\": "; writeStringListJson( stream, opportunity.inductionRegisters ); stream << ",\n";
 			stream << "      \"loop_read_write_registers\": "; writeStringListJson( stream, opportunity.loopReadWriteRegisters ); stream << ",\n";
 			stream << "      \"carried_q_input_registers\": "; writeStringListJson( stream, opportunity.carriedQInputRegisters ); stream << ",\n";

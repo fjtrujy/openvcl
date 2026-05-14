@@ -64,6 +64,10 @@ TEST_CASE("CLI: loop pipeline text dump exposes Q software-pipeline candidates")
     CHECK(contains(r.stdout_data, "q_latency=7"));
     CHECK(contains(r.stdout_data, "requires_prolog_epilog=yes"));
     CHECK(contains(r.stdout_data, "eligible_single_q_pipeline=yes"));
+    CHECK(contains(r.stdout_data, "pipeline_plan=yes"));
+    CHECK(contains(r.stdout_data, "prolog_tokens=2|3|4"));
+    CHECK(contains(r.stdout_data, "main_tokens=5|6|7|8|9|10|11"));
+    CHECK(contains(r.stdout_data, "drain_tokens=5|6|7|8|9|10"));
     CHECK(contains(r.stdout_data, "memory_loads=2"));
     CHECK(contains(r.stdout_data, "memory_stores=1"));
     CHECK(contains(r.stdout_data, "induction_registers=VI01"));
@@ -88,6 +92,11 @@ TEST_CASE("CLI: loop pipeline JSON dump is stable enough for scheduler tooling")
     CHECK(contains(r.stdout_data, "\"memory_stores\": 1"));
     CHECK(contains(r.stdout_data, "\"induction_registers\": [\"VI01\"]"));
     CHECK(contains(r.stdout_data, "\"eligible_single_q_pipeline\": true"));
+    CHECK(contains(r.stdout_data, "\"pipeline_plan\": {"));
+    CHECK(contains(r.stdout_data, "\"available\": true"));
+    CHECK(contains(r.stdout_data, "\"prolog_token_indices\": [2, 3, 4]"));
+    CHECK(contains(r.stdout_data, "\"main_token_indices\": [5, 6, 7, 8, 9, 10, 11]"));
+    CHECK(contains(r.stdout_data, "\"drain_token_indices\": [5, 6, 7, 8, 9, 10]"));
     CHECK(contains(r.stdout_data, "\"carried_q_input_registers\": [\"VF03.x\""));
 }
 
