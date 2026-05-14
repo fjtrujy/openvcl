@@ -1383,6 +1383,10 @@ TEST_CASE("VuSchedulerAnalysis: issue slots expose generic dual-pipe pair choice
     REQUIRE(slots[0].lowerToken != 0);
     CHECK(vcl::normalizeVuMnemonic(slots[0].upperToken->name()) == "add");
     CHECK(vcl::normalizeVuMnemonic(slots[0].lowerToken->name()) == "iaddiu");
+    CHECK(slots[0].firstTokenIndex == 0u);
+    CHECK(slots[0].secondTokenIndex == 2u);
+    CHECK(slots[0].upperTokenIndex == 0u);
+    CHECK(slots[0].lowerTokenIndex == 2u);
 
     for (unsigned int i = 1; i < 5; ++i)
     {
@@ -1602,6 +1606,12 @@ TEST_CASE("VuSchedulerAnalysis: scheduled program exposes block cycle ranges")
     CHECK(scheduled.blocks[1].firstIssueCycle == 7u);
     CHECK(scheduled.blocks[1].cycleCount == 2u);
     CHECK(scheduled.cycleCount == 9u);
+    REQUIRE(scheduled.blocks[0].issueSlots.size() >= 2u);
+    CHECK(scheduled.blocks[0].issueSlots[0].firstTokenIndex == 0u);
+    CHECK(scheduled.blocks[0].issueSlots[0].secondTokenIndex == vcl::VU_SCHEDULED_TOKEN_INDEX_NONE);
+    CHECK(scheduled.blocks[0].issueSlots[1].firstTokenIndex == 1u);
+    REQUIRE(scheduled.blocks[1].issueSlots.size() >= 1u);
+    CHECK(scheduled.blocks[1].issueSlots[0].firstTokenIndex == 3u);
 }
 
 TEST_CASE("VuSchedulerAnalysis: scheduled program flattens to scheduled token order")

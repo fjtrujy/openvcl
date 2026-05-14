@@ -833,53 +833,25 @@ namespace
 		return name;
 	}
 
-	std::map<const Token*, unsigned int> buildTokenIndexMap( const std::list<Token>& tokens )
-	{
-		std::map<const Token*, unsigned int> result;
-		unsigned int index = 0;
-		for( std::list<Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i, ++index )
-			result[ &*i ] = index;
-		return result;
-	}
-
-	bool tokenIndex( const std::map<const Token*, unsigned int>& tokenIndices,
-	                 const Token* token,
-	                 unsigned int& index )
-	{
-		if( !token )
-			return false;
-
-		std::map<const Token*, unsigned int>::const_iterator found = tokenIndices.find( token );
-		if( found == tokenIndices.end() )
-			return false;
-
-		index = found->second;
-		return true;
-	}
-
 	void writeScheduleTokenText( std::ostream& stream,
-	                             const std::map<const Token*, unsigned int>& tokenIndices,
+	                             unsigned int tokenIndex,
 	                             const Token* token )
 	{
-		unsigned int index = 0;
-		if( !tokenIndex( tokenIndices, token, index ) )
+		if( tokenIndex == VU_SCHEDULED_TOKEN_INDEX_NONE || !token )
 		{
 			stream << "-";
 			return;
 		}
 
-		stream << index << ":" << scheduleTokenName( token );
+		stream << tokenIndex << ":" << scheduleTokenName( token );
 	}
 
-	void writeNullableTokenIndexJson( std::ostream& stream,
-	                                  const std::map<const Token*, unsigned int>& tokenIndices,
-	                                  const Token* token )
+	void writeNullableTokenIndexJson( std::ostream& stream, unsigned int tokenIndex )
 	{
-		unsigned int index = 0;
-		if( tokenIndex( tokenIndices, token, index ) )
-			stream << index;
-		else
+		if( tokenIndex == VU_SCHEDULED_TOKEN_INDEX_NONE )
 			stream << "null";
+		else
+			stream << tokenIndex;
 	}
 
 	void writeNullableTokenNameJson( std::ostream& stream, const Token* token )
@@ -906,7 +878,6 @@ namespace
 	{
 		const VuScheduledProgram program =
 			scheduleVuProgramReadyIssueSlotsWithFlagLiveness( tokens );
-		const std::map<const Token*, unsigned int> tokenIndices = buildTokenIndexMap( tokens );
 
 		stream << "OpenVCL VU ready scheduler issue slots" << std::endl;
 		stream << "program_cycle_count=" << program.cycleCount << std::endl;
@@ -930,13 +901,13 @@ namespace
 				       << " program_issue_cycle=" << (scheduledBlock.firstIssueCycle + slot.issueCycle)
 				       << " cycle_count=" << slot.cycleCount
 				       << " first=";
-				writeScheduleTokenText( stream, tokenIndices, slot.firstToken );
+				writeScheduleTokenText( stream, slot.firstTokenIndex, slot.firstToken );
 				stream << " second=";
-				writeScheduleTokenText( stream, tokenIndices, slot.secondToken );
+				writeScheduleTokenText( stream, slot.secondTokenIndex, slot.secondToken );
 				stream << " upper=";
-				writeScheduleTokenText( stream, tokenIndices, slot.upperToken );
+				writeScheduleTokenText( stream, slot.upperTokenIndex, slot.upperToken );
 				stream << " lower=";
-				writeScheduleTokenText( stream, tokenIndices, slot.lowerToken );
+				writeScheduleTokenText( stream, slot.lowerTokenIndex, slot.lowerToken );
 				stream << " padding=" << (slot.padding ? "yes" : "no");
 				stream << " padding_kind=" << scheduledPaddingKindName( slot.paddingKind );
 				stream << " ignored_waw_resources=";
@@ -950,7 +921,6 @@ namespace
 	{
 		const VuScheduledProgram program =
 			scheduleVuProgramReadyIssueSlotsWithFlagLiveness( tokens );
-		const std::map<const Token*, unsigned int> tokenIndices = buildTokenIndexMap( tokens );
 
 		stream << "{\n  \"program_cycle_count\": " << program.cycleCount << ",\n";
 		stream << "  \"scheduled_blocks\": [\n";
@@ -978,10 +948,10 @@ namespace
 				stream << "          \"issue_cycle\": " << slot.issueCycle << ",\n";
 				stream << "          \"program_issue_cycle\": " << (scheduledBlock.firstIssueCycle + slot.issueCycle) << ",\n";
 				stream << "          \"cycle_count\": " << slot.cycleCount << ",\n";
-				stream << "          \"first_token_index\": "; writeNullableTokenIndexJson( stream, tokenIndices, slot.firstToken ); stream << ",\n";
-				stream << "          \"second_token_index\": "; writeNullableTokenIndexJson( stream, tokenIndices, slot.secondToken ); stream << ",\n";
-				stream << "          \"upper_token_index\": "; writeNullableTokenIndexJson( stream, tokenIndices, slot.upperToken ); stream << ",\n";
-				stream << "          \"lower_token_index\": "; writeNullableTokenIndexJson( stream, tokenIndices, slot.lowerToken ); stream << ",\n";
+				stream << "          \"first_token_index\": "; writeNullableTokenIndexJson( stream, slot.firstTokenIndex ); stream << ",\n";
+				stream << "          \"second_token_index\": "; writeNullableTokenIndexJson( stream, slot.secondTokenIndex ); stream << ",\n";
+				stream << "          \"upper_token_index\": "; writeNullableTokenIndexJson( stream, slot.upperTokenIndex ); stream << ",\n";
+				stream << "          \"lower_token_index\": "; writeNullableTokenIndexJson( stream, slot.lowerTokenIndex ); stream << ",\n";
 				stream << "          \"first\": "; writeNullableTokenNameJson( stream, slot.firstToken ); stream << ",\n";
 				stream << "          \"second\": "; writeNullableTokenNameJson( stream, slot.secondToken ); stream << ",\n";
 				stream << "          \"upper\": "; writeNullableTokenNameJson( stream, slot.upperToken ); stream << ",\n";

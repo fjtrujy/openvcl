@@ -12,6 +12,8 @@
 namespace vcl
 {
 
+extern const unsigned int VU_SCHEDULED_TOKEN_INDEX_NONE = ~0u;
+
 namespace
 {
 	bool containsKey( const std::list<std::string>& keys, const std::string& key )
@@ -232,6 +234,32 @@ namespace
 	{
 		for( std::vector<VuScheduledIssueSlot>::iterator i = slots.begin(); i != slots.end(); ++i )
 			i->ignoredImplicitWawResources = ignoredImplicitWawResources;
+	}
+
+	unsigned int tokenIndexInScheduledBlock( const VuBasicBlock& block, const Token* token )
+	{
+		if( !token )
+			return VU_SCHEDULED_TOKEN_INDEX_NONE;
+
+		for( unsigned int i = 0; i < block.tokens.size(); ++i )
+		{
+			if( block.tokens[i] == token )
+				return block.firstTokenIndex + i;
+		}
+
+		return VU_SCHEDULED_TOKEN_INDEX_NONE;
+	}
+
+	void assignScheduledIssueSlotTokenIndices( const VuBasicBlock& block,
+	                                           std::vector<VuScheduledIssueSlot>& slots )
+	{
+		for( std::vector<VuScheduledIssueSlot>::iterator slot = slots.begin(); slot != slots.end(); ++slot )
+		{
+			slot->firstTokenIndex = tokenIndexInScheduledBlock( block, slot->firstToken );
+			slot->secondTokenIndex = tokenIndexInScheduledBlock( block, slot->secondToken );
+			slot->upperTokenIndex = tokenIndexInScheduledBlock( block, slot->upperToken );
+			slot->lowerTokenIndex = tokenIndexInScheduledBlock( block, slot->lowerToken );
+		}
 	}
 
 	std::vector<VuScheduledIssueSlot> scheduleReadySegmentIssueSlots( const std::vector<const Token*>& segment,
@@ -540,6 +568,7 @@ namespace
 			issueCycle += slot->cycleCount;
 		}
 
+		assignScheduledIssueSlotTokenIndices( block, slots );
 		return slots;
 	}
 
@@ -1650,13 +1679,17 @@ VuDependencyEdge::VuDependencyEdge( unsigned int beforeToken, unsigned int after
 VuScheduledIssueSlot::VuScheduledIssueSlot()
 {
 	firstToken = NULL;
-		secondToken = NULL;
-		upperToken = NULL;
-		lowerToken = NULL;
-		padding = false;
-		paddingKind = VU_SCHEDULED_PADDING_NONE;
-		ignoredImplicitWawResources = VU_RESOURCE_NONE;
-		issueCycle = 0;
+	secondToken = NULL;
+	upperToken = NULL;
+	lowerToken = NULL;
+	firstTokenIndex = VU_SCHEDULED_TOKEN_INDEX_NONE;
+	secondTokenIndex = VU_SCHEDULED_TOKEN_INDEX_NONE;
+	upperTokenIndex = VU_SCHEDULED_TOKEN_INDEX_NONE;
+	lowerTokenIndex = VU_SCHEDULED_TOKEN_INDEX_NONE;
+	padding = false;
+	paddingKind = VU_SCHEDULED_PADDING_NONE;
+	ignoredImplicitWawResources = VU_RESOURCE_NONE;
+	issueCycle = 0;
 	cycleCount = 1;
 }
 
@@ -1860,6 +1893,7 @@ std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlots( const VuB
 		issueCycle += slot->cycleCount;
 	}
 
+	assignScheduledIssueSlotTokenIndices( block, slots );
 	return slots;
 }
 

@@ -99,6 +99,8 @@ enum VuScheduledPaddingKind
 	VU_SCHEDULED_PADDING_WAITP
 };
 
+extern const unsigned int VU_SCHEDULED_TOKEN_INDEX_NONE;
+
 struct VuScheduledIssueSlot
 {
 	VuScheduledIssueSlot();
@@ -107,6 +109,10 @@ struct VuScheduledIssueSlot
 	const Token* secondToken;
 	const Token* upperToken;
 	const Token* lowerToken;
+	unsigned int firstTokenIndex;
+	unsigned int secondTokenIndex;
+	unsigned int upperTokenIndex;
+	unsigned int lowerTokenIndex;
 	bool padding;
 	VuScheduledPaddingKind paddingKind;
 	unsigned int ignoredImplicitWawResources;
