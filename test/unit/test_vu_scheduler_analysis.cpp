@@ -937,6 +937,11 @@ TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose all Q producers")
     CHECK(opportunities[0].qStages[1].qProducerInsertionGapCycles == 6u);
     CHECK(opportunities[0].qStages[1].qProducerInsertionGapDeficitCycles == 1u);
     CHECK(opportunities[0].qStages[1].qSchedulingStrategy == vcl::VU_LOOP_Q_SCHEDULE_INSUFFICIENT);
+    CHECK(opportunities[0].firstQConsumerTokenIndex == 3u);
+    CHECK(opportunities[0].lastQConsumerTokenIndex == 6u);
+    REQUIRE(opportunities[0].qConsumerTokenIndices.size() == 2u);
+    CHECK(opportunities[0].qConsumerTokenIndices[0] == 3u);
+    CHECK(opportunities[0].qConsumerTokenIndices[1] == 6u);
     CHECK(hasString(opportunities[0].softwarePipelineBlockers, "multiple_q_producers"));
 }
 

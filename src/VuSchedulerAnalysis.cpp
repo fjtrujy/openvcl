@@ -1792,14 +1792,12 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		if( qProducerCount == 0 )
 			continue;
 
-		std::vector<unsigned int> qConsumerOffsets;
+		std::vector<unsigned int> lastQConsumerOffsets;
 		for( unsigned int i = qProducerOffset + 1; i < loop->bodyTokens.size(); ++i )
 		{
 			if( vuTokenReadsQ( *loop->bodyTokens[i] ) )
-				qConsumerOffsets.push_back( i );
+				lastQConsumerOffsets.push_back( i );
 		}
-		if( qConsumerOffsets.empty() )
-			continue;
 
 		const unsigned int branchDelaySlots = loop->branchToken ? vuTokenBranchDelaySlots( *loop->branchToken ) : 0;
 		const unsigned int branchOffset = loop->bodyTokens.empty()
@@ -1814,6 +1812,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		for( std::vector<unsigned int>::const_iterator producer = qProducerOffsets.begin();
 		     producer != qProducerOffsets.end(); ++producer )
 			opportunity.qProducerTokenIndices.push_back( loop->firstBodyTokenIndex + *producer );
+		std::vector<unsigned int> allQConsumerOffsets;
 		for( unsigned int producerIndex = 0; producerIndex < qProducerOffsets.size(); ++producerIndex )
 		{
 			const unsigned int producerOffset = qProducerOffsets[producerIndex];
@@ -1831,7 +1830,10 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			     ++consumerOffset )
 			{
 				if( vuTokenReadsQ( *loop->bodyTokens[consumerOffset] ) )
+				{
 					stage.qConsumerTokenIndices.push_back( loop->firstBodyTokenIndex + consumerOffset );
+					allQConsumerOffsets.push_back( consumerOffset );
+				}
 			}
 			if( !stage.qConsumerTokenIndices.empty() )
 			{
@@ -1864,17 +1866,21 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			}
 			opportunity.qStages.push_back( stage );
 		}
-		opportunity.firstQConsumerTokenIndex = loop->firstBodyTokenIndex + qConsumerOffsets.front();
-		opportunity.lastQConsumerTokenIndex = loop->firstBodyTokenIndex + qConsumerOffsets.back();
+		if( allQConsumerOffsets.empty() )
+			continue;
+		const std::vector<unsigned int>& primaryQConsumerOffsets =
+			lastQConsumerOffsets.empty() ? allQConsumerOffsets : lastQConsumerOffsets;
+		opportunity.firstQConsumerTokenIndex = loop->firstBodyTokenIndex + allQConsumerOffsets.front();
+		opportunity.lastQConsumerTokenIndex = loop->firstBodyTokenIndex + allQConsumerOffsets.back();
 		opportunity.qProducerLatency = loop->bodyTokens[qProducerOffset]->operand()
 		                             ? loop->bodyTokens[qProducerOffset]->operand()->latency()
 		                             : 0;
 		opportunity.qProducerConsumerGapCycles = countEmittableTokens( *loop,
 		                                                                qProducerOffset + 1,
-		                                                                qConsumerOffsets.front() );
+		                                                                primaryQConsumerOffsets.front() );
 		opportunity.sourcePrefixCycles = countEmittableTokens( *loop, 0, qProducerOffset );
 		opportunity.sourceSuffixCycles = countEmittableTokens( *loop,
-		                                                       qConsumerOffsets.front() + 1,
+		                                                       primaryQConsumerOffsets.front() + 1,
 		                                                       static_cast<unsigned int>( loop->bodyTokens.size() - 1 ) );
 		opportunity.branchDelaySlots = branchDelaySlots;
 		opportunity.qProducerConsumerGapDeficitCycles =
@@ -1885,7 +1891,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			opportunity.sourceSuffixCycles + opportunity.branchDelaySlots + opportunity.sourcePrefixCycles;
 		opportunity.qProducerInsertionGapCycles =
 			countEmittableTokens( *loop,
-			                      qConsumerOffsets.back() + 1,
+			                      primaryQConsumerOffsets.back() + 1,
 			                      static_cast<unsigned int>( loop->bodyTokens.size() - 1 ) )
 		    + opportunity.branchDelaySlots
 		    + opportunity.sourcePrefixCycles;
@@ -1905,7 +1911,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		opportunity.inductionUpdates = loop->inductionUpdates;
 		opportunity.loopReadWriteRegisters = loop->loopReadWriteRegisters;
 
-		for( std::vector<unsigned int>::const_iterator q = qConsumerOffsets.begin(); q != qConsumerOffsets.end(); ++q )
+		for( std::vector<unsigned int>::const_iterator q = allQConsumerOffsets.begin(); q != allQConsumerOffsets.end(); ++q )
 		{
 			opportunity.qConsumerTokenIndices.push_back( loop->firstBodyTokenIndex + *q );
 		}
@@ -1934,7 +1940,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 
 		if( opportunity.eligibleSingleQSoftwarePipeline )
 		{
-			const unsigned int firstConsumerOffset = qConsumerOffsets.front();
+			const unsigned int firstConsumerOffset = primaryQConsumerOffsets.front();
 			const unsigned int branchOffset = loop->branchTokenIndex - loop->firstBodyTokenIndex;
 			opportunity.hasSoftwarePipelinePlan = true;
 			appendPipelineInstructionIndices( *loop, 0, firstConsumerOffset, opportunity.prologTokenIndices );

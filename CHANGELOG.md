@@ -15,6 +15,8 @@
   long-latency waits.
 - Scheduler issue-slot dumps now include modeled `issue_cycle` and
   `cycle_count`, including multi-cycle `waitq`/`waitp` padding spans.
+- Loop-pipeline analysis now reports the complete Q consumer list for multi-Q
+  loops instead of exposing only the final Q stage through top-level fields.
 - Added regression fixtures and unit/integration tests for cost analysis.
 - Added conservative VU scheduling improvements used by ps2gl:
   - upper/lower pairing lookahead;
