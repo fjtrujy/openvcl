@@ -97,6 +97,7 @@ struct VuScheduledIssueSlot
 	const Token* secondToken;
 	const Token* upperToken;
 	const Token* lowerToken;
+	bool padding;
 };
 
 struct VuLoopCandidate

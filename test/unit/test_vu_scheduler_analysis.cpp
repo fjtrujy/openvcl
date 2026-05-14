@@ -1131,6 +1131,31 @@ TEST_CASE("VuSchedulerAnalysis: ready-set scheduler pulls long Q producers forwa
     CHECK(vcl::normalizeVuMnemonic(i->name()) == "waitq");
 }
 
+TEST_CASE("VuSchedulerAnalysis: ready issue slots expose latency padding cycles")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("mul.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("add.xy vf04, vf01, vf05"));
+
+    std::vector<vcl::VuBasicBlock> blocks = vcl::buildVuBasicBlocks(program.tokenizer.tokens());
+    REQUIRE(blocks.size() == 1u);
+
+    std::vector<vcl::VuScheduledIssueSlot> slots = vcl::scheduleVuBasicBlockReadyIssueSlots(blocks[0]);
+    REQUIRE(slots.size() == 6u);
+    CHECK(slots[0].firstToken != NULL);
+    CHECK(!slots[0].padding);
+    for (unsigned int i = 1; i < 5; ++i)
+    {
+        CHECK(slots[i].firstToken == NULL);
+        CHECK(slots[i].secondToken == NULL);
+        CHECK(slots[i].padding);
+    }
+    REQUIRE(slots[5].firstToken != NULL);
+    CHECK(vcl::normalizeVuMnemonic(slots[5].firstToken->name()) == "add");
+    CHECK(!slots[5].padding);
+}
+
 TEST_CASE("VuSchedulerAnalysis: ready-set scheduler keeps dependencies and barriers ordered")
 {
     vcl::Error::ResetErrorCount();
@@ -1261,7 +1286,7 @@ TEST_CASE("VuSchedulerAnalysis: issue slots expose generic dual-pipe pair choice
     REQUIRE(blocks.size() == 1u);
 
     std::vector<vcl::VuScheduledIssueSlot> slots = vcl::scheduleVuBasicBlockReadyIssueSlots(blocks[0]);
-    REQUIRE(slots.size() == 2u);
+    REQUIRE(slots.size() == 6u);
     REQUIRE(slots[0].firstToken != 0);
     REQUIRE(slots[0].secondToken != 0);
     CHECK(vcl::normalizeVuMnemonic(slots[0].firstToken->name()) == "add");
@@ -1271,12 +1296,15 @@ TEST_CASE("VuSchedulerAnalysis: issue slots expose generic dual-pipe pair choice
     CHECK(vcl::normalizeVuMnemonic(slots[0].upperToken->name()) == "add");
     CHECK(vcl::normalizeVuMnemonic(slots[0].lowerToken->name()) == "iaddiu");
 
-    REQUIRE(slots[1].firstToken != 0);
-    CHECK(slots[1].secondToken == 0);
-    CHECK(vcl::normalizeVuMnemonic(slots[1].firstToken->name()) == "mul");
-    REQUIRE(slots[1].upperToken != 0);
-    CHECK(slots[1].lowerToken == 0);
-    CHECK(vcl::normalizeVuMnemonic(slots[1].upperToken->name()) == "mul");
+    for (unsigned int i = 1; i < 5; ++i)
+        CHECK(slots[i].padding);
+
+    REQUIRE(slots[5].firstToken != 0);
+    CHECK(slots[5].secondToken == 0);
+    CHECK(vcl::normalizeVuMnemonic(slots[5].firstToken->name()) == "mul");
+    REQUIRE(slots[5].upperToken != 0);
+    CHECK(slots[5].lowerToken == 0);
+    CHECK(vcl::normalizeVuMnemonic(slots[5].upperToken->name()) == "mul");
 }
 
 TEST_CASE("VuSchedulerAnalysis: ready-set scheduler tags explicit issue-slot pairs")

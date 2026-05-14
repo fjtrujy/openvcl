@@ -140,6 +140,8 @@
   so independent work fills Q/P latency before consumers are selected.
 - Extended loop-pipeline diagnostics so every Q stage reports its loop-carried
   gap, next-producer insertion gap, deficit, and scheduling strategy.
+- Added explicit padding slots to generic schedule dumps so latency stalls are
+  visible in the scheduler plan before code emission.
 
 ## 0.3.3
 

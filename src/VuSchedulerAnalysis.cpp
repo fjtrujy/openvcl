@@ -191,6 +191,7 @@ namespace
 		VuScheduledIssueSlot slot;
 		slot.firstToken = first;
 		slot.secondToken = second;
+		slot.padding = first == NULL && second == NULL;
 
 		if( first )
 		{
@@ -246,7 +247,7 @@ namespace
 
 		while( emittedCount < block.tokens.size() )
 		{
-			const unsigned int currentCycle = static_cast<unsigned int>( slots.size() );
+			unsigned int currentCycle = static_cast<unsigned int>( slots.size() );
 			unsigned int best = static_cast<unsigned int>( block.tokens.size() );
 			int bestScore = 0;
 
@@ -286,8 +287,18 @@ namespace
 			                                                     priority,
 			                                                     latencyTracker,
 			                                                     currentCycle );
+			const Token* partnerToken = partner < block.tokens.size() ? block.tokens[partner] : NULL;
+			int issueDelay = latencyTracker.readHazardDelay( *block.tokens[best],
+			                                                 partnerToken,
+			                                                 static_cast<int>( currentCycle ) );
+			while( issueDelay > 0 )
+			{
+				slots.push_back( makeIssueSlot( NULL, NULL ) );
+				++currentCycle;
+				--issueDelay;
+			}
 			slots.push_back( makeIssueSlot( block.tokens[best],
-			                                (partner < block.tokens.size()) ? block.tokens[partner] : NULL ) );
+			                                partnerToken ) );
 
 			markReadyTokenScheduled( best, incoming, outgoing, emitted, emittedCount );
 			latencyTracker.recordWrites( *block.tokens[best], static_cast<int>( currentCycle ) );
@@ -1448,6 +1459,7 @@ VuScheduledIssueSlot::VuScheduledIssueSlot()
 	secondToken = NULL;
 	upperToken = NULL;
 	lowerToken = NULL;
+	padding = false;
 }
 
 VuLoopCandidate::VuLoopCandidate()

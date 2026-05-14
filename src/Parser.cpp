@@ -908,6 +908,7 @@ namespace
 				writeScheduleTokenText( stream, tokenIndices, slot.upperToken );
 				stream << " lower=";
 				writeScheduleTokenText( stream, tokenIndices, slot.lowerToken );
+				stream << " padding=" << (slot.padding ? "yes" : "no");
 				stream << std::endl;
 			}
 		}
@@ -944,7 +945,8 @@ namespace
 				stream << "          \"first\": "; writeNullableTokenNameJson( stream, slot.firstToken ); stream << ",\n";
 				stream << "          \"second\": "; writeNullableTokenNameJson( stream, slot.secondToken ); stream << ",\n";
 				stream << "          \"upper\": "; writeNullableTokenNameJson( stream, slot.upperToken ); stream << ",\n";
-				stream << "          \"lower\": "; writeNullableTokenNameJson( stream, slot.lowerToken ); stream << "\n";
+				stream << "          \"lower\": "; writeNullableTokenNameJson( stream, slot.lowerToken ); stream << ",\n";
+				stream << "          \"padding\": " << (slot.padding ? "true" : "false") << "\n";
 				stream << "        }";
 			}
 			stream << "\n      ]\n";
