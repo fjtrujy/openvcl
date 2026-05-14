@@ -29,6 +29,14 @@ namespace
             "iaddiu vi01, vi01, 3\n"
             "ibne vi01, vi03, loop_lid\n";
     }
+
+    std::string scheduleInput()
+    {
+        return
+            "add.xy vf01, vf02, vf03\n"
+            "mul.xy vf04, vf01, vf05\n"
+            "iaddiu vi01, vi00, 1\n";
+    }
 }
 
 TEST_CASE("CLI: --version prints the shared OpenVCL version")
@@ -81,4 +89,37 @@ TEST_CASE("CLI: loop pipeline JSON dump is stable enough for scheduler tooling")
     CHECK(contains(r.stdout_data, "\"induction_registers\": [\"VI01\"]"));
     CHECK(contains(r.stdout_data, "\"eligible_single_q_pipeline\": true"));
     CHECK(contains(r.stdout_data, "\"carried_q_input_registers\": [\"VF03.x\""));
+}
+
+TEST_CASE("CLI: schedule text dump exposes ready-set issue slots")
+{
+    std::vector<std::string> args;
+    args.push_back("-n");
+    args.push_back("--dump-schedule-info");
+
+    ::test::RunResult r = ::test::run_openvcl(args, scheduleInput());
+    REQUIRE(r.exit_code == 0);
+    CHECK(r.stderr_data.empty());
+    CHECK(contains(r.stdout_data, "OpenVCL VU ready scheduler issue slots"));
+    CHECK(contains(r.stdout_data, "block 0 first_token=0 terminator=none slots=2"));
+    CHECK(contains(r.stdout_data, "slot 0 first=0:add second=2:iaddiu upper=0:add lower=2:iaddiu"));
+    CHECK(contains(r.stdout_data, "slot 1 first=1:mul second=- upper=1:mul lower=-"));
+}
+
+TEST_CASE("CLI: schedule JSON dump is stable enough for generic emission tooling")
+{
+    std::vector<std::string> args;
+    args.push_back("-n");
+    args.push_back("--dump-schedule-info-json");
+
+    ::test::RunResult r = ::test::run_openvcl(args, scheduleInput());
+    REQUIRE(r.exit_code == 0);
+    CHECK(r.stderr_data.empty());
+    CHECK(contains(r.stdout_data, "\"scheduled_blocks\": ["));
+    CHECK(contains(r.stdout_data, "\"block_index\": 0"));
+    CHECK(contains(r.stdout_data, "\"first_token_index\": 0"));
+    CHECK(contains(r.stdout_data, "\"terminator\": \"none\""));
+    CHECK(contains(r.stdout_data, "\"second_token_index\": 2"));
+    CHECK(contains(r.stdout_data, "\"upper\": \"add\""));
+    CHECK(contains(r.stdout_data, "\"lower\": \"iaddiu\""));
 }

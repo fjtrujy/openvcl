@@ -18,6 +18,7 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
+#include <map>
 #include <sstream>
 
 #include <fcntl.h>
@@ -217,6 +218,19 @@ namespace
 			case VU_MEMORY_LOAD: return "load";
 			case VU_MEMORY_STORE: return "store";
 			case VU_MEMORY_XGKICK: return "xgkick";
+			default: return "unknown";
+		}
+	}
+
+	const char* basicBlockTerminatorKindName( VuBasicBlockTerminatorKind kind )
+	{
+		switch( kind )
+		{
+			case VU_BASIC_BLOCK_TERMINATOR_NONE: return "none";
+			case VU_BASIC_BLOCK_TERMINATOR_BRANCH: return "branch";
+			case VU_BASIC_BLOCK_TERMINATOR_XGKICK: return "xgkick";
+			case VU_BASIC_BLOCK_TERMINATOR_BOUNDARY: return "boundary";
+			case VU_BASIC_BLOCK_TERMINATOR_PREORDERED: return "preordered";
 			default: return "unknown";
 		}
 	}
@@ -461,6 +475,145 @@ namespace
 		}
 		stream << "\n  ]\n}" << std::endl;
 	}
+
+	std::string scheduleTokenName( const Token* token )
+	{
+		if( !token )
+			return "";
+		if( token->name().length() != 0 )
+			return normalizeVuMnemonic( token->name() );
+		if( token->label().length() != 0 )
+			return token->label() + ":";
+		return "";
+	}
+
+	std::map<const Token*, unsigned int> buildTokenIndexMap( const std::list<Token>& tokens )
+	{
+		std::map<const Token*, unsigned int> result;
+		unsigned int index = 0;
+		for( std::list<Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i, ++index )
+			result[ &*i ] = index;
+		return result;
+	}
+
+	bool tokenIndex( const std::map<const Token*, unsigned int>& tokenIndices,
+	                 const Token* token,
+	                 unsigned int& index )
+	{
+		if( !token )
+			return false;
+
+		std::map<const Token*, unsigned int>::const_iterator found = tokenIndices.find( token );
+		if( found == tokenIndices.end() )
+			return false;
+
+		index = found->second;
+		return true;
+	}
+
+	void writeScheduleTokenText( std::ostream& stream,
+	                             const std::map<const Token*, unsigned int>& tokenIndices,
+	                             const Token* token )
+	{
+		unsigned int index = 0;
+		if( !tokenIndex( tokenIndices, token, index ) )
+		{
+			stream << "-";
+			return;
+		}
+
+		stream << index << ":" << scheduleTokenName( token );
+	}
+
+	void writeNullableTokenIndexJson( std::ostream& stream,
+	                                  const std::map<const Token*, unsigned int>& tokenIndices,
+	                                  const Token* token )
+	{
+		unsigned int index = 0;
+		if( tokenIndex( tokenIndices, token, index ) )
+			stream << index;
+		else
+			stream << "null";
+	}
+
+	void writeNullableTokenNameJson( std::ostream& stream, const Token* token )
+	{
+		if( token )
+			writeJsonString( stream, scheduleTokenName( token ).c_str() );
+		else
+			stream << "null";
+	}
+
+	void writeScheduleInfoText( std::ostream& stream, const std::list<Token>& tokens )
+	{
+		const std::vector<VuBasicBlock> blocks = buildVuBasicBlocks( tokens );
+		const std::map<const Token*, unsigned int> tokenIndices = buildTokenIndexMap( tokens );
+
+		stream << "OpenVCL VU ready scheduler issue slots" << std::endl;
+		for( unsigned int blockIndex = 0; blockIndex < blocks.size(); ++blockIndex )
+		{
+			const VuBasicBlock& block = blocks[blockIndex];
+			const std::vector<VuScheduledIssueSlot> slots = scheduleVuBasicBlockReadyIssueSlots( block );
+			stream << "block " << blockIndex
+			       << " first_token=" << block.firstTokenIndex
+			       << " terminator=" << basicBlockTerminatorKindName( block.terminatorKind )
+			       << " slots=" << slots.size()
+			       << std::endl;
+			for( unsigned int slotIndex = 0; slotIndex < slots.size(); ++slotIndex )
+			{
+				const VuScheduledIssueSlot& slot = slots[slotIndex];
+				stream << "  slot " << slotIndex << " first=";
+				writeScheduleTokenText( stream, tokenIndices, slot.firstToken );
+				stream << " second=";
+				writeScheduleTokenText( stream, tokenIndices, slot.secondToken );
+				stream << " upper=";
+				writeScheduleTokenText( stream, tokenIndices, slot.upperToken );
+				stream << " lower=";
+				writeScheduleTokenText( stream, tokenIndices, slot.lowerToken );
+				stream << std::endl;
+			}
+		}
+	}
+
+	void writeScheduleInfoJson( std::ostream& stream, const std::list<Token>& tokens )
+	{
+		const std::vector<VuBasicBlock> blocks = buildVuBasicBlocks( tokens );
+		const std::map<const Token*, unsigned int> tokenIndices = buildTokenIndexMap( tokens );
+
+		stream << "{\n  \"scheduled_blocks\": [\n";
+		for( unsigned int blockIndex = 0; blockIndex < blocks.size(); ++blockIndex )
+		{
+			const VuBasicBlock& block = blocks[blockIndex];
+			const std::vector<VuScheduledIssueSlot> slots = scheduleVuBasicBlockReadyIssueSlots( block );
+			if( blockIndex != 0 )
+				stream << ",\n";
+			stream << "    {\n";
+			stream << "      \"block_index\": " << blockIndex << ",\n";
+			stream << "      \"first_token_index\": " << block.firstTokenIndex << ",\n";
+			stream << "      \"terminator\": "; writeJsonString( stream, basicBlockTerminatorKindName( block.terminatorKind ) ); stream << ",\n";
+			stream << "      \"issue_slots\": [\n";
+			for( unsigned int slotIndex = 0; slotIndex < slots.size(); ++slotIndex )
+			{
+				const VuScheduledIssueSlot& slot = slots[slotIndex];
+				if( slotIndex != 0 )
+					stream << ",\n";
+				stream << "        {\n";
+				stream << "          \"slot_index\": " << slotIndex << ",\n";
+				stream << "          \"first_token_index\": "; writeNullableTokenIndexJson( stream, tokenIndices, slot.firstToken ); stream << ",\n";
+				stream << "          \"second_token_index\": "; writeNullableTokenIndexJson( stream, tokenIndices, slot.secondToken ); stream << ",\n";
+				stream << "          \"upper_token_index\": "; writeNullableTokenIndexJson( stream, tokenIndices, slot.upperToken ); stream << ",\n";
+				stream << "          \"lower_token_index\": "; writeNullableTokenIndexJson( stream, tokenIndices, slot.lowerToken ); stream << ",\n";
+				stream << "          \"first\": "; writeNullableTokenNameJson( stream, slot.firstToken ); stream << ",\n";
+				stream << "          \"second\": "; writeNullableTokenNameJson( stream, slot.secondToken ); stream << ",\n";
+				stream << "          \"upper\": "; writeNullableTokenNameJson( stream, slot.upperToken ); stream << ",\n";
+				stream << "          \"lower\": "; writeNullableTokenNameJson( stream, slot.lowerToken ); stream << "\n";
+				stream << "        }";
+			}
+			stream << "\n      ]\n";
+			stream << "    }";
+		}
+		stream << "\n  ]\n}" << std::endl;
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -500,7 +653,7 @@ bool Parser::create( int argc, char* argv[] )
 		setState( SHOW_USAGE );
 	else if( m_cmdLine.dumpInstructionInfo() )
 		setState( DUMP_INSTRUCTION_INFO );
-	else if( m_cmdLine.dumpLoopPipelineInfo() )
+	else if( m_cmdLine.dumpLoopPipelineInfo() || m_cmdLine.dumpScheduleInfo() )
 		setState( READ_INPUT );
 	else if( m_cmdLine.compareVsmCostListMarkdown() || m_cmdLine.compareVsmCostListCheck() )
 		setState( ANALYZE_VSM_COST_COMPARE_LIST );
@@ -537,6 +690,7 @@ bool Parser::run()
 		case SHOW_USAGE: return showUsage();
 		case DUMP_INSTRUCTION_INFO: return dumpInstructionInfo();
 		case DUMP_LOOP_PIPELINE_INFO: return dumpLoopPipelineInfo();
+		case DUMP_SCHEDULE_INFO: return dumpScheduleInfo();
 		case ANALYZE_VSM_COST: return analyzeVsmCost();
 		case ANALYZE_VSM_COST_COMPARE: return analyzeVsmCostCompare();
 		case ANALYZE_VSM_COST_COMPARE_LIST: return analyzeVsmCostCompareList();
@@ -1071,6 +1225,36 @@ bool Parser::dumpLoopPipelineInfo()
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+bool Parser::dumpScheduleInfo()
+{
+	if( m_cmdLine.output().length() > 0 )
+	{
+		std::ofstream output( m_cmdLine.output().c_str() );
+		if( !output.good() )
+		{
+			Error::Display( Error( "Could not open output file" ) );
+			return false;
+		}
+
+		if( m_cmdLine.dumpScheduleInfoJson() )
+			writeScheduleInfoJson( output, m_tokenizer.tokens() );
+		else
+			writeScheduleInfoText( output, m_tokenizer.tokens() );
+	}
+	else
+	{
+		if( m_cmdLine.dumpScheduleInfoJson() )
+			writeScheduleInfoJson( std::cout, m_tokenizer.tokens() );
+		else
+			writeScheduleInfoText( std::cout, m_tokenizer.tokens() );
+	}
+
+	setState( EXIT );
+	return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 bool Parser::readInputStream( std::istream& stream )
 {
 	std::string buffer;
@@ -1346,7 +1530,9 @@ bool Parser::tokenize()
 			return false;
 	}
 
-	if( m_cmdLine.dumpLoopPipelineInfo() )
+	if( m_cmdLine.dumpScheduleInfo() )
+		setState( DUMP_SCHEDULE_INFO );
+	else if( m_cmdLine.dumpLoopPipelineInfo() )
 		setState( DUMP_LOOP_PIPELINE_INFO );
 	else
 		setState( ALLOCATE_REGISTERS );
