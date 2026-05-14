@@ -563,7 +563,8 @@ namespace
 
 	void classifySoftwarePipelineEmissionSafety( VuLoopPipelineOpportunity& opportunity,
 	                                             const VuLoopCandidate& loop,
-	                                             unsigned int qProducerOffset )
+	                                             unsigned int qProducerOffset,
+	                                             const std::vector<const Token*>& indexedTokens )
 	{
 		if( !opportunity.simpleCountedLoop )
 			addPipelineBlocker( opportunity, "not_simple_counted_loop" );
@@ -600,6 +601,17 @@ namespace
 					addPipelineBlocker( opportunity, "q_producer_memory" );
 				if( intersects( access.registerReads, opportunity.inductionRegisters ) )
 					addPipelineBlocker( opportunity, "q_producer_reads_induction" );
+			}
+		}
+
+		for( unsigned int i = opportunity.branchTokenIndex + 1; i < indexedTokens.size(); ++i )
+		{
+			if( vuTokenWritesQ( *indexedTokens[i] ) )
+				break;
+			if( vuTokenReadsQ( *indexedTokens[i] ) )
+			{
+				addPipelineBlocker( opportunity, "q_live_out" );
+				break;
 			}
 		}
 
@@ -862,6 +874,10 @@ std::vector<VuLoopCandidate> findVuLoopCandidates( const std::list<Token>& token
 std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const std::list<Token>& tokens )
 {
 	std::vector<VuLoopPipelineOpportunity> result;
+	std::vector<const Token*> indexedTokens;
+	for( std::list<Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i )
+		indexedTokens.push_back( &*i );
+
 	std::vector<VuLoopCandidate> loops = findVuLoopCandidates( tokens );
 
 	for( std::vector<VuLoopCandidate>::const_iterator loop = loops.begin(); loop != loops.end(); ++loop )
@@ -937,7 +953,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			appendPipelineInstructionIndices( *loop, firstConsumerOffset, branchOffset, opportunity.drainTokenIndices );
 		}
 
-		classifySoftwarePipelineEmissionSafety( opportunity, *loop, qProducerOffset );
+		classifySoftwarePipelineEmissionSafety( opportunity, *loop, qProducerOffset, indexedTokens );
 
 		result.push_back( opportunity );
 	}
