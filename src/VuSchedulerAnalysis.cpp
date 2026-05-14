@@ -1831,6 +1831,25 @@ std::vector< std::vector<VuScheduledIssueSlot> > scheduleVuBasicBlocksReadyIssue
 	return result;
 }
 
+unsigned int vuIgnoredFlagWawResourcesForRemaining( std::list<Token>::const_iterator begin,
+                                                    std::list<Token>::const_iterator end )
+{
+	bool readsMac = false;
+	bool readsClip = false;
+	for( std::list<Token>::const_iterator i = begin; i != end; ++i )
+	{
+		readsMac = readsMac || tokenReadsMac( *i );
+		readsClip = readsClip || tokenReadsClip( *i );
+	}
+
+	unsigned int mask = VU_RESOURCE_NONE;
+	if( !readsMac )
+		mask |= VU_RESOURCE_MAC;
+	if( !readsClip )
+		mask |= VU_RESOURCE_CLIP;
+	return mask;
+}
+
 std::vector<VuLoopCandidate> findVuLoopCandidates( const std::list<Token>& tokens )
 {
 	std::vector<const Token*> indexedTokens;

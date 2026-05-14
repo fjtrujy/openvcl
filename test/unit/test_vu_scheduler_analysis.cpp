@@ -1542,6 +1542,25 @@ TEST_CASE("VuSchedulerAnalysis: flag-liveness issue slots match ready-set schedu
     CHECK(vcl::normalizeVuMnemonic(blockSlots[0][1].firstToken->name()) == "ftoi0");
 }
 
+TEST_CASE("VuSchedulerAnalysis: remaining flag WAW helper reports dead MAC and CLIP flags")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("clipw.xyz vf04, vf05[w]"));
+    REQUIRE(program.parse("fmand vi01, vi02"));
+
+    std::list<vcl::Token>::const_iterator begin = program.tokenizer.tokens().begin();
+    CHECK((vcl::vuIgnoredFlagWawResourcesForRemaining(begin, program.tokenizer.tokens().end()) & vcl::VU_RESOURCE_MAC) == 0u);
+    CHECK((vcl::vuIgnoredFlagWawResourcesForRemaining(begin, program.tokenizer.tokens().end()) & vcl::VU_RESOURCE_CLIP) != 0u);
+
+    ++begin;
+    ++begin;
+    ++begin;
+    CHECK((vcl::vuIgnoredFlagWawResourcesForRemaining(begin, program.tokenizer.tokens().end()) & vcl::VU_RESOURCE_MAC) != 0u);
+    CHECK((vcl::vuIgnoredFlagWawResourcesForRemaining(begin, program.tokenizer.tokens().end()) & vcl::VU_RESOURCE_CLIP) != 0u);
+}
+
 TEST_CASE("VuSchedulerAnalysis: ready-set scheduler can move Q producers before independent plain stores")
 {
     vcl::Error::ResetErrorCount();

@@ -21,6 +21,8 @@
   NOP vs `waitq`/`waitp` read-hazard padding.
 - Schedule issue-slot dumps now use the same MAC/CLIP flag-liveness
   segmentation as generic code emission.
+- Code emission now reuses the shared scheduler-analysis helper for deciding
+  when remaining MAC/CLIP WAW dependencies are dead.
 - Added regression fixtures and unit/integration tests for cost analysis.
 - Added conservative VU scheduling improvements used by ps2gl:
   - upper/lower pairing lookahead;

@@ -240,6 +240,8 @@ std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlots( const VuB
                                                                        unsigned int ignoredImplicitWawResources = 0 );
 std::vector< std::vector<VuScheduledIssueSlot> > scheduleVuBasicBlocksReadyIssueSlotsWithFlagLiveness(
     const std::list<Token>& tokens );
+unsigned int vuIgnoredFlagWawResourcesForRemaining( std::list<Token>::const_iterator begin,
+                                                    std::list<Token>::const_iterator end );
 VuScheduledPaddingKind vuScheduledPaddingKindForReadHazard( const Token& token,
                                                             const Token* partner,
                                                             const VuLatencyTracker& latencyTracker,
