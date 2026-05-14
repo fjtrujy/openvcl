@@ -1491,6 +1491,10 @@ namespace
 	                                             unsigned int endIndex,
 	                                             const std::vector<const Token*>& indexedTokens,
 	                                             const std::vector<VuSoftwarePipelineSuffixStore>& stores );
+	Token adjustedMultiQCyclicPrefixToken( const Token& token,
+	                                       const std::vector<VuSoftwarePipelineRotation>& rotations,
+	                                       const std::vector<VuLoopInductionUpdate>& inductionUpdates,
+	                                       unsigned int insertionTokenIndex );
 
 	bool tokenRangeWritesAny( unsigned int beginIndex,
 	                          unsigned int endIndex,
@@ -1745,6 +1749,26 @@ namespace
 		return NULL;
 	}
 
+	bool aggregateInductionStepAfterToken( const std::vector<VuLoopInductionUpdate>& updates,
+	                                       const std::string& registerName,
+	                                       unsigned int tokenIndex,
+	                                       long& step )
+	{
+		bool found = false;
+		step = 0;
+		for( std::vector<VuLoopInductionUpdate>::const_iterator i = updates.begin();
+		     i != updates.end(); ++i )
+		{
+			if( i->registerName != registerName || i->tokenIndex <= tokenIndex )
+				continue;
+			if( !i->stepKnown )
+				return false;
+			step += i->step;
+			found = true;
+		}
+		return found;
+	}
+
 	void appendSoftwarePipelinePrefetchDescriptor( const Token& token,
 	                                               unsigned int tokenIndex,
 	                                               const VuLoopPipelineOpportunity& opportunity,
@@ -1847,14 +1871,16 @@ namespace
 				}
 			}
 
-			const VuLoopInductionUpdate* update =
-			    access.hasMemoryBase
-			    ? findInductionUpdate( opportunity.inductionUpdates, access.memoryBaseRegister )
-			    : NULL;
-			if( update && update->stepKnown && access.hasMemoryOffset )
+			long stepAfterStore = 0;
+			if( access.hasMemoryBase
+			    && access.hasMemoryOffset
+			    && aggregateInductionStepAfterToken( opportunity.inductionUpdates,
+			                                         access.memoryBaseRegister,
+			                                         tokenIndex,
+			                                         stepAfterStore ) )
 			{
 				suffixStore.hasNextIterationOffset = true;
-				suffixStore.nextIterationOffset = access.memoryOffset - update->step;
+				suffixStore.nextIterationOffset = access.memoryOffset - stepAfterStore;
 				suffixStore.drainCandidate = suffixStore.usesInductionRegister;
 			}
 
@@ -2360,6 +2386,155 @@ namespace
 			                                             opportunity,
 			                                             opportunity.softwarePipelineSuffixStores );
 		}
+	}
+
+	void collectAdjustedCyclicPrefixWriteKeys( const VuLoopPipelineOpportunity& opportunity,
+	                                           const std::vector<const Token*>& indexedTokens,
+	                                           std::list<std::string>& writes )
+	{
+		for( std::vector<unsigned int>::const_iterator i =
+		         opportunity.multiQCyclicPrefixTokenIndices.begin();
+		     i != opportunity.multiQCyclicPrefixTokenIndices.end(); ++i )
+		{
+			if( *i >= indexedTokens.size() )
+				continue;
+			const Token adjusted =
+			    adjustedMultiQCyclicPrefixToken( *indexedTokens[*i],
+			                                     opportunity.multiQCyclicPrefixRotations,
+			                                     opportunity.inductionUpdates,
+			                                     opportunity.multiQCyclicPrefixInsertBeforeTokenIndex );
+			std::list<std::string> tokenWrites;
+			collectVuRegisterWriteKeys( adjusted, tokenWrites );
+			for( std::list<std::string>::const_iterator write = tokenWrites.begin();
+			     write != tokenWrites.end(); ++write )
+				addUniqueString( writes, *write );
+		}
+	}
+
+	bool tokenIndicesLoadFromMemoryBase( const std::vector<unsigned int>& tokenIndices,
+	                                     const std::vector<const Token*>& indexedTokens,
+	                                     const std::string& memoryBaseRegister )
+	{
+		for( std::vector<unsigned int>::const_iterator i = tokenIndices.begin();
+		     i != tokenIndices.end(); ++i )
+		{
+			if( *i >= indexedTokens.size() )
+				continue;
+			VuTokenResourceAccess access;
+			if( !buildVuTokenResourceAccess( *indexedTokens[*i], access ) )
+				continue;
+			if( access.memoryKind == VU_MEMORY_LOAD
+			    && access.hasMemoryBase
+			    && access.memoryBaseRegister == memoryBaseRegister )
+				return true;
+		}
+		return false;
+	}
+
+	void classifyMultiQCyclicPrefixSuffixStoreDrains( VuLoopPipelineOpportunity& opportunity,
+	                                                  const VuLoopCandidate& loop,
+	                                                  const std::vector<const Token*>& indexedTokens )
+	{
+		opportunity.hasSuffixStoreDrainPlan = false;
+		opportunity.canEmitSuffixStoreDrain = false;
+		opportunity.suffixStoreDrainBlockers.clear();
+		opportunity.softwarePipelineSuffixStores.clear();
+
+		collectSoftwarePipelineSuffixStoreDescriptors( opportunity.multiQMainTokenIndices,
+		                                               indexedTokens,
+		                                               opportunity );
+		if( opportunity.softwarePipelineSuffixStores.empty() )
+			return;
+
+		bool hasDrainCandidate = false;
+		for( std::vector<VuSoftwarePipelineSuffixStore>::const_iterator i =
+		         opportunity.softwarePipelineSuffixStores.begin();
+		     i != opportunity.softwarePipelineSuffixStores.end(); ++i )
+		{
+			if( i->drainCandidate )
+				hasDrainCandidate = true;
+		}
+		if( !hasDrainCandidate )
+			return;
+
+		opportunity.hasSuffixStoreDrainPlan = true;
+		if( opportunity.branchTokenIndex >= indexedTokens.size()
+		    || !branchCanInvertToDrain( *indexedTokens[opportunity.branchTokenIndex] ) )
+			addSuffixStoreDrainBlocker( opportunity, "non_invertible_loop_branch" );
+		if( opportunity.qLiveOut )
+			addSuffixStoreDrainBlocker( opportunity, "q_live_out" );
+
+		std::list<std::string> cyclicPrefixWrites;
+		collectAdjustedCyclicPrefixWriteKeys( opportunity, indexedTokens, cyclicPrefixWrites );
+		std::list<std::string> used;
+		collectUsedScratchVfRegisters( loop,
+		                               opportunity.multiQCyclicPrefixRotations,
+		                               opportunity.softwarePipelineSuffixStores,
+		                               used );
+
+		for( std::vector<VuSoftwarePipelineSuffixStore>::iterator store =
+		         opportunity.softwarePipelineSuffixStores.begin();
+		     store != opportunity.softwarePipelineSuffixStores.end(); ++store )
+		{
+			if( !store->drainCandidate )
+				continue;
+			if( !store->hasNextIterationOffset )
+				continue;
+			if( !store->hasStoredValueRegister )
+				continue;
+			if( store->tokenIndex >= indexedTokens.size() )
+				continue;
+			if( store->hasMemoryBase
+			    && tokenIndicesLoadFromMemoryBase( opportunity.multiQMainTokenIndices,
+			                                      indexedTokens,
+			                                      store->memoryBaseRegister ) )
+				continue;
+			if( indexedTokens[store->tokenIndex]->flags() & (Token::PREORDERED | Token::E | Token::D
+			                                                | Token::T | Token::BRANCH_DELAY_FILLER) )
+				continue;
+
+			if( tokenRangeHasMemoryDependencyWithStore( *store,
+			                                           store->tokenIndex + 1,
+			                                           opportunity.branchTokenIndex,
+			                                           indexedTokens,
+			                                           opportunity.softwarePipelineSuffixStores ) )
+				continue;
+
+			std::list<std::string> valueKeys;
+			collectSuffixStoreValueKeys( *store, valueKeys );
+			const bool valueWrittenAfterStore =
+			    store->tokenIndex + 1 <= opportunity.branchTokenIndex
+			    && tokenRangeWritesAny( store->tokenIndex + 1,
+			                            opportunity.branchTokenIndex,
+			                            indexedTokens,
+			                            valueKeys );
+			const bool cyclicPrefixClobbersValue =
+			    suffixStoreNeedsValueRotation( *store, cyclicPrefixWrites );
+			if( cyclicPrefixClobbersValue
+			    && store->tokenIndex >= opportunity.multiQCyclicPrefixInsertBeforeTokenIndex )
+				continue;
+			if( valueWrittenAfterStore || cyclicPrefixClobbersValue )
+			{
+				if( !isVfRegisterName( store->storedValueRegister ) )
+					continue;
+				store->requiresValueRotation = true;
+				store->rotateValueAtStore = true;
+				if( !assignOneSuffixStoreValueScratchRegister( *store, used ) )
+					continue;
+			}
+			store->delayedDrain = true;
+		}
+
+		bool hasDelayedStore = false;
+		for( std::vector<VuSoftwarePipelineSuffixStore>::const_iterator store =
+		         opportunity.softwarePipelineSuffixStores.begin();
+		     store != opportunity.softwarePipelineSuffixStores.end(); ++store )
+		{
+			if( store->delayedDrain )
+				hasDelayedStore = true;
+		}
+		if( hasDelayedStore && opportunity.suffixStoreDrainBlockers.empty() )
+			opportunity.canEmitSuffixStoreDrain = true;
 	}
 
 	bool tokenHasGuardableMultiQCyclicPrefixSideEffect( const Token& token )
@@ -3962,6 +4137,85 @@ namespace
 			output.push_back( adjustedCyclicPrefixBranchDelayToken( *indexedTokens[tokenIndex], rewrite ) );
 	}
 
+	void appendRewriteMainToken( std::list<Token>& output,
+	                             const std::vector<const Token*>& indexedTokens,
+	                             const VuSoftwarePipelineRewritePlan& rewrite,
+	                             unsigned int tokenIndex,
+	                             bool skipDelayedStores,
+	                             bool invertBranchToDrain )
+	{
+		if( tokenIndex >= indexedTokens.size() )
+			return;
+
+		Token token = tokenWithoutLabel( *indexedTokens[tokenIndex] );
+		const VuSoftwarePipelineSuffixStore* suffixStore =
+		    findSuffixStoreForTokenIndex( rewrite.suffixStores, tokenIndex );
+		if( suffixStore && suffixStore->delayedDrain && skipDelayedStores )
+		{
+			if( suffixStore->requiresValueRotation
+			    && suffixStore->hasValueScratchRegister
+			    && suffixStore->rotateValueAtStore )
+				output.push_back( makeSuffixStoreValueMoveToken( *indexedTokens[tokenIndex],
+				                                                 *suffixStore ) );
+			return;
+		}
+		if( suffixStore )
+			rewriteSuffixStoreValueToScratch( token, *suffixStore );
+
+		if( tokenIndex == rewrite.branchTokenIndex && invertBranchToDrain )
+			output.push_back( invertedBranchToDrainToken( *indexedTokens[tokenIndex],
+			                                             rewrite.drainLabel ) );
+		else
+			output.push_back( token );
+	}
+
+	void appendCyclicPrefixMainBody( std::list<Token>& output,
+	                                 const std::vector<const Token*>& indexedTokens,
+	                                 const VuSoftwarePipelineRewritePlan& rewrite,
+	                                 bool skipDelayedStores,
+	                                 bool invertBranchToDrain,
+	                                 bool allowBranchDelayCyclicPrefix )
+	{
+		bool emittedCyclicPrefix = false;
+		for( std::vector<unsigned int>::const_iterator m = rewrite.mainTokenIndices.begin();
+		     m != rewrite.mainTokenIndices.end(); ++m )
+		{
+			if( !emittedCyclicPrefix && *m == rewrite.cyclicPrefixInsertBeforeTokenIndex )
+			{
+				if( rewrite.cyclicPrefixNeedsGuard && rewrite.branchTokenIndex < indexedTokens.size() )
+					output.push_back( invertedBranchToDrainToken( *indexedTokens[rewrite.branchTokenIndex],
+					                                               rewrite.drainLabel ) );
+				appendCyclicPrefixTokens( output, indexedTokens, rewrite, false );
+				emittedCyclicPrefix = true;
+			}
+			if( *m < indexedTokens.size() && *m != rewrite.branchTokenIndex )
+				appendRewriteMainToken( output,
+				                        indexedTokens,
+				                        rewrite,
+				                        *m,
+				                        skipDelayedStores,
+				                        invertBranchToDrain );
+		}
+		if( !emittedCyclicPrefix )
+		{
+			if( rewrite.cyclicPrefixNeedsGuard && rewrite.branchTokenIndex < indexedTokens.size() )
+				output.push_back( invertedBranchToDrainToken( *indexedTokens[rewrite.branchTokenIndex],
+				                                               rewrite.drainLabel ) );
+			appendCyclicPrefixTokens( output, indexedTokens, rewrite, false );
+		}
+		if( rewrite.branchTokenIndex < indexedTokens.size() )
+		{
+			appendRewriteMainToken( output,
+			                        indexedTokens,
+			                        rewrite,
+			                        rewrite.branchTokenIndex,
+			                        skipDelayedStores,
+			                        invertBranchToDrain );
+			if( allowBranchDelayCyclicPrefix && !rewrite.cyclicPrefixNeedsGuard )
+				appendDelayedCyclicPrefixBranchToken( output, indexedTokens, rewrite );
+		}
+	}
+
 	void appendTokenRangeWithInsertedPrefetchAndQProducer( std::list<Token>& output,
 	                                                       const std::vector<const Token*>& indexedTokens,
 	                                                       const VuSoftwarePipelineRewritePlan& rewrite,
@@ -4877,6 +5131,15 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 
 		classifySoftwarePipelineEmissionSafety( opportunity, *loop, qProducerOffset, indexedTokens );
 		classifyMultiQSoftwarePipelineOpportunity( opportunity, qProducerCount, indexedTokens );
+		if( opportunity.canEmitMultiQSoftwarePipeline
+		    && !opportunity.multiQMainTokenIndices.empty()
+		    && !opportunity.multiQCyclicPrefixTokenIndices.empty()
+		    && !opportunity.multiQCyclicPrefixNeedsGuard
+		    && opportunity.memoryLoadCount == 0
+		    && !loopUsesLoopExtraDirective( *loop, indexedTokens ) )
+			classifyMultiQCyclicPrefixSuffixStoreDrains( opportunity,
+			                                             *loop,
+			                                             indexedTokens );
 
 		result.push_back( opportunity );
 	}
@@ -4923,6 +5186,8 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 			plan.cyclicPrefixLastTokenInBranchDelaySlot =
 			    i->multiQCyclicPrefixLastTokenInBranchDelaySlot;
 			plan.emitsDrain = i->multiQCyclicPrefixNeedsGuard;
+			plan.drainsSuffixStores = i->canEmitSuffixStoreDrain;
+			plan.suffixStores = i->softwarePipelineSuffixStores;
 			plan.inductionUpdates = i->inductionUpdates;
 			plan.drainTokenIndices = i->drainTokenIndices;
 			plans.push_back( plan );
@@ -5038,14 +5303,22 @@ std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens )
 
 		if( rewrite.drainsSuffixStores )
 		{
-			appendTokenRangeWithInsertedPrefetchAndQProducer(
-			    output,
-			    indexedTokens,
-			    rewrite,
-			    rewrite.mainTokenIndices.empty() ? rewrite.branchTokenIndex : rewrite.mainTokenIndices.front(),
-			    rewrite.branchTokenIndex,
-			    true,
-			    true );
+			if( rewrite.cyclicPrefixBeforeBranch )
+				appendCyclicPrefixMainBody( output,
+				                            indexedTokens,
+				                            rewrite,
+				                            true,
+				                            true,
+				                            false );
+			else
+				appendTokenRangeWithInsertedPrefetchAndQProducer(
+				    output,
+				    indexedTokens,
+				    rewrite,
+				    rewrite.mainTokenIndices.empty() ? rewrite.branchTokenIndex : rewrite.mainTokenIndices.front(),
+				    rewrite.branchTokenIndex,
+				    true,
+				    true );
 		}
 
 		Token mainLabel( *i );
@@ -5056,34 +5329,14 @@ std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens )
 
 		if( rewrite.cyclicPrefixBeforeBranch )
 		{
-			bool emittedCyclicPrefix = false;
-			for( std::vector<unsigned int>::const_iterator m = rewrite.mainTokenIndices.begin();
-			     m != rewrite.mainTokenIndices.end(); ++m )
-			{
-				if( !emittedCyclicPrefix && *m == rewrite.cyclicPrefixInsertBeforeTokenIndex )
-				{
-					if( rewrite.cyclicPrefixNeedsGuard && rewrite.branchTokenIndex < indexedTokens.size() )
-						output.push_back( invertedBranchToDrainToken( *indexedTokens[rewrite.branchTokenIndex],
-						                                               rewrite.drainLabel ) );
-					appendCyclicPrefixTokens( output, indexedTokens, rewrite, false );
-					emittedCyclicPrefix = true;
-				}
-				if( *m < indexedTokens.size() && *m != rewrite.branchTokenIndex )
-					output.push_back( tokenWithoutLabel( *indexedTokens[*m] ) );
-			}
-			if( !emittedCyclicPrefix )
-			{
-				if( rewrite.cyclicPrefixNeedsGuard && rewrite.branchTokenIndex < indexedTokens.size() )
-					output.push_back( invertedBranchToDrainToken( *indexedTokens[rewrite.branchTokenIndex],
-					                                               rewrite.drainLabel ) );
-				appendCyclicPrefixTokens( output, indexedTokens, rewrite, false );
-			}
-			if( rewrite.branchTokenIndex < indexedTokens.size() )
-			{
-				output.push_back( tokenWithoutLabel( *indexedTokens[rewrite.branchTokenIndex] ) );
-				if( !rewrite.cyclicPrefixNeedsGuard )
-					appendDelayedCyclicPrefixBranchToken( output, indexedTokens, rewrite );
-			}
+			if( rewrite.drainsSuffixStores )
+				appendDelayedSuffixStores( output, indexedTokens, rewrite );
+			appendCyclicPrefixMainBody( output,
+			                            indexedTokens,
+			                            rewrite,
+			                            rewrite.drainsSuffixStores,
+			                            false,
+			                            true );
 		}
 		else
 		{

@@ -380,6 +380,36 @@ namespace
             "\t--endexit\n";
     }
 
+    std::string genericMultiQSuffixStoreDrainPipelineSource()
+    {
+        return
+            "\t.init_vf_all\n"
+            "\t.init_vi_all\n"
+            "\t--enter\n"
+            "\t--endenter\n"
+            "\tiaddiu vi01, vi00, 0\n"
+            "\tiaddiu vi02, vi00, 3\n"
+            "\tiaddiu vi03, vi00, 0\n"
+            "loop_lid:\n"
+            "\t--LoopCS 1,1\n"
+            "\tdiv q, vf00w, vf00w\n"
+            "\tmulq.xyz vf02, vf00, q\n"
+            "\tadd.xyz vf10, vf00, vf00\n"
+            "\tadd.xyz vf11, vf00, vf00\n"
+            "\tdiv q, vf00w, vf00w\n"
+            "\tadd.xyz vf12, vf00, vf00\n"
+            "\tadd.xyz vf13, vf00, vf00\n"
+            "\tmulq.xyz vf05, vf00, q\n"
+            "\tsq.xyz vf05, 0(vi03)\n"
+            "\tadd.xyz vf14, vf00, vf00\n"
+            "\tiaddiu vi03, vi03, 1\n"
+            "\tiaddiu vi03, vi03, 1\n"
+            "\tiaddiu vi01, vi01, 1\n"
+            "\tibne vi01, vi02, loop_lid\n"
+            "\t--exit\n"
+            "\t--endexit\n";
+    }
+
     std::string genericMultiQGuardedStorePipelineSource()
     {
         return
@@ -1285,6 +1315,23 @@ TEST_CASE("Software pipeline: generic path emits multi-Q producer-side prefixes"
                              "loop_lid:",
                              "ibne VI01, VI02, loop_lid",
                              "add.xyz VF16, VF00, VF00"));
+}
+
+TEST_CASE("Software pipeline: generic multi-Q prefixes emit delayed suffix store drains")
+{
+    std::vector<std::string> args;
+    args.push_back("--enable-generic-software-pipelining");
+    std::string vsm = runEmitWithExtraArgs(genericMultiQSuffixStoreDrainPipelineSource(), args);
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(contains(vsm, "loop_lid__PROLOG:"));
+    CHECK(contains(vsm, "loop_lid__DRAIN:"));
+    CHECK(contains(vsm, "ibeq VI01, VI02, loop_lid__DRAIN"));
+    CHECK(appearsBeforeAfter(vsm,
+                             "loop_lid:",
+                             "sq.xyz VF05, -4(VI03)",
+                             "ibne VI01, VI02, loop_lid"));
+    CHECK(blockContains(vsm, "loop_lid__DRAIN", "sq.xyz VF05, -2(VI03)"));
 }
 
 TEST_CASE("Software pipeline: generic path guards cloned multi-Q store prefixes")

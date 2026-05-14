@@ -140,6 +140,8 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: no-Q cyclic-prefix rewrites now support single-store `--LoopExtra` loops while keeping the suffix store inside the loop instead of letting legacy branch-delay passes move it to fallthrough.
    - Done: no-Q cyclic-prefix selection now prefers a store-at-top value-rotation shape when it is cost-neutral, moving final-color conversion work into the prolog/cyclic prefix.
    - Done: the shared latency model now includes the narrow SCE-observed `lq`/`lqi`/`lqd` to `minii` bypass, improving modulo-scheduled final-color/store-drain loops without relaxing ordinary load-to-FMAC padding.
+   - Done: generic multi-Q cyclic-prefix loops can now emit delayed suffix-store drains for no-load/write-only counted loops; ps2gl transform/light loops remain gated until read/write memory-stream value rotation is modeled safely.
+   - Done: delayed suffix-store offset calculation now uses the aggregate per-iteration induction step, so loops with multiple pointer increments model their drain addresses correctly.
 
 8. **Retire Pattern Emitters Incrementally** - started
    - Replace each hand emitter only after generic scheduling/software pipelining matches correctness and reaches equal or better loop cost.
