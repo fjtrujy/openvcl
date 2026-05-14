@@ -46,6 +46,9 @@
   duplication of consumed Q work in that subset.
 - Multi-Q cyclic-prefix planning now evaluates safe split candidates with the
   shared scheduler model and emits the lowest-cycle main-loop shape it finds.
+- Multi-Q cyclic-prefix rewrites can now insert the cloned prefix before
+  independent loop-tail work, giving the modulo-scheduled Q producer/consumer
+  more useful cycles before the branch.
 - Ready-scheduler analysis now has a typed `VuScheduledProgram` wrapper with
   block-level cycle ranges, and schedule dumps expose program-relative issue
   cycles.

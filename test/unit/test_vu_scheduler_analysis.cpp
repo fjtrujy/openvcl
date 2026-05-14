@@ -1477,6 +1477,7 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline chooses the cheaper cy
     REQUIRE(opportunities[0].multiQCyclicPrefixTokenIndices.size() == 2u);
     CHECK(opportunities[0].multiQCyclicPrefixTokenIndices[0] == 2u);
     CHECK(opportunities[0].multiQCyclicPrefixTokenIndices[1] == 3u);
+    CHECK(opportunities[0].multiQCyclicPrefixInsertBeforeTokenIndex == 11u);
 
     std::vector<vcl::VuSoftwarePipelineRewritePlan> plans =
         vcl::buildVuSoftwarePipelineRewritePlans(program.tokenizer.tokens());
@@ -1567,6 +1568,7 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline can rotate producer-si
     CHECK(opportunities[0].multiQMainTokenIndices.front() == 10u);
     CHECK(opportunities[0].multiQMainTokenIndices.back() == 17u);
     CHECK(opportunities[0].multiQCyclicPrefixTokenIndices == opportunities[0].multiQPrologTokenIndices);
+    CHECK(opportunities[0].multiQCyclicPrefixInsertBeforeTokenIndex == 16u);
 
     std::list<vcl::Token> transformed = vcl::applyVuSoftwarePipelinePlans(program.tokenizer.tokens());
     unsigned int divCount = 0;

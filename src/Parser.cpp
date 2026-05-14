@@ -794,6 +794,8 @@ namespace
 			       << " rewrite_drains_suffix_stores=" << (rewritePlan && rewritePlan->drainsSuffixStores ? "yes" : "no")
 			       << " rewrite_cyclic_prefix_before_branch="
 			       << (rewritePlan && rewritePlan->cyclicPrefixBeforeBranch ? "yes" : "no")
+			       << " rewrite_cyclic_prefix_insert_before="
+			       << (rewritePlan ? rewritePlan->cyclicPrefixInsertBeforeTokenIndex : 0)
 			       << " rewrite_prefetch_tokens=";
 			if( rewritePlan )
 				writeUnsignedVectorText( stream, rewritePlan->prefetchTokenIndices );
@@ -818,6 +820,8 @@ namespace
 			writeUnsignedVectorText( stream, i->multiQMainTokenIndices );
 			stream << " multi_q_cyclic_prefix_tokens=";
 			writeUnsignedVectorText( stream, i->multiQCyclicPrefixTokenIndices );
+			stream << " multi_q_cyclic_prefix_insert_before="
+			       << i->multiQCyclicPrefixInsertBeforeTokenIndex;
 			stream << " multi_q_blockers=";
 			writeStringListText( stream, i->multiQSoftwarePipelineBlockers );
 			stream << " suffix_store_drain_blockers=";
@@ -908,7 +912,9 @@ namespace
 			stream << "        \"blockers\": "; writeStringListJson( stream, opportunity.multiQSoftwarePipelineBlockers ); stream << ",\n";
 			stream << "        \"prolog_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.multiQPrologTokenIndices ); stream << ",\n";
 			stream << "        \"main_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.multiQMainTokenIndices ); stream << ",\n";
-			stream << "        \"cyclic_prefix_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.multiQCyclicPrefixTokenIndices ); stream << "\n";
+			stream << "        \"cyclic_prefix_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.multiQCyclicPrefixTokenIndices ); stream << ",\n";
+			stream << "        \"cyclic_prefix_insert_before_token_index\": "
+			       << opportunity.multiQCyclicPrefixInsertBeforeTokenIndex << "\n";
 			stream << "      },\n";
 			stream << "      \"rewrite_plan\": {\n";
 			stream << "        \"available\": " << (rewritePlan ? "true" : "false") << ",\n";
@@ -919,6 +925,8 @@ namespace
 			stream << "        \"drains_suffix_stores\": " << (rewritePlan && rewritePlan->drainsSuffixStores ? "true" : "false") << ",\n";
 			stream << "        \"cyclic_prefix_before_branch\": "
 			       << (rewritePlan && rewritePlan->cyclicPrefixBeforeBranch ? "true" : "false") << ",\n";
+			stream << "        \"cyclic_prefix_insert_before_token_index\": "
+			       << (rewritePlan ? rewritePlan->cyclicPrefixInsertBeforeTokenIndex : 0) << ",\n";
 			stream << "        \"prefetch_insert_after_token_index\": "
 			       << (rewritePlan ? rewritePlan->prefetchInsertAfterTokenIndex : 0) << ",\n";
 			stream << "        \"q_producer_insert_after_token_index\": "

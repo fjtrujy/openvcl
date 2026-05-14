@@ -16,6 +16,21 @@ namespace
         return haystack.find(needle) != std::string::npos;
     }
 
+    bool appearsBeforeAfter(const std::string& haystack,
+                            const std::string& anchor,
+                            const std::string& first,
+                            const std::string& second)
+    {
+        const std::string::size_type anchorPos = haystack.find(anchor);
+        if (anchorPos == std::string::npos)
+            return false;
+        const std::string::size_type firstPos = haystack.find(first, anchorPos);
+        const std::string::size_type secondPos = haystack.find(second, anchorPos);
+        return firstPos != std::string::npos
+            && secondPos != std::string::npos
+            && firstPos < secondPos;
+    }
+
     int countSubstrings(const std::string& text, const std::string& pattern)
     {
         int count = 0;
@@ -1166,6 +1181,14 @@ TEST_CASE("Software pipeline: generic path emits multi-Q cyclic prefixes")
     CHECK(countSubstrings(vsm, "div q, VF00w, VF00w") == 3);
     CHECK(countSubstrings(vsm, "mulq.xyz VF02, VF00, q") == 2);
     CHECK(countSubstrings(vsm, "mulq.xyz VF05, VF00, q") == 1);
+    CHECK(appearsBeforeAfter(vsm,
+                             "loop_lid:",
+                             "add.xyz VF14, VF00, VF00",
+                             "mulq.xyz VF02, VF00, q"));
+    CHECK(appearsBeforeAfter(vsm,
+                             "loop_lid:",
+                             "mulq.xyz VF02, VF00, q",
+                             "ibne VI01, VI02, loop_lid"));
 }
 
 TEST_CASE("Software pipeline: generic path emits multi-Q producer-side prefixes")
@@ -1181,6 +1204,14 @@ TEST_CASE("Software pipeline: generic path emits multi-Q producer-side prefixes"
     CHECK(countSubstrings(vsm, "div q, VF00w, VF00w") == 3);
     CHECK(countSubstrings(vsm, "mulq.xyz VF02, VF00, q") == 1);
     CHECK(countSubstrings(vsm, "mulq.xyz VF05, VF00, q") == 1);
+    CHECK(appearsBeforeAfter(vsm,
+                             "loop_lid:",
+                             "add.xyz VF19, VF00, VF00",
+                             "add.xyz VF16, VF00, VF00"));
+    CHECK(appearsBeforeAfter(vsm,
+                             "loop_lid:",
+                             "add.xyz VF16, VF00, VF00",
+                             "ibne VI01, VI02, loop_lid"));
 }
 
 TEST_CASE("Software pipeline: generic software-pipelining is default and can be disabled")
