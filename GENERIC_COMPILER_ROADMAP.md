@@ -11,7 +11,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
 
 ## Execution Plan
 
-1. **Classify Codegen Paths** - started
+1. **Classify Codegen Paths** - done
    - Separate generic emission, generic scheduling helpers, and known-loop optimizations.
    - Done: add a switch to disable known-loop optimizations so the generic compiler path can be tested directly.
    - Done: generic compilation is now the default; known-loop emitters are opt-in reference paths via `--enable-known-loop-optimizations`.
@@ -26,11 +26,12 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Compare their output and cost against the generic path and SCEI references.
    - Done: integration tests now emit optimized and generic fast_nolights VSM, then compare loop-cost JSON so the hand emitter is a measurable reference.
 
-4. **Build Generic Basic-Block Scheduling** - started
+4. **Build Generic Basic-Block Scheduling** - done
    - Split token streams by labels, branches, barriers, continuations, and memory/control boundaries.
    - Build dependency graphs from `VuTokenResourceAccess`.
    - Initially emit the same order to validate structure.
    - Done: basic blocks now preserve explicit terminator kind and token pointer for branches, xgkick, compiler boundaries, and preordered barriers.
+   - Done: dependency graphs are descriptor-backed and cover explicit VF/VI registers, implicit resources, memory ordering, and barriers.
 
 5. **Implement Generic Dual-Pipe Scheduling** - started
    - Schedule upper/lower pipe instructions from a ready set.
@@ -40,11 +41,12 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: scheduler analysis exposes explicit issue slots with first/second and upper/lower token pointers for future generic bundling.
    - Done: `--dump-schedule-info` and `--dump-schedule-info-json` expose those issue slots for tooling and tests.
 
-6. **Implement Generic Loop Analysis** - started
+6. **Implement Generic Loop Analysis** - done
    - Detect induction registers, loop-carried dependencies, loads/stores, branch targets, and loop bodies.
    - Report cost by label and as `fixed + loop*n`.
    - Emit machine-readable JSON for comparisons.
    - Done: loop-pipeline analysis now reports memory load/store counts, pre/post-increment memory use, xgkick presence, induction registers, and read/write loop-carried registers in text and JSON.
+   - Done: loop-pipeline analysis reports Q latency strategy, blockers, rotated registers, rewrite plans, and machine-readable token ranges for future modulo scheduling.
 
 7. **Implement Generic Software Pipelining** - started
    - Start with simple affine loops.
