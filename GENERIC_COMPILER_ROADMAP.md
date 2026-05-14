@@ -80,6 +80,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: pipeline plans now expose prefetch descriptors for prolog tokens, including memory base/offset, induction-register use, and computed next-iteration offsets.
    - Done: generic software-pipeline emission can now emit a simple drain for Q live-out loops whose Q producer is invariant across the loop body.
    - Done: generic register-rotation emission now supports multiple Q consumers and multiple rotated VF registers when the descriptor checks prove the suffix is safe.
+   - Done: rotation requirements are now filtered to registers actually written by cloned prefetch work, so later in-loop Q consumers no longer force unnecessary rotations.
 
 8. **Retire Pattern Emitters Incrementally** - started
    - Replace each hand emitter only after generic scheduling/software pipelining matches correctness and reaches equal or better loop cost.

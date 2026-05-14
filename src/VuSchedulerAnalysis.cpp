@@ -830,6 +830,45 @@ namespace
 		}
 	}
 
+	void collectTokenWriteBaseKeys( const std::vector<unsigned int>& tokenIndices,
+	                                const std::vector<const Token*>& indexedTokens,
+	                                std::list<std::string>& bases )
+	{
+		std::list<std::string> writes;
+		collectTokenWriteKeys( tokenIndices, indexedTokens, writes );
+		collectRotatedRegisterBaseKeys( writes, bases );
+	}
+
+	void retainPrefetchedRotations( VuLoopPipelineOpportunity& opportunity,
+	                                const std::vector<const Token*>& indexedTokens )
+	{
+		std::vector<unsigned int> prefetchTokenIndices;
+		for( std::vector<VuSoftwarePipelinePrefetch>::const_iterator i = opportunity.softwarePipelinePrefetches.begin();
+		     i != opportunity.softwarePipelinePrefetches.end(); ++i )
+			prefetchTokenIndices.push_back( i->tokenIndex );
+
+		std::list<std::string> prefetchWriteBases;
+		collectTokenWriteBaseKeys( prefetchTokenIndices, indexedTokens, prefetchWriteBases );
+
+		for( std::vector<VuSoftwarePipelineRotation>::iterator i = opportunity.softwarePipelineRotations.begin();
+		     i != opportunity.softwarePipelineRotations.end(); )
+		{
+			if( containsKey( prefetchWriteBases, i->registerBase ) )
+				++i;
+			else
+				i = opportunity.softwarePipelineRotations.erase( i );
+		}
+
+		for( std::list<std::string>::iterator i = opportunity.softwarePipelineRotatedRegisters.begin();
+		     i != opportunity.softwarePipelineRotatedRegisters.end(); )
+		{
+			if( containsKey( prefetchWriteBases, *i ) )
+				++i;
+			else
+				i = opportunity.softwarePipelineRotatedRegisters.erase( i );
+		}
+	}
+
 	bool tokenRangeReadsOrWritesAny( unsigned int beginIndex,
 	                                 unsigned int endIndex,
 	                                 const std::vector<const Token*>& indexedTokens,
@@ -866,7 +905,7 @@ namespace
 		std::list<std::string> prefetchWrites;
 		std::list<std::string> prefetchWriteBases;
 		collectTokenWriteKeys( prefetchTokenIndices, indexedTokens, prefetchWrites );
-		collectVfBaseKeys( prefetchWrites, prefetchWriteBases );
+		collectRotatedRegisterBaseKeys( prefetchWrites, prefetchWriteBases );
 
 		for( std::vector<VuSoftwarePipelineRotation>::const_iterator i = opportunity.softwarePipelineRotations.begin();
 		     i != opportunity.softwarePipelineRotations.end(); ++i )
@@ -892,7 +931,7 @@ namespace
 			std::list<std::string> writes;
 			std::list<std::string> writeBases;
 			collectVuRegisterWriteKeys( *indexedTokens[tokenIndex], writes );
-			collectVfBaseKeys( writes, writeBases );
+			collectRotatedRegisterBaseKeys( writes, writeBases );
 			for( std::list<std::string>::const_iterator i = writeBases.begin(); i != writeBases.end(); ++i )
 			{
 				if( containsKey( rotatedBases, *i ) )
@@ -1040,11 +1079,12 @@ namespace
 		collectRotationDescriptors( opportunity.carriedQOutputRegisters,
 		                            false,
 		                            opportunity.softwarePipelineRotations );
-		assignRotationScratchRegisters( loop, opportunity.softwarePipelineRotations );
 		collectSoftwarePipelinePrefetchDescriptors( opportunity.prologTokenIndices,
 		                                            opportunity.qProducerTokenIndex,
 		                                            indexedTokens,
 		                                            opportunity );
+		retainPrefetchedRotations( opportunity, indexedTokens );
+		assignRotationScratchRegisters( loop, opportunity.softwarePipelineRotations );
 
 		const bool canEmitRotations = softwarePipelineRotationsCanEmit( opportunity, indexedTokens );
 		if( !opportunity.softwarePipelineRotatedRegisters.empty() && !canEmitRotations )

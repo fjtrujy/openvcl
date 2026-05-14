@@ -333,10 +333,10 @@ TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose loop-carried Q sta
     CHECK(opportunities[0].hasSoftwarePipelinePlan);
     CHECK(!opportunities[0].canEmitSoftwarePipeline);
     CHECK(hasString(opportunities[0].softwarePipelineBlockers, "insufficient_q_insertion_gap"));
-    CHECK(hasString(opportunities[0].softwarePipelineBlockers, "requires_register_rotation"));
+    CHECK(!hasString(opportunities[0].softwarePipelineBlockers, "requires_register_rotation"));
     CHECK(!hasString(opportunities[0].softwarePipelineBlockers, "multi_instruction_prefetch"));
     CHECK(hasString(opportunities[0].softwarePipelineRotatedRegisters, "VF03"));
-    CHECK(hasString(opportunities[0].softwarePipelineRotatedRegisters, "VF06"));
+    CHECK(!hasString(opportunities[0].softwarePipelineRotatedRegisters, "VF06"));
     const vcl::VuSoftwarePipelinePrefetch* lqPrefetch = findPrefetch(opportunities[0].softwarePipelinePrefetches, 2u);
     REQUIRE(lqPrefetch != NULL);
     CHECK(lqPrefetch->mnemonic == "lq");
@@ -363,16 +363,7 @@ TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose loop-carried Q sta
     CHECK(hasString(vf03Rotation->outputFields, "x"));
     CHECK(hasString(vf03Rotation->outputFields, "y"));
     CHECK(hasString(vf03Rotation->outputFields, "z"));
-    const vcl::VuSoftwarePipelineRotation* vf06Rotation = findRotation(opportunities[0].softwarePipelineRotations, "VF06");
-    REQUIRE(vf06Rotation != NULL);
-    CHECK(vf06Rotation->hasScratchRegister);
-    CHECK(vf06Rotation->scratchRegister == "VF30");
-    CHECK(hasString(vf06Rotation->inputFields, "x"));
-    CHECK(hasString(vf06Rotation->inputFields, "y"));
-    CHECK(hasString(vf06Rotation->inputFields, "z"));
-    CHECK(hasString(vf06Rotation->outputFields, "x"));
-    CHECK(hasString(vf06Rotation->outputFields, "y"));
-    CHECK(hasString(vf06Rotation->outputFields, "z"));
+    CHECK(findRotation(opportunities[0].softwarePipelineRotations, "VF06") == NULL);
     REQUIRE(opportunities[0].qConsumerTokenIndices.size() == 2u);
     CHECK(opportunities[0].qConsumerTokenIndices[0] == 5u);
     CHECK(opportunities[0].qConsumerTokenIndices[1] == 8u);
@@ -723,6 +714,62 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline rewrites multiple rota
             ++moveCount;
     }
     CHECK(moveCount == 2u);
+}
+
+TEST_CASE("VuSchedulerAnalysis: generic software pipeline matches alias rotation bases")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 1"));
+    REQUIRE(program.parse("lq.xy temp_a, 0(vi01)"));
+    REQUIRE(program.parse("div q, vf00[w], vf00[w]"));
+    REQUIRE(program.parse("mulq.xy temp_a, temp_a, q"));
+    REQUIRE(program.parse("add.xy vf20, vf21, vf22"));
+    REQUIRE(program.parse("sub.xy vf23, vf24, vf25"));
+    REQUIRE(program.parse("max.xy vf26, vf27, vf28"));
+    REQUIRE(program.parse("mini.xy vf29, vf30, vf31"));
+    REQUIRE(program.parse("add.xy vf16, vf17, vf18"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
+    REQUIRE(program.parse("ibne vi01, vi02, loop_lid"));
+
+    std::vector<vcl::VuLoopPipelineOpportunity> opportunities = vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
+    REQUIRE(opportunities.size() == 1u);
+    CHECK(opportunities[0].eligibleSingleQSoftwarePipeline);
+    CHECK(opportunities[0].hasSoftwarePipelinePlan);
+    CHECK(opportunities[0].canEmitSoftwarePipeline);
+    CHECK(!hasString(opportunities[0].softwarePipelineBlockers, "requires_register_rotation"));
+    const vcl::VuSoftwarePipelineRotation* rotation = findRotation(opportunities[0].softwarePipelineRotations, "temp_a");
+    REQUIRE(rotation != NULL);
+    CHECK(rotation->hasScratchRegister);
+}
+
+TEST_CASE("VuSchedulerAnalysis: generic software pipeline ignores non-prefetched Q consumer rotations")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 1"));
+    REQUIRE(program.parse("lq.xy vf03, 0(vi01)"));
+    REQUIRE(program.parse("div q, vf00[w], vf00[w]"));
+    REQUIRE(program.parse("mulq.xy vf03, vf03, q"));
+    REQUIRE(program.parse("lq.xy vf05, 1(vi01)"));
+    REQUIRE(program.parse("mulq.xy vf05, vf05, q"));
+    REQUIRE(program.parse("add.xy vf20, vf21, vf22"));
+    REQUIRE(program.parse("sub.xy vf23, vf24, vf25"));
+    REQUIRE(program.parse("max.xy vf26, vf27, vf28"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 2"));
+    REQUIRE(program.parse("iaddiu vi02, vi02, 2"));
+    REQUIRE(program.parse("ibne vi01, vi03, loop_lid"));
+
+    std::vector<vcl::VuLoopPipelineOpportunity> opportunities = vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
+    REQUIRE(opportunities.size() == 1u);
+    CHECK(opportunities[0].eligibleSingleQSoftwarePipeline);
+    CHECK(opportunities[0].hasSoftwarePipelinePlan);
+    CHECK(opportunities[0].canEmitSoftwarePipeline);
+    CHECK(opportunities[0].softwarePipelineRotations.size() == 1u);
+    CHECK(findRotation(opportunities[0].softwarePipelineRotations, "VF03") != NULL);
+    CHECK(findRotation(opportunities[0].softwarePipelineRotations, "VF05") == NULL);
 }
 
 TEST_CASE("VuSchedulerAnalysis: multi-instruction prefetch reports suffix clobber blockers")
