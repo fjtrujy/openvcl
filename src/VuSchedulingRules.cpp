@@ -296,6 +296,17 @@ bool isVuLoadToFtoiBypassProducer( const std::string& name )
 	return info && (info->bypassFlags & VU_BYPASS_LOAD_TO_FTOI) != 0;
 }
 
+bool isVuMinii( const std::string& name )
+{
+	return name == "minii";
+}
+
+bool isVuLoadToMiniiBypassProducer( const std::string& name )
+{
+	const VuInstructionInfo* info = findVuInstructionInfo( name );
+	return info && (info->bypassFlags & VU_BYPASS_LOAD_TO_MINII) != 0;
+}
+
 bool isVuMacReader( const std::string& name )
 {
 	return name == "fmand" || name == "fmeq" || name == "fmor"

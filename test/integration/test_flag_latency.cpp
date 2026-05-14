@@ -226,6 +226,22 @@ TEST_CASE("Latency: strict schedule slots keep lq to fmac padding")
 	CHECK(d >= 6);
 }
 
+TEST_CASE("Latency: lq result can feed minii after the SCE final-color gap")
+{
+    // SCE final-color loops use lq.xyz -> minii.xyz with a shorter gap than
+    // ordinary FMAC consumers. Keep this bypass narrow so lq -> mul still pads.
+    const std::string body =
+        "\tloi 255.0\n"
+        "\tlq.xyz vf01, 0(vi00)\n"
+        "\tminii.xyz vf02, vf01, i\n";
+
+    std::string vsm = runEmit(body, "vsmLatencyLqMiniiBypass");
+    REQUIRE(vsm.length() > 0);
+    int d = cycleDistance(vsm, "lq.xyz", "minii.xyz");
+    REQUIRE(d > 0);
+    CHECK(d == 4);
+}
+
 TEST_CASE("Latency: lq result can feed ftoi on the next cycle")
 {
     // SCE-generated ps2gl ADC setup emits `lq -> ftoi0` tightly.  Keep this as

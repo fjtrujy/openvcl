@@ -23,6 +23,8 @@ std::string lowerVuTokenName( const Token& token );
 bool isVuMtir( const Token& token );
 bool isVuFtoiConversion( const std::string& name );
 bool isVuLoadToFtoiBypassProducer( const std::string& name );
+bool isVuMinii( const std::string& name );
+bool isVuLoadToMiniiBypassProducer( const std::string& name );
 
 bool isVuMacReader( const std::string& name );
 bool isVuClipReader( const std::string& name );

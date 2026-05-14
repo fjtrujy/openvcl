@@ -51,7 +51,7 @@ TEST_CASE("Instruction info CLI: JSON dump is stable enough for tooling")
     CHECK(contains(r.stdout_data, "\"mnemonic\": \"lqi\""));
     CHECK(contains(r.stdout_data, "\"kind\": \"load\""));
     CHECK(contains(r.stdout_data, "\"flags\": [\"postinc\"]"));
-    CHECK(contains(r.stdout_data, "\"bypass\": [\"load_to_ftoi\"]"));
+    CHECK(contains(r.stdout_data, "\"bypass\": [\"load_to_ftoi\", \"load_to_minii\"]"));
     CHECK(contains(r.stdout_data, "\"branch_delay_slots\": 1"));
     CHECK(contains(r.stdout_data, "\"unconditional_branch\""));
     CHECK(contains(r.stdout_data, "\"register_branch\""));

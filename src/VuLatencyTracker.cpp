@@ -86,6 +86,12 @@ int VuLatencyTracker::readHazardDelay( const Token& token,
 		         || (partner && isVuFtoiConversion( lowerVuTokenName( *partner ) )
 		             && vuTokenReadsRegister( *partner, *i )) ) )
 			readyCycle -= bypassLatencyReduction( producer->second, 4 );
+		if( producer != m_registerProducerMnemonic.end()
+		    && isVuLoadToMiniiBypassProducer( producer->second )
+		    && ( (isVuMinii( lowerVuTokenName( token ) ) && vuTokenReadsRegister( token, *i ))
+		         || (partner && isVuMinii( lowerVuTokenName( *partner ) )
+		             && vuTokenReadsRegister( *partner, *i )) ) )
+			readyCycle -= 2;
 
 		const int gap = readyCycle - currentCycle;
 		if( gap > needed )

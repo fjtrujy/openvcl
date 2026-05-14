@@ -81,7 +81,8 @@ enum VuBypassFlags
 {
 	VU_BYPASS_NONE         = 0,
 	VU_BYPASS_FTOI_TO_MTIR = 1 << 0,
-	VU_BYPASS_LOAD_TO_FTOI = 1 << 1
+	VU_BYPASS_LOAD_TO_FTOI = 1 << 1,
+	VU_BYPASS_LOAD_TO_MINII = 1 << 2
 };
 
 enum VuInstructionOpcode

@@ -164,6 +164,7 @@ TEST_CASE("VuInstructionInfo: memory, special register, and bypass metadata are 
     CHECK(lqi->memoryKind == vcl::VU_MEMORY_LOAD);
     CHECK((lqi->memoryFlags & vcl::VU_MEMORY_FLAG_POSTINC) != 0);
     CHECK((lqi->bypassFlags & vcl::VU_BYPASS_LOAD_TO_FTOI) != 0);
+    CHECK((lqi->bypassFlags & vcl::VU_BYPASS_LOAD_TO_MINII) != 0);
 
     const vcl::VuInstructionInfo* sqd = vcl::findVuInstructionInfo("sqd");
     REQUIRE(sqd != 0);
