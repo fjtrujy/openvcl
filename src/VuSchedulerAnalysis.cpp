@@ -3643,18 +3643,32 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		    && !opportunity.qStages.empty()
 		    && !opportunity.qStages.front().qConsumerTokenIndices.empty() )
 		{
-			const unsigned int firstStageLastConsumerOffset =
-			    opportunity.qStages.front().qConsumerTokenIndices.back() - loop->firstBodyTokenIndex;
 			const unsigned int branchOffset = loop->branchTokenIndex - loop->firstBodyTokenIndex;
-			if( firstStageLastConsumerOffset < branchOffset )
+			unsigned int cyclicPrefixLastConsumerOffset = 0;
+			bool foundCyclicPrefix = false;
+			for( std::vector<VuLoopQStage>::const_iterator stage = opportunity.qStages.begin();
+			     stage != opportunity.qStages.end(); ++stage )
+			{
+				if( stage->qConsumerTokenIndices.empty() )
+					continue;
+				const unsigned int lastConsumerOffset =
+				    stage->qConsumerTokenIndices.back() - loop->firstBodyTokenIndex;
+				if( lastConsumerOffset >= branchOffset )
+					continue;
+				if( countEmittableTokens( *loop, lastConsumerOffset + 1, branchOffset ) == 0 )
+					continue;
+				cyclicPrefixLastConsumerOffset = lastConsumerOffset;
+				foundCyclicPrefix = true;
+			}
+			if( foundCyclicPrefix )
 			{
 				appendPipelineInstructionIndices( *loop,
 				                                  0,
-				                                  firstStageLastConsumerOffset + 1,
+				                                  cyclicPrefixLastConsumerOffset + 1,
 				                                  opportunity.multiQPrologTokenIndices );
 				opportunity.multiQCyclicPrefixTokenIndices = opportunity.multiQPrologTokenIndices;
 				appendPipelineInstructionIndices( *loop,
-				                                  firstStageLastConsumerOffset + 1,
+				                                  cyclicPrefixLastConsumerOffset + 1,
 				                                  branchOffset + 1,
 				                                  opportunity.multiQMainTokenIndices );
 			}

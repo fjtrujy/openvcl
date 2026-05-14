@@ -38,6 +38,9 @@
   the prolog computes and captures the first iteration, the main loop stores
   previous-iteration values before current Q consumers, and the drain stores
   the final captured values on exit.
+- Generic multi-Q software-pipeline rewrites can now rotate through the latest
+  safe Q stage that still leaves a real loop suffix, instead of being limited
+  to the first Q stage.
 - Ready-scheduler analysis now has a typed `VuScheduledProgram` wrapper with
   block-level cycle ranges, and schedule dumps expose program-relative issue
   cycles.

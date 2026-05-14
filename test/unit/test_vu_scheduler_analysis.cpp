@@ -1442,7 +1442,7 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q stages contribute carried register sets"
     CHECK(hasString(opportunities[0].carriedQOutputRegisters, "VF24.x"));
 }
 
-TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline emits cyclic first-stage prefixes")
+TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline emits cyclic multi-stage prefixes")
 {
     vcl::Error::ResetErrorCount();
     ParsedProgram program;
@@ -1468,15 +1468,15 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline emits cyclic first-sta
     CHECK(opportunities[0].eligibleMultiQSoftwarePipeline);
     CHECK(opportunities[0].canEmitMultiQSoftwarePipeline);
     CHECK(opportunities[0].multiQSoftwarePipelineBlockers.empty());
-    REQUIRE(opportunities[0].multiQPrologTokenIndices.size() == 2u);
+    REQUIRE(opportunities[0].multiQPrologTokenIndices.size() == 8u);
     CHECK(opportunities[0].multiQPrologTokenIndices[0] == 2u);
-    CHECK(opportunities[0].multiQPrologTokenIndices[1] == 3u);
-    REQUIRE(opportunities[0].multiQMainTokenIndices.size() == 9u);
-    CHECK(opportunities[0].multiQMainTokenIndices.front() == 4u);
+    CHECK(opportunities[0].multiQPrologTokenIndices[7] == 9u);
+    REQUIRE(opportunities[0].multiQMainTokenIndices.size() == 3u);
+    CHECK(opportunities[0].multiQMainTokenIndices.front() == 10u);
     CHECK(opportunities[0].multiQMainTokenIndices.back() == 12u);
-    REQUIRE(opportunities[0].multiQCyclicPrefixTokenIndices.size() == 2u);
+    REQUIRE(opportunities[0].multiQCyclicPrefixTokenIndices.size() == 8u);
     CHECK(opportunities[0].multiQCyclicPrefixTokenIndices[0] == 2u);
-    CHECK(opportunities[0].multiQCyclicPrefixTokenIndices[1] == 3u);
+    CHECK(opportunities[0].multiQCyclicPrefixTokenIndices[7] == 9u);
 
     std::vector<vcl::VuSoftwarePipelineRewritePlan> plans =
         vcl::buildVuSoftwarePipelineRewritePlans(program.tokenizer.tokens());
@@ -1524,8 +1524,8 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline emits cyclic first-sta
 
     CHECK(prologLabels == 1u);
     CHECK(mainLabels == 1u);
-    CHECK(divCount == 3u);
-    CHECK(mulqCount == 3u);
+    CHECK(divCount == 4u);
+    CHECK(mulqCount == 4u);
     CHECK(sawCyclicPrefixBeforeBranch);
 }
 
@@ -1538,9 +1538,9 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline blocks cyclic prefixes
     REQUIRE(program.parse("add.xyz vf02, vf10, vf00"));
     REQUIRE(program.parse("div q, vf00[w], vf01[w]"));
     REQUIRE(program.parse("mulq.xyz vf02, vf02, q"));
-    REQUIRE(program.parse("add.xyz vf10, vf11, vf00"));
     REQUIRE(program.parse("div q, vf00[w], vf04[w]"));
     REQUIRE(program.parse("mulq.xyz vf05, vf06, q"));
+    REQUIRE(program.parse("add.xyz vf10, vf11, vf00"));
     REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
     REQUIRE(program.parse("ibne vi01, vi02, loop_lid"));
 
