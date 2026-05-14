@@ -1183,8 +1183,6 @@ namespace
 	                                          const std::vector<const Token*>& indexedTokens )
 	{
 		if( opportunity.qLiveOut
-		    || !opportunity.softwarePipelinePrefetches.empty()
-		    || !opportunity.softwarePipelineRotations.empty()
 		    || opportunity.qConsumerTokenIndices.empty()
 		    || opportunity.qProducerTokenIndex >= indexedTokens.size()
 		    || opportunity.branchTokenIndex >= indexedTokens.size() )
@@ -1229,6 +1227,23 @@ namespace
 		     tokenIndex < opportunity.branchTokenIndex && tokenIndex < indexedTokens.size();
 		     ++tokenIndex )
 		{
+			VuTokenResourceAccess suffixAccess;
+			if( buildVuTokenResourceAccess( *indexedTokens[tokenIndex], suffixAccess )
+			    && isVuLowerPipe( *indexedTokens[tokenIndex] )
+			    && suffixAccess.branchDelaySlots == 0
+			    && suffixAccess.memoryKind == VU_MEMORY_NONE
+			    && !(suffixAccess.instructionFlags & (VU_INSTR_BRANCH
+			                                        | VU_INSTR_WAIT_Q
+			                                        | VU_INSTR_WAIT_P
+			                                        | VU_INSTR_XGKICK
+			                                        | VU_INSTR_WRITES_Q
+			                                        | VU_INSTR_WRITES_P))
+			    && !intersects( suffixAccess.registerWrites, branchAccess.registerReads )
+			    && !intersects( suffixAccess.registerWrites, branchAccess.registerWrites )
+			    && !intersects( suffixAccess.registerReads, branchAccess.registerWrites )
+			    && !(suffixAccess.implicitWrites & (branchAccess.implicitReads | branchAccess.implicitWrites))
+			    && !(branchAccess.implicitWrites & (suffixAccess.implicitReads | suffixAccess.implicitWrites)) )
+				return false;
 			if( !vuTokenCanMoveBefore( *indexedTokens[tokenIndex], qProducer, VU_RESOURCE_NONE ) )
 				return false;
 		}

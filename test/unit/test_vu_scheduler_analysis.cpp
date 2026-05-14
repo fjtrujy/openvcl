@@ -614,13 +614,19 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline rewrites next-iteratio
     REQUIRE(plans.size() == 1u);
     REQUIRE(plans[0].prefetchTokenIndices.size() == 1u);
     CHECK(plans[0].prefetchTokenIndices[0] == 2u);
+    CHECK(plans[0].qProducerInsertAfterTokenIndex == 12u);
+    CHECK(plans[0].qProducerInBranchDelaySlot);
 
     std::list<vcl::Token> transformed = vcl::applyVuSoftwarePipelinePlans(program.tokenizer.tokens());
     unsigned int lqOffsetZeroCount = 0;
     unsigned int lqOffsetOneCount = 0;
+    unsigned int branchDelayDivCount = 0;
     for (std::list<vcl::Token>::const_iterator i = transformed.begin(); i != transformed.end(); ++i)
     {
-        if (vcl::normalizeVuMnemonic(i->name()) != "lq")
+        const std::string mnemonic = vcl::normalizeVuMnemonic(i->name());
+        if (mnemonic == "div" && (i->flags() & vcl::Token::BRANCH_DELAY_FILLER))
+            ++branchDelayDivCount;
+        if (mnemonic != "lq")
             continue;
         vcl::VuTokenResourceAccess access;
         REQUIRE(vcl::buildVuTokenResourceAccess(*i, access));
@@ -631,6 +637,32 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline rewrites next-iteratio
     }
     CHECK(lqOffsetZeroCount == 1u);
     CHECK(lqOffsetOneCount == 1u);
+    CHECK(branchDelayDivCount == 1u);
+}
+
+TEST_CASE("VuSchedulerAnalysis: generic software pipeline preserves useful branch-delay suffix fillers")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 1"));
+    REQUIRE(program.parse("lq.xyz vf01, 0(vi01)"));
+    REQUIRE(program.parse("div q, vf00[w], vf01[w]"));
+    REQUIRE(program.parse("mulq.xyz vf02, vf03, q"));
+    REQUIRE(program.parse("add.xyz vf10, vf10, vf00"));
+    REQUIRE(program.parse("add.xyz vf11, vf11, vf00"));
+    REQUIRE(program.parse("add.xyz vf12, vf12, vf00"));
+    REQUIRE(program.parse("add.xyz vf13, vf13, vf00"));
+    REQUIRE(program.parse("add.xyz vf14, vf14, vf00"));
+    REQUIRE(program.parse("add.xyz vf15, vf15, vf00"));
+    REQUIRE(program.parse("iaddiu vi03, vi03, 1"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
+    REQUIRE(program.parse("ibne vi01, vi02, loop_lid"));
+
+    std::vector<vcl::VuSoftwarePipelineRewritePlan> plans = vcl::buildVuSoftwarePipelineRewritePlans(program.tokenizer.tokens());
+    REQUIRE(plans.size() == 1u);
+    CHECK(plans[0].qProducerInsertAfterTokenIndex == 4u);
+    CHECK(!plans[0].qProducerInBranchDelaySlot);
 }
 
 TEST_CASE("VuSchedulerAnalysis: generic software pipeline rewrites simple rotated registers")
@@ -650,7 +682,6 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline rewrites simple rotate
     REQUIRE(program.parse("add.xyz vf13, vf13, vf00"));
     REQUIRE(program.parse("add.xyz vf14, vf14, vf00"));
     REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
-    REQUIRE(program.parse("iaddiu vi02, vi02, 1"));
     REQUIRE(program.parse("ibne vi01, vi04, loop_lid"));
 
     std::vector<vcl::VuLoopPipelineOpportunity> opportunities = vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
@@ -667,6 +698,7 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline rewrites simple rotate
     std::list<vcl::Token> transformed = vcl::applyVuSoftwarePipelinePlans(program.tokenizer.tokens());
     unsigned int mulWritesScratch = 0;
     unsigned int divReadsScratch = 0;
+    unsigned int branchDelayDivCount = 0;
     unsigned int moveScratchToOriginal = 0;
     for (std::list<vcl::Token>::const_iterator i = transformed.begin(); i != transformed.end(); ++i)
     {
@@ -677,6 +709,8 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline rewrites simple rotate
         const std::string mnemonic = vcl::normalizeVuMnemonic(i->name());
         if (mnemonic == "mul" && hasString(access.registerWrites, "VF31.x"))
             ++mulWritesScratch;
+        if (mnemonic == "div" && (i->flags() & vcl::Token::BRANCH_DELAY_FILLER))
+            ++branchDelayDivCount;
         if (mnemonic == "div" && hasString(access.registerReads, "VF31.w"))
             ++divReadsScratch;
         if (mnemonic == "move"
@@ -687,6 +721,7 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline rewrites simple rotate
 
     CHECK(mulWritesScratch == 1u);
     CHECK(divReadsScratch == 1u);
+    CHECK(branchDelayDivCount == 1u);
     CHECK(moveScratchToOriginal == 1u);
 }
 

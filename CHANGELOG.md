@@ -25,6 +25,10 @@
   when remaining MAC/CLIP WAW dependencies are dead.
 - Schedule issue-slot dumps now expose the implicit WAW resources ignored by
   each ready-scheduler segment.
+- Generic software-pipeline rewrites can now place the next-iteration Q
+  producer in the loop branch delay slot even when the plan has safe cloned
+  prefetch work or scratch-register rotation, while preserving better
+  ordinary suffix fillers when they exist.
 - Added regression fixtures and unit/integration tests for cost analysis.
 - Added conservative VU scheduling improvements used by ps2gl:
   - upper/lower pairing lookahead;
