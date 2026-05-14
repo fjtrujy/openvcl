@@ -186,6 +186,7 @@ TEST_CASE("CLI: loop pipeline JSON dumps expose emitted rewrite plans")
     CHECK(contains(r.stdout_data, "\"prefetch_insert_after_token_index\": 3"));
     CHECK(contains(r.stdout_data, "\"q_producer_insert_after_token_index\": 11"));
     CHECK(contains(r.stdout_data, "\"q_producer_in_branch_delay_slot\": true"));
+    CHECK(contains(r.stdout_data, "\"suffix_store_descriptors\": []"));
 }
 
 TEST_CASE("CLI: schedule text dump exposes ready-set issue slots")

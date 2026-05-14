@@ -273,6 +273,7 @@ struct VuSoftwarePipelineRewritePlan
 	std::vector<unsigned int> prefetchTokenIndices;
 	std::vector<VuSoftwarePipelinePrefetch> prefetches;
 	std::vector<VuSoftwarePipelineRotation> rotations;
+	std::vector<VuSoftwarePipelineSuffixStore> suffixStores;
 	std::vector<unsigned int> prologTokenIndices;
 	std::vector<unsigned int> mainTokenIndices;
 	std::vector<unsigned int> drainTokenIndices;

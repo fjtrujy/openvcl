@@ -778,6 +778,11 @@ namespace
 				writeUnsignedVectorText( stream, rewritePlan->prefetchTokenIndices );
 			else
 				stream << "-";
+			stream << " rewrite_suffix_store_descriptors=";
+			if( rewritePlan )
+				writeSuffixStoreListText( stream, rewritePlan->suffixStores );
+			else
+				stream << "-";
 			stream << " prolog_tokens=";
 			writeUnsignedVectorText( stream, i->prologTokenIndices );
 			stream << " main_tokens=";
@@ -877,6 +882,7 @@ namespace
 			stream << "        \"q_producer_branch_delay_suffix_blocker_token_index\": "
 			       << (rewritePlan ? rewritePlan->qProducerBranchDelaySuffixBlockerTokenIndex : 0) << ",\n";
 			stream << "        \"prefetch_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->prefetchTokenIndices ); else stream << "[]"; stream << ",\n";
+			stream << "        \"suffix_store_descriptors\": "; if( rewritePlan ) writeSuffixStoreListJson( stream, rewritePlan->suffixStores ); else stream << "[]"; stream << ",\n";
 			stream << "        \"prolog_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->prologTokenIndices ); else stream << "[]"; stream << ",\n";
 			stream << "        \"main_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->mainTokenIndices ); else stream << "[]"; stream << ",\n";
 			stream << "        \"drain_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->drainTokenIndices ); else stream << "[]"; stream << "\n";

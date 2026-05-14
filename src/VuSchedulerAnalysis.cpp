@@ -2881,6 +2881,7 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		plan.emitsDrain = i->qLiveOut;
 		plan.prefetches = i->softwarePipelinePrefetches;
 		plan.rotations = i->softwarePipelineRotations;
+		plan.suffixStores = i->softwarePipelineSuffixStores;
 		for( std::vector<VuSoftwarePipelinePrefetch>::const_iterator p = i->softwarePipelinePrefetches.begin();
 		     p != i->softwarePipelinePrefetches.end(); ++p )
 			plan.prefetchTokenIndices.push_back( p->tokenIndex );

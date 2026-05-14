@@ -746,6 +746,14 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline reports suffix store d
     CHECK(hasString(store->storedValueFields, "z"));
     CHECK(!hasString(store->storedValueFields, "w"));
     CHECK(store->drainCandidate);
+
+    std::vector<vcl::VuSoftwarePipelineRewritePlan> plans =
+        vcl::buildVuSoftwarePipelineRewritePlans(program.tokenizer.tokens());
+    REQUIRE(plans.size() == 1u);
+    REQUIRE(plans[0].suffixStores.size() == 1u);
+    CHECK(plans[0].suffixStores[0].tokenIndex == store->tokenIndex);
+    CHECK(plans[0].suffixStores[0].storedValueRegister == "VF02");
+    CHECK(plans[0].suffixStores[0].drainCandidate);
 }
 
 TEST_CASE("VuSchedulerAnalysis: generic software pipeline prefers Q producers over ordinary branch-delay suffix fillers")
