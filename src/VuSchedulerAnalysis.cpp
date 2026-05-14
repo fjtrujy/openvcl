@@ -1018,6 +1018,63 @@ namespace
 		return true;
 	}
 
+	bool qProducerCanMoveIntoBranchDelaySlot( const VuLoopPipelineOpportunity& opportunity,
+	                                          const std::vector<const Token*>& indexedTokens )
+	{
+		if( opportunity.qLiveOut
+		    || !opportunity.softwarePipelinePrefetches.empty()
+		    || !opportunity.softwarePipelineRotations.empty()
+		    || opportunity.qConsumerTokenIndices.empty()
+		    || opportunity.qProducerTokenIndex >= indexedTokens.size()
+		    || opportunity.branchTokenIndex >= indexedTokens.size() )
+			return false;
+
+		const Token& qProducer = *indexedTokens[opportunity.qProducerTokenIndex];
+		const Token& branch = *indexedTokens[opportunity.branchTokenIndex];
+		if( vuTokenBranchDelaySlots( branch ) != 1 )
+			return false;
+		if( !qProducer.operand() || !qProducer.operand()->isLowerExecutionPath() )
+			return false;
+
+		VuTokenResourceAccess qProducerAccess;
+		VuTokenResourceAccess branchAccess;
+		if( !buildVuTokenResourceAccess( qProducer, qProducerAccess )
+		    || !buildVuTokenResourceAccess( branch, branchAccess ) )
+			return false;
+		if( branchAccess.instructionFlags & (VU_INSTR_LINK_BRANCH | VU_INSTR_REGISTER_BRANCH) )
+			return false;
+		if( qProducerAccess.memoryKind != VU_MEMORY_NONE
+		    || qProducerAccess.memoryFlags != VU_MEMORY_FLAG_NONE
+		    || qProducerAccess.branchDelaySlots > 0 )
+			return false;
+		if( qProducerAccess.instructionFlags & (VU_INSTR_BRANCH
+		                                      | VU_INSTR_WAIT_Q
+		                                      | VU_INSTR_WAIT_P
+		                                      | VU_INSTR_XGKICK) )
+			return false;
+		if( (qProducerAccess.instructionFlags & (VU_INSTR_WRITES_Q | VU_INSTR_WRITES_P)) == 0 )
+			return false;
+
+		if( intersects( qProducerAccess.registerWrites, branchAccess.registerReads )
+		    || intersects( qProducerAccess.registerWrites, branchAccess.registerWrites )
+		    || intersects( qProducerAccess.registerReads, branchAccess.registerWrites ) )
+			return false;
+		if( qProducerAccess.implicitWrites & (branchAccess.implicitReads | branchAccess.implicitWrites) )
+			return false;
+		if( branchAccess.implicitWrites & (qProducerAccess.implicitReads | qProducerAccess.implicitWrites) )
+			return false;
+
+		for( unsigned int tokenIndex = opportunity.qConsumerTokenIndices.back() + 1;
+		     tokenIndex < opportunity.branchTokenIndex && tokenIndex < indexedTokens.size();
+		     ++tokenIndex )
+		{
+			if( !vuTokenCanMoveBefore( *indexedTokens[tokenIndex], qProducer, VU_RESOURCE_NONE ) )
+				return false;
+		}
+
+		return true;
+	}
+
 	void collectSoftwarePipelinePrefetchDescriptors( const std::vector<unsigned int>& prologTokenIndices,
 	                                                unsigned int qProducerTokenIndex,
 	                                                const std::vector<const Token*>& indexedTokens,
@@ -1327,7 +1384,7 @@ namespace
 			if( i == rewrite.branchTokenIndex && !rewrite.rotations.empty() )
 				appendRotationMoves( output, *indexedTokens[i], rewrite.rotations );
 			output.push_back( tokenWithoutLabel( *indexedTokens[i] ) );
-			if( i == rewrite.qProducerInsertAfterTokenIndex )
+			if( i == rewrite.prefetchInsertAfterTokenIndex )
 			{
 				for( std::vector<unsigned int>::const_iterator p = rewrite.prefetchTokenIndices.begin();
 				     p != rewrite.prefetchTokenIndices.end(); ++p )
@@ -1338,9 +1395,17 @@ namespace
 					                                        findPrefetchForTokenIndex( rewrite.prefetches, *p ),
 					                                        rewrite.rotations ) );
 				}
+			}
+			if( i == rewrite.qProducerInsertAfterTokenIndex )
+			{
 				if( rewrite.qProducerTokenIndex < indexedTokens.size() )
-					output.push_back( adjustedQProducerToken( *indexedTokens[rewrite.qProducerTokenIndex],
-					                                          rewrite.rotations ) );
+				{
+					Token qProducer = adjustedQProducerToken( *indexedTokens[rewrite.qProducerTokenIndex],
+					                                          rewrite.rotations );
+					if( rewrite.qProducerInBranchDelaySlot )
+						qProducer.setFlags( qProducer.flags() | Token::BRANCH_DELAY_FILLER );
+					output.push_back( qProducer );
+				}
 			}
 		}
 	}
@@ -1427,7 +1492,9 @@ VuSoftwarePipelineRewritePlan::VuSoftwarePipelineRewritePlan()
 	labelTokenIndex = 0;
 	branchTokenIndex = 0;
 	qProducerTokenIndex = 0;
+	prefetchInsertAfterTokenIndex = 0;
 	qProducerInsertAfterTokenIndex = 0;
+	qProducerInBranchDelaySlot = false;
 	emitsDrain = false;
 }
 
@@ -1707,6 +1774,10 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( const std::list<Token>& tokens )
 {
 	std::vector<VuSoftwarePipelineRewritePlan> plans;
+	std::vector<const Token*> indexedTokens;
+	for( std::list<Token>::const_iterator token = tokens.begin(); token != tokens.end(); ++token )
+		indexedTokens.push_back( &*token );
+
 	const std::vector<VuLoopPipelineOpportunity> opportunities = findVuLoopPipelineOpportunities( tokens );
 	for( std::vector<VuLoopPipelineOpportunity>::const_iterator i = opportunities.begin(); i != opportunities.end(); ++i )
 	{
@@ -1721,7 +1792,13 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		plan.labelTokenIndex = i->labelTokenIndex;
 		plan.branchTokenIndex = i->branchTokenIndex;
 		plan.qProducerTokenIndex = i->qProducerTokenIndex;
+		plan.prefetchInsertAfterTokenIndex = i->qConsumerTokenIndices.back();
 		plan.qProducerInsertAfterTokenIndex = i->qConsumerTokenIndices.back();
+		if( qProducerCanMoveIntoBranchDelaySlot( *i, indexedTokens ) )
+		{
+			plan.qProducerInsertAfterTokenIndex = i->branchTokenIndex;
+			plan.qProducerInBranchDelaySlot = true;
+		}
 		plan.emitsDrain = i->qLiveOut;
 		plan.prefetches = i->softwarePipelinePrefetches;
 		plan.rotations = i->softwarePipelineRotations;

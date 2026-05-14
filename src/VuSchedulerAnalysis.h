@@ -189,7 +189,9 @@ struct VuSoftwarePipelineRewritePlan
 	unsigned int labelTokenIndex;
 	unsigned int branchTokenIndex;
 	unsigned int qProducerTokenIndex;
+	unsigned int prefetchInsertAfterTokenIndex;
 	unsigned int qProducerInsertAfterTokenIndex;
+	bool qProducerInBranchDelaySlot;
 	bool emitsDrain;
 	std::vector<unsigned int> prefetchTokenIndices;
 	std::vector<VuSoftwarePipelinePrefetch> prefetches;

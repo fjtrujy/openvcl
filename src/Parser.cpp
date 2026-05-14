@@ -632,7 +632,9 @@ namespace
 			       << " rewrite_prolog_label=" << (rewritePlan ? rewritePlan->prologLabel : "")
 			       << " rewrite_main_label=" << (rewritePlan ? rewritePlan->mainLabel : "")
 			       << " rewrite_drain_label=" << (rewritePlan ? rewritePlan->drainLabel : "")
+			       << " rewrite_insert_prefetch_after=" << (rewritePlan ? rewritePlan->prefetchInsertAfterTokenIndex : 0)
 			       << " rewrite_insert_q_after=" << (rewritePlan ? rewritePlan->qProducerInsertAfterTokenIndex : 0)
+			       << " rewrite_q_in_branch_delay=" << (rewritePlan && rewritePlan->qProducerInBranchDelaySlot ? "yes" : "no")
 			       << " rewrite_emits_drain=" << (rewritePlan && rewritePlan->emitsDrain ? "yes" : "no")
 			       << " rewrite_prefetch_tokens=";
 			if( rewritePlan )
@@ -722,8 +724,12 @@ namespace
 			stream << "        \"main_label\": "; writeJsonString( stream, rewritePlan ? rewritePlan->mainLabel.c_str() : "" ); stream << ",\n";
 			stream << "        \"drain_label\": "; writeJsonString( stream, rewritePlan ? rewritePlan->drainLabel.c_str() : "" ); stream << ",\n";
 			stream << "        \"emits_drain\": " << (rewritePlan && rewritePlan->emitsDrain ? "true" : "false") << ",\n";
+			stream << "        \"prefetch_insert_after_token_index\": "
+			       << (rewritePlan ? rewritePlan->prefetchInsertAfterTokenIndex : 0) << ",\n";
 			stream << "        \"q_producer_insert_after_token_index\": "
 			       << (rewritePlan ? rewritePlan->qProducerInsertAfterTokenIndex : 0) << ",\n";
+			stream << "        \"q_producer_in_branch_delay_slot\": "
+			       << (rewritePlan && rewritePlan->qProducerInBranchDelaySlot ? "true" : "false") << ",\n";
 			stream << "        \"prefetch_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->prefetchTokenIndices ); else stream << "[]"; stream << ",\n";
 			stream << "        \"prolog_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->prologTokenIndices ); else stream << "[]"; stream << ",\n";
 			stream << "        \"main_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->mainTokenIndices ); else stream << "[]"; stream << ",\n";

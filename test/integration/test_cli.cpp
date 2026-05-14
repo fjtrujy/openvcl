@@ -158,7 +158,9 @@ TEST_CASE("CLI: loop pipeline dumps expose emitted rewrite plans")
     CHECK(contains(r.stdout_data, "rewrite_plan=yes"));
     CHECK(contains(r.stdout_data, "rewrite_prolog_label=loop_lid__PROLOG"));
     CHECK(contains(r.stdout_data, "rewrite_main_label=loop_lid"));
-    CHECK(contains(r.stdout_data, "rewrite_insert_q_after=3"));
+    CHECK(contains(r.stdout_data, "rewrite_insert_prefetch_after=3"));
+    CHECK(contains(r.stdout_data, "rewrite_insert_q_after=11"));
+    CHECK(contains(r.stdout_data, "rewrite_q_in_branch_delay=yes"));
 }
 
 TEST_CASE("CLI: loop pipeline JSON dumps expose emitted rewrite plans")
@@ -175,7 +177,9 @@ TEST_CASE("CLI: loop pipeline JSON dumps expose emitted rewrite plans")
     CHECK(contains(r.stdout_data, "\"available\": true"));
     CHECK(contains(r.stdout_data, "\"prolog_label\": \"loop_lid__PROLOG\""));
     CHECK(contains(r.stdout_data, "\"main_label\": \"loop_lid\""));
-    CHECK(contains(r.stdout_data, "\"q_producer_insert_after_token_index\": 3"));
+    CHECK(contains(r.stdout_data, "\"prefetch_insert_after_token_index\": 3"));
+    CHECK(contains(r.stdout_data, "\"q_producer_insert_after_token_index\": 11"));
+    CHECK(contains(r.stdout_data, "\"q_producer_in_branch_delay_slot\": true"));
 }
 
 TEST_CASE("CLI: schedule text dump exposes ready-set issue slots")

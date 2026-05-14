@@ -481,7 +481,7 @@ bool isVuBoundaryOperand( const Token& token )
 
 bool isVuSchedulingBarrier( const Token& token )
 {
-	if( token.flags() & Token::PREORDERED )
+	if( token.flags() & (Token::PREORDERED | Token::BRANCH_DELAY_FILLER) )
 		return true;
 	if( isVuBoundaryOperand( token ) )
 		return true;
@@ -503,6 +503,8 @@ bool isVuReadyScheduleCandidate( const Token& token )
 	if( token.operand()->isPreprocessor() )
 		return false;
 	if( token.flags() & (Token::PREORDERED | Token::IGNORED | Token::E | Token::D | Token::T) )
+		return false;
+	if( token.flags() & Token::BRANCH_DELAY_FILLER )
 		return false;
 	if( !token.operand()->isUpperExecutionPath() && !token.operand()->isLowerExecutionPath() )
 		return false;

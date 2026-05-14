@@ -81,6 +81,8 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: generic software-pipeline emission can now emit a simple drain for Q live-out loops whose Q producer is invariant across the loop body.
    - Done: generic register-rotation emission now supports multiple Q consumers and multiple rotated VF registers when the descriptor checks prove the suffix is safe.
    - Done: rotation requirements are now filtered to registers actually written by cloned prefetch work, so later in-loop Q consumers no longer force unnecessary rotations.
+   - Done: rewrite plans now distinguish cloned prefetch placement from cloned Q-producer placement, and the simple no-prefetch/no-rotation subset can put the next Q producer in the loop branch delay slot.
+   - Done: explicit branch-delay fillers are preserved as scheduling barriers, keeping typed rewrite decisions intact through ready-set scheduling.
 
 8. **Retire Pattern Emitters Incrementally** - started
    - Replace each hand emitter only after generic scheduling/software pipelining matches correctness and reaches equal or better loop cost.

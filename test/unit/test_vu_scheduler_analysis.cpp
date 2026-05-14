@@ -474,7 +474,9 @@ TEST_CASE("VuSchedulerAnalysis: apply software pipeline plans rewrites emittable
     CHECK(plans[0].labelTokenIndex == 0u);
     CHECK(plans[0].branchTokenIndex == 11u);
     CHECK(plans[0].qProducerTokenIndex == 2u);
-    CHECK(plans[0].qProducerInsertAfterTokenIndex == 3u);
+    CHECK(plans[0].prefetchInsertAfterTokenIndex == 3u);
+    CHECK(plans[0].qProducerInsertAfterTokenIndex == 11u);
+    CHECK(plans[0].qProducerInBranchDelaySlot);
     CHECK(!plans[0].emitsDrain);
     REQUIRE(plans[0].prologTokenIndices.size() == 1u);
     CHECK(plans[0].prologTokenIndices[0] == 2u);
@@ -487,19 +489,28 @@ TEST_CASE("VuSchedulerAnalysis: apply software pipeline plans rewrites emittable
     unsigned int prologLabels = 0;
     unsigned int mainLabels = 0;
     unsigned int divCount = 0;
+    bool divInBranchDelaySlot = false;
+    bool previousWasBranch = false;
     for (std::list<vcl::Token>::const_iterator i = transformed.begin(); i != transformed.end(); ++i)
     {
         if (i->label() == "loop_lid__PROLOG")
             ++prologLabels;
         if (i->label() == "loop_lid")
             ++mainLabels;
-        if (vcl::normalizeVuMnemonic(i->name()) == "div")
+        const std::string mnemonic = vcl::normalizeVuMnemonic(i->name());
+        if (mnemonic == "div")
+        {
             ++divCount;
+            if (previousWasBranch && (i->flags() & vcl::Token::BRANCH_DELAY_FILLER))
+                divInBranchDelaySlot = true;
+        }
+        previousWasBranch = mnemonic == "ibne";
     }
 
     CHECK(prologLabels == 1u);
     CHECK(mainLabels == 1u);
     CHECK(divCount == 2u);
+    CHECK(divInBranchDelaySlot);
     CHECK(transformed.size() == program.tokenizer.tokens().size() + 1u);
 }
 
