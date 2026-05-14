@@ -16,9 +16,9 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: add a switch to disable known-loop optimizations so the generic compiler path can be tested directly.
    - Done: document known-loop emitters as transitional ps2gl-oriented optimizations in the code wrapper.
 
-2. **Protect Generic Correctness** - started
-   - Done: add tests that compile representative shaders with known-loop optimizations disabled.
-   - Acceptance: VSM is still produced, original labels remain, and optimized `__MAIN_LOOP` labels are absent.
+2. **Protect Generic Correctness** - done
+   - Done: add tests that compile every current software-pipeline fixture with known-loop optimizations disabled.
+   - Done: verify VSM is still produced, original labels remain, and optimized `__MAIN_LOOP` labels are absent.
 
 3. **Use Hand Emitters as Performance References**
    - Keep current optimized emitters while the generic scheduler matures.

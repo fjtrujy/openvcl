@@ -87,6 +87,23 @@ namespace
         return runEmitWithExtraArgs(source, std::vector<std::string>());
     }
 
+    void expectGenericPathCompiles(const std::string& source,
+                                   const std::string& loopLabel)
+    {
+        std::vector<std::string> args;
+        args.push_back("--disable-known-loop-optimizations");
+
+        std::string vsm = runEmitWithExtraArgs(source, args);
+        REQUIRE(vsm.length() > 0);
+
+        CHECK(contains(vsm, loopLabel + ":"));
+        CHECK(!contains(vsm, loopLabel + "__ENTRY_POINT:"));
+        CHECK(!contains(vsm, loopLabel + "__PRO1:"));
+        CHECK(!contains(vsm, loopLabel + "__MAIN_LOOP:"));
+        CHECK(!contains(vsm, loopLabel + "__EPI0:"));
+        CHECK(!contains(vsm, loopLabel + "__EPI1:"));
+    }
+
     std::string ps2glNamedXformLoopSource(const std::string& name)
     {
         return
@@ -828,16 +845,24 @@ TEST_CASE("Software pipeline: fast_nolights transform loop emits a 12-cycle stea
 
 TEST_CASE("Software pipeline: known-loop optimizations can be disabled")
 {
-    std::vector<std::string> args;
-    args.push_back("--disable-known-loop-optimizations");
+    expectGenericPathCompiles(fastNoLightsPipelineSource(), "xform_loop_lid");
+    expectGenericPathCompiles(fastLitPipelineSource(), "xform_loop_lid");
+    expectGenericPathCompiles(sceiPipelineSource(), "xform_loop_lid");
+    expectGenericPathCompiles(finalColorPipelineSource(), "final_loop_lid");
+    expectGenericPathCompiles(linearXformPipelineSource(), "xform_loop_lid");
+    expectGenericPathCompiles(dirLightNoSpecPipelineSource(), "dir_light_vert_loop_lid");
+    expectGenericPathCompiles(dirLightSpecPipelineSource(), "dir_light_vert_loop_lid");
+    expectGenericPathCompiles(dirLightSpecIndexedPipelineSource(), "dir_light_vert_loop_lid");
+    expectGenericPathCompiles(dirLightSpecPvDiffPipelineSource(), "dir_light_vert_loop_lid");
+    expectGenericPathCompiles(ptLightNoSpecPipelineSource(), "pt_light_vert_loop_lid");
+    expectGenericPathCompiles(ptLightSpecPipelineSource(), "pt_light_vert_loop_lid");
+    expectGenericPathCompiles(ptLightSpecPvDiffPipelineSource(), "pt_light_vert_loop_lid");
 
-    std::string vsm = runEmitWithExtraArgs(fastNoLightsPipelineSource(), args);
-    REQUIRE(vsm.length() > 0);
-
-    CHECK(contains(vsm, "xform_loop_lid:"));
-    CHECK(contains(vsm, "ibne VI02, VI05, xform_loop_lid"));
-    CHECK(!contains(vsm, "xform_loop_lid__ENTRY_POINT:"));
-    CHECK(!contains(vsm, "xform_loop_lid__MAIN_LOOP:"));
+    expectGenericPathCompiles(ps2glNamedXformLoopSource("vsmGeneralNoSpecQuad"), "xform_loop_lid");
+    expectGenericPathCompiles(ps2glNamedXformLoopSource("vsmGeneralNoSpecTri"), "xform_loop_lid");
+    expectGenericPathCompiles(ps2glNamedXformLoopSource("vsmGeneralTri"), "xform_loop_lid");
+    expectGenericPathCompiles(ps2glNamedXformLoopSource("vsmGeneralPVDiffTri"), "xform_loop_lid");
+    expectGenericPathCompiles(ps2glNamedXformLoopSource("vsmIndexed"), "xform_loop_lid");
 }
 
 TEST_CASE("Software pipeline: fast lit transform loop emits a 16-cycle steady state")
