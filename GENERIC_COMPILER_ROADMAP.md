@@ -36,6 +36,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Respect latency, Q/P waits, I, ACC, MAC, CLIP, memory, branch delays, and bypass metadata.
    - Improve cost while keeping output valid for arbitrary VCL.
    - Done: ready-set scheduling now keeps independent opposite-pipe ready instructions adjacent so the generic emitter can dual-issue them.
+   - Done: scheduler analysis exposes explicit issue slots with first/second and upper/lower token pointers for future generic bundling.
 
 6. **Implement Generic Loop Analysis** - started
    - Detect induction registers, loop-carried dependencies, loads/stores, branch targets, and loop bodies.

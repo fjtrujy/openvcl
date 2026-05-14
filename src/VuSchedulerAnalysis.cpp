@@ -164,15 +164,40 @@ namespace
 		}
 	}
 
-	void appendReadyScheduledSegment( const std::vector<const Token*>& segment,
-	                                  std::list<Token>& scheduled,
-	                                  unsigned int ignoredImplicitWawResources )
+	VuScheduledIssueSlot makeIssueSlot( const Token* first, const Token* second )
 	{
+		VuScheduledIssueSlot slot;
+		slot.firstToken = first;
+		slot.secondToken = second;
+
+		if( first )
+		{
+			if( isVuLowerPipe( *first ) )
+				slot.lowerToken = first;
+			else
+				slot.upperToken = first;
+		}
+
+		if( second )
+		{
+			if( isVuLowerPipe( *second ) )
+				slot.lowerToken = second;
+			else
+				slot.upperToken = second;
+		}
+
+		return slot;
+	}
+
+	std::vector<VuScheduledIssueSlot> scheduleReadySegmentIssueSlots( const std::vector<const Token*>& segment,
+	                                                                  unsigned int ignoredImplicitWawResources )
+	{
+		std::vector<VuScheduledIssueSlot> slots;
 		if( segment.size() < 2 )
 		{
 			for( std::vector<const Token*>::const_iterator i = segment.begin(); i != segment.end(); ++i )
-				scheduled.push_back( **i );
-			return;
+				slots.push_back( makeIssueSlot( *i, NULL ) );
+			return slots;
 		}
 
 		VuBasicBlock block;
@@ -219,15 +244,14 @@ namespace
 				for( unsigned int i = 0; i < block.tokens.size(); ++i )
 				{
 					if( !emitted[i] )
-						scheduled.push_back( *block.tokens[i] );
+						slots.push_back( makeIssueSlot( block.tokens[i], NULL ) );
 				}
-				return;
+				return slots;
 			}
 
-			scheduled.push_back( *block.tokens[best] );
 			const unsigned int partner = chooseReadyPairPartner( best, block, incoming, emitted, priority );
-			if( partner < block.tokens.size() )
-				scheduled.push_back( *block.tokens[partner] );
+			slots.push_back( makeIssueSlot( block.tokens[best],
+			                                (partner < block.tokens.size()) ? block.tokens[partner] : NULL ) );
 
 			markReadyTokenScheduled( best, incoming, outgoing, emitted, emittedCount );
 			if( partner < block.tokens.size() )
@@ -241,6 +265,28 @@ namespace
 				lastWasLower = isVuLowerPipe( *block.tokens[best] );
 			}
 		}
+
+		return slots;
+	}
+
+	void appendIssueSlotsFlat( const std::vector<VuScheduledIssueSlot>& slots,
+	                           std::list<Token>& scheduled )
+	{
+		for( std::vector<VuScheduledIssueSlot>::const_iterator i = slots.begin(); i != slots.end(); ++i )
+		{
+			if( i->firstToken )
+				scheduled.push_back( *i->firstToken );
+			if( i->secondToken )
+				scheduled.push_back( *i->secondToken );
+		}
+	}
+
+	void appendReadyScheduledSegment( const std::vector<const Token*>& segment,
+	                                  std::list<Token>& scheduled,
+	                                  unsigned int ignoredImplicitWawResources )
+	{
+		appendIssueSlotsFlat( scheduleReadySegmentIssueSlots( segment, ignoredImplicitWawResources ),
+		                      scheduled );
 	}
 
 	void appendReadyScheduledBlock( const VuBasicBlock& block,
@@ -493,6 +539,14 @@ VuDependencyEdge::VuDependencyEdge( unsigned int beforeToken, unsigned int after
 	kind = dependencyKind;
 }
 
+VuScheduledIssueSlot::VuScheduledIssueSlot()
+{
+	firstToken = NULL;
+	secondToken = NULL;
+	upperToken = NULL;
+	lowerToken = NULL;
+}
+
 VuLoopCandidate::VuLoopCandidate()
 {
 	labelTokenIndex = 0;
@@ -612,6 +666,34 @@ std::vector<VuDependencyEdge> buildVuDependencyGraph( const VuBasicBlock& block,
 	}
 
 	return edges;
+}
+
+std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlots( const VuBasicBlock& block,
+                                                                       unsigned int ignoredImplicitWawResources )
+{
+	std::vector<VuScheduledIssueSlot> slots;
+	std::vector<const Token*> segment;
+
+	for( std::vector<const Token*>::const_iterator i = block.tokens.begin(); i != block.tokens.end(); ++i )
+	{
+		if( isVuReadyScheduleCandidate( **i ) )
+		{
+			segment.push_back( *i );
+			continue;
+		}
+
+		std::vector<VuScheduledIssueSlot> segmentSlots =
+			scheduleReadySegmentIssueSlots( segment, ignoredImplicitWawResources );
+		slots.insert( slots.end(), segmentSlots.begin(), segmentSlots.end() );
+		segment.clear();
+		slots.push_back( makeIssueSlot( *i, NULL ) );
+	}
+
+	std::vector<VuScheduledIssueSlot> segmentSlots =
+		scheduleReadySegmentIssueSlots( segment, ignoredImplicitWawResources );
+	slots.insert( slots.end(), segmentSlots.begin(), segmentSlots.end() );
+
+	return slots;
 }
 
 std::vector<VuLoopCandidate> findVuLoopCandidates( const std::list<Token>& tokens )

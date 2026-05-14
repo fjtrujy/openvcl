@@ -56,6 +56,16 @@ struct VuDependencyEdge
 	VuDependencyKind kind;
 };
 
+struct VuScheduledIssueSlot
+{
+	VuScheduledIssueSlot();
+
+	const Token* firstToken;
+	const Token* secondToken;
+	const Token* upperToken;
+	const Token* lowerToken;
+};
+
 struct VuLoopCandidate
 {
 	VuLoopCandidate();
@@ -108,6 +118,8 @@ struct VuLoopPipelineOpportunity
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens );
 std::vector<VuDependencyEdge> buildVuDependencyGraph( const VuBasicBlock& block,
                                                       unsigned int ignoredImplicitWawResources = 0 );
+std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlots( const VuBasicBlock& block,
+                                                                       unsigned int ignoredImplicitWawResources = 0 );
 std::vector<VuLoopCandidate> findVuLoopCandidates( const std::list<Token>& tokens );
 std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const std::list<Token>& tokens );
 std::list<Token> scheduleVuTokensPreservingOrder( const std::list<Token>& tokens );

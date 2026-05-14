@@ -511,6 +511,36 @@ TEST_CASE("VuSchedulerAnalysis: ready-set scheduler keeps independent dual-pipe 
     CHECK(vcl::normalizeVuMnemonic(i->name()) == "mul");
 }
 
+TEST_CASE("VuSchedulerAnalysis: issue slots expose generic dual-pipe pair choices")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("mul.xy vf04, vf01, vf05"));
+    REQUIRE(program.parse("iaddiu vi01, vi00, 1"));
+
+    std::vector<vcl::VuBasicBlock> blocks = vcl::buildVuBasicBlocks(program.tokenizer.tokens());
+    REQUIRE(blocks.size() == 1u);
+
+    std::vector<vcl::VuScheduledIssueSlot> slots = vcl::scheduleVuBasicBlockReadyIssueSlots(blocks[0]);
+    REQUIRE(slots.size() == 2u);
+    REQUIRE(slots[0].firstToken != 0);
+    REQUIRE(slots[0].secondToken != 0);
+    CHECK(vcl::normalizeVuMnemonic(slots[0].firstToken->name()) == "add");
+    CHECK(vcl::normalizeVuMnemonic(slots[0].secondToken->name()) == "iaddiu");
+    REQUIRE(slots[0].upperToken != 0);
+    REQUIRE(slots[0].lowerToken != 0);
+    CHECK(vcl::normalizeVuMnemonic(slots[0].upperToken->name()) == "add");
+    CHECK(vcl::normalizeVuMnemonic(slots[0].lowerToken->name()) == "iaddiu");
+
+    REQUIRE(slots[1].firstToken != 0);
+    CHECK(slots[1].secondToken == 0);
+    CHECK(vcl::normalizeVuMnemonic(slots[1].firstToken->name()) == "mul");
+    REQUIRE(slots[1].upperToken != 0);
+    CHECK(slots[1].lowerToken == 0);
+    CHECK(vcl::normalizeVuMnemonic(slots[1].upperToken->name()) == "mul");
+}
+
 TEST_CASE("VuSchedulerAnalysis: ready-set scheduler prefers longer dependency chains")
 {
     vcl::Error::ResetErrorCount();
