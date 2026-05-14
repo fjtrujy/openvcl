@@ -25,6 +25,8 @@ TEST_CASE("Instruction info CLI: text dump exposes scheduling metadata")
     REQUIRE(r.exit_code == 0);
     CHECK(contains(r.stdout_data, "OpenVCL VU instruction metadata"));
     CHECK(contains(r.stdout_data, "div pipe=lower unit=fdiv throughput=7 latency=7"));
+    CHECK(contains(r.stdout_data, "parameters=\"q[write], vf[component], vf[component]\""));
+    CHECK(contains(r.stdout_data, "description=\"Start a Q scalar divide/square-root operation.\""));
     CHECK(contains(r.stdout_data, "clipw pipe=upper unit=fmac"));
     CHECK(contains(r.stdout_data, "writes=mac|clip"));
     CHECK(contains(r.stdout_data, "lqi pipe=lower unit=lsu"));
@@ -42,7 +44,9 @@ TEST_CASE("Instruction info CLI: JSON dump is stable enough for tooling")
     REQUIRE(r.exit_code == 0);
     CHECK(contains(r.stdout_data, "\"instructions\": ["));
     CHECK(contains(r.stdout_data, "\"mnemonic\": \"div\""));
+    CHECK(contains(r.stdout_data, "\"description\": \"Start a Q scalar divide/square-root operation.\""));
     CHECK(contains(r.stdout_data, "\"unit\": \"fdiv\""));
+    CHECK(contains(r.stdout_data, "\"parameters\": \"q[write], vf[component], vf[component]\""));
     CHECK(contains(r.stdout_data, "\"implicit_writes\": [\"q\"]"));
     CHECK(contains(r.stdout_data, "\"mnemonic\": \"lqi\""));
     CHECK(contains(r.stdout_data, "\"kind\": \"load\""));

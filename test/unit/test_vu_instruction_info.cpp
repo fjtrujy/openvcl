@@ -164,3 +164,30 @@ TEST_CASE("VuInstructionInfo: memory, special register, and bypass metadata are 
     REQUIRE(ftoi4 != 0);
     CHECK((ftoi4->bypassFlags & vcl::VU_BYPASS_FTOI_TO_MTIR) != 0);
 }
+
+TEST_CASE("VuInstructionInfo: exposes readable parameter summaries and descriptions")
+{
+    const vcl::VuInstructionInfo* add = findOperandInfo("ADD", vcl::Operand::UPPER | vcl::Operand::DEST);
+    REQUIRE(add != 0);
+    CHECK(vcl::vuInstructionParameterSummary(*add) == "vf[dest,write], vf[dest], vf[dest]");
+    CHECK(std::string(vcl::vuInstructionDescription(*add)) == "Add vector fields.");
+
+    const vcl::VuInstructionInfo* addBroadcast = findOperandInfo("ADD", vcl::Operand::UPPER | vcl::Operand::BROADCAST);
+    REQUIRE(addBroadcast != 0);
+    CHECK(vcl::vuInstructionParameterSummary(*addBroadcast) == "vf[dest,write], vf[dest], vf[bc]");
+
+    const vcl::VuInstructionInfo* div = vcl::findVuInstructionInfo("div");
+    REQUIRE(div != 0);
+    CHECK(vcl::vuInstructionParameterSummary(*div) == "q[write], vf[component], vf[component]");
+    CHECK(std::string(vcl::vuInstructionDescription(*div)) == "Start a Q scalar divide/square-root operation.");
+
+    const vcl::VuInstructionInfo* lq = vcl::findVuInstructionInfo("lq");
+    REQUIRE(lq != 0);
+    CHECK(vcl::vuInstructionParameterSummary(*lq) == "vf[dest,write], (vi)|imm(vi)");
+    CHECK(std::string(vcl::vuInstructionDescription(*lq)) == "Load data from VU memory into a vector or integer register.");
+
+    const vcl::VuInstructionInfo* ibne = vcl::findVuInstructionInfo("ibne");
+    REQUIRE(ibne != 0);
+    CHECK(vcl::vuInstructionParameterSummary(*ibne) == "vi, vi, label");
+    CHECK(std::string(vcl::vuInstructionDescription(*ibne)) == "Branch after one delay slot when the integer condition is met.");
+}

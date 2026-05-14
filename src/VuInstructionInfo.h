@@ -109,6 +109,8 @@ const VuInstructionInfo* allVuInstructionInfos();
 const VuInstructionInfo* findVuInstructionInfo( const std::string& mnemonic );
 bool isKnownVuInstruction( const std::string& mnemonic );
 std::string normalizeVuMnemonic( const std::string& word );
+std::string vuInstructionParameterSummary( const VuInstructionInfo& info );
+const char* vuInstructionDescription( const VuInstructionInfo& info );
 
 }
 

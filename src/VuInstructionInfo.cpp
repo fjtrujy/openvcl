@@ -227,12 +227,99 @@ namespace
 		return result;
 	}
 
+	bool startsWith( const std::string& text, const char* prefix )
+	{
+		const std::string prefixText( prefix );
+		return text.size() >= prefixText.size() && text.compare( 0, prefixText.size(), prefixText ) == 0;
+	}
+
 	bool hasBroadcastSuffix( const std::string& mnemonic )
 	{
 		if( mnemonic.size() <= 1 )
 			return false;
 		const char suffix = mnemonic[mnemonic.size() - 1];
 		return suffix == 'x' || suffix == 'y' || suffix == 'z' || suffix == 'w';
+	}
+
+	bool patternHasTag( const std::string& pattern, const char* tag )
+	{
+		std::string::size_type pos = pattern.find( ':' );
+		while( pos != std::string::npos )
+		{
+			std::string::size_type tagStart = pos + 1;
+			std::string::size_type tagEnd = pattern.find( ':', tagStart );
+			std::string current = pattern.substr( tagStart, tagEnd == std::string::npos
+			                                                ? std::string::npos
+			                                                : tagEnd - tagStart );
+			if( current == tag )
+				return true;
+			pos = tagEnd;
+		}
+		return false;
+	}
+
+	void appendParameterNote( std::string& notes, const char* note )
+	{
+		if( !notes.empty() )
+			notes += ",";
+		notes += note;
+	}
+
+	std::string summarizeOperandAlternative( const std::string& pattern )
+	{
+		std::string::size_type tag = pattern.find( ':' );
+		std::string base = tag == std::string::npos ? pattern : pattern.substr( 0, tag );
+		std::string notes;
+
+		if( base == "imm" && patternHasTag( pattern, "branch" ) )
+			return "label";
+
+		if( patternHasTag( pattern, "dest" ) )
+			appendParameterNote( notes, "dest" );
+		if( patternHasTag( pattern, "write" ) )
+			appendParameterNote( notes, "write" );
+		if( patternHasTag( pattern, "bc" ) )
+			appendParameterNote( notes, "bc" );
+		if( patternHasTag( pattern, "flag" ) )
+			appendParameterNote( notes, "component" );
+		if( patternHasTag( pattern, "wcomp" ) )
+			appendParameterNote( notes, "w" );
+		if( patternHasTag( pattern, "predec" ) )
+			appendParameterNote( notes, "predec" );
+		if( patternHasTag( pattern, "postinc" ) )
+			appendParameterNote( notes, "postinc" );
+		if( patternHasTag( pattern, "address" ) )
+			appendParameterNote( notes, "address" );
+		if( patternHasTag( pattern, "branch" ) )
+			appendParameterNote( notes, "branch" );
+		if( patternHasTag( pattern, "rotate" ) )
+			appendParameterNote( notes, "rotate" );
+		if( patternHasTag( pattern, "raw" ) )
+			appendParameterNote( notes, "raw" );
+
+		if( notes.empty() )
+			return base;
+		return base + "[" + notes + "]";
+	}
+
+	std::string summarizeOperandPattern( const std::string& pattern )
+	{
+		std::string result;
+		std::string::size_type start = 0;
+		while( start <= pattern.size() )
+		{
+			std::string::size_type end = pattern.find( '|', start );
+			std::string part = pattern.substr( start, end == std::string::npos
+			                                         ? std::string::npos
+			                                         : end - start );
+			if( !result.empty() )
+				result += "|";
+			result += summarizeOperandAlternative( part );
+			if( end == std::string::npos )
+				break;
+			start = end + 1;
+		}
+		return result;
 	}
 }
 
@@ -280,6 +367,109 @@ std::string normalizeVuMnemonic( const std::string& word )
 	}
 
 	return mnemonic;
+}
+
+std::string vuInstructionParameterSummary( const VuInstructionInfo& info )
+{
+	if( !info.operandPattern || !info.operandPattern[0] )
+		return "";
+
+	std::string result;
+	std::string pattern( info.operandPattern );
+	std::string::size_type start = 0;
+	while( start <= pattern.size() )
+	{
+		std::string::size_type end = pattern.find( ',', start );
+		std::string part = pattern.substr( start, end == std::string::npos
+		                                         ? std::string::npos
+		                                         : end - start );
+		if( !result.empty() )
+			result += ", ";
+		result += summarizeOperandPattern( part );
+		if( end == std::string::npos )
+			break;
+		start = end + 1;
+	}
+	return result;
+}
+
+const char* vuInstructionDescription( const VuInstructionInfo& info )
+{
+	if( !info.mnemonic )
+		return "";
+
+	const std::string mnemonic = lower( info.mnemonic );
+	const std::string operand = info.operandName ? lower( info.operandName ) : mnemonic;
+
+	if( mnemonic == "nop" )
+		return "No operation.";
+	if( info.memoryKind == VU_MEMORY_LOAD )
+		return "Load data from VU memory into a vector or integer register.";
+	if( info.memoryKind == VU_MEMORY_STORE )
+		return "Store a vector or integer register to VU memory.";
+	if( info.memoryKind == VU_MEMORY_XGKICK )
+		return "Start a GIF transfer from VU memory.";
+	if( info.flags & VU_INSTR_WAIT_Q )
+		return "Wait until the Q result is available.";
+	if( info.flags & VU_INSTR_WAIT_P )
+		return "Wait until the P result is available.";
+	if( info.flags & VU_INSTR_BRANCH )
+	{
+		if( info.flags & VU_INSTR_UNCONDITIONAL_BRANCH )
+			return "Branch after one delay slot.";
+		return "Branch after one delay slot when the integer condition is met.";
+	}
+	if( (info.flags & VU_INSTR_WRITES_Q) != 0 )
+		return "Start a Q scalar divide/square-root operation.";
+	if( (info.flags & VU_INSTR_WRITES_P) != 0 )
+		return "Start an elementary-function operation that writes P.";
+	if( mnemonic == "loi" )
+		return "Load an immediate scalar into the I register.";
+	if( startsWith( operand, "ftoi" ) )
+		return "Convert floating-point vector fields to fixed-point integer fields.";
+	if( startsWith( operand, "itof" ) )
+		return "Convert fixed-point integer vector fields to floating-point fields.";
+	if( startsWith( operand, "clip" ) )
+		return "Update MAC and CLIP flags from clip-space bounds.";
+	if( startsWith( operand, "madd" ) )
+		return "Multiply vector fields and add ACC.";
+	if( startsWith( operand, "msub" ) )
+		return "Multiply vector fields and subtract from ACC.";
+	if( startsWith( operand, "mul" ) )
+		return "Multiply vector fields.";
+	if( startsWith( operand, "add" ) )
+		return "Add vector fields.";
+	if( startsWith( operand, "sub" ) )
+		return "Subtract vector fields.";
+	if( startsWith( operand, "max" ) )
+		return "Take the per-field vector maximum.";
+	if( startsWith( operand, "mini" ) )
+		return "Take the per-field vector minimum.";
+	if( startsWith( operand, "opm" ) )
+		return "Perform an outer-product vector operation.";
+	if( startsWith( operand, "i" ) && info.unit == VU_EXEC_IALU )
+		return "Perform an integer ALU operation on VI registers or immediates.";
+	if( startsWith( operand, "f" ) && info.unit == VU_EXEC_IALU )
+		return "Read or update VU status flags.";
+	if( startsWith( operand, "r" ) && info.unit == VU_EXEC_RANDU )
+		return "Access the VU random-number unit.";
+	if( mnemonic == "move" )
+		return "Copy vector register fields.";
+	if( mnemonic == "mfir" )
+		return "Move an integer register value into vector fields.";
+	if( mnemonic == "mtir" )
+		return "Move a vector field into an integer register.";
+	if( mnemonic == "mr32" )
+		return "Rotate vector register fields.";
+	if( mnemonic == "xtop" || mnemonic == "xitop" )
+		return "Read the VIF TOP/ITOP register.";
+	if( info.unit == VU_EXEC_EFU )
+		return "Execute an elementary-function unit operation.";
+	if( info.pipe == VU_PIPE_UPPER )
+		return "Execute an upper-pipe vector operation.";
+	if( info.pipe == VU_PIPE_LOWER )
+		return "Execute a lower-pipe VU operation.";
+	return "VU instruction.";
 }
 
 }

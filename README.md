@@ -235,8 +235,10 @@ The JSON form is intended for scripts and regression tests:
 ```
 
 Each row includes the mnemonic, pipe, execution unit, throughput, latency,
-parser operand pattern, implicit resources, memory flags, branch-delay slots,
-and special bypass notes.
+parser operand pattern, readable parameter summary, short description, implicit
+resources, memory flags, branch-delay slots, and special bypass notes. This is
+the canonical table to inspect before adding new parser, cost-analysis, or
+scheduler rules.
 
 ## Scheduler Status
 

@@ -281,6 +281,7 @@ namespace
 		stream << "OpenVCL VU instruction metadata" << std::endl;
 		for( const VuInstructionInfo* info = allVuInstructionInfos(); info->mnemonic; ++info )
 		{
+			const std::string parameters = vuInstructionParameterSummary( *info );
 			stream << info->mnemonic
 			       << " pipe=" << pipeName( info->pipe )
 			       << " unit=" << executionUnitName( info->unit )
@@ -292,6 +293,8 @@ namespace
 			       << " parser_flags=";
 			writeFlagListText( stream, info->operandFlags, kOperandFlags );
 			stream << " pattern=\"" << info->operandPattern << "\""
+			       << " parameters=\"" << parameters << "\""
+			       << " description=\"" << vuInstructionDescription( *info ) << "\""
 			       << " flags=";
 			writeFlagListText( stream, info->flags, kInstructionFlags );
 			stream << " reads=";
@@ -313,10 +316,12 @@ namespace
 		stream << "{\n  \"instructions\": [\n";
 		for( const VuInstructionInfo* info = allVuInstructionInfos(); info->mnemonic; ++info )
 		{
+			const std::string parameters = vuInstructionParameterSummary( *info );
 			if( info != allVuInstructionInfos() )
 				stream << ",\n";
 			stream << "    {\n";
 			stream << "      \"mnemonic\": "; writeJsonString( stream, info->mnemonic ); stream << ",\n";
+			stream << "      \"description\": "; writeJsonString( stream, vuInstructionDescription( *info ) ); stream << ",\n";
 			stream << "      \"pipe\": "; writeJsonString( stream, pipeName( info->pipe ) ); stream << ",\n";
 			stream << "      \"unit\": "; writeJsonString( stream, executionUnitName( info->unit ) ); stream << ",\n";
 			stream << "      \"throughput\": " << info->throughput << ",\n";
@@ -326,7 +331,8 @@ namespace
 			stream << "        \"arguments\": " << info->arguments << ",\n";
 			stream << "        \"unit\": "; writeJsonString( stream, operandUnitName( info->operandUnit ) ); stream << ",\n";
 			stream << "        \"flags\": "; writeFlagArrayJson( stream, info->operandFlags, kOperandFlags ); stream << ",\n";
-			stream << "        \"pattern\": "; writeJsonString( stream, info->operandPattern ); stream << "\n";
+			stream << "        \"pattern\": "; writeJsonString( stream, info->operandPattern ); stream << ",\n";
+			stream << "        \"parameters\": "; writeJsonString( stream, parameters.c_str() ); stream << "\n";
 			stream << "      },\n";
 			stream << "      \"flags\": "; writeFlagArrayJson( stream, info->flags, kInstructionFlags ); stream << ",\n";
 			stream << "      \"resources\": {\n";
