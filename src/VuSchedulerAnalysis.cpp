@@ -186,13 +186,18 @@ namespace
 		}
 	}
 
-	VuScheduledIssueSlot makeIssueSlot( const Token* first, const Token* second )
+	VuScheduledIssueSlot makeIssueSlot( const Token* first,
+	                                    const Token* second,
+	                                    unsigned int issueCycle = 0,
+	                                    unsigned int cycleCount = 1 )
 	{
 		VuScheduledIssueSlot slot;
 		slot.firstToken = first;
 		slot.secondToken = second;
 		slot.padding = first == NULL && second == NULL;
 		slot.paddingKind = slot.padding ? VU_SCHEDULED_PADDING_NOP : VU_SCHEDULED_PADDING_NONE;
+		slot.issueCycle = issueCycle;
+		slot.cycleCount = cycleCount;
 
 		if( first )
 		{
@@ -213,9 +218,11 @@ namespace
 		return slot;
 	}
 
-	VuScheduledIssueSlot makePaddingIssueSlot( VuScheduledPaddingKind paddingKind )
+	VuScheduledIssueSlot makePaddingIssueSlot( VuScheduledPaddingKind paddingKind,
+	                                           unsigned int issueCycle,
+	                                           unsigned int cycleCount )
 	{
-		VuScheduledIssueSlot slot = makeIssueSlot( NULL, NULL );
+		VuScheduledIssueSlot slot = makeIssueSlot( NULL, NULL, issueCycle, cycleCount );
 		slot.paddingKind = paddingKind;
 		return slot;
 	}
@@ -248,8 +255,9 @@ namespace
 		std::vector<VuScheduledIssueSlot> slots;
 		if( segment.size() < 2 )
 		{
+			unsigned int issueCycle = 0;
 			for( std::vector<const Token*>::const_iterator i = segment.begin(); i != segment.end(); ++i )
-				slots.push_back( makeIssueSlot( *i, NULL ) );
+				slots.push_back( makeIssueSlot( *i, NULL, issueCycle++ ) );
 			return slots;
 		}
 
@@ -325,29 +333,34 @@ namespace
 			{
 				const VuScheduledPaddingKind paddingKind =
 					choosePaddingKind( *block.tokens[best], partnerToken, latencyTracker, currentCycle );
-				slots.push_back( makePaddingIssueSlot( paddingKind ) );
+				unsigned int paddingCycleCount = 1;
 				if( paddingKind == VU_SCHEDULED_PADDING_WAITQ )
 				{
 					const int readyCycle = latencyTracker.qReadyCycle();
-					currentCycle = static_cast<unsigned int>( readyCycle > static_cast<int>( currentCycle + 1 )
-					                                        ? readyCycle
-					                                        : static_cast<int>( currentCycle + 1 ) );
+					const unsigned int nextCycle = static_cast<unsigned int>(
+						readyCycle > static_cast<int>( currentCycle + 1 )
+						? readyCycle
+						: static_cast<int>( currentCycle + 1 ) );
+					paddingCycleCount = nextCycle - currentCycle;
 				}
 				else if( paddingKind == VU_SCHEDULED_PADDING_WAITP )
 				{
 					const int readyCycle = latencyTracker.pReadyCycle();
-					currentCycle = static_cast<unsigned int>( readyCycle > static_cast<int>( currentCycle + 1 )
-					                                        ? readyCycle
-					                                        : static_cast<int>( currentCycle + 1 ) );
+					const unsigned int nextCycle = static_cast<unsigned int>(
+						readyCycle > static_cast<int>( currentCycle + 1 )
+						? readyCycle
+						: static_cast<int>( currentCycle + 1 ) );
+					paddingCycleCount = nextCycle - currentCycle;
 				}
-				else
-					++currentCycle;
+				slots.push_back( makePaddingIssueSlot( paddingKind, currentCycle, paddingCycleCount ) );
+				currentCycle += paddingCycleCount;
 				issueDelay = latencyTracker.readHazardDelay( *block.tokens[best],
 				                                             partnerToken,
 				                                             static_cast<int>( currentCycle ) );
 			}
 			slots.push_back( makeIssueSlot( block.tokens[best],
-			                                partnerToken ) );
+			                                partnerToken,
+			                                currentCycle ) );
 
 			markReadyTokenScheduled( best, incoming, outgoing, emitted, emittedCount );
 			latencyTracker.recordWrites( *block.tokens[best], static_cast<int>( currentCycle ) );
@@ -1511,6 +1524,8 @@ VuScheduledIssueSlot::VuScheduledIssueSlot()
 	lowerToken = NULL;
 	padding = false;
 	paddingKind = VU_SCHEDULED_PADDING_NONE;
+	issueCycle = 0;
+	cycleCount = 1;
 }
 
 VuLoopCandidate::VuLoopCandidate()
@@ -1692,6 +1707,13 @@ std::vector<VuScheduledIssueSlot> scheduleVuBasicBlockReadyIssueSlots( const VuB
 	std::vector<VuScheduledIssueSlot> segmentSlots =
 		scheduleReadySegmentIssueSlots( segment, ignoredImplicitWawResources );
 	slots.insert( slots.end(), segmentSlots.begin(), segmentSlots.end() );
+
+	unsigned int issueCycle = 0;
+	for( std::vector<VuScheduledIssueSlot>::iterator slot = slots.begin(); slot != slots.end(); ++slot )
+	{
+		slot->issueCycle = issueCycle;
+		issueCycle += slot->cycleCount;
+	}
 
 	return slots;
 }

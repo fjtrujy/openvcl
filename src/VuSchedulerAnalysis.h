@@ -107,6 +107,8 @@ struct VuScheduledIssueSlot
 	const Token* lowerToken;
 	bool padding;
 	VuScheduledPaddingKind paddingKind;
+	unsigned int issueCycle;
+	unsigned int cycleCount;
 };
 
 struct VuLoopCandidate

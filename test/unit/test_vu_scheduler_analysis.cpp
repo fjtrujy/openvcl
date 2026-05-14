@@ -1146,17 +1146,23 @@ TEST_CASE("VuSchedulerAnalysis: ready issue slots expose latency padding cycles"
     CHECK(slots[0].firstToken != NULL);
     CHECK(!slots[0].padding);
     CHECK(slots[0].paddingKind == vcl::VU_SCHEDULED_PADDING_NONE);
+    CHECK(slots[0].issueCycle == 0u);
+    CHECK(slots[0].cycleCount == 1u);
     for (unsigned int i = 1; i < 5; ++i)
     {
         CHECK(slots[i].firstToken == NULL);
         CHECK(slots[i].secondToken == NULL);
         CHECK(slots[i].padding);
         CHECK(slots[i].paddingKind == vcl::VU_SCHEDULED_PADDING_NOP);
+        CHECK(slots[i].issueCycle == i);
+        CHECK(slots[i].cycleCount == 1u);
     }
     REQUIRE(slots[5].firstToken != NULL);
     CHECK(vcl::normalizeVuMnemonic(slots[5].firstToken->name()) == "add");
     CHECK(!slots[5].padding);
     CHECK(slots[5].paddingKind == vcl::VU_SCHEDULED_PADDING_NONE);
+    CHECK(slots[5].issueCycle == 5u);
+    CHECK(slots[5].cycleCount == 1u);
 }
 
 TEST_CASE("VuSchedulerAnalysis: ready issue slots classify Q and P wait padding")
@@ -1172,7 +1178,10 @@ TEST_CASE("VuSchedulerAnalysis: ready issue slots classify Q and P wait padding"
     REQUIRE(qSlots.size() == 3u);
     CHECK(qSlots[1].padding);
     CHECK(qSlots[1].paddingKind == vcl::VU_SCHEDULED_PADDING_WAITQ);
+    CHECK(qSlots[1].issueCycle == 1u);
+    CHECK(qSlots[1].cycleCount == 7u);
     REQUIRE(qSlots[2].firstToken != NULL);
+    CHECK(qSlots[2].issueCycle == 8u);
     CHECK(vcl::normalizeVuMnemonic(qSlots[2].firstToken->name()) == "mulq");
 
     vcl::Error::ResetErrorCount();
@@ -1186,7 +1195,10 @@ TEST_CASE("VuSchedulerAnalysis: ready issue slots classify Q and P wait padding"
     REQUIRE(pSlots.size() == 3u);
     CHECK(pSlots[1].padding);
     CHECK(pSlots[1].paddingKind == vcl::VU_SCHEDULED_PADDING_WAITP);
+    CHECK(pSlots[1].issueCycle == 1u);
+    CHECK(pSlots[1].cycleCount == 29u);
     REQUIRE(pSlots[2].firstToken != NULL);
+    CHECK(pSlots[2].issueCycle == 30u);
     CHECK(vcl::normalizeVuMnemonic(pSlots[2].firstToken->name()) == "mfp");
 }
 
@@ -1334,6 +1346,8 @@ TEST_CASE("VuSchedulerAnalysis: issue slots expose generic dual-pipe pair choice
     {
         CHECK(slots[i].padding);
         CHECK(slots[i].paddingKind == vcl::VU_SCHEDULED_PADDING_NOP);
+        CHECK(slots[i].issueCycle == i);
+        CHECK(slots[i].cycleCount == 1u);
     }
 
     REQUIRE(slots[5].firstToken != 0);

@@ -912,7 +912,10 @@ namespace
 			for( unsigned int slotIndex = 0; slotIndex < slots.size(); ++slotIndex )
 			{
 				const VuScheduledIssueSlot& slot = slots[slotIndex];
-				stream << "  slot " << slotIndex << " first=";
+				stream << "  slot " << slotIndex
+				       << " issue_cycle=" << slot.issueCycle
+				       << " cycle_count=" << slot.cycleCount
+				       << " first=";
 				writeScheduleTokenText( stream, tokenIndices, slot.firstToken );
 				stream << " second=";
 				writeScheduleTokenText( stream, tokenIndices, slot.secondToken );
@@ -951,6 +954,8 @@ namespace
 					stream << ",\n";
 				stream << "        {\n";
 				stream << "          \"slot_index\": " << slotIndex << ",\n";
+				stream << "          \"issue_cycle\": " << slot.issueCycle << ",\n";
+				stream << "          \"cycle_count\": " << slot.cycleCount << ",\n";
 				stream << "          \"first_token_index\": "; writeNullableTokenIndexJson( stream, tokenIndices, slot.firstToken ); stream << ",\n";
 				stream << "          \"second_token_index\": "; writeNullableTokenIndexJson( stream, tokenIndices, slot.secondToken ); stream << ",\n";
 				stream << "          \"upper_token_index\": "; writeNullableTokenIndexJson( stream, tokenIndices, slot.upperToken ); stream << ",\n";

@@ -13,6 +13,8 @@
 - Generic scheduler issue-slot dumps now classify latency padding as `nop`,
   `waitq`, or `waitp`, so tooling can distinguish idle cycles from explicit
   long-latency waits.
+- Scheduler issue-slot dumps now include modeled `issue_cycle` and
+  `cycle_count`, including multi-cycle `waitq`/`waitp` padding spans.
 - Added regression fixtures and unit/integration tests for cost analysis.
 - Added conservative VU scheduling improvements used by ps2gl:
   - upper/lower pairing lookahead;
