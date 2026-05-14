@@ -605,6 +605,21 @@ namespace
 		    || opportunity.prologTokenIndices.front() != opportunity.qProducerTokenIndex )
 			addPipelineBlocker( opportunity, "multi_instruction_prefetch" );
 
+		for( std::vector<unsigned int>::const_iterator p = opportunity.prologTokenIndices.begin();
+		     p != opportunity.prologTokenIndices.end(); ++p )
+		{
+			if( *p == opportunity.qProducerTokenIndex || *p >= indexedTokens.size() )
+				continue;
+
+			VuTokenResourceAccess prefetchAccess;
+			if( !buildVuTokenResourceAccess( *indexedTokens[*p], prefetchAccess ) )
+				continue;
+			if( prefetchAccess.memoryKind != VU_MEMORY_NONE )
+				addPipelineBlocker( opportunity, "multi_instruction_prefetch_memory" );
+			if( intersects( prefetchAccess.registerReads, opportunity.inductionRegisters ) )
+				addPipelineBlocker( opportunity, "multi_instruction_prefetch_reads_induction" );
+		}
+
 		if( qProducerOffset < loop.bodyTokens.size() )
 		{
 			VuTokenResourceAccess access;

@@ -486,6 +486,34 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline reports insufficient Q
     CHECK(plans.empty());
 }
 
+TEST_CASE("VuSchedulerAnalysis: multi-instruction prefetch reports memory and induction blockers")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 1"));
+    REQUIRE(program.parse("lq.xyz vf01, 0(vi01)"));
+    REQUIRE(program.parse("div q, vf00[w], vf01[w]"));
+    REQUIRE(program.parse("mulq.xyz vf02, vf03, q"));
+    REQUIRE(program.parse("add.xyz vf10, vf10, vf00"));
+    REQUIRE(program.parse("add.xyz vf11, vf11, vf00"));
+    REQUIRE(program.parse("add.xyz vf12, vf12, vf00"));
+    REQUIRE(program.parse("add.xyz vf13, vf13, vf00"));
+    REQUIRE(program.parse("add.xyz vf14, vf14, vf00"));
+    REQUIRE(program.parse("add.xyz vf15, vf15, vf00"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
+    REQUIRE(program.parse("ibne vi01, vi02, loop_lid"));
+
+    std::vector<vcl::VuLoopPipelineOpportunity> opportunities = vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
+    REQUIRE(opportunities.size() == 1u);
+    CHECK(opportunities[0].eligibleSingleQSoftwarePipeline);
+    CHECK(opportunities[0].hasSoftwarePipelinePlan);
+    CHECK(!opportunities[0].canEmitSoftwarePipeline);
+    CHECK(hasString(opportunities[0].softwarePipelineBlockers, "multi_instruction_prefetch"));
+    CHECK(hasString(opportunities[0].softwarePipelineBlockers, "multi_instruction_prefetch_memory"));
+    CHECK(hasString(opportunities[0].softwarePipelineBlockers, "multi_instruction_prefetch_reads_induction"));
+}
+
 TEST_CASE("VuSchedulerAnalysis: generic software pipeline blocks Q live-out loops")
 {
     vcl::Error::ResetErrorCount();
