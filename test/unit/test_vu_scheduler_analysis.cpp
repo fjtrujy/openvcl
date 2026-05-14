@@ -1482,3 +1482,30 @@ TEST_CASE("VuSchedulerAnalysis: ready-set scheduler fills Q latency before Q con
     REQUIRE(i != scheduled.end());
     CHECK(vcl::normalizeVuMnemonic(i->name()) == "mulq");
 }
+
+TEST_CASE("VuSchedulerAnalysis: latency-blocked Q consumers do not outrank ready independent work")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("div q, vf01[w], vf02[w]"));
+    REQUIRE(program.parse("mulq.xy vf03, vf04, q"));
+    REQUIRE(program.parse("add.xy vf05, vf03, vf06"));
+    REQUIRE(program.parse("add.xy vf07, vf05, vf08"));
+    REQUIRE(program.parse("lq.xy vf09, 0(vi01)"));
+    REQUIRE(program.parse("lq.xy vf10, 1(vi01)"));
+    REQUIRE(program.parse("iaddiu vi02, vi02, 1"));
+
+    std::list<vcl::Token> scheduled = vcl::scheduleVuTokensReadySet(program.tokenizer.tokens());
+    REQUIRE(scheduled.size() == program.tokenizer.tokens().size());
+
+    std::vector<std::string> names;
+    for (std::list<vcl::Token>::const_iterator i = scheduled.begin(); i != scheduled.end(); ++i)
+        names.push_back(vcl::normalizeVuMnemonic(i->name()));
+
+    REQUIRE(names.size() == 7u);
+    CHECK(names[0] == "div");
+    CHECK(names[1] == "lq");
+    CHECK(names[2] == "lq");
+    CHECK(names[3] == "iaddiu");
+    CHECK(names[4] == "mulq");
+}

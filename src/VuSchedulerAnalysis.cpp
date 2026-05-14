@@ -85,7 +85,7 @@ namespace
 		if( haveLastPipe && isVuLowerPipe( *block.tokens[candidate] ) != lastWasLower )
 			score -= 100;
 
-		if( candidate < priority.size() )
+		if( delay == 0 && candidate < priority.size() )
 			score -= static_cast<int>( priority[candidate] * 20 );
 
 		return score;

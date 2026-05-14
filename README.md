@@ -274,10 +274,10 @@ Current ps2gl pure-OpenVCL aggregate cost baseline:
 
 | metric | SCE/reference | OpenVCL | delta |
 |---|---:|---:|---:|
-| static scheduled cycles | 6308 | 5271 | -1037 |
-| estimated cycles | 6820 | 5841 | -979 |
-| ps2gl-loop weighted static cycles | 100358 | 335238 | +234880 |
-| ps2gl-loop weighted estimated cycles | 100870 | 373527 | +272657 |
+| static scheduled cycles | 6308 | 5268 | -1040 |
+| estimated cycles | 6820 | 5838 | -982 |
+| ps2gl-loop weighted static cycles | 100358 | 334938 | +234580 |
+| ps2gl-loop weighted estimated cycles | 100870 | 373227 | +272357 |
 
 `estimated cycles` includes modeled FDIV/EFU producer issue stalls and
 explicit `waitq`/`waitp` stalls. These are static VSM estimates, not measured
