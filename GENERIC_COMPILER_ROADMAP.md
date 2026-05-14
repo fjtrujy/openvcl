@@ -129,6 +129,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: multi-Q cyclic-prefix planning now evaluates safe split candidates with the shared scheduler model and keeps the lowest-cycle main-loop shape instead of hard-coding first-stage or latest-stage selection.
    - Done: multi-Q cyclic-prefix emission can now insert the cloned prefix before independent loop-tail work, giving next-iteration Q producers/consumers real tail cycles to hide latency instead of forcing the clone immediately before the branch.
    - Done: software-pipeline rewrites now support labels carried by `--LoopCS` directives, which lets ps2gl-style `label: --LoopCS ...` transform loops enter the generic prolog/main/drain path.
+   - Done: multi-Q cyclic-prefix planning can now prime producer-only first-stage prefixes whenever the loop-carried insertion gap is sufficient, enabling the first generic modulo shape for quad transform loops without duplicating the first Q consumer.
 
 8. **Retire Pattern Emitters Incrementally** - started
    - Replace each hand emitter only after generic scheduling/software pipelining matches correctness and reaches equal or better loop cost.

@@ -1489,7 +1489,7 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q stages contribute carried register sets"
     CHECK(hasString(opportunities[0].carriedQOutputRegisters, "VF24.x"));
 }
 
-TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline chooses the cheaper cyclic prefix")
+TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline can use producer-only cyclic prefixes")
 {
     vcl::Error::ResetErrorCount();
     ParsedProgram program;
@@ -1515,16 +1515,14 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline chooses the cheaper cy
     CHECK(opportunities[0].eligibleMultiQSoftwarePipeline);
     CHECK(opportunities[0].canEmitMultiQSoftwarePipeline);
     CHECK(opportunities[0].multiQSoftwarePipelineBlockers.empty());
-    REQUIRE(opportunities[0].multiQPrologTokenIndices.size() == 2u);
+    REQUIRE(opportunities[0].multiQPrologTokenIndices.size() == 1u);
     CHECK(opportunities[0].multiQPrologTokenIndices[0] == 2u);
-    CHECK(opportunities[0].multiQPrologTokenIndices[1] == 3u);
-    REQUIRE(opportunities[0].multiQMainTokenIndices.size() == 9u);
-    CHECK(opportunities[0].multiQMainTokenIndices.front() == 4u);
+    REQUIRE(opportunities[0].multiQMainTokenIndices.size() == 10u);
+    CHECK(opportunities[0].multiQMainTokenIndices.front() == 3u);
     CHECK(opportunities[0].multiQMainTokenIndices.back() == 12u);
-    REQUIRE(opportunities[0].multiQCyclicPrefixTokenIndices.size() == 2u);
+    REQUIRE(opportunities[0].multiQCyclicPrefixTokenIndices.size() == 1u);
     CHECK(opportunities[0].multiQCyclicPrefixTokenIndices[0] == 2u);
-    CHECK(opportunities[0].multiQCyclicPrefixTokenIndices[1] == 3u);
-    CHECK(opportunities[0].multiQCyclicPrefixInsertBeforeTokenIndex == 11u);
+    CHECK(opportunities[0].multiQCyclicPrefixInsertBeforeTokenIndex == 10u);
 
     std::vector<vcl::VuSoftwarePipelineRewritePlan> plans =
         vcl::buildVuSoftwarePipelineRewritePlans(program.tokenizer.tokens());
@@ -1537,7 +1535,6 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline chooses the cheaper cy
     unsigned int mainLabels = 0;
     unsigned int divCount = 0;
     unsigned int mulqCount = 0;
-    bool sawCyclicPrefixBeforeBranch = false;
     bool sawStageOneDivAfterStageTwoConsumer = false;
     bool sawStageTwoConsumer = false;
     for (std::list<vcl::Token>::const_iterator i = transformed.begin(); i != transformed.end(); ++i)
@@ -1563,18 +1560,16 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline chooses the cheaper cy
             REQUIRE(vcl::buildVuTokenResourceAccess(*i, access));
             if (hasString(access.registerWrites, "VF05.x"))
                 sawStageTwoConsumer = true;
-            if (sawStageOneDivAfterStageTwoConsumer && hasString(access.registerWrites, "VF02.x"))
-                sawCyclicPrefixBeforeBranch = true;
         }
         if (mnemonic == "ibne")
-            CHECK(sawCyclicPrefixBeforeBranch);
+            CHECK(sawStageOneDivAfterStageTwoConsumer);
     }
 
     CHECK(prologLabels == 1u);
     CHECK(mainLabels == 1u);
     CHECK(divCount == 3u);
-    CHECK(mulqCount == 3u);
-    CHECK(sawCyclicPrefixBeforeBranch);
+    CHECK(mulqCount == 2u);
+    CHECK(sawStageOneDivAfterStageTwoConsumer);
 }
 
 TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline can rotate producer-side prefixes")

@@ -3822,7 +3822,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			unsigned int bestMainCycles = ~0u;
 			VuLoopPipelineOpportunity bestOpportunity = opportunity;
 			if( firstConsumerOffset < branchOffset
-			    && firstStage.qProducerConsumerGapDeficitCycles == 0
+			    && firstStage.qProducerInsertionGapDeficitCycles == 0
 			    && countEmittableTokens( *loop, firstConsumerOffset, branchOffset ) != 0 )
 			{
 				foundSafeCyclicPrefix =

@@ -53,6 +53,9 @@
   `--LoopCS` directives, so ps2gl-style `label: --LoopCS ...` loops actually
   emit the planned prolog/main/drain structure instead of falling back to the
   original loop body.
+- Multi-Q cyclic-prefix planning can now use a producer-only first-stage
+  prefix when the loop-carried insertion gap is sufficient, priming the first
+  Q producer in the prolog without duplicating its consumer.
 - Ready-scheduler analysis now has a typed `VuScheduledProgram` wrapper with
   block-level cycle ranges, and schedule dumps expose program-relative issue
   cycles.
