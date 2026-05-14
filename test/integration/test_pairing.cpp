@@ -421,6 +421,31 @@ TEST_CASE("Pairing: vf00 move after final MAC reader can emit as upper zero op")
     CHECK(find_line(vsm, "move.xyz").empty());
 }
 
+TEST_CASE("Pairing: nonzero xyz move can emit as upper max when MAC is dead")
+{
+    const std::string body =
+        "\tlq.xyz vf02, 0(vi00)\n"
+        "\tmove.xyz vf01, vf02\n"
+        "\tiaddiu vi01, vi00, 1\n";
+    std::string vsm = runEmit(body, "vsmPairUpperMove");
+    REQUIRE(vsm.length() > 0);
+    CHECK(vsm.find("max.xyz VF01, VF02, VF02") != std::string::npos);
+    CHECK(vsm.find("move.xyz VF01, VF02") == std::string::npos);
+}
+
+TEST_CASE("Pairing: nonzero move stays lower when MAC flags are read")
+{
+    const std::string body =
+        "\tlq.xyz vf02, 0(vi00)\n"
+        "\tmove.xyz vf01, vf02\n"
+        "\tiaddiu vi01, vi00, 1\n"
+        "\tfmand vi02, vi00\n";
+    std::string vsm = runEmit(body, "vsmKeepNonzeroMoveWhenMacRead");
+    REQUIRE(vsm.length() > 0);
+    CHECK(vsm.find("max.xyz VF01, VF02, VF02") == std::string::npos);
+    CHECK(vsm.find("move.xyz VF01, VF02") != std::string::npos);
+}
+
 TEST_CASE("Pairing: suffix after final MAC reader can cross dead MAC WAW")
 {
     const std::string body =

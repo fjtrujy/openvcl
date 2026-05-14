@@ -1049,7 +1049,8 @@ TEST_CASE("Software pipeline: generic path emits simple rotated register prefetc
     CHECK(contains(vsm, "loop_lid__PROLOG:"));
     CHECK(contains(vsm, "mul.xyzw VF31, VF01, VF02"));
     CHECK(contains(vsm, "div q, VF00w, VF31w"));
-    CHECK(contains(vsm, "move.xyz VF03, VF31"));
+    CHECK(contains(vsm, "move.xyz VF03, VF31")
+          || contains(vsm, "max.xyz VF03, VF31, VF31"));
 }
 
 TEST_CASE("Software pipeline: generic software-pipelining is default and can be disabled")

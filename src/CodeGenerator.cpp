@@ -944,7 +944,7 @@ CodeGenerator::CodeGenerator()
 	m_knownLoopOptimizations = false;
 	m_genericSoftwarePipelining = false;
 	m_strictScheduleSlots = false;
-	m_enableUpperZeroMoves = false;
+	m_enableUpperMoves = false;
 	m_ignoredImplicitWawResources = VU_RESOURCE_NONE;
 }
 
@@ -997,7 +997,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 		workTokens.swap(pipelinedTokens);
 	}
 	const bool macFlagsDead = !vuTokenListReadsMac(workTokens);
-	m_enableUpperZeroMoves = macFlagsDead;
+	m_enableUpperMoves = macFlagsDead;
 	m_ignoredImplicitWawResources = VU_RESOURCE_NONE;
 
 	const bool emitTypedScheduleDirectly = m_strictScheduleSlots || !m_knownLoopOptimizations;
@@ -1935,22 +1935,22 @@ bool CodeGenerator::emitStrictScheduledProgram( const std::list<Token>& tokens, 
 	return true;
 }
 
-bool CodeGenerator::emitsAsUpperZeroMove( const Token& token ) const
+bool CodeGenerator::emitsAsUpperMove( const Token& token ) const
 {
-	return ( m_enableUpperZeroMoves || (m_ignoredImplicitWawResources & VU_RESOURCE_MAC) )
-	    && isVuZeroMoveFromVf00(token);
+	return ( m_enableUpperMoves || (m_ignoredImplicitWawResources & VU_RESOURCE_MAC) )
+	    && isVuMoveAsUpperMaxCandidate(token);
 }
 
 bool CodeGenerator::tokenIsLowerExecutionPath( const Token& token ) const
 {
-	if( emitsAsUpperZeroMove(token) )
+	if( emitsAsUpperMove(token) )
 		return false;
 	return token.operand() && token.operand()->isLowerExecutionPath();
 }
 
 bool CodeGenerator::tokenIsUpperExecutionPath( const Token& token ) const
 {
-	if( emitsAsUpperZeroMove(token) )
+	if( emitsAsUpperMove(token) )
 		return true;
 	return token.operand() && token.operand()->isUpperExecutionPath();
 }
@@ -1988,7 +1988,7 @@ void CodeGenerator::padForReadHazards( const Token& token, const Token* partner 
 
 void CodeGenerator::recordRegisterWrites( const Token& token, int issueCycle )
 {
-	m_latencyTracker.recordWrites( token, issueCycle, emitsAsUpperZeroMove( token ) );
+	m_latencyTracker.recordWrites( token, issueCycle, emitsAsUpperMove( token ) );
 }
 
 unsigned int CodeGenerator::ignoredImplicitWawResourcesForRemaining( std::list<Token>::const_iterator begin,
@@ -9390,8 +9390,8 @@ bool CodeGenerator::tokensCanPair( const Token& a, const Token& b ) const
 	// CLIP.  Keep same-flag readers out of the pair.  A non-clip FMAC
 	// can still pair with a CLIP reader such as fcand once the previous
 	// clipw result is latency-ready.
-	bool aFMAC = (a.operand()->unit() == Operand::FMAC) || emitsAsUpperZeroMove(a);
-	bool bFMAC = (b.operand()->unit() == Operand::FMAC) || emitsAsUpperZeroMove(b);
+	bool aFMAC = (a.operand()->unit() == Operand::FMAC) || emitsAsUpperMove(a);
+	bool bFMAC = (b.operand()->unit() == Operand::FMAC) || emitsAsUpperMove(b);
 	return vuTokenPairResourcesAreIndependent(a, b, aFMAC, bFMAC);
 }
 
@@ -9408,8 +9408,8 @@ std::string CodeGenerator::generateInstruction(const Token& token)
 {
 	std::string codeLine;
 
-	if( emitsAsUpperZeroMove(token) )
-		return generateUpperZeroMoveInstruction(token);
+	if( emitsAsUpperMove(token) )
+		return generateUpperMoveInstruction(token);
 
 	codeLine = generateOperand(token);
 	codeLine += " ";
@@ -9450,7 +9450,7 @@ std::string CodeGenerator::generateInstruction(const Token& token)
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-std::string CodeGenerator::generateUpperZeroMoveInstruction( const Token& token )
+std::string CodeGenerator::generateUpperMoveInstruction( const Token& token )
 {
 	static const char* fieldnames = "xyzw";
 	std::string fields;

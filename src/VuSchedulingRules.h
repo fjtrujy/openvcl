@@ -42,6 +42,7 @@ void collectVuRegisterReadKeys( const Token& token, std::list<std::string>& read
 void collectVuRegisterWriteKeys( const Token& token, std::list<std::string>& writes );
 
 bool isVuZeroMoveFromVf00( const Token& token );
+bool isVuMoveAsUpperMaxCandidate( const Token& token );
 bool vuTokenListReadsMac( const std::list<Token>& tokens );
 bool vuTokenListReadsClip( const std::list<Token>& tokens );
 

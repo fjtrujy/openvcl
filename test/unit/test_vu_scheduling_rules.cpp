@@ -167,6 +167,21 @@ TEST_CASE("VuSchedulingRules: scheduler analysis gates are shared predicates")
     CHECK(vcl::isVuLowerPipe(program.token(1)));
 }
 
+TEST_CASE("VuSchedulingRules: move-as-upper-max candidates are explicit")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("move.xyz vf01, vf02"));
+    REQUIRE(program.parse("move.xyz vf03, vf00"));
+    REQUIRE(program.parse("move.xyzw vf04, vf05"));
+
+    CHECK(vcl::isVuMoveAsUpperMaxCandidate(program.token(0)));
+    CHECK(vcl::isVuMoveAsUpperMaxCandidate(program.token(1)));
+    CHECK(!vcl::isVuZeroMoveFromVf00(program.token(0)));
+    CHECK(vcl::isVuZeroMoveFromVf00(program.token(1)));
+    CHECK(!vcl::isVuMoveAsUpperMaxCandidate(program.token(2)));
+}
+
 TEST_CASE("VuSchedulingRules: flag-reader scans distinguish MAC and CLIP users")
 {
     vcl::Error::ResetErrorCount();

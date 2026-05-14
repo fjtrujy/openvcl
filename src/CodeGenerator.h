@@ -99,10 +99,10 @@ private:
 	bool writesAreDeadFromTarget( const std::list<std::string>& writes,
 	                              std::list<Token>::iterator target,
 	                              std::list<Token>::iterator end ) const;
-	bool emitsAsUpperZeroMove( const Token& token ) const;
+	bool emitsAsUpperMove( const Token& token ) const;
 	bool tokenIsLowerExecutionPath( const Token& token ) const;
 	bool tokenIsUpperExecutionPath( const Token& token ) const;
-	std::string generateUpperZeroMoveInstruction( const Token& token );
+	std::string generateUpperMoveInstruction( const Token& token );
 	bool tryEmitKnownLoopOptimization( std::list<Token>& tokens,
 	                                   std::list<Token>::iterator& token );
 	struct FastNoLightsLoopPipelinePattern;
@@ -193,7 +193,7 @@ private:
 	bool m_knownLoopOptimizations;
 	bool m_genericSoftwarePipelining;
 	bool m_strictScheduleSlots;
-	bool m_enableUpperZeroMoves;
+	bool m_enableUpperMoves;
 	unsigned int m_ignoredImplicitWawResources;
 	std::string m_name;
 

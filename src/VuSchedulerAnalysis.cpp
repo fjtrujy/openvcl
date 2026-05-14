@@ -126,7 +126,7 @@ namespace
 
 	bool tokenSchedulesAsUpper( const Token& token, unsigned int ignoredImplicitWawResources )
 	{
-		if( (ignoredImplicitWawResources & VU_RESOURCE_MAC) && isVuZeroMoveFromVf00( token ) )
+		if( (ignoredImplicitWawResources & VU_RESOURCE_MAC) && isVuMoveAsUpperMaxCandidate( token ) )
 			return true;
 		return !isVuLowerPipe( token );
 	}
@@ -138,7 +138,7 @@ namespace
 
 	bool tokenWritesMacForPair( const Token& token, unsigned int ignoredImplicitWawResources )
 	{
-		if( tokenSchedulesAsUpper( token, ignoredImplicitWawResources ) && isVuZeroMoveFromVf00( token ) )
+		if( tokenSchedulesAsUpper( token, ignoredImplicitWawResources ) && isVuMoveAsUpperMaxCandidate( token ) )
 			return true;
 		return tokenWritesMacForPair( token );
 	}

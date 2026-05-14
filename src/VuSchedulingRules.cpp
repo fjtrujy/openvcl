@@ -383,7 +383,7 @@ void collectVuRegisterWriteKeys( const Token& token, std::list<std::string>& wri
 	writes.insert( writes.end(), access.registerWrites.begin(), access.registerWrites.end() );
 }
 
-bool isVuZeroMoveFromVf00( const Token& token )
+bool isVuMoveAsUpperMaxCandidate( const Token& token )
 {
 	if( !token.operand() )
 		return false;
@@ -401,13 +401,27 @@ bool isVuZeroMoveFromVf00( const Token& token )
 		return false;
 
 	std::list<Token::Argument>::const_iterator src = args.begin();
+	if( src->type() != Token::Argument::FLOAT_REGISTER
+	    || (src->flags() & (Token::Argument::INDIRECT
+	                      | Token::Argument::PREDEC
+	                      | Token::Argument::POSTINC)) )
+		return false;
 	++src;
 	return src->type() == Token::Argument::FLOAT_REGISTER
-	    && src->content() == Token::Argument::REGISTER
-	    && src->regNumber() == 0
 	    && !(src->flags() & (Token::Argument::INDIRECT
 	                       | Token::Argument::PREDEC
 	                       | Token::Argument::POSTINC));
+}
+
+bool isVuZeroMoveFromVf00( const Token& token )
+{
+	if( !isVuMoveAsUpperMaxCandidate( token ) )
+		return false;
+
+	std::list<Token::Argument>::const_iterator src = token.arguments().begin();
+	++src;
+	return src->content() == Token::Argument::REGISTER
+	    && src->regNumber() == 0;
 }
 
 bool vuTokenListReadsMac( const std::list<Token>& tokens )
