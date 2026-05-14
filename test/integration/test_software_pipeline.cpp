@@ -253,6 +253,35 @@ namespace
             "\t--endexit\n";
     }
 
+    std::string genericSuffixStoreDrainPipelineSource()
+    {
+        return
+            "\t.init_vf_all\n"
+            "\t.init_vi_all\n"
+            "\t--enter\n"
+            "\t--endenter\n"
+            "\tiaddiu vi01, vi00, 0\n"
+            "\tiaddiu vi02, vi00, 0\n"
+            "\tiaddiu vi04, vi00, 3\n"
+            "\tmove.xyzw vf02, vf00\n"
+            "loop_lid:\n"
+            "\t--LoopCS 1,1\n"
+            "\tlq.xyzw vf01, 0(vi01)\n"
+            "\tdiv q, vf00w, vf01w\n"
+            "\tmulq.xyz vf03, vf02, q\n"
+            "\tsq.xyz vf03, 0(vi02)\n"
+            "\tadd.xyz vf10, vf00, vf00\n"
+            "\tadd.xyz vf11, vf00, vf00\n"
+            "\tadd.xyz vf12, vf00, vf00\n"
+            "\tadd.xyz vf13, vf00, vf00\n"
+            "\tadd.xyz vf14, vf00, vf00\n"
+            "\tiaddiu vi01, vi01, 1\n"
+            "\tiaddiu vi02, vi02, 1\n"
+            "\tibne vi01, vi04, loop_lid\n"
+            "\t--exit\n"
+            "\t--endexit\n";
+    }
+
     std::string genericMultiQPipelineSource()
     {
         return
@@ -1077,6 +1106,20 @@ TEST_CASE("Software pipeline: generic path emits simple rotated register prefetc
     CHECK(contains(vsm, "div q, VF00w, VF31w"));
     CHECK(contains(vsm, "move.xyz VF03, VF31")
           || contains(vsm, "max.xyz VF03, VF31, VF31"));
+}
+
+TEST_CASE("Software pipeline: generic path emits delayed suffix store drains")
+{
+    std::vector<std::string> args;
+    args.push_back("--enable-generic-software-pipelining");
+    std::string vsm = runEmitWithExtraArgs(genericSuffixStoreDrainPipelineSource(), args);
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(contains(vsm, "loop_lid__PROLOG:"));
+    CHECK(contains(vsm, "loop_lid__DRAIN:"));
+    CHECK(contains(vsm, "ibeq VI01, VI04, loop_lid__DRAIN"));
+    CHECK(contains(vsm, "sq.xyz VF03, -1(VI02)"));
+    CHECK(contains(vsm, "sq.xyz VF03, -2(VI02)"));
 }
 
 TEST_CASE("Software pipeline: generic path emits multi-Q cyclic prefixes")

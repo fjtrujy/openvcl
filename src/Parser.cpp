@@ -682,6 +682,11 @@ namespace
 			if( stores[i].hasValueScratchRegister )
 				stream << ":" << stores[i].valueScratchRegister;
 			stream << ",drain_candidate=" << (stores[i].drainCandidate ? "yes" : "no");
+			stream << ",delayed_drain=" << (stores[i].delayedDrain ? "yes" : "no");
+			if( stores[i].rotateValueBeforePrefetch )
+				stream << ",rotate_before_prefetch=yes";
+			if( stores[i].rotateValueAtStore )
+				stream << ",rotate_at_store=yes";
 			stream << ")";
 		}
 	}
@@ -707,7 +712,10 @@ namespace
 			stream << "\"stored_value_fields\": "; writeStringListJson( stream, stores[i].storedValueFields ); stream << ", ";
 			stream << "\"value_rotation_required\": " << (stores[i].requiresValueRotation ? "true" : "false") << ", ";
 			stream << "\"value_scratch_register\": "; writeJsonString( stream, stores[i].hasValueScratchRegister ? stores[i].valueScratchRegister.c_str() : "" ); stream << ", ";
-			stream << "\"drain_candidate\": " << (stores[i].drainCandidate ? "true" : "false");
+			stream << "\"drain_candidate\": " << (stores[i].drainCandidate ? "true" : "false") << ", ";
+			stream << "\"delayed_drain\": " << (stores[i].delayedDrain ? "true" : "false") << ", ";
+			stream << "\"rotate_value_before_prefetch\": " << (stores[i].rotateValueBeforePrefetch ? "true" : "false") << ", ";
+			stream << "\"rotate_value_at_store\": " << (stores[i].rotateValueAtStore ? "true" : "false");
 			stream << "}";
 		}
 		stream << "]";
@@ -769,6 +777,8 @@ namespace
 			       << " eligible_multi_q_pipeline=" << (i->eligibleMultiQSoftwarePipeline ? "yes" : "no")
 			       << " multi_q_pipeline_plan=" << (i->hasMultiQSoftwarePipelinePlan ? "yes" : "no")
 			       << " multi_q_pipeline_emittable=" << (i->canEmitMultiQSoftwarePipeline ? "yes" : "no")
+			       << " suffix_store_drain_plan=" << (i->hasSuffixStoreDrainPlan ? "yes" : "no")
+			       << " suffix_store_drain_emittable=" << (i->canEmitSuffixStoreDrain ? "yes" : "no")
 			       << " rewrite_plan=" << (rewritePlan ? "yes" : "no")
 			       << " rewrite_prolog_label=" << (rewritePlan ? rewritePlan->prologLabel : "")
 			       << " rewrite_main_label=" << (rewritePlan ? rewritePlan->mainLabel : "")
@@ -781,6 +791,7 @@ namespace
 			       << " rewrite_q_branch_delay_suffix_blocker="
 			       << (rewritePlan ? rewritePlan->qProducerBranchDelaySuffixBlockerTokenIndex : 0)
 			       << " rewrite_emits_drain=" << (rewritePlan && rewritePlan->emitsDrain ? "yes" : "no")
+			       << " rewrite_drains_suffix_stores=" << (rewritePlan && rewritePlan->drainsSuffixStores ? "yes" : "no")
 			       << " rewrite_cyclic_prefix_before_branch="
 			       << (rewritePlan && rewritePlan->cyclicPrefixBeforeBranch ? "yes" : "no")
 			       << " rewrite_prefetch_tokens=";
@@ -809,6 +820,8 @@ namespace
 			writeUnsignedVectorText( stream, i->multiQCyclicPrefixTokenIndices );
 			stream << " multi_q_blockers=";
 			writeStringListText( stream, i->multiQSoftwarePipelineBlockers );
+			stream << " suffix_store_drain_blockers=";
+			writeStringListText( stream, i->suffixStoreDrainBlockers );
 			stream << " rotated_registers=";
 			writeStringListText( stream, i->softwarePipelineRotatedRegisters );
 			stream << " rotation_descriptors=";
@@ -883,6 +896,11 @@ namespace
 			stream << "        \"main_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.mainTokenIndices ); stream << ",\n";
 			stream << "        \"drain_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.drainTokenIndices ); stream << "\n";
 			stream << "      },\n";
+			stream << "      \"suffix_store_drain_plan\": {\n";
+			stream << "        \"available\": " << (opportunity.hasSuffixStoreDrainPlan ? "true" : "false") << ",\n";
+			stream << "        \"emittable\": " << (opportunity.canEmitSuffixStoreDrain ? "true" : "false") << ",\n";
+			stream << "        \"blockers\": "; writeStringListJson( stream, opportunity.suffixStoreDrainBlockers ); stream << "\n";
+			stream << "      },\n";
 			stream << "      \"multi_q_pipeline_plan\": {\n";
 			stream << "        \"available\": " << (opportunity.hasMultiQSoftwarePipelinePlan ? "true" : "false") << ",\n";
 			stream << "        \"eligible\": " << (opportunity.eligibleMultiQSoftwarePipeline ? "true" : "false") << ",\n";
@@ -898,6 +916,7 @@ namespace
 			stream << "        \"main_label\": "; writeJsonString( stream, rewritePlan ? rewritePlan->mainLabel.c_str() : "" ); stream << ",\n";
 			stream << "        \"drain_label\": "; writeJsonString( stream, rewritePlan ? rewritePlan->drainLabel.c_str() : "" ); stream << ",\n";
 			stream << "        \"emits_drain\": " << (rewritePlan && rewritePlan->emitsDrain ? "true" : "false") << ",\n";
+			stream << "        \"drains_suffix_stores\": " << (rewritePlan && rewritePlan->drainsSuffixStores ? "true" : "false") << ",\n";
 			stream << "        \"cyclic_prefix_before_branch\": "
 			       << (rewritePlan && rewritePlan->cyclicPrefixBeforeBranch ? "true" : "false") << ",\n";
 			stream << "        \"prefetch_insert_after_token_index\": "

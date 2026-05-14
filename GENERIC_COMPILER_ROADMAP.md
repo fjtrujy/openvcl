@@ -121,6 +121,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: concrete software-pipeline rewrite plans now carry suffix store descriptors through to text/JSON dumps, so the future emitter can consume typed store-drain metadata directly.
    - Done: software-pipeline rewrite application now uses one shared helper for safe store-base advancement, keeping codegen and scheduler dumps on the same transformed token stream.
    - Done: generic software-pipeline rewrites can now rotate suffix-store source values into scratch VF registers before cloned prefetches overwrite them, then rewrite the store to use the scratch value.
+   - Done: generic software-pipeline rewrites can now emit true delayed suffix-store drains by computing the first iteration in the prolog, storing previous-iteration values at the top of the main loop, and draining the final stored values on loop exit.
    - Done: multi-Q loop analysis now exposes a dedicated cyclic-prefix plan with text/JSON blockers for unsafe prefix side effects, suffix clobbers, branch clobbers, and Q live-out cases.
    - Done: generic software-pipeline rewrites can now emit the first multi-Q cyclic-prefix subset by priming the first Q stage in a prolog, running the suffix in the main loop, and cloning that first-stage prefix before the branch.
 

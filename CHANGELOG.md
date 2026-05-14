@@ -34,6 +34,10 @@
 - Loop-pipeline rewrite-plan dumps now report suffix dependency blockers when
   a cloned next-iteration Q producer cannot safely move into the branch delay
   slot.
+- Generic software-pipeline rewrites can now delay drainable suffix stores:
+  the prolog computes and captures the first iteration, the main loop stores
+  previous-iteration values before current Q consumers, and the drain stores
+  the final captured values on exit.
 - Ready-scheduler analysis now has a typed `VuScheduledProgram` wrapper with
   block-level cycle ranges, and schedule dumps expose program-relative issue
   cycles.

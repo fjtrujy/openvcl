@@ -134,6 +134,19 @@ namespace
             return "";
         return block.terminator->operand()->name();
     }
+
+    bool tokenBranchesTo(const vcl::Token& token, const std::string& target)
+    {
+        for (std::list<vcl::Token::Argument>::const_iterator i = token.arguments().begin();
+             i != token.arguments().end(); ++i)
+        {
+            if ((i->flags() & vcl::Token::Argument::BRANCH)
+                && i->type() == vcl::Token::Argument::IMMEDIATE
+                && i->immediate() == target)
+                return true;
+        }
+        return false;
+    }
 }
 
 TEST_CASE("VuSchedulerAnalysis: basic blocks split on labels and barriers")
@@ -628,7 +641,7 @@ TEST_CASE("VuSchedulerAnalysis: software pipeline helper applies safe store-base
 
         CHECK(sawStoreBaseAdvance);
         CHECK(access.hasMemoryOffset);
-        CHECK(access.memoryOffset == -1);
+        CHECK(access.memoryOffset == -2);
         sawAdjustedStore = true;
         break;
     }
@@ -814,6 +827,140 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline reports suffix store d
     CHECK(plans[0].suffixStores[0].tokenIndex == store->tokenIndex);
     CHECK(plans[0].suffixStores[0].storedValueRegister == "VF02");
     CHECK(plans[0].suffixStores[0].drainCandidate);
+}
+
+TEST_CASE("VuSchedulerAnalysis: generic software pipeline emits delayed suffix store drains")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 1"));
+    REQUIRE(program.parse("lq.xyz vf01, 0(vi01)"));
+    REQUIRE(program.parse("div q, vf00[w], vf01[w]"));
+    REQUIRE(program.parse("mulq.xyz vf02, vf03, q"));
+    REQUIRE(program.parse("sq.xyz vf02, 0(vi03)"));
+    REQUIRE(program.parse("add.xyz vf10, vf10, vf00"));
+    REQUIRE(program.parse("add.xyz vf11, vf11, vf00"));
+    REQUIRE(program.parse("add.xyz vf12, vf12, vf00"));
+    REQUIRE(program.parse("add.xyz vf13, vf13, vf00"));
+    REQUIRE(program.parse("add.xyz vf14, vf14, vf00"));
+    REQUIRE(program.parse("add.xyz vf15, vf15, vf00"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
+    REQUIRE(program.parse("iaddiu vi03, vi03, 1"));
+    REQUIRE(program.parse("ibne vi01, vi02, loop_lid"));
+
+    std::vector<vcl::VuLoopPipelineOpportunity> opportunities =
+        vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
+    REQUIRE(opportunities.size() == 1u);
+    CHECK(opportunities[0].canEmitSoftwarePipeline);
+    CHECK(opportunities[0].hasSuffixStoreDrainPlan);
+    CHECK(opportunities[0].canEmitSuffixStoreDrain);
+    REQUIRE(opportunities[0].softwarePipelineSuffixStores.size() == 1u);
+    CHECK(opportunities[0].softwarePipelineSuffixStores[0].delayedDrain);
+    CHECK(!opportunities[0].softwarePipelineSuffixStores[0].requiresValueRotation);
+
+    std::vector<vcl::VuSoftwarePipelineRewritePlan> plans =
+        vcl::buildVuSoftwarePipelineRewritePlans(program.tokenizer.tokens());
+    REQUIRE(plans.size() == 1u);
+    CHECK(plans[0].drainsSuffixStores);
+
+    std::list<vcl::Token> transformed = vcl::applyVuSoftwarePipelinePlans(program.tokenizer.tokens());
+
+    unsigned int prologLabels = 0;
+    unsigned int mainLabels = 0;
+    unsigned int drainLabels = 0;
+    unsigned int storeCount = 0;
+    bool sawInvertedPrologBranch = false;
+    bool inMainLoop = false;
+    bool mainStoreBeforeConsumer = false;
+    for (std::list<vcl::Token>::const_iterator i = transformed.begin(); i != transformed.end(); ++i)
+    {
+        if (i->label() == "loop_lid__PROLOG")
+            ++prologLabels;
+        if (i->label() == "loop_lid")
+            ++mainLabels;
+        if (i->label() == "loop_lid__DRAIN")
+            ++drainLabels;
+
+        const std::string mnemonic = vcl::normalizeVuMnemonic(i->name());
+        if (mnemonic == "ibeq")
+        {
+            if (tokenBranchesTo(*i, "loop_lid__DRAIN"))
+                sawInvertedPrologBranch = true;
+        }
+        if (i->label() == "loop_lid")
+            inMainLoop = true;
+        if (inMainLoop && mnemonic == "sq")
+        {
+            vcl::VuTokenResourceAccess access;
+            REQUIRE(vcl::buildVuTokenResourceAccess(*i, access));
+            CHECK(access.hasMemoryOffset);
+            CHECK(access.memoryOffset == -1);
+            ++storeCount;
+            mainStoreBeforeConsumer = true;
+        }
+        if (inMainLoop && mnemonic == "mulq")
+            CHECK(mainStoreBeforeConsumer);
+    }
+
+    CHECK(prologLabels == 1u);
+    CHECK(mainLabels == 1u);
+    CHECK(drainLabels == 1u);
+    CHECK(storeCount == 2u);
+    CHECK(sawInvertedPrologBranch);
+}
+
+TEST_CASE("VuSchedulerAnalysis: delayed suffix store drains rotate overwritten values")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 1"));
+    REQUIRE(program.parse("lq.xyz vf01, 0(vi01)"));
+    REQUIRE(program.parse("div q, vf00[w], vf01[w]"));
+    REQUIRE(program.parse("mulq.xyz vf02, vf03, q"));
+    REQUIRE(program.parse("sq.xyz vf02, 0(vi03)"));
+    REQUIRE(program.parse("add.xyz vf02, vf10, vf00"));
+    REQUIRE(program.parse("add.xyz vf11, vf11, vf00"));
+    REQUIRE(program.parse("add.xyz vf12, vf12, vf00"));
+    REQUIRE(program.parse("add.xyz vf13, vf13, vf00"));
+    REQUIRE(program.parse("add.xyz vf14, vf14, vf00"));
+    REQUIRE(program.parse("add.xyz vf15, vf15, vf00"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
+    REQUIRE(program.parse("iaddiu vi03, vi03, 1"));
+    REQUIRE(program.parse("ibne vi01, vi02, loop_lid"));
+
+    std::vector<vcl::VuLoopPipelineOpportunity> opportunities =
+        vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
+    REQUIRE(opportunities.size() == 1u);
+    CHECK(opportunities[0].canEmitSuffixStoreDrain);
+    REQUIRE(opportunities[0].softwarePipelineSuffixStores.size() == 1u);
+    CHECK(opportunities[0].softwarePipelineSuffixStores[0].requiresValueRotation);
+    CHECK(opportunities[0].softwarePipelineSuffixStores[0].hasValueScratchRegister);
+    CHECK(opportunities[0].softwarePipelineSuffixStores[0].rotateValueAtStore);
+
+    std::list<vcl::Token> transformed = vcl::applyVuSoftwarePipelinePlans(program.tokenizer.tokens());
+    bool sawValueMove = false;
+    bool sawAdjustedStore = false;
+    for (std::list<vcl::Token>::const_iterator i = transformed.begin(); i != transformed.end(); ++i)
+    {
+        vcl::VuTokenResourceAccess access;
+        if (!vcl::buildVuTokenResourceAccess(*i, access))
+            continue;
+        const std::string mnemonic = vcl::normalizeVuMnemonic(i->name());
+        if (mnemonic == "move"
+            && hasString(access.registerReads, "VF02.x")
+            && hasString(access.registerWrites, "VF31.x"))
+            sawValueMove = true;
+        if (mnemonic == "sq"
+            && hasString(access.registerReads, "VF31.x")
+            && access.hasMemoryOffset
+            && access.memoryOffset == -1)
+            sawAdjustedStore = true;
+    }
+
+    CHECK(sawValueMove);
+    CHECK(sawAdjustedStore);
 }
 
 TEST_CASE("VuSchedulerAnalysis: generic software pipeline prefers Q producers over ordinary branch-delay suffix fillers")
