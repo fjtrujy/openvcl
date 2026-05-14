@@ -97,6 +97,13 @@ namespace
         return runEmitWithExtraArgs(source, std::vector<std::string>());
     }
 
+    std::string runOptimizedEmit(const std::string& source)
+    {
+        std::vector<std::string> args;
+        args.push_back("--enable-known-loop-optimizations");
+        return runEmitWithExtraArgs(source, args);
+    }
+
     ::test::RunResult runCostJsonWithLoop(const std::string& vsm, const std::string& loop)
     {
         std::vector<std::string> args;
@@ -109,10 +116,7 @@ namespace
     void expectGenericPathCompiles(const std::string& source,
                                    const std::string& loopLabel)
     {
-        std::vector<std::string> args;
-        args.push_back("--disable-known-loop-optimizations");
-
-        std::string vsm = runEmitWithExtraArgs(source, args);
+        std::string vsm = runEmit(source);
         REQUIRE(vsm.length() > 0);
 
         CHECK(contains(vsm, loopLabel + ":"));
@@ -849,7 +853,7 @@ namespace
 
 TEST_CASE("Software pipeline: fast_nolights transform loop emits a 12-cycle steady state")
 {
-    std::string vsm = runEmit(fastNoLightsPipelineSource());
+    std::string vsm = runOptimizedEmit(fastNoLightsPipelineSource());
     REQUIRE(vsm.length() > 0);
 
     CHECK(contains(vsm, "xform_loop_lid__ENTRY_POINT:"));
@@ -862,7 +866,7 @@ TEST_CASE("Software pipeline: fast_nolights transform loop emits a 12-cycle stea
     CHECK(countSubstrings(vsm, "waitq") == 0);
 }
 
-TEST_CASE("Software pipeline: known-loop optimizations can be disabled")
+TEST_CASE("Software pipeline: generic compiler path is the default")
 {
     expectGenericPathCompiles(fastNoLightsPipelineSource(), "xform_loop_lid");
     expectGenericPathCompiles(fastLitPipelineSource(), "xform_loop_lid");
@@ -886,7 +890,7 @@ TEST_CASE("Software pipeline: known-loop optimizations can be disabled")
 
 TEST_CASE("Software pipeline: known-loop emitters remain cost references for generic path")
 {
-    std::string optimized = runEmit(fastNoLightsPipelineSource());
+    std::string optimized = runOptimizedEmit(fastNoLightsPipelineSource());
     REQUIRE(optimized.length() > 0);
 
     std::vector<std::string> genericArgs;
@@ -910,7 +914,7 @@ TEST_CASE("Software pipeline: known-loop emitters remain cost references for gen
 
 TEST_CASE("Software pipeline: fast lit transform loop emits a 16-cycle steady state")
 {
-    std::string vsm = runEmit(fastLitPipelineSource());
+    std::string vsm = runOptimizedEmit(fastLitPipelineSource());
     REQUIRE(vsm.length() > 0);
 
     CHECK(contains(vsm, "xform_loop_lid__ENTRY_POINT:"));
@@ -925,7 +929,7 @@ TEST_CASE("Software pipeline: fast lit transform loop emits a 16-cycle steady st
 
 TEST_CASE("Software pipeline: SCEI transform loop emits a 19-cycle steady state")
 {
-    std::string vsm = runEmit(sceiPipelineSource());
+    std::string vsm = runOptimizedEmit(sceiPipelineSource());
     REQUIRE(vsm.length() > 0);
 
     CHECK(contains(vsm, "xform_loop_lid__ENTRY_POINT:"));
@@ -940,7 +944,7 @@ TEST_CASE("Software pipeline: SCEI transform loop emits a 19-cycle steady state"
 
 TEST_CASE("Software pipeline: final color loop keeps the original output register w lane")
 {
-    std::string vsm = runEmit(finalColorPipelineSource());
+    std::string vsm = runOptimizedEmit(finalColorPipelineSource());
     REQUIRE(vsm.length() > 0);
 
     CHECK(contains(vsm, "final_loop_lid__ENTRY_POINT:"));
@@ -957,7 +961,7 @@ TEST_CASE("Software pipeline: final color loop keeps the original output registe
 
 TEST_CASE("Software pipeline: linear transform loop computes next flags before looping")
 {
-    std::string vsm = runEmit(linearXformPipelineSource());
+    std::string vsm = runOptimizedEmit(linearXformPipelineSource());
     REQUIRE(vsm.length() > 0);
 
     CHECK(contains(vsm, "xform_loop_lid__ENTRY_POINT:"));
@@ -982,7 +986,7 @@ TEST_CASE("Software pipeline: linear transform loop pipelines when clip scratch 
     REQUIRE(pos != std::string::npos);
     source.replace(pos, stripMerge.length(), "\tior vi05, vi05, vi01\n");
 
-    std::string vsm = runEmit(source);
+    std::string vsm = runOptimizedEmit(source);
     REQUIRE(vsm.length() > 0);
 
     CHECK(contains(vsm, "xform_loop_lid__PRO1:"));
@@ -1014,7 +1018,7 @@ TEST_CASE("Software pipeline: safe ps2gl primitive transform loops keep SCE-size
 
     for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i)
     {
-        std::string vsm = runEmit(ps2glNamedXformLoopSource(cases[i].name));
+        std::string vsm = runOptimizedEmit(ps2glNamedXformLoopSource(cases[i].name));
         REQUIRE(vsm.length() > 0);
         CHECK(contains(vsm, "xform_loop_lid__ENTRY_POINT:"));
         CHECK(contains(vsm, "xform_loop_lid__MAIN_LOOP:"));
@@ -1030,7 +1034,7 @@ TEST_CASE("Software pipeline: safe ps2gl primitive transform loops keep SCE-size
 
 TEST_CASE("Software pipeline: no-spec directional light loop emits an 8-cycle steady state")
 {
-    std::string vsm = runEmit(dirLightNoSpecPipelineSource());
+    std::string vsm = runOptimizedEmit(dirLightNoSpecPipelineSource());
     REQUIRE(vsm.length() > 0);
 
     CHECK(contains(vsm, "dir_light_vert_loop_lid__ENTRY_POINT:"));
@@ -1042,7 +1046,7 @@ TEST_CASE("Software pipeline: no-spec directional light loop emits an 8-cycle st
 
 TEST_CASE("Software pipeline: plain specular directional light loop pipelines shared W power chains")
 {
-    std::string vsm = runEmit(dirLightSpecPipelineSource());
+    std::string vsm = runOptimizedEmit(dirLightSpecPipelineSource());
     REQUIRE(vsm.length() > 0);
 
     CHECK(contains(vsm, "dir_light_vert_loop_lid__SPEC_ENTRY_POINT:"));
@@ -1056,7 +1060,7 @@ TEST_CASE("Software pipeline: plain specular directional light loop pipelines sh
 
 TEST_CASE("Software pipeline: indexed specular directional light loop keeps postincrement stores")
 {
-    std::string vsm = runEmit(dirLightSpecIndexedPipelineSource());
+    std::string vsm = runOptimizedEmit(dirLightSpecIndexedPipelineSource());
     REQUIRE(vsm.length() > 0);
 
     CHECK(contains(vsm, "dir_light_vert_loop_lid__SPEC_ENTRY_POINT:"));
@@ -1068,7 +1072,7 @@ TEST_CASE("Software pipeline: indexed specular directional light loop keeps post
 
 TEST_CASE("Software pipeline: pv-diff specular directional light loop keeps per-vertex material diffuse")
 {
-    std::string vsm = runEmit(dirLightSpecPvDiffPipelineSource());
+    std::string vsm = runOptimizedEmit(dirLightSpecPvDiffPipelineSource());
     REQUIRE(vsm.length() > 0);
 
     CHECK(contains(vsm, "dir_light_vert_loop_lid__SPEC_ENTRY_POINT:"));
@@ -1081,7 +1085,7 @@ TEST_CASE("Software pipeline: pv-diff specular directional light loop keeps per-
 
 TEST_CASE("Software pipeline: no-spec point light loop emits a 26-cycle steady state")
 {
-    std::string vsm = runEmit(ptLightNoSpecPipelineSource());
+    std::string vsm = runOptimizedEmit(ptLightNoSpecPipelineSource());
     REQUIRE(vsm.length() > 0);
 
     CHECK(contains(vsm, "pt_light_vert_loop_lid__ENTRY_POINT:"));
@@ -1094,7 +1098,7 @@ TEST_CASE("Software pipeline: no-spec point light loop emits a 26-cycle steady s
 
 TEST_CASE("Software pipeline: plain specular point light loop pipelines Q/P and W power chains")
 {
-    std::string vsm = runEmit(ptLightSpecPipelineSource());
+    std::string vsm = runOptimizedEmit(ptLightSpecPipelineSource());
     REQUIRE(vsm.length() > 0);
 
     CHECK(contains(vsm, "pt_light_vert_loop_lid__SPEC_ENTRY_POINT:"));
@@ -1106,7 +1110,7 @@ TEST_CASE("Software pipeline: plain specular point light loop pipelines Q/P and 
 
 TEST_CASE("Software pipeline: pv-diff specular point light loop stays scalar until W power chain is safe")
 {
-    std::string vsm = runEmit(ptLightSpecPvDiffPipelineSource());
+    std::string vsm = runOptimizedEmit(ptLightSpecPvDiffPipelineSource());
     REQUIRE(vsm.length() > 0);
 
     CHECK(!contains(vsm, "pt_light_vert_loop_lid__SPEC_ENTRY_POINT:"));

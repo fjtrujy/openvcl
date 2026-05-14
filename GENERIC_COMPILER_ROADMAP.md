@@ -14,10 +14,11 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
 1. **Classify Codegen Paths** - started
    - Separate generic emission, generic scheduling helpers, and known-loop optimizations.
    - Done: add a switch to disable known-loop optimizations so the generic compiler path can be tested directly.
+   - Done: generic compilation is now the default; known-loop emitters are opt-in reference paths via `--enable-known-loop-optimizations`.
    - Done: document known-loop emitters as transitional ps2gl-oriented optimizations in the code wrapper.
 
 2. **Protect Generic Correctness** - done
-   - Done: add tests that compile every current software-pipeline fixture with known-loop optimizations disabled.
+   - Done: add tests that compile every current software-pipeline fixture through the default generic path.
    - Done: verify VSM is still produced, original labels remain, and optimized `__MAIN_LOOP` labels are absent.
 
 3. **Use Hand Emitters as Performance References** - done
@@ -51,9 +52,10 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Compare against current hand emitters and SCEI output per shader.
    - Done: loop analysis now exposes an automatic prolog/main/drain token plan for eligible single-Q affine loops in text and JSON.
 
-8. **Retire Pattern Emitters Incrementally**
+8. **Retire Pattern Emitters Incrementally** - started
    - Replace each hand emitter only after generic scheduling/software pipelining matches correctness and reaches equal or better loop cost.
    - Delete the bespoke emitter and keep focused regression tests.
+   - Done: ps2gl-shaped emitters are no longer used by default, keeping generic emission as the normal compiler path while retaining opt-in reference emitters for comparison.
 
 ## Validation Loop
 - `make openvcl -j8`

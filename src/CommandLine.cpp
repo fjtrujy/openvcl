@@ -74,7 +74,7 @@ CommandLine::CommandLine()
 	m_dumpLoopPipelineInfoJson = false;
 	m_dumpScheduleInfo = false;
 	m_dumpScheduleInfoJson = false;
-	m_knownLoopOptimizations = true;
+	m_knownLoopOptimizations = false;
 
 	m_gasp = "gasp";
 	m_cpp = "cpp";
@@ -122,6 +122,7 @@ CommandLine::CommandLine()
 	m_options.push_back(Option('\0',"dump-loop-pipeline-info-json",DUMP_LOOP_PIPELINE_INFO_JSON,false));
 	m_options.push_back(Option('\0',"dump-schedule-info",DUMP_SCHEDULE_INFO,false));
 	m_options.push_back(Option('\0',"dump-schedule-info-json",DUMP_SCHEDULE_INFO_JSON,false));
+	m_options.push_back(Option('\0',"enable-known-loop-optimizations",ENABLE_KNOWN_LOOP_OPTIMIZATIONS,false));
 	m_options.push_back(Option('\0',"disable-known-loop-optimizations",DISABLE_KNOWN_LOOP_OPTIMIZATIONS,false));
 }
 
@@ -232,6 +233,7 @@ bool CommandLine::parse( int argc, char* argv[] )
 				case DUMP_LOOP_PIPELINE_INFO_JSON: m_dumpLoopPipelineInfo = true; m_dumpLoopPipelineInfoJson = true; break;
 				case DUMP_SCHEDULE_INFO: m_dumpScheduleInfo = true; break;
 				case DUMP_SCHEDULE_INFO_JSON: m_dumpScheduleInfo = true; m_dumpScheduleInfoJson = true; break;
+				case ENABLE_KNOWN_LOOP_OPTIMIZATIONS: m_knownLoopOptimizations = true; break;
 				case DISABLE_KNOWN_LOOP_OPTIMIZATIONS: m_knownLoopOptimizations = false; break;
 				case ANALYZE_VSM_COST_LOOP:
 				{
@@ -319,7 +321,8 @@ void CommandLine::showUsage( std::ostream& stream )
 	stream << "  --dump-loop-pipeline-info-json  Print loop-carried Q pipeline opportunities as JSON." << std::endl;
 	stream << "  --dump-schedule-info       Print generic ready-scheduler issue slots." << std::endl;
 	stream << "  --dump-schedule-info-json  Print generic ready-scheduler issue slots as JSON." << std::endl;
-	stream << "  --disable-known-loop-optimizations  Compile without ps2gl-shaped loop emitters." << std::endl;
+	stream << "  --enable-known-loop-optimizations  Compile with ps2gl-shaped loop reference emitters." << std::endl;
+	stream << "  --disable-known-loop-optimizations  Kept for compatibility; generic compilation is the default." << std::endl;
 
 	stream << std::endl << "  If no input or output file are specified, standard I/O will be used instead." << std::endl;
 
