@@ -1657,6 +1657,7 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline blocks cyclic prefixes
     REQUIRE(program.parse("div q, vf00[w], vf04[w]"));
     REQUIRE(program.parse("mulq.xyz vf05, vf06, q"));
     REQUIRE(program.parse("add.xyz vf10, vf11, vf00"));
+    REQUIRE(program.parse("add.xyz vf20, vf20, vf00"));
     REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
     REQUIRE(program.parse("ibne vi01, vi02, loop_lid"));
 

@@ -2741,6 +2741,8 @@ namespace
 			addMultiQPipelineBlocker( opportunity, "xgkick_barrier" );
 		if( opportunity.inductionRegisters.empty() )
 			addMultiQPipelineBlocker( opportunity, "missing_induction_register" );
+		if( opportunity.qProducerInsertionGapDeficitCycles != 0 )
+			addMultiQPipelineBlocker( opportunity, "insufficient_q_insertion_gap" );
 		if( opportunity.qLiveOut )
 			addMultiQPipelineBlocker( opportunity, "q_live_out" );
 		if( tokenIndicesHaveUnsafeMultiQCyclicPrefixSideEffects( opportunity.multiQCyclicPrefixTokenIndices,
