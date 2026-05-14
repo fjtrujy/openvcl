@@ -265,6 +265,7 @@ TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose loop-carried Q sta
     CHECK(opportunities[0].qProducerLatency == 7u);
     CHECK(opportunities[0].qProducerConsumerGapCycles == 0u);
     CHECK(opportunities[0].qProducerConsumerGapDeficitCycles == 7u);
+    CHECK(opportunities[0].qSchedulingStrategy == vcl::VU_LOOP_Q_SCHEDULE_LOOP_CARRIED);
     CHECK(opportunities[0].sourcePrefixCycles > 0u);
     CHECK(opportunities[0].sourcePrefixCycles < opportunities[0].qProducerLatency);
     CHECK(opportunities[0].sourcePrefixCycles + opportunities[0].sourceSuffixCycles >= opportunities[0].qProducerLatency);
@@ -331,6 +332,7 @@ TEST_CASE("VuSchedulerAnalysis: pipeline plans report loops that are safe for ge
     CHECK(opportunities[0].qProducerConsumerGapCycles == 0u);
     CHECK(opportunities[0].qProducerConsumerGapDeficitCycles == 7u);
     CHECK(opportunities[0].loopCarriedQGapCycles >= opportunities[0].qProducerLatency);
+    CHECK(opportunities[0].qSchedulingStrategy == vcl::VU_LOOP_Q_SCHEDULE_LOOP_CARRIED);
     CHECK(opportunities[0].softwarePipelineBlockers.empty());
     CHECK(opportunities[0].softwarePipelineRotatedRegisters.empty());
     CHECK(!opportunities[0].requiresLoopCarriedRegisters);

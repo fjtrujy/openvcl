@@ -433,6 +433,17 @@ namespace
 		return NULL;
 	}
 
+	const char* loopQSchedulingStrategyName( VuLoopQSchedulingStrategy strategy )
+	{
+		switch( strategy )
+		{
+			case VU_LOOP_Q_SCHEDULE_LOCAL: return "local";
+			case VU_LOOP_Q_SCHEDULE_LOOP_CARRIED: return "loop_carried";
+			case VU_LOOP_Q_SCHEDULE_INSUFFICIENT: return "insufficient";
+		}
+		return "insufficient";
+	}
+
 	void writeLoopPipelineInfoText( std::ostream& stream,
 	                                const std::vector<VuLoopPipelineOpportunity>& opportunities,
 	                                const std::vector<VuSoftwarePipelineRewritePlan>& rewritePlans )
@@ -449,6 +460,7 @@ namespace
 			       << " q_producer_consumer_gap_cycles=" << i->qProducerConsumerGapCycles
 			       << " q_producer_consumer_gap_deficit_cycles=" << i->qProducerConsumerGapDeficitCycles
 			       << " loop_carried_q_gap_cycles=" << i->loopCarriedQGapCycles
+			       << " q_scheduling_strategy=" << loopQSchedulingStrategyName( i->qSchedulingStrategy )
 			       << " source_prefix_cycles=" << i->sourcePrefixCycles
 			       << " source_suffix_cycles=" << i->sourceSuffixCycles
 			       << " branch_delay_slots=" << i->branchDelaySlots
@@ -512,6 +524,7 @@ namespace
 			stream << "      \"q_producer_consumer_gap_cycles\": " << opportunity.qProducerConsumerGapCycles << ",\n";
 			stream << "      \"q_producer_consumer_gap_deficit_cycles\": " << opportunity.qProducerConsumerGapDeficitCycles << ",\n";
 			stream << "      \"loop_carried_q_gap_cycles\": " << opportunity.loopCarriedQGapCycles << ",\n";
+			stream << "      \"q_scheduling_strategy\": "; writeJsonString( stream, loopQSchedulingStrategyName( opportunity.qSchedulingStrategy ) ); stream << ",\n";
 			stream << "      \"source_prefix_cycles\": " << opportunity.sourcePrefixCycles << ",\n";
 			stream << "      \"source_suffix_cycles\": " << opportunity.sourceSuffixCycles << ",\n";
 			stream << "      \"branch_delay_slots\": " << opportunity.branchDelaySlots << ",\n";

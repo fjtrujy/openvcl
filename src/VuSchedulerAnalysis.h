@@ -87,6 +87,13 @@ struct VuLoopCandidate
 	const Token* branchToken;
 };
 
+enum VuLoopQSchedulingStrategy
+{
+	VU_LOOP_Q_SCHEDULE_LOCAL,
+	VU_LOOP_Q_SCHEDULE_LOOP_CARRIED,
+	VU_LOOP_Q_SCHEDULE_INSUFFICIENT
+};
+
 struct VuLoopPipelineOpportunity
 {
 	VuLoopPipelineOpportunity();
@@ -100,6 +107,7 @@ struct VuLoopPipelineOpportunity
 	unsigned int qProducerConsumerGapCycles;
 	unsigned int qProducerConsumerGapDeficitCycles;
 	unsigned int loopCarriedQGapCycles;
+	VuLoopQSchedulingStrategy qSchedulingStrategy;
 	unsigned int sourcePrefixCycles;
 	unsigned int sourceSuffixCycles;
 	unsigned int branchDelaySlots;

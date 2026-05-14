@@ -561,6 +561,15 @@ namespace
 			addUniqueString( rotatedRegisters, registerBaseKey( *i ) );
 	}
 
+	VuLoopQSchedulingStrategy classifyLoopQSchedulingStrategy( const VuLoopPipelineOpportunity& opportunity )
+	{
+		if( opportunity.qProducerConsumerGapDeficitCycles == 0 )
+			return VU_LOOP_Q_SCHEDULE_LOCAL;
+		if( opportunity.loopCarriedQGapCycles >= opportunity.qProducerLatency )
+			return VU_LOOP_Q_SCHEDULE_LOOP_CARRIED;
+		return VU_LOOP_Q_SCHEDULE_INSUFFICIENT;
+	}
+
 	void classifySoftwarePipelineEmissionSafety( VuLoopPipelineOpportunity& opportunity,
 	                                             const VuLoopCandidate& loop,
 	                                             unsigned int qProducerOffset,
@@ -697,6 +706,7 @@ VuLoopPipelineOpportunity::VuLoopPipelineOpportunity()
 	qProducerConsumerGapCycles = 0;
 	qProducerConsumerGapDeficitCycles = 0;
 	loopCarriedQGapCycles = 0;
+	qSchedulingStrategy = VU_LOOP_Q_SCHEDULE_INSUFFICIENT;
 	sourcePrefixCycles = 0;
 	sourceSuffixCycles = 0;
 	branchDelaySlots = 0;
@@ -940,6 +950,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			: 0;
 		opportunity.loopCarriedQGapCycles =
 			opportunity.sourceSuffixCycles + opportunity.branchDelaySlots + opportunity.sourcePrefixCycles;
+		opportunity.qSchedulingStrategy = classifyLoopQSchedulingStrategy( opportunity );
 		opportunity.simpleCountedLoop = loop->simpleCountedLoop;
 		opportunity.hasSingleQProducer = qProducerCount == 1;
 		opportunity.requiresPrologEpilog = loop->simpleCountedLoop && qProducerCount == 1;
