@@ -201,6 +201,20 @@ TEST_CASE("CLI: schedule text dump exposes ready-set issue slots")
     CHECK(contains(r.stdout_data, "slot 1 first=1:mul second=- upper=1:mul lower=-"));
 }
 
+TEST_CASE("CLI: schedule text dump honors generic software-pipeline rewrites")
+{
+    std::vector<std::string> args;
+    args.push_back("-n");
+    args.push_back("--enable-generic-software-pipelining");
+    args.push_back("--dump-schedule-info");
+
+    ::test::RunResult r = ::test::run_openvcl(args, safePipelineInput());
+    REQUIRE(r.exit_code == 0);
+    CHECK(r.stderr_data.empty());
+    CHECK(contains(r.stdout_data, "loop_lid__PROLOG:"));
+    CHECK(contains(r.stdout_data, "loop_lid:"));
+}
+
 TEST_CASE("CLI: schedule JSON dump is stable enough for generic emission tooling")
 {
     std::vector<std::string> args;
@@ -217,4 +231,18 @@ TEST_CASE("CLI: schedule JSON dump is stable enough for generic emission tooling
     CHECK(contains(r.stdout_data, "\"second_token_index\": 2"));
     CHECK(contains(r.stdout_data, "\"upper\": \"add\""));
     CHECK(contains(r.stdout_data, "\"lower\": \"iaddiu\""));
+}
+
+TEST_CASE("CLI: schedule JSON dump honors generic software-pipeline rewrites")
+{
+    std::vector<std::string> args;
+    args.push_back("-n");
+    args.push_back("--enable-generic-software-pipelining");
+    args.push_back("--dump-schedule-info-json");
+
+    ::test::RunResult r = ::test::run_openvcl(args, safePipelineInput());
+    REQUIRE(r.exit_code == 0);
+    CHECK(r.stderr_data.empty());
+    CHECK(contains(r.stdout_data, "\"first\": \"loop_lid__PROLOG:\""));
+    CHECK(contains(r.stdout_data, "\"first\": \"loop_lid:\""));
 }

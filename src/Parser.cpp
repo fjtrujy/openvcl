@@ -1553,6 +1553,13 @@ bool Parser::dumpLoopPipelineInfo()
 
 bool Parser::dumpScheduleInfo()
 {
+	std::list<Token> scheduleTokens = m_tokenizer.tokens();
+	if( !m_cmdLine.knownLoopOptimizations() && m_cmdLine.genericSoftwarePipelining() )
+	{
+		std::list<Token> transformedTokens = applyVuSoftwarePipelinePlans( scheduleTokens );
+		scheduleTokens.swap( transformedTokens );
+	}
+
 	if( m_cmdLine.output().length() > 0 )
 	{
 		std::ofstream output( m_cmdLine.output().c_str() );
@@ -1563,16 +1570,16 @@ bool Parser::dumpScheduleInfo()
 		}
 
 		if( m_cmdLine.dumpScheduleInfoJson() )
-			writeScheduleInfoJson( output, m_tokenizer.tokens() );
+			writeScheduleInfoJson( output, scheduleTokens );
 		else
-			writeScheduleInfoText( output, m_tokenizer.tokens() );
+			writeScheduleInfoText( output, scheduleTokens );
 	}
 	else
 	{
 		if( m_cmdLine.dumpScheduleInfoJson() )
-			writeScheduleInfoJson( std::cout, m_tokenizer.tokens() );
+			writeScheduleInfoJson( std::cout, scheduleTokens );
 		else
-			writeScheduleInfoText( std::cout, m_tokenizer.tokens() );
+			writeScheduleInfoText( std::cout, scheduleTokens );
 	}
 
 	setState( EXIT );
