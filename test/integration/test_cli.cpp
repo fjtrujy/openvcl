@@ -213,6 +213,7 @@ TEST_CASE("CLI: schedule text dump honors generic software-pipeline rewrites")
     CHECK(r.stderr_data.empty());
     CHECK(contains(r.stdout_data, "loop_lid__PROLOG:"));
     CHECK(contains(r.stdout_data, "loop_lid:"));
+    CHECK(contains(r.stdout_data, "div[branch_delay]"));
 }
 
 TEST_CASE("CLI: schedule JSON dump is stable enough for generic emission tooling")
@@ -245,4 +246,5 @@ TEST_CASE("CLI: schedule JSON dump honors generic software-pipeline rewrites")
     CHECK(r.stderr_data.empty());
     CHECK(contains(r.stdout_data, "\"first\": \"loop_lid__PROLOG:\""));
     CHECK(contains(r.stdout_data, "\"first\": \"loop_lid:\""));
+    CHECK(contains(r.stdout_data, "\"first\": \"div[branch_delay]\""));
 }

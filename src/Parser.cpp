@@ -805,11 +805,14 @@ namespace
 	{
 		if( !token )
 			return "";
+		std::string name;
 		if( token->name().length() != 0 )
-			return normalizeVuMnemonic( token->name() );
-		if( token->label().length() != 0 )
-			return token->label() + ":";
-		return "";
+			name = normalizeVuMnemonic( token->name() );
+		else if( token->label().length() != 0 )
+			name = token->label() + ":";
+		if( (token->flags() & Token::BRANCH_DELAY_FILLER) && name.length() != 0 )
+			name += "[branch_delay]";
+		return name;
 	}
 
 	std::map<const Token*, unsigned int> buildTokenIndexMap( const std::list<Token>& tokens )
