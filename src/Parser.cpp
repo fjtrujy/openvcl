@@ -447,6 +447,8 @@ namespace
 			       << " q_consumers=" << i->qConsumerTokenIndices.size()
 			       << " q_latency=" << i->qProducerLatency
 			       << " q_producer_consumer_gap_cycles=" << i->qProducerConsumerGapCycles
+			       << " q_producer_consumer_gap_deficit_cycles=" << i->qProducerConsumerGapDeficitCycles
+			       << " loop_carried_q_gap_cycles=" << i->loopCarriedQGapCycles
 			       << " source_prefix_cycles=" << i->sourcePrefixCycles
 			       << " source_suffix_cycles=" << i->sourceSuffixCycles
 			       << " branch_delay_slots=" << i->branchDelaySlots
@@ -508,6 +510,8 @@ namespace
 			stream << "      \"q_consumer_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.qConsumerTokenIndices ); stream << ",\n";
 			stream << "      \"q_producer_latency\": " << opportunity.qProducerLatency << ",\n";
 			stream << "      \"q_producer_consumer_gap_cycles\": " << opportunity.qProducerConsumerGapCycles << ",\n";
+			stream << "      \"q_producer_consumer_gap_deficit_cycles\": " << opportunity.qProducerConsumerGapDeficitCycles << ",\n";
+			stream << "      \"loop_carried_q_gap_cycles\": " << opportunity.loopCarriedQGapCycles << ",\n";
 			stream << "      \"source_prefix_cycles\": " << opportunity.sourcePrefixCycles << ",\n";
 			stream << "      \"source_suffix_cycles\": " << opportunity.sourceSuffixCycles << ",\n";
 			stream << "      \"branch_delay_slots\": " << opportunity.branchDelaySlots << ",\n";

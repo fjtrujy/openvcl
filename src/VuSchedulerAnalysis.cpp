@@ -695,6 +695,8 @@ VuLoopPipelineOpportunity::VuLoopPipelineOpportunity()
 	firstQConsumerTokenIndex = 0;
 	qProducerLatency = 0;
 	qProducerConsumerGapCycles = 0;
+	qProducerConsumerGapDeficitCycles = 0;
+	loopCarriedQGapCycles = 0;
 	sourcePrefixCycles = 0;
 	sourceSuffixCycles = 0;
 	branchDelaySlots = 0;
@@ -932,6 +934,12 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		                                                       qConsumerOffsets.front() + 1,
 		                                                       static_cast<unsigned int>( loop->bodyTokens.size() - 1 ) );
 		opportunity.branchDelaySlots = loop->branchToken ? vuTokenBranchDelaySlots( *loop->branchToken ) : 0;
+		opportunity.qProducerConsumerGapDeficitCycles =
+			opportunity.qProducerLatency > opportunity.qProducerConsumerGapCycles
+			? opportunity.qProducerLatency - opportunity.qProducerConsumerGapCycles
+			: 0;
+		opportunity.loopCarriedQGapCycles =
+			opportunity.sourceSuffixCycles + opportunity.branchDelaySlots + opportunity.sourcePrefixCycles;
 		opportunity.simpleCountedLoop = loop->simpleCountedLoop;
 		opportunity.hasSingleQProducer = qProducerCount == 1;
 		opportunity.requiresPrologEpilog = loop->simpleCountedLoop && qProducerCount == 1;

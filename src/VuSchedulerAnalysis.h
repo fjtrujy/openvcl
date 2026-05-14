@@ -98,6 +98,8 @@ struct VuLoopPipelineOpportunity
 	unsigned int firstQConsumerTokenIndex;
 	unsigned int qProducerLatency;
 	unsigned int qProducerConsumerGapCycles;
+	unsigned int qProducerConsumerGapDeficitCycles;
+	unsigned int loopCarriedQGapCycles;
 	unsigned int sourcePrefixCycles;
 	unsigned int sourceSuffixCycles;
 	unsigned int branchDelaySlots;
