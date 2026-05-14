@@ -446,6 +446,7 @@ namespace
 			       << " first_q_consumer_token=" << i->firstQConsumerTokenIndex
 			       << " q_consumers=" << i->qConsumerTokenIndices.size()
 			       << " q_latency=" << i->qProducerLatency
+			       << " q_producer_consumer_gap_cycles=" << i->qProducerConsumerGapCycles
 			       << " source_prefix_cycles=" << i->sourcePrefixCycles
 			       << " source_suffix_cycles=" << i->sourceSuffixCycles
 			       << " branch_delay_slots=" << i->branchDelaySlots
@@ -506,6 +507,7 @@ namespace
 			stream << "      \"first_q_consumer_token_index\": " << opportunity.firstQConsumerTokenIndex << ",\n";
 			stream << "      \"q_consumer_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.qConsumerTokenIndices ); stream << ",\n";
 			stream << "      \"q_producer_latency\": " << opportunity.qProducerLatency << ",\n";
+			stream << "      \"q_producer_consumer_gap_cycles\": " << opportunity.qProducerConsumerGapCycles << ",\n";
 			stream << "      \"source_prefix_cycles\": " << opportunity.sourcePrefixCycles << ",\n";
 			stream << "      \"source_suffix_cycles\": " << opportunity.sourceSuffixCycles << ",\n";
 			stream << "      \"branch_delay_slots\": " << opportunity.branchDelaySlots << ",\n";

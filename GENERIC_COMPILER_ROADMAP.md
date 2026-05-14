@@ -59,6 +59,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: generic software-pipeline emission now rejects Q live-out loops so the inserted next-iteration Q producer cannot change fallthrough semantics.
    - Done: generic software-pipeline rewrites now go through an explicit `VuSoftwarePipelineRewritePlan`, giving future rotation/drain work a typed plan instead of ad hoc token surgery.
    - Done: loop-pipeline text/JSON dumps now expose the concrete rewrite plan that will be emitted, not only the abstract opportunity.
+   - Done: loop-pipeline analysis now reports the original Q producer-to-consumer gap, so future profitability checks can distinguish local Q scheduling from true cross-iteration pipelining needs.
 
 8. **Retire Pattern Emitters Incrementally** - started
    - Replace each hand emitter only after generic scheduling/software pipelining matches correctness and reaches equal or better loop cost.
