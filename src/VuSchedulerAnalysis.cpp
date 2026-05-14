@@ -922,6 +922,29 @@ namespace
 		                                    prefetchWrites );
 	}
 
+	bool softwarePipelineQDrainCanEmit( const VuLoopPipelineOpportunity& opportunity,
+	                                    const VuLoopCandidate& loop,
+	                                    unsigned int qProducerOffset )
+	{
+		if( qProducerOffset >= loop.bodyTokens.size() )
+			return false;
+		if( !opportunity.softwarePipelinePrefetches.empty()
+		    || !opportunity.softwarePipelineRotations.empty() )
+			return false;
+
+		VuTokenResourceAccess access;
+		if( !buildVuTokenResourceAccess( *loop.bodyTokens[qProducerOffset], access ) )
+			return false;
+		if( access.memoryKind != VU_MEMORY_NONE )
+			return false;
+		if( intersects( access.registerReads, opportunity.inductionRegisters ) )
+			return false;
+		if( intersects( access.registerReads, opportunity.loopReadWriteRegisters ) )
+			return false;
+
+		return true;
+	}
+
 	void collectSoftwarePipelinePrefetchDescriptors( const std::vector<unsigned int>& prologTokenIndices,
 	                                                unsigned int qProducerTokenIndex,
 	                                                const std::vector<const Token*>& indexedTokens,
@@ -1058,7 +1081,9 @@ namespace
 				break;
 			if( vuTokenReadsQ( *indexedTokens[i] ) )
 			{
-				addPipelineBlocker( opportunity, "q_live_out" );
+				opportunity.qLiveOut = true;
+				if( !softwarePipelineQDrainCanEmit( opportunity, loop, qProducerOffset ) )
+					addPipelineBlocker( opportunity, "q_live_out" );
 				break;
 			}
 		}
@@ -1313,6 +1338,7 @@ VuLoopPipelineOpportunity::VuLoopPipelineOpportunity()
 	hasSingleQProducer = false;
 	requiresPrologEpilog = false;
 	requiresLoopCarriedRegisters = false;
+	qLiveOut = false;
 	eligibleSingleQSoftwarePipeline = false;
 	hasSoftwarePipelinePlan = false;
 	canEmitSoftwarePipeline = false;
@@ -1622,6 +1648,7 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		plan.branchTokenIndex = i->branchTokenIndex;
 		plan.qProducerTokenIndex = i->qProducerTokenIndex;
 		plan.qProducerInsertAfterTokenIndex = i->qConsumerTokenIndices.back();
+		plan.emitsDrain = i->qLiveOut;
 		plan.prefetches = i->softwarePipelinePrefetches;
 		plan.rotations = i->softwarePipelineRotations;
 		for( std::vector<VuSoftwarePipelinePrefetch>::const_iterator p = i->softwarePipelinePrefetches.begin();
@@ -1703,6 +1730,16 @@ std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens )
 		{
 			++i;
 			++index;
+		}
+
+		if( rewrite.emitsDrain )
+		{
+			Token drainLabel( *indexedTokens[rewrite.labelTokenIndex] );
+			drainLabel.setLabel( rewrite.drainLabel );
+			output.push_back( drainLabel );
+			if( rewrite.qProducerTokenIndex < indexedTokens.size() )
+				output.push_back( adjustedQProducerToken( *indexedTokens[rewrite.qProducerTokenIndex],
+				                                          rewrite.rotations ) );
 		}
 	}
 

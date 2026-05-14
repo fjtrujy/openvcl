@@ -155,6 +155,7 @@ struct VuLoopPipelineOpportunity
 	bool hasSingleQProducer;
 	bool requiresPrologEpilog;
 	bool requiresLoopCarriedRegisters;
+	bool qLiveOut;
 	bool eligibleSingleQSoftwarePipeline;
 	bool hasSoftwarePipelinePlan;
 	bool canEmitSoftwarePipeline;

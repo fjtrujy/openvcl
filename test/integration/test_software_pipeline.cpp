@@ -198,6 +198,35 @@ namespace
             "\t--endexit\n";
     }
 
+    std::string genericQDrainPipelineSource()
+    {
+        return
+            "\t.init_vf_all\n"
+            "\t.init_vi_all\n"
+            "\t--enter\n"
+            "\t--endenter\n"
+            "\tiaddiu vi01, vi00, 0\n"
+            "\tiaddiu vi02, vi00, 3\n"
+            "\tmove.xyzw vf03, vf00\n"
+            "\tmove.xyzw vf05, vf00\n"
+            "loop_lid:\n"
+            "\t--LoopCS 1,1\n"
+            "\tdiv q, vf00w, vf00w\n"
+            "\tmulq.xyz vf02, vf03, q\n"
+            "\tadd.xyz vf10, vf00, vf00\n"
+            "\tadd.xyz vf11, vf00, vf00\n"
+            "\tadd.xyz vf12, vf00, vf00\n"
+            "\tadd.xyz vf13, vf00, vf00\n"
+            "\tadd.xyz vf14, vf00, vf00\n"
+            "\tadd.xyz vf15, vf00, vf00\n"
+            "\tiaddiu vi01, vi01, 1\n"
+            "\tibne vi01, vi02, loop_lid\n"
+            "after_lid:\n"
+            "\tmulq.xyz vf04, vf05, q\n"
+            "\t--exit\n"
+            "\t--endexit\n";
+    }
+
     std::string genericRotationPipelineSource()
     {
         return
@@ -974,6 +1003,19 @@ TEST_CASE("Software pipeline: generic path emits adjusted memory prefetches")
     CHECK(contains(vsm, "lq VF01, 0(VI01)"));
     CHECK(contains(vsm, "lq VF01, 1(VI01)"));
     CHECK(countSubstrings(vsm, "div q, VF00w, VF01w") == 2);
+}
+
+TEST_CASE("Software pipeline: generic path emits simple Q live-out drains")
+{
+    std::vector<std::string> args;
+    args.push_back("--enable-generic-software-pipelining");
+    std::string vsm = runEmitWithExtraArgs(genericQDrainPipelineSource(), args);
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(contains(vsm, "loop_lid__PROLOG:"));
+    CHECK(contains(vsm, "loop_lid__DRAIN:"));
+    CHECK(contains(vsm, "after_lid:"));
+    CHECK(countSubstrings(vsm, "div q, VF00w, VF00w") == 3);
 }
 
 TEST_CASE("Software pipeline: generic path emits simple rotated register prefetches")

@@ -620,6 +620,7 @@ namespace
 			       << " single_q_producer=" << (i->hasSingleQProducer ? "yes" : "no")
 			       << " requires_prolog_epilog=" << (i->requiresPrologEpilog ? "yes" : "no")
 			       << " requires_loop_carried_registers=" << (i->requiresLoopCarriedRegisters ? "yes" : "no")
+			       << " q_live_out=" << (i->qLiveOut ? "yes" : "no")
 			       << " memory_loads=" << i->memoryLoadCount
 			       << " memory_stores=" << i->memoryStoreCount
 			       << " memory_pre_post_increment=" << (i->hasMemoryPreOrPostIncrement ? "yes" : "no")
@@ -698,6 +699,7 @@ namespace
 			stream << "      \"single_q_producer\": " << (opportunity.hasSingleQProducer ? "true" : "false") << ",\n";
 			stream << "      \"requires_prolog_epilog\": " << (opportunity.requiresPrologEpilog ? "true" : "false") << ",\n";
 			stream << "      \"requires_loop_carried_registers\": " << (opportunity.requiresLoopCarriedRegisters ? "true" : "false") << ",\n";
+			stream << "      \"q_live_out\": " << (opportunity.qLiveOut ? "true" : "false") << ",\n";
 			stream << "      \"memory_loads\": " << opportunity.memoryLoadCount << ",\n";
 			stream << "      \"memory_stores\": " << opportunity.memoryStoreCount << ",\n";
 			stream << "      \"memory_pre_post_increment\": " << (opportunity.hasMemoryPreOrPostIncrement ? "true" : "false") << ",\n";
