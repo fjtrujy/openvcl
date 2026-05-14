@@ -8,6 +8,7 @@
 #include "../../src/Tokenizer.h"
 #include "../../src/VuInstructionInfo.h"
 #include "../../src/VuSchedulerAnalysis.h"
+#include "../../src/VuTokenResourceAccess.h"
 
 #include <list>
 #include <string>
@@ -328,7 +329,7 @@ TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose loop-carried Q sta
     CHECK(opportunities[0].hasSoftwarePipelinePlan);
     CHECK(!opportunities[0].canEmitSoftwarePipeline);
     CHECK(hasString(opportunities[0].softwarePipelineBlockers, "requires_register_rotation"));
-    CHECK(hasString(opportunities[0].softwarePipelineBlockers, "multi_instruction_prefetch"));
+    CHECK(!hasString(opportunities[0].softwarePipelineBlockers, "multi_instruction_prefetch"));
     CHECK(hasString(opportunities[0].softwarePipelineRotatedRegisters, "VF03"));
     CHECK(hasString(opportunities[0].softwarePipelineRotatedRegisters, "VF06"));
     const vcl::VuSoftwarePipelinePrefetch* lqPrefetch = findPrefetch(opportunities[0].softwarePipelinePrefetches, 2u);
@@ -567,7 +568,7 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline reports insufficient Q
     CHECK(plans.empty());
 }
 
-TEST_CASE("VuSchedulerAnalysis: multi-instruction prefetch reports memory and induction blockers")
+TEST_CASE("VuSchedulerAnalysis: generic software pipeline rewrites next-iteration load prefetches")
 {
     vcl::Error::ResetErrorCount();
     ParsedProgram program;
@@ -589,10 +590,65 @@ TEST_CASE("VuSchedulerAnalysis: multi-instruction prefetch reports memory and in
     REQUIRE(opportunities.size() == 1u);
     CHECK(opportunities[0].eligibleSingleQSoftwarePipeline);
     CHECK(opportunities[0].hasSoftwarePipelinePlan);
+    CHECK(opportunities[0].canEmitSoftwarePipeline);
+    CHECK(!hasString(opportunities[0].softwarePipelineBlockers, "multi_instruction_prefetch"));
+    CHECK(!hasString(opportunities[0].softwarePipelineBlockers, "multi_instruction_prefetch_memory"));
+    CHECK(!hasString(opportunities[0].softwarePipelineBlockers, "multi_instruction_prefetch_reads_induction"));
+    const vcl::VuSoftwarePipelinePrefetch* lqPrefetch = findPrefetch(opportunities[0].softwarePipelinePrefetches, 2u);
+    REQUIRE(lqPrefetch != NULL);
+    CHECK(lqPrefetch->hasNextIterationOffset);
+    CHECK(lqPrefetch->nextIterationOffset == 1);
+
+    std::vector<vcl::VuSoftwarePipelineRewritePlan> plans = vcl::buildVuSoftwarePipelineRewritePlans(program.tokenizer.tokens());
+    REQUIRE(plans.size() == 1u);
+    REQUIRE(plans[0].prefetchTokenIndices.size() == 1u);
+    CHECK(plans[0].prefetchTokenIndices[0] == 2u);
+
+    std::list<vcl::Token> transformed = vcl::applyVuSoftwarePipelinePlans(program.tokenizer.tokens());
+    unsigned int lqOffsetZeroCount = 0;
+    unsigned int lqOffsetOneCount = 0;
+    for (std::list<vcl::Token>::const_iterator i = transformed.begin(); i != transformed.end(); ++i)
+    {
+        if (vcl::normalizeVuMnemonic(i->name()) != "lq")
+            continue;
+        vcl::VuTokenResourceAccess access;
+        REQUIRE(vcl::buildVuTokenResourceAccess(*i, access));
+        if (access.hasMemoryOffset && access.memoryOffset == 0)
+            ++lqOffsetZeroCount;
+        if (access.hasMemoryOffset && access.memoryOffset == 1)
+            ++lqOffsetOneCount;
+    }
+    CHECK(lqOffsetZeroCount == 1u);
+    CHECK(lqOffsetOneCount == 1u);
+}
+
+TEST_CASE("VuSchedulerAnalysis: multi-instruction prefetch reports suffix clobber blockers")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 1"));
+    REQUIRE(program.parse("lq.xyz vf01, 0(vi01)"));
+    REQUIRE(program.parse("div q, vf00[w], vf01[w]"));
+    REQUIRE(program.parse("mulq.xyz vf02, vf03, q"));
+    REQUIRE(program.parse("add.xyz vf10, vf01, vf00"));
+    REQUIRE(program.parse("add.xyz vf11, vf11, vf00"));
+    REQUIRE(program.parse("add.xyz vf12, vf12, vf00"));
+    REQUIRE(program.parse("add.xyz vf13, vf13, vf00"));
+    REQUIRE(program.parse("add.xyz vf14, vf14, vf00"));
+    REQUIRE(program.parse("add.xyz vf15, vf15, vf00"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
+    REQUIRE(program.parse("ibne vi01, vi02, loop_lid"));
+
+    std::vector<vcl::VuLoopPipelineOpportunity> opportunities = vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
+    REQUIRE(opportunities.size() == 1u);
+    CHECK(opportunities[0].eligibleSingleQSoftwarePipeline);
+    CHECK(opportunities[0].hasSoftwarePipelinePlan);
     CHECK(!opportunities[0].canEmitSoftwarePipeline);
     CHECK(hasString(opportunities[0].softwarePipelineBlockers, "multi_instruction_prefetch"));
     CHECK(hasString(opportunities[0].softwarePipelineBlockers, "multi_instruction_prefetch_memory"));
     CHECK(hasString(opportunities[0].softwarePipelineBlockers, "multi_instruction_prefetch_reads_induction"));
+    CHECK(hasString(opportunities[0].softwarePipelineBlockers, "prefetch_clobbers_suffix"));
 }
 
 TEST_CASE("VuSchedulerAnalysis: generic software pipeline blocks Q live-out loops")

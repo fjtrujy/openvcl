@@ -5,6 +5,7 @@
 
 #include <cstdlib>
 #include <map>
+#include <sstream>
 #include <string>
 
 namespace vcl
@@ -651,6 +652,7 @@ namespace
 		prefetch.tokenIndex = tokenIndex;
 		prefetch.mnemonic = lowerVuTokenName( token );
 		prefetch.memoryKind = VU_MEMORY_NONE;
+		prefetch.memoryFlags = VU_MEMORY_FLAG_NONE;
 		prefetch.hasMemoryBase = false;
 		prefetch.memoryBaseRegister = "";
 		prefetch.hasMemoryOffset = false;
@@ -664,6 +666,7 @@ namespace
 		if( buildVuTokenResourceAccess( token, access ) )
 		{
 			prefetch.memoryKind = access.memoryKind;
+			prefetch.memoryFlags = access.memoryFlags;
 			prefetch.hasMemoryBase = access.hasMemoryBase;
 			prefetch.memoryBaseRegister = access.memoryBaseRegister;
 			prefetch.hasMemoryOffset = access.hasMemoryOffset;
@@ -693,6 +696,76 @@ namespace
 		}
 
 		prefetches.push_back( prefetch );
+	}
+
+	void collectTokenWriteKeys( const std::vector<unsigned int>& tokenIndices,
+	                            const std::vector<const Token*>& indexedTokens,
+	                            std::list<std::string>& writes )
+	{
+		for( std::vector<unsigned int>::const_iterator i = tokenIndices.begin(); i != tokenIndices.end(); ++i )
+		{
+			if( *i >= indexedTokens.size() )
+				continue;
+			std::list<std::string> tokenWrites;
+			collectVuRegisterWriteKeys( *indexedTokens[*i], tokenWrites );
+			for( std::list<std::string>::const_iterator write = tokenWrites.begin(); write != tokenWrites.end(); ++write )
+				addUniqueString( writes, *write );
+		}
+	}
+
+	bool tokenRangeReadsOrWritesAny( unsigned int beginIndex,
+	                                 unsigned int endIndex,
+	                                 const std::vector<const Token*>& indexedTokens,
+	                                 const std::list<std::string>& keys )
+	{
+		for( unsigned int i = beginIndex; i <= endIndex && i < indexedTokens.size(); ++i )
+		{
+			std::list<std::string> reads;
+			std::list<std::string> writes;
+			collectVuRegisterReadKeys( *indexedTokens[i], reads );
+			collectVuRegisterWriteKeys( *indexedTokens[i], writes );
+			if( intersects( reads, keys ) || intersects( writes, keys ) )
+				return true;
+		}
+		return false;
+	}
+
+	bool softwarePipelinePrefetchesCanEmit( const VuLoopPipelineOpportunity& opportunity,
+	                                        const std::vector<const Token*>& indexedTokens )
+	{
+		for( std::vector<VuSoftwarePipelinePrefetch>::const_iterator i = opportunity.softwarePipelinePrefetches.begin();
+		     i != opportunity.softwarePipelinePrefetches.end(); ++i )
+		{
+			if( i->memoryKind != VU_MEMORY_NONE && i->memoryKind != VU_MEMORY_LOAD )
+				return false;
+			if( i->memoryFlags != VU_MEMORY_FLAG_NONE )
+				return false;
+			if( i->readsInductionRegister && i->memoryKind != VU_MEMORY_LOAD )
+				return false;
+			if( i->readsInductionRegister && !i->hasNextIterationOffset )
+				return false;
+		}
+
+		if( opportunity.qConsumerTokenIndices.empty() )
+			return false;
+
+		std::vector<unsigned int> prefetchTokenIndices;
+		for( std::vector<VuSoftwarePipelinePrefetch>::const_iterator i = opportunity.softwarePipelinePrefetches.begin();
+		     i != opportunity.softwarePipelinePrefetches.end(); ++i )
+			prefetchTokenIndices.push_back( i->tokenIndex );
+
+		std::list<std::string> prefetchWrites;
+		collectTokenWriteKeys( prefetchTokenIndices, indexedTokens, prefetchWrites );
+		if( prefetchWrites.empty() )
+			return true;
+
+		const unsigned int insertAfter = opportunity.qConsumerTokenIndices.back();
+		if( insertAfter + 1 > opportunity.branchTokenIndex )
+			return true;
+		return !tokenRangeReadsOrWritesAny( insertAfter + 1,
+		                                    opportunity.branchTokenIndex,
+		                                    indexedTokens,
+		                                    prefetchWrites );
 	}
 
 	void collectSoftwarePipelinePrefetchDescriptors( const std::vector<unsigned int>& prologTokenIndices,
@@ -762,23 +835,41 @@ namespace
 		if( !opportunity.softwarePipelineRotatedRegisters.empty() )
 			addPipelineBlocker( opportunity, "requires_register_rotation" );
 
+		const bool canEmitPrefetches = softwarePipelinePrefetchesCanEmit( opportunity, indexedTokens );
 		if( opportunity.prologTokenIndices.size() != 1
 		    || opportunity.prologTokenIndices.front() != opportunity.qProducerTokenIndex )
-			addPipelineBlocker( opportunity, "multi_instruction_prefetch" );
-
-		for( std::vector<unsigned int>::const_iterator p = opportunity.prologTokenIndices.begin();
-		     p != opportunity.prologTokenIndices.end(); ++p )
 		{
-			if( *p == opportunity.qProducerTokenIndex || *p >= indexedTokens.size() )
-				continue;
+			if( !canEmitPrefetches )
+				addPipelineBlocker( opportunity, "multi_instruction_prefetch" );
+		}
 
-			VuTokenResourceAccess prefetchAccess;
-			if( !buildVuTokenResourceAccess( *indexedTokens[*p], prefetchAccess ) )
-				continue;
-			if( prefetchAccess.memoryKind != VU_MEMORY_NONE )
-				addPipelineBlocker( opportunity, "multi_instruction_prefetch_memory" );
-			if( intersects( prefetchAccess.registerReads, opportunity.inductionRegisters ) )
-				addPipelineBlocker( opportunity, "multi_instruction_prefetch_reads_induction" );
+		if( !canEmitPrefetches )
+		{
+			for( std::vector<VuSoftwarePipelinePrefetch>::const_iterator p = opportunity.softwarePipelinePrefetches.begin();
+			     p != opportunity.softwarePipelinePrefetches.end(); ++p )
+			{
+				if( p->memoryKind != VU_MEMORY_NONE )
+					addPipelineBlocker( opportunity, "multi_instruction_prefetch_memory" );
+				if( p->readsInductionRegister )
+					addPipelineBlocker( opportunity, "multi_instruction_prefetch_reads_induction" );
+				if( p->readsInductionRegister && !p->hasNextIterationOffset )
+					addPipelineBlocker( opportunity, "multi_instruction_prefetch_unknown_next_offset" );
+			}
+
+			std::list<std::string> prefetchWrites;
+			std::vector<unsigned int> prefetchTokenIndices;
+			for( std::vector<VuSoftwarePipelinePrefetch>::const_iterator p = opportunity.softwarePipelinePrefetches.begin();
+			     p != opportunity.softwarePipelinePrefetches.end(); ++p )
+				prefetchTokenIndices.push_back( p->tokenIndex );
+			collectTokenWriteKeys( prefetchTokenIndices, indexedTokens, prefetchWrites );
+			if( !prefetchWrites.empty()
+			    && !opportunity.qConsumerTokenIndices.empty()
+			    && opportunity.qConsumerTokenIndices.back() + 1 <= opportunity.branchTokenIndex
+			    && tokenRangeReadsOrWritesAny( opportunity.qConsumerTokenIndices.back() + 1,
+			                                   opportunity.branchTokenIndex,
+			                                   indexedTokens,
+			                                   prefetchWrites ) )
+				addPipelineBlocker( opportunity, "prefetch_clobbers_suffix" );
 		}
 
 		if( qProducerOffset < loop.bodyTokens.size() )
@@ -815,18 +906,65 @@ namespace
 		return copy;
 	}
 
-	void appendTokenRangeWithInsertedQProducer( std::list<Token>& output,
-	                                            const std::vector<const Token*>& indexedTokens,
-	                                            unsigned int beginIndex,
-	                                            unsigned int endIndex,
-	                                            unsigned int insertAfterIndex,
-	                                            unsigned int qProducerIndex )
+	const VuSoftwarePipelinePrefetch* findPrefetchForTokenIndex( const std::vector<VuSoftwarePipelinePrefetch>& prefetches,
+	                                                             unsigned int tokenIndex )
+	{
+		for( std::vector<VuSoftwarePipelinePrefetch>::const_iterator i = prefetches.begin(); i != prefetches.end(); ++i )
+		{
+			if( i->tokenIndex == tokenIndex )
+				return &*i;
+		}
+		return NULL;
+	}
+
+	bool setIndirectMemoryOffset( Token& token, const std::string& baseRegister, long offset )
+	{
+		for( std::list<Token::Argument>::iterator i = token.arguments().begin(); i != token.arguments().end(); ++i )
+		{
+			if( i->type() != Token::Argument::INTEGER_REGISTER
+			    || !(i->flags() & Token::Argument::INDIRECT) )
+				continue;
+			std::string key;
+			if( !vuRegisterKey( *i, key ) || key != baseRegister )
+				continue;
+			std::stringstream s;
+			s << offset;
+			i->setImmediate( s.str() );
+			return true;
+		}
+		return false;
+	}
+
+	Token adjustedPrefetchToken( const Token& token, const VuSoftwarePipelinePrefetch* prefetch )
+	{
+		Token copy = tokenWithoutLabel( token );
+		if( prefetch && prefetch->hasNextIterationOffset && prefetch->hasMemoryBase )
+			setIndirectMemoryOffset( copy, prefetch->memoryBaseRegister, prefetch->nextIterationOffset );
+		return copy;
+	}
+
+	void appendTokenRangeWithInsertedPrefetchAndQProducer( std::list<Token>& output,
+	                                                       const std::vector<const Token*>& indexedTokens,
+	                                                       const VuSoftwarePipelineRewritePlan& rewrite,
+	                                                       unsigned int beginIndex,
+	                                                       unsigned int endIndex )
 	{
 		for( unsigned int i = beginIndex; i <= endIndex && i < indexedTokens.size(); ++i )
 		{
 			output.push_back( tokenWithoutLabel( *indexedTokens[i] ) );
-			if( i == insertAfterIndex && qProducerIndex < indexedTokens.size() )
-				output.push_back( tokenWithoutLabel( *indexedTokens[qProducerIndex] ) );
+			if( i == rewrite.qProducerInsertAfterTokenIndex )
+			{
+				for( std::vector<unsigned int>::const_iterator p = rewrite.prefetchTokenIndices.begin();
+				     p != rewrite.prefetchTokenIndices.end(); ++p )
+				{
+					if( *p >= indexedTokens.size() )
+						continue;
+					output.push_back( adjustedPrefetchToken( *indexedTokens[*p],
+					                                        findPrefetchForTokenIndex( rewrite.prefetches, *p ) ) );
+				}
+				if( rewrite.qProducerTokenIndex < indexedTokens.size() )
+					output.push_back( tokenWithoutLabel( *indexedTokens[rewrite.qProducerTokenIndex] ) );
+			}
 		}
 	}
 }
@@ -1192,6 +1330,10 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		plan.branchTokenIndex = i->branchTokenIndex;
 		plan.qProducerTokenIndex = i->qProducerTokenIndex;
 		plan.qProducerInsertAfterTokenIndex = i->qConsumerTokenIndices.back();
+		plan.prefetches = i->softwarePipelinePrefetches;
+		for( std::vector<VuSoftwarePipelinePrefetch>::const_iterator p = i->softwarePipelinePrefetches.begin();
+		     p != i->softwarePipelinePrefetches.end(); ++p )
+			plan.prefetchTokenIndices.push_back( p->tokenIndex );
 		plan.prologTokenIndices = i->prologTokenIndices;
 		plan.mainTokenIndices = i->mainTokenIndices;
 		plan.drainTokenIndices = i->drainTokenIndices;
@@ -1257,12 +1399,12 @@ std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens )
 		mainLabel.setLabel( rewrite.mainLabel );
 		output.push_back( mainLabel );
 
-		appendTokenRangeWithInsertedQProducer( output,
-		                                       indexedTokens,
-		                                       rewrite.mainTokenIndices.empty() ? rewrite.branchTokenIndex : rewrite.mainTokenIndices.front(),
-		                                       rewrite.branchTokenIndex,
-		                                       rewrite.qProducerInsertAfterTokenIndex,
-		                                       rewrite.qProducerTokenIndex );
+		appendTokenRangeWithInsertedPrefetchAndQProducer(
+		    output,
+		    indexedTokens,
+		    rewrite,
+		    rewrite.mainTokenIndices.empty() ? rewrite.branchTokenIndex : rewrite.mainTokenIndices.front(),
+		    rewrite.branchTokenIndex );
 
 		while( index <= rewrite.branchTokenIndex && i != tokens.end() )
 		{

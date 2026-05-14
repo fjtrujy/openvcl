@@ -118,6 +118,7 @@ struct VuSoftwarePipelinePrefetch
 	unsigned int tokenIndex;
 	std::string mnemonic;
 	VuMemoryKind memoryKind;
+	unsigned int memoryFlags;
 	bool hasMemoryBase;
 	std::string memoryBaseRegister;
 	bool hasMemoryOffset;
@@ -184,6 +185,8 @@ struct VuSoftwarePipelineRewritePlan
 	unsigned int qProducerTokenIndex;
 	unsigned int qProducerInsertAfterTokenIndex;
 	bool emitsDrain;
+	std::vector<unsigned int> prefetchTokenIndices;
+	std::vector<VuSoftwarePipelinePrefetch> prefetches;
 	std::vector<unsigned int> prologTokenIndices;
 	std::vector<unsigned int> mainTokenIndices;
 	std::vector<unsigned int> drainTokenIndices;

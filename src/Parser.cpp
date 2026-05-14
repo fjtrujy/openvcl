@@ -625,7 +625,12 @@ namespace
 			       << " rewrite_drain_label=" << (rewritePlan ? rewritePlan->drainLabel : "")
 			       << " rewrite_insert_q_after=" << (rewritePlan ? rewritePlan->qProducerInsertAfterTokenIndex : 0)
 			       << " rewrite_emits_drain=" << (rewritePlan && rewritePlan->emitsDrain ? "yes" : "no")
-			       << " prolog_tokens=";
+			       << " rewrite_prefetch_tokens=";
+			if( rewritePlan )
+				writeUnsignedVectorText( stream, rewritePlan->prefetchTokenIndices );
+			else
+				stream << "-";
+			stream << " prolog_tokens=";
 			writeUnsignedVectorText( stream, i->prologTokenIndices );
 			stream << " main_tokens=";
 			writeUnsignedVectorText( stream, i->mainTokenIndices );
@@ -706,6 +711,7 @@ namespace
 			stream << "        \"emits_drain\": " << (rewritePlan && rewritePlan->emitsDrain ? "true" : "false") << ",\n";
 			stream << "        \"q_producer_insert_after_token_index\": "
 			       << (rewritePlan ? rewritePlan->qProducerInsertAfterTokenIndex : 0) << ",\n";
+			stream << "        \"prefetch_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->prefetchTokenIndices ); else stream << "[]"; stream << ",\n";
 			stream << "        \"prolog_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->prologTokenIndices ); else stream << "[]"; stream << ",\n";
 			stream << "        \"main_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->mainTokenIndices ); else stream << "[]"; stream << ",\n";
 			stream << "        \"drain_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->drainTokenIndices ); else stream << "[]"; stream << "\n";

@@ -128,7 +128,7 @@ TEST_CASE("CLI: loop pipeline JSON dump is stable enough for scheduler tooling")
     CHECK(contains(r.stdout_data, "\"pipeline_plan\": {"));
     CHECK(contains(r.stdout_data, "\"available\": true"));
     CHECK(contains(r.stdout_data, "\"emittable\": false"));
-    CHECK(contains(r.stdout_data, "\"blockers\": [\"requires_register_rotation\", \"multi_instruction_prefetch\", \"multi_instruction_prefetch_memory\", \"multi_instruction_prefetch_reads_induction\"]"));
+    CHECK(contains(r.stdout_data, "\"blockers\": [\"requires_register_rotation\"]"));
     CHECK(contains(r.stdout_data, "\"rotated_registers\": [\"VF03\", \"VF06\"]"));
     CHECK(contains(r.stdout_data, "\"rotation_descriptors\": [{\"register\": \"VF03\", \"input_fields\": [\"x\", \"y\", \"z\"], \"output_fields\": [\"x\", \"y\", \"z\"]}"));
     CHECK(contains(r.stdout_data, "\"prefetch_descriptors\": [{\"token_index\": 2, \"mnemonic\": \"lq\", \"memory\": \"load\", \"memory_base\": \"VI01\", \"memory_offset_known\": true, \"memory_offset\": 0, \"reads_induction_register\": true, \"induction_register\": \"VI01\", \"next_iteration_offset_known\": true, \"next_iteration_offset\": 3}"));
