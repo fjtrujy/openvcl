@@ -427,7 +427,10 @@ namespace
 		{
 			if( wrote )
 				stream << "|";
-			stream << i->registerBase << "(in=";
+			stream << i->registerBase;
+			if( i->hasScratchRegister )
+				stream << "->" << i->scratchRegister;
+			stream << "(in=";
 			writeStringListText( stream, i->inputFields );
 			stream << ",out=";
 			writeStringListText( stream, i->outputFields );
@@ -447,6 +450,8 @@ namespace
 				stream << ", ";
 			stream << "{";
 			stream << "\"register\": "; writeJsonString( stream, rotations[i].registerBase.c_str() ); stream << ", ";
+			stream << "\"scratch_available\": " << (rotations[i].hasScratchRegister ? "true" : "false") << ", ";
+			stream << "\"scratch_register\": "; writeJsonString( stream, rotations[i].scratchRegister.c_str() ); stream << ", ";
 			stream << "\"input_fields\": "; writeStringListJson( stream, rotations[i].inputFields ); stream << ", ";
 			stream << "\"output_fields\": "; writeStringListJson( stream, rotations[i].outputFields );
 			stream << "}";

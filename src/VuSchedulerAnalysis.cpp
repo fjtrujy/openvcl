@@ -615,6 +615,8 @@ namespace
 		{
 			VuSoftwarePipelineRotation rotation;
 			rotation.registerBase = base;
+			rotation.hasScratchRegister = false;
+			rotation.scratchRegister = "";
 			rotations.push_back( rotation );
 		}
 
@@ -630,6 +632,63 @@ namespace
 	{
 		for( std::list<std::string>::const_iterator i = keys.begin(); i != keys.end(); ++i )
 			addRotationField( rotations, *i, input );
+	}
+
+	void collectVfBaseKeys( const std::list<std::string>& keys, std::list<std::string>& bases )
+	{
+		for( std::list<std::string>::const_iterator i = keys.begin(); i != keys.end(); ++i )
+		{
+			const std::string base = registerBaseKey( *i );
+			if( base.size() >= 2 && base[0] == 'V' && base[1] == 'F' )
+				addUniqueString( bases, base );
+		}
+	}
+
+	void collectLoopVfBaseKeys( const VuLoopCandidate& loop, std::list<std::string>& bases )
+	{
+		for( std::vector<const Token*>::const_iterator i = loop.bodyTokens.begin(); i != loop.bodyTokens.end(); ++i )
+		{
+			std::list<std::string> reads;
+			std::list<std::string> writes;
+			collectVuRegisterReadKeys( **i, reads );
+			collectVuRegisterWriteKeys( **i, writes );
+			collectVfBaseKeys( reads, bases );
+			collectVfBaseKeys( writes, bases );
+		}
+	}
+
+	std::string vfRegisterName( unsigned int index )
+	{
+		std::stringstream s;
+		s << "VF";
+		if( index < 10 )
+			s << "0";
+		s << index;
+		return s.str();
+	}
+
+	void assignRotationScratchRegisters( const VuLoopCandidate& loop,
+	                                     std::vector<VuSoftwarePipelineRotation>& rotations )
+	{
+		std::list<std::string> used;
+		collectLoopVfBaseKeys( loop, used );
+		for( std::vector<VuSoftwarePipelineRotation>::const_iterator i = rotations.begin(); i != rotations.end(); ++i )
+			addUniqueString( used, i->registerBase );
+
+		for( std::vector<VuSoftwarePipelineRotation>::iterator rotation = rotations.begin();
+		     rotation != rotations.end(); ++rotation )
+		{
+			for( unsigned int reverse = 32; reverse > 1; --reverse )
+			{
+				const std::string scratch = vfRegisterName( reverse - 1 );
+				if( containsKey( used, scratch ) )
+					continue;
+				rotation->hasScratchRegister = true;
+				rotation->scratchRegister = scratch;
+				addUniqueString( used, scratch );
+				break;
+			}
+		}
 	}
 
 	const VuLoopInductionUpdate* findInductionUpdate( const std::vector<VuLoopInductionUpdate>& updates,
@@ -827,6 +886,7 @@ namespace
 		collectRotationDescriptors( opportunity.carriedQOutputRegisters,
 		                            false,
 		                            opportunity.softwarePipelineRotations );
+		assignRotationScratchRegisters( loop, opportunity.softwarePipelineRotations );
 		collectSoftwarePipelinePrefetchDescriptors( opportunity.prologTokenIndices,
 		                                            opportunity.qProducerTokenIndex,
 		                                            indexedTokens,
@@ -834,6 +894,12 @@ namespace
 
 		if( !opportunity.softwarePipelineRotatedRegisters.empty() )
 			addPipelineBlocker( opportunity, "requires_register_rotation" );
+		for( std::vector<VuSoftwarePipelineRotation>::const_iterator rotation = opportunity.softwarePipelineRotations.begin();
+		     rotation != opportunity.softwarePipelineRotations.end(); ++rotation )
+		{
+			if( !rotation->hasScratchRegister )
+				addPipelineBlocker( opportunity, "missing_rotation_scratch" );
+		}
 
 		const bool canEmitPrefetches = softwarePipelinePrefetchesCanEmit( opportunity, indexedTokens );
 		if( opportunity.prologTokenIndices.size() != 1

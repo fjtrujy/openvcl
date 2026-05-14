@@ -111,6 +111,8 @@ struct VuSoftwarePipelineRotation
 	std::string registerBase;
 	std::list<std::string> inputFields;
 	std::list<std::string> outputFields;
+	bool hasScratchRegister;
+	std::string scratchRegister;
 };
 
 struct VuSoftwarePipelinePrefetch

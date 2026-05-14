@@ -350,6 +350,8 @@ TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose loop-carried Q sta
     CHECK(!mulPrefetch->readsInductionRegister);
     const vcl::VuSoftwarePipelineRotation* vf03Rotation = findRotation(opportunities[0].softwarePipelineRotations, "VF03");
     REQUIRE(vf03Rotation != NULL);
+    CHECK(vf03Rotation->hasScratchRegister);
+    CHECK(vf03Rotation->scratchRegister == "VF31");
     CHECK(hasString(vf03Rotation->inputFields, "x"));
     CHECK(hasString(vf03Rotation->inputFields, "y"));
     CHECK(hasString(vf03Rotation->inputFields, "z"));
@@ -358,6 +360,8 @@ TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose loop-carried Q sta
     CHECK(hasString(vf03Rotation->outputFields, "z"));
     const vcl::VuSoftwarePipelineRotation* vf06Rotation = findRotation(opportunities[0].softwarePipelineRotations, "VF06");
     REQUIRE(vf06Rotation != NULL);
+    CHECK(vf06Rotation->hasScratchRegister);
+    CHECK(vf06Rotation->scratchRegister == "VF30");
     CHECK(hasString(vf06Rotation->inputFields, "x"));
     CHECK(hasString(vf06Rotation->inputFields, "y"));
     CHECK(hasString(vf06Rotation->inputFields, "z"));

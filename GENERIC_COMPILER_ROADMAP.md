@@ -70,6 +70,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: loop-pipeline safety now allows multiple self-updating induction registers, which ps2gl loops need for paired input/output pointer advancement.
    - Done: multi-instruction prefetch blockers now identify memory and induction-register reads separately, exposing the next scheduler work needed by ps2gl transform loops.
    - Done: loop-pipeline analysis now exposes register-rotation descriptors with per-register input/output fields, not only a flat rotated-register list.
+   - Done: register-rotation descriptors now include assigned scratch VF registers from a generic free-register scan, preparing rotation emission without hard-coded ps2gl register choices.
    - Done: loop analysis now exposes signed induction-update descriptors with token index, mnemonic, immediate, and step, giving future prefetch rewrites the data needed to adjust memory references generically.
    - Done: pipeline plans now expose prefetch descriptors for prolog tokens, including memory base/offset, induction-register use, and computed next-iteration offsets.
 
