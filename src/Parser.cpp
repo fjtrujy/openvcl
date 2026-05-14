@@ -420,6 +420,55 @@ namespace
 		stream << "]";
 	}
 
+	void writeQStageListText( std::ostream& stream, const std::vector<VuLoopQStage>& stages )
+	{
+		if( stages.empty() )
+		{
+			stream << "-";
+			return;
+		}
+
+		for( unsigned int i = 0; i < stages.size(); ++i )
+		{
+			if( i != 0 )
+				stream << "|";
+			stream << stages[i].qProducerTokenIndex << "->";
+			if( stages[i].qConsumerTokenIndices.empty() )
+				stream << "-";
+			else
+			{
+				for( unsigned int c = 0; c < stages[i].qConsumerTokenIndices.size(); ++c )
+				{
+					if( c != 0 )
+						stream << ",";
+					stream << stages[i].qConsumerTokenIndices[c];
+				}
+			}
+			stream << "(latency=" << stages[i].qProducerLatency
+			       << ",gap=" << stages[i].qProducerConsumerGapCycles
+			       << ",deficit=" << stages[i].qProducerConsumerGapDeficitCycles
+			       << ")";
+		}
+	}
+
+	void writeQStageListJson( std::ostream& stream, const std::vector<VuLoopQStage>& stages )
+	{
+		stream << "[";
+		for( unsigned int i = 0; i < stages.size(); ++i )
+		{
+			if( i != 0 )
+				stream << ", ";
+			stream << "{\"producer_token_index\": " << stages[i].qProducerTokenIndex
+			       << ", \"consumer_token_indices\": ";
+			writeUnsignedVectorJson( stream, stages[i].qConsumerTokenIndices );
+			stream << ", \"producer_latency\": " << stages[i].qProducerLatency
+			       << ", \"producer_consumer_gap_cycles\": " << stages[i].qProducerConsumerGapCycles
+			       << ", \"producer_consumer_gap_deficit_cycles\": " << stages[i].qProducerConsumerGapDeficitCycles
+			       << "}";
+		}
+		stream << "]";
+	}
+
 	void writeRotationListText( std::ostream& stream, const std::vector<VuSoftwarePipelineRotation>& rotations )
 	{
 		bool wrote = false;
@@ -605,6 +654,8 @@ namespace
 			       << " q_producer_token=" << i->qProducerTokenIndex
 			       << " q_producer_tokens=";
 			writeUnsignedVectorText( stream, i->qProducerTokenIndices );
+			stream << " q_stages=";
+			writeQStageListText( stream, i->qStages );
 			stream
 			       << " first_q_consumer_token=" << i->firstQConsumerTokenIndex
 			       << " last_q_consumer_token=" << i->lastQConsumerTokenIndex
@@ -688,6 +739,7 @@ namespace
 			stream << "      \"branch_token_index\": " << opportunity.branchTokenIndex << ",\n";
 			stream << "      \"q_producer_token_index\": " << opportunity.qProducerTokenIndex << ",\n";
 			stream << "      \"q_producer_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.qProducerTokenIndices ); stream << ",\n";
+			stream << "      \"q_stages\": "; writeQStageListJson( stream, opportunity.qStages ); stream << ",\n";
 			stream << "      \"first_q_consumer_token_index\": " << opportunity.firstQConsumerTokenIndex << ",\n";
 			stream << "      \"last_q_consumer_token_index\": " << opportunity.lastQConsumerTokenIndex << ",\n";
 			stream << "      \"q_consumer_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.qConsumerTokenIndices ); stream << ",\n";

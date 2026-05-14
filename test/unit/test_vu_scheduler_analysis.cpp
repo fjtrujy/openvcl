@@ -916,6 +916,19 @@ TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose all Q producers")
     REQUIRE(opportunities[0].qProducerTokenIndices.size() == 2u);
     CHECK(opportunities[0].qProducerTokenIndices[0] == 2u);
     CHECK(opportunities[0].qProducerTokenIndices[1] == 5u);
+    REQUIRE(opportunities[0].qStages.size() == 2u);
+    CHECK(opportunities[0].qStages[0].qProducerTokenIndex == 2u);
+    REQUIRE(opportunities[0].qStages[0].qConsumerTokenIndices.size() == 1u);
+    CHECK(opportunities[0].qStages[0].qConsumerTokenIndices[0] == 3u);
+    CHECK(opportunities[0].qStages[0].qProducerLatency == 7u);
+    CHECK(opportunities[0].qStages[0].qProducerConsumerGapCycles == 0u);
+    CHECK(opportunities[0].qStages[0].qProducerConsumerGapDeficitCycles == 7u);
+    CHECK(opportunities[0].qStages[1].qProducerTokenIndex == 5u);
+    REQUIRE(opportunities[0].qStages[1].qConsumerTokenIndices.size() == 1u);
+    CHECK(opportunities[0].qStages[1].qConsumerTokenIndices[0] == 6u);
+    CHECK(opportunities[0].qStages[1].qProducerLatency == 7u);
+    CHECK(opportunities[0].qStages[1].qProducerConsumerGapCycles == 0u);
+    CHECK(opportunities[0].qStages[1].qProducerConsumerGapDeficitCycles == 7u);
     CHECK(hasString(opportunities[0].softwarePipelineBlockers, "multiple_q_producers"));
 }
 

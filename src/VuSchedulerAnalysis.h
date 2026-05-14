@@ -46,6 +46,17 @@ struct VuLoopInductionUpdate
 	unsigned int tokenIndex;
 };
 
+struct VuLoopQStage
+{
+	VuLoopQStage();
+
+	unsigned int qProducerTokenIndex;
+	std::vector<unsigned int> qConsumerTokenIndices;
+	unsigned int qProducerLatency;
+	unsigned int qProducerConsumerGapCycles;
+	unsigned int qProducerConsumerGapDeficitCycles;
+};
+
 enum VuDependencyKind
 {
 	VU_DEPENDENCY_REGISTER_RAW,
@@ -140,6 +151,7 @@ struct VuLoopPipelineOpportunity
 	unsigned int branchTokenIndex;
 	unsigned int qProducerTokenIndex;
 	std::vector<unsigned int> qProducerTokenIndices;
+	std::vector<VuLoopQStage> qStages;
 	unsigned int firstQConsumerTokenIndex;
 	unsigned int lastQConsumerTokenIndex;
 	unsigned int qProducerLatency;

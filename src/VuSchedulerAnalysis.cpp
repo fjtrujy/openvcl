@@ -1456,6 +1456,14 @@ VuLoopCandidate::VuLoopCandidate()
 	branchToken = NULL;
 }
 
+VuLoopQStage::VuLoopQStage()
+{
+	qProducerTokenIndex = 0;
+	qProducerLatency = 0;
+	qProducerConsumerGapCycles = 0;
+	qProducerConsumerGapDeficitCycles = 0;
+}
+
 VuLoopPipelineOpportunity::VuLoopPipelineOpportunity()
 {
 	labelTokenIndex = 0;
@@ -1703,6 +1711,38 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		for( std::vector<unsigned int>::const_iterator producer = qProducerOffsets.begin();
 		     producer != qProducerOffsets.end(); ++producer )
 			opportunity.qProducerTokenIndices.push_back( loop->firstBodyTokenIndex + *producer );
+		for( unsigned int producerIndex = 0; producerIndex < qProducerOffsets.size(); ++producerIndex )
+		{
+			const unsigned int producerOffset = qProducerOffsets[producerIndex];
+			const unsigned int nextProducerOffset =
+			    producerIndex + 1 < qProducerOffsets.size()
+			    ? qProducerOffsets[producerIndex + 1]
+			    : static_cast<unsigned int>( loop->bodyTokens.size() );
+			VuLoopQStage stage;
+			stage.qProducerTokenIndex = loop->firstBodyTokenIndex + producerOffset;
+			stage.qProducerLatency = loop->bodyTokens[producerOffset]->operand()
+			                       ? loop->bodyTokens[producerOffset]->operand()->latency()
+			                       : 0;
+			for( unsigned int consumerOffset = producerOffset + 1;
+			     consumerOffset < nextProducerOffset && consumerOffset < loop->bodyTokens.size();
+			     ++consumerOffset )
+			{
+				if( vuTokenReadsQ( *loop->bodyTokens[consumerOffset] ) )
+					stage.qConsumerTokenIndices.push_back( loop->firstBodyTokenIndex + consumerOffset );
+			}
+			if( !stage.qConsumerTokenIndices.empty() )
+			{
+				const unsigned int firstConsumerOffset =
+				    stage.qConsumerTokenIndices.front() - loop->firstBodyTokenIndex;
+				stage.qProducerConsumerGapCycles =
+				    countEmittableTokens( *loop, producerOffset + 1, firstConsumerOffset );
+				stage.qProducerConsumerGapDeficitCycles =
+				    stage.qProducerLatency > stage.qProducerConsumerGapCycles
+				    ? stage.qProducerLatency - stage.qProducerConsumerGapCycles
+				    : 0;
+			}
+			opportunity.qStages.push_back( stage );
+		}
 		opportunity.firstQConsumerTokenIndex = loop->firstBodyTokenIndex + qConsumerOffsets.front();
 		opportunity.lastQConsumerTokenIndex = loop->firstBodyTokenIndex + qConsumerOffsets.back();
 		opportunity.qProducerLatency = loop->bodyTokens[qProducerOffset]->operand()
