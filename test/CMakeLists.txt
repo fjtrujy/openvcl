@@ -59,6 +59,7 @@ set(OPENVCL_TEST_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_vu_scheduler_analysis.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_vu_scheduling_rules.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_vu_instruction_info.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_codegen_instruction_literals.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_vu_token_resource_access.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_vsm_cost_analyzer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/integration/openvcl_runner.cpp
@@ -88,6 +89,7 @@ add_executable(openvcl_unit_tests
 # integration tests check that the file exists before running.
 target_compile_definitions(openvcl_unit_tests PRIVATE
     OPENVCL_BIN="${OPENVCL_ROOT}/openvcl"
+    OPENVCL_SOURCE_ROOT="${OPENVCL_ROOT}"
     OPENVCL_TEST_VSM_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/vsm_cost"
 )
 

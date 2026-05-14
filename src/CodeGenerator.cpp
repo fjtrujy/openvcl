@@ -658,6 +658,31 @@ namespace
 		return vuInstr( opcode ) + "." + fields + " " + arguments;
 	}
 
+	std::string vuInstrPrefix( VuInstructionOpcode opcode )
+	{
+		return vuInstr( opcode ) + " ";
+	}
+
+	std::string vuInstrPrefixFields( VuInstructionOpcode opcode, const char* fields )
+	{
+		return vuInstr( opcode ) + "." + fields + " ";
+	}
+
+	std::string vuInstrBroadcastName( VuInstructionOpcode opcode, const char* broadcast )
+	{
+		return vuInstr( opcode ) + broadcast;
+	}
+
+	std::string vuInstrPrefixBroadcast( VuInstructionOpcode opcode, const char* broadcast )
+	{
+		return vuInstrBroadcastName( opcode, broadcast ) + " ";
+	}
+
+	std::string vuInstrPrefixBroadcastFields( VuInstructionOpcode opcode, const char* broadcast, const char* fields )
+	{
+		return vuInstrBroadcastName( opcode, broadcast ) + "." + fields + " ";
+	}
+
 	std::string vuInstructionFieldText( unsigned int fields )
 	{
 		static const char* fieldNames = "xyzw";
@@ -1035,8 +1060,8 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 
 		if( ((token.operand()->unit() == Operand::EXIT) || (token.operand()->unit() == Operand::ENTER)) && !exitWritten )
 		{
-			m_codeLines.push_back(std::string("                    nop[E]                          nop"));
-			m_codeLines.push_back(std::string("                    nop                             nop"));
+			m_codeLines.push_back(formatRawPairedInstructionLine(vuInstr(VU_OP_NOP) + "[E]", vuInstr(VU_OP_NOP)));
+			m_codeLines.push_back(formatRawPairedInstructionLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP)));
 			exitWritten = true;
 		}
 
@@ -1064,8 +1089,8 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			}
 			else if( token.operand()->name() == "--cont" )
 			{
-				m_codeLines.push_back(std::string("                    nop[E]                          nop"));
-				m_codeLines.push_back(std::string("                    nop                             nop"));
+				m_codeLines.push_back(formatRawPairedInstructionLine(vuInstr(VU_OP_NOP) + "[E]", vuInstr(VU_OP_NOP)));
+				m_codeLines.push_back(formatRawPairedInstructionLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP)));
 				exitWritten = true;
 				++k;
 				continue;
@@ -1346,7 +1371,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 	if( !exitWritten )
 	{
 		// Auto-terminate with an exit pair if the last instruction wasn't closed
-		m_codeLines.push_back(std::string("                    nop[E]                          nop"));
+		m_codeLines.push_back(formatRawPairedInstructionLine(vuInstr(VU_OP_NOP) + "[E]", vuInstr(VU_OP_NOP)));
 		m_codeLines.push_back( formatRawPairedInstructionLine( vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP) ) );
 		// Do not treat as an error; some VCL programs end in a loop
 	}
@@ -3154,121 +3179,121 @@ void CodeGenerator::emitFastLitSoftwarePipelineLoop( const FastLitLoopPipelinePa
 	const std::string vf00 = "VF00";
 
 	m_codeLines.push_back(p.entryLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + normal + ", " + offsetBase(1, in));
 	emitRawPairedLine(p.lightDirMulaxOp + " ACC, " + p.lightDir0Reg + ", " + fieldArg(normal, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.lightDirMaddayOp + " ACC, " + p.lightDir1Reg + ", " + fieldArg(normal, "y"),
-	                  "lq.xyz " + vert + ", " + offsetBase(0, in));
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + vert + ", " + offsetBase(0, in));
 	emitRawPairedLine(p.lightDirMaddzOp + " " + cos + ", " + p.lightDir2Reg + ", " + fieldArg(normal, "z"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("max.xyz " + clamped + ", " + cos + ", " + vf00, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MAX, "xyz") + clamped + ", " + cos + ", " + vf00, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"),
-	                  "iaddiu " + in + ", " + in + ", 3");
+	                  vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", 3");
 	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.lightColorMulaxOp + " ACC, " + p.lightColor0Reg + ", " + fieldArg(clamped, "x"),
-	                  "ibeq " + in + ", " + last + ", " + p.epilogOneLabel);
+	                  vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.epilogOneLabel);
 	emitRawPairedLine(p.lightColorMaddayOp + " ACC, " + p.lightColor1Reg + ", " + fieldArg(clamped, "y"),
-	                  "iaddiu " + out + ", " + out + ", 0");
+	                  vuInstrPrefix(VU_OP_IADDIU) + out + ", " + out + ", 0");
 
 	m_codeLines.push_back(p.prologLabel + ":");
 	emitRawPairedLine(p.lightColorMaddzOp + " " + colorRaw + ", " + p.lightColor2Reg + ", " + fieldArg(clamped, "z"),
-	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + vert + ", " + offsetBase(0, in));
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + vert + ", " + offsetBase(0, in));
 	emitRawPairedLine(p.lightDirMulaxOp + " ACC, " + p.lightDir0Reg + ", " + fieldArg(normal, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.lightDirMaddayOp + " ACC, " + p.lightDir1Reg + ", " + fieldArg(normal, "y"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.lightDirMaddzOp + " " + cos + ", " + p.lightDir2Reg + ", " + fieldArg(normal, "z"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"),
-	                  "ilw.w " + strip + ", " + offsetBase(-3, in));
+	                  vuInstrPrefixFields(VU_OP_ILW, "w") + strip + ", " + offsetBase(-3, in));
 	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"),
-	                  "move.xyz " + xCarry + ", " + x);
-	emitRawPairedLine("max.xyz " + clamped + ", " + cos + ", " + vf00,
-	                  "iaddiu " + out + ", " + out + ", 6");
+	                  vuInstrPrefixFields(VU_OP_MOVE, "xyz") + xCarry + ", " + x);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MAX, "xyz") + clamped + ", " + cos + ", " + vf00,
+	                  vuInstrPrefix(VU_OP_IADDIU) + out + ", " + out + ", 6");
 	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"),
-	                  "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("add.xyz " + colorAccum + ", " + colorRaw + ", " + p.constantColorReg,
-	                  "iaddiu " + adc + ", " + strip + ", " + p.adcImmediate);
-	emitRawPairedLine("mulq.xyz " + xQ + ", " + xCarry + ", q",
-	                  "mfir.w " + gs + ", " + adc);
+	                  vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + colorAccum + ", " + colorRaw + ", " + p.constantColorReg,
+	                  vuInstrPrefix(VU_OP_IADDIU) + adc + ", " + strip + ", " + p.adcImmediate);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + xQ + ", " + xCarry + ", q",
+	                  vuInstrPrefixFields(VU_OP_MFIR, "w") + gs + ", " + adc);
 	emitRawPairedLine(p.lightColorMulaxOp + " ACC, " + p.lightColor0Reg + ", " + fieldArg(clamped, "x"),
-	                  "ibeq " + in + ", " + last + ", " + p.epilogTwoLabel);
+	                  vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.epilogTwoLabel);
 	emitRawPairedLine(p.lightColorMaddayOp + " ACC, " + p.lightColor1Reg + ", " + fieldArg(clamped, "y"),
-	                  "lq.xyz " + texIn + ", " + offsetBase(-4, in));
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + texIn + ", " + offsetBase(-4, in));
 
 	m_codeLines.push_back(p.mainLabel + ":");
 	emitRawPairedLine(p.lightColorMaddzOp + " " + colorRaw + ", " + p.lightColor2Reg + ", " + fieldArg(clamped, "z"),
-	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("miniw.xyz " + color + ", " + colorAccum + ", " + fieldArg(p.maxColorReg, "w"),
-	                  "iaddiu " + out + ", " + out + ", 3");
-	emitRawPairedLine("ftoi4.xyz " + gs + ", " + xQ, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz " + texOut + ", " + texIn + ", q",
-	                  "lq.xyz " + vert + ", " + offsetBase(0, in));
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MINI, "w", "xyz") + color + ", " + colorAccum + ", " + fieldArg(p.maxColorReg, "w"),
+	                  vuInstrPrefix(VU_OP_IADDIU) + out + ", " + out + ", 3");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + gs + ", " + xQ, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + texOut + ", " + texIn + ", q",
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + vert + ", " + offsetBase(0, in));
 	emitRawPairedLine(p.lightDirMulaxOp + " ACC, " + p.lightDir0Reg + ", " + fieldArg(normal, "x"),
-	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
+	                  vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
 	emitRawPairedLine(p.lightDirMaddayOp + " ACC, " + p.lightDir1Reg + ", " + fieldArg(normal, "y"),
-	                  "sq " + color + ", " + offsetBase(-8, out));
+	                  vuInstrPrefix(VU_OP_SQ) + color + ", " + offsetBase(-8, out));
 	emitRawPairedLine(p.lightDirMaddzOp + " " + cos + ", " + p.lightDir2Reg + ", " + fieldArg(normal, "z"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"),
-	                  "ilw.w " + strip + ", " + offsetBase(-3, in));
+	                  vuInstrPrefixFields(VU_OP_ILW, "w") + strip + ", " + offsetBase(-3, in));
 	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"),
-	                  "iaddiu " + in + ", " + in + ", 3");
+	                  vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", 3");
 	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"),
-	                  "move.xyz " + xCarry + ", " + x);
-	emitRawPairedLine("max.xyz " + clamped + ", " + cos + ", " + vf00,
-	                  "sq.xyz " + texOut + ", " + offsetBase(-9, out));
+	                  vuInstrPrefixFields(VU_OP_MOVE, "xyz") + xCarry + ", " + x);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MAX, "xyz") + clamped + ", " + cos + ", " + vf00,
+	                  vuInstrPrefixFields(VU_OP_SQ, "xyz") + texOut + ", " + offsetBase(-9, out));
 	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"),
-	                  "iaddiu " + adc + ", " + strip + ", " + p.adcImmediate);
-	emitRawPairedLine("add.xyz " + colorAccum + ", " + colorRaw + ", " + p.constantColorReg,
-	                  "sq " + gs + ", " + offsetBase(-7, out));
-	emitRawPairedLine("mulq.xyz " + xQ + ", " + xCarry + ", q",
-	                  "mfir.w " + gs + ", " + adc);
+	                  vuInstrPrefix(VU_OP_IADDIU) + adc + ", " + strip + ", " + p.adcImmediate);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + colorAccum + ", " + colorRaw + ", " + p.constantColorReg,
+	                  vuInstrPrefix(VU_OP_SQ) + gs + ", " + offsetBase(-7, out));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + xQ + ", " + xCarry + ", q",
+	                  vuInstrPrefixFields(VU_OP_MFIR, "w") + gs + ", " + adc);
 	emitRawPairedLine(p.lightColorMulaxOp + " ACC, " + p.lightColor0Reg + ", " + fieldArg(clamped, "x"),
-	                  "ibne " + in + ", " + last + ", " + p.mainLabel);
+	                  vuInstrPrefix(VU_OP_IBNE) + in + ", " + last + ", " + p.mainLabel);
 	emitRawPairedLine(p.lightColorMaddayOp + " ACC, " + p.lightColor1Reg + ", " + fieldArg(clamped, "y"),
-	                  "lq.xyz " + texIn + ", " + offsetBase(-4, in));
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + texIn + ", " + offsetBase(-4, in));
 
 	m_codeLines.push_back(p.epilogTwoLabel + ":");
 	emitRawPairedLine(p.lightColorMaddzOp + " " + colorRaw + ", " + p.lightColor2Reg + ", " + fieldArg(clamped, "z"),
-	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
-	emitRawPairedLine("miniw.xyz " + color + ", " + colorAccum + ", " + fieldArg(p.maxColorReg, "w"),
-	                  "ilw.w " + strip + ", " + offsetBase(-3, in));
-	emitRawPairedLine("ftoi4.xyz " + gs + ", " + xQ, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz " + texOut + ", " + texIn + ", q",
-	                  "move.xyz " + xCarry + ", " + x);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + color + ", " + offsetBase(-5, out));
-	emitRawPairedLine("add.xyz " + colorAccum + ", " + colorRaw + ", " + p.constantColorReg,
-	                  "sq " + gs + ", " + offsetBase(-4, out));
-	emitRawPairedLine("mulq.xyz " + xQ + ", " + xCarry + ", q",
-	                  "sq.xyz " + texOut + ", " + offsetBase(-6, out));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + adc + ", " + strip + ", " + p.adcImmediate);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + texIn + ", " + offsetBase(-1, in));
-	emitRawPairedLine("miniw.xyz " + color + ", " + colorAccum + ", " + fieldArg(p.maxColorReg, "w"),
-	                  "mfir.w " + gs + ", " + adc);
-	emitRawPairedLine("ftoi4.xyz " + gs + ", " + xQ, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz " + texOut + ", " + texIn + ", q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + color + ", " + offsetBase(-2, out));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + gs + ", " + offsetBase(-1, out));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.exitLabel);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + texOut + ", " + offsetBase(-3, out));
+	                  vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MINI, "w", "xyz") + color + ", " + colorAccum + ", " + fieldArg(p.maxColorReg, "w"),
+	                  vuInstrPrefixFields(VU_OP_ILW, "w") + strip + ", " + offsetBase(-3, in));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + gs + ", " + xQ, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + texOut + ", " + texIn + ", q",
+	                  vuInstrPrefixFields(VU_OP_MOVE, "xyz") + xCarry + ", " + x);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + color + ", " + offsetBase(-5, out));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + colorAccum + ", " + colorRaw + ", " + p.constantColorReg,
+	                  vuInstrPrefix(VU_OP_SQ) + gs + ", " + offsetBase(-4, out));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + xQ + ", " + xCarry + ", q",
+	                  vuInstrPrefixFields(VU_OP_SQ, "xyz") + texOut + ", " + offsetBase(-6, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + adc + ", " + strip + ", " + p.adcImmediate);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + texIn + ", " + offsetBase(-1, in));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MINI, "w", "xyz") + color + ", " + colorAccum + ", " + fieldArg(p.maxColorReg, "w"),
+	                  vuInstrPrefixFields(VU_OP_MFIR, "w") + gs + ", " + adc);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + gs + ", " + xQ, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + texOut + ", " + texIn + ", q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + color + ", " + offsetBase(-2, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + gs + ", " + offsetBase(-1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.exitLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + texOut + ", " + offsetBase(-3, out));
 
 	m_codeLines.push_back(p.epilogOneLabel + ":");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.lightColorMaddzOp + " " + colorRaw + ", " + p.lightColor2Reg + ", " + fieldArg(clamped, "z"),
-	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "move.xyz " + xCarry + ", " + x);
-	emitRawPairedLine("add.xyz " + colorAccum + ", " + colorRaw + ", " + p.constantColorReg,
-	                  "lq.xyz " + texIn + ", " + offsetBase(-1, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ilw.w " + strip + ", " + offsetBase(-3, in));
-	emitRawPairedLine("mulq.xyz " + xQ + ", " + xCarry + ", q", vuInstr(VU_OP_WAITQ));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + adc + ", " + strip + ", " + p.adcImmediate);
-	emitRawPairedLine("miniw.xyz " + color + ", " + colorAccum + ", " + fieldArg(p.maxColorReg, "w"),
-	                  "mfir.w " + gs + ", " + adc);
-	emitRawPairedLine("ftoi4.xyz " + gs + ", " + xQ, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz " + texOut + ", " + texIn + ", q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + color + ", " + offsetBase(1, out));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + gs + ", " + offsetBase(2, out));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + texOut + ", " + offsetBase(0, out));
+	                  vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MOVE, "xyz") + xCarry + ", " + x);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + colorAccum + ", " + colorRaw + ", " + p.constantColorReg,
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + texIn + ", " + offsetBase(-1, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_ILW, "w") + strip + ", " + offsetBase(-3, in));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + xQ + ", " + xCarry + ", q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + adc + ", " + strip + ", " + p.adcImmediate);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MINI, "w", "xyz") + color + ", " + colorAccum + ", " + fieldArg(p.maxColorReg, "w"),
+	                  vuInstrPrefixFields(VU_OP_MFIR, "w") + gs + ", " + adc);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + gs + ", " + xQ, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + texOut + ", " + texIn + ", q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + color + ", " + offsetBase(1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + gs + ", " + offsetBase(2, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + texOut + ", " + offsetBase(0, out));
 
 	m_codeLines.push_back(p.exitLabel + ":");
 }
@@ -4084,102 +4109,102 @@ void CodeGenerator::emitPs2glTriXformSoftwarePipelineLoop( bool pvDiff )
 	const long thirdTexOffset = pvDiff ? 10 : 8;
 
 	m_codeLines.push_back("xform_loop_lid__ENTRY_POINT:");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI08, VI07, VI00");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI07, VI06, VI00");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI06, VI05, VI00");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.w VF08, 0(VI00)");
-	emitRawPairedLine("max.xyz VF06, VF07, VF07", vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "loi 0x45000000");
-	emitRawPairedLine("maxi.w VF07, VF00, i", vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF08, " + offsetBase(secondVertexOffset, "VI03"));
-	emitRawPairedLine("mulax ACC, VF01, VF08x", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madday ACC, VF02, VF08y", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddaz ACC, VF03, VF08z", "iadd VI06, VI05, VI00");
-	emitRawPairedLine("maddw VF15, VF04, VF00w", "lq.xyz VF14, 0(VI03)");
-	emitRawPairedLine("mulax ACC, VF01, VF14x", "div q, VF00w, VF15w");
-	emitRawPairedLine("madday ACC, VF02, VF14y", "lq.xyz VF08, " + offsetBase(thirdVertexOffset, "VI03"));
-	emitRawPairedLine("maddaz ACC, VF03, VF14z", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddw VF14, VF04, VF00w", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulax ACC, VF01, VF08x", "lq.xyz VF07, " + offsetBase(secondTexOffset, "VI03"));
-	emitRawPairedLine("madday ACC, VF02, VF08y", "lq.w VF08, 0(VI00)");
-	emitRawPairedLine("maddaz ACC, VF03, VF08z", "div q, VF00w, VF14w");
-	emitRawPairedLine("mulq.xyz VF08, VF15, q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz VF07, VF07, q", "iaddiu VI09, VI03, 0");
-	emitRawPairedLine("maddw VF12, VF04, VF00w", "iaddiu VI10, VI04, 0");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF09, 1(VI04)");
-	emitRawPairedLine("add.xyz VF10, VF08, VF05", "lq.xyz VF15, 2(VI03)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF07, 3(VI04)");
-	emitRawPairedLine("mulq.xyz VF07, VF14, q", "div q, VF00w, VF12w");
-	emitRawPairedLine("mul.xyz VF13, VF08, VF06", "mfir.w VF10, VI08");
-	emitRawPairedLine("ftoi4.xyz VF10, VF10", "lq.xyz VF11, " + offsetBase(thirdTexOffset, "VI03"));
-	emitRawPairedLine("mulq.xyz VF15, VF15, q", "sq.xyz VF09, 4(VI04)");
-	emitRawPairedLine("sub.xyz VF14, VF07, VF08", "sq.xyz VF09, 7(VI04)");
-	emitRawPairedLine("mul.xyz VF16, VF07, VF06", "iaddiu VI03, VI09, 0");
-	emitRawPairedLine("add.xyz VF10, VF07, VF05", "sq VF10, 5(VI04)");
-	emitRawPairedLine("mulq.xyz VF07, VF12, q", "iaddiu VI03, VI03, " + integerText(inputStep));
-	emitRawPairedLine("mulq.xyz VF15, VF11, q", "sq.xyz VF15, 0(VI04)");
-	emitRawPairedLine("clipw.xyz VF16xyz, VF07w", "ibeq VI03, VI06, " + epiLabel);
-	emitRawPairedLine("clipw.xyz VF13xyz, VF07w", "iaddiu VI09, VI04, 0");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADD) + "VI08, VI07, VI00");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADD) + "VI07, VI06, VI00");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADD) + "VI06, VI05, VI00");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "w") + "VF08, 0(VI00)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MAX, "xyz") + "VF06, VF07, VF07", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_LOI) + "0x45000000");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MAXI, "w") + "VF07, VF00, i", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF08, " + offsetBase(secondVertexOffset, "VI03"));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF08x", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF08y", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF08z", vuInstrPrefix(VU_OP_IADD) + "VI06, VI05, VI00");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF15, VF04, VF00w", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF14, 0(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF14x", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF15w");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF14y", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF08, " + offsetBase(thirdVertexOffset, "VI03"));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF14z", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF14, VF04, VF00w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF08x", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF07, " + offsetBase(secondTexOffset, "VI03"));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF08y", vuInstrPrefixFields(VU_OP_LQ, "w") + "VF08, 0(VI00)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF08z", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF14w");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF08, VF15, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF07, VF07, q", vuInstrPrefix(VU_OP_IADDIU) + "VI09, VI03, 0");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF12, VF04, VF00w", vuInstrPrefix(VU_OP_IADDIU) + "VI10, VI04, 0");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 1(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF10, VF08, VF05", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF15, 2(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF07, 3(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF07, VF14, q", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF12w");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF13, VF08, VF06", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF10, VI08");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF10, VF10", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF11, " + offsetBase(thirdTexOffset, "VI03"));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF15, VF15, q", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 4(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + "VF14, VF07, VF08", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 7(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF16, VF07, VF06", vuInstrPrefix(VU_OP_IADDIU) + "VI03, VI09, 0");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF10, VF07, VF05", vuInstrPrefix(VU_OP_SQ) + "VF10, 5(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF07, VF12, q", vuInstrPrefix(VU_OP_IADDIU) + "VI03, VI03, " + integerText(inputStep));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF15, VF11, q", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF15, 0(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF16xyz, VF07w", vuInstrPrefix(VU_OP_IBEQ) + "VI03, VI06, " + epiLabel);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF13xyz, VF07w", vuInstrPrefix(VU_OP_IADDIU) + "VI09, VI04, 0");
 
 	m_codeLines.push_back(mainLabel + ":");
-	emitRawPairedLine("ftoi4.xyz VF12, VF10", "lq.xyz VF11, " + offsetBase(secondVertexOffset, "VI03"));
-	emitRawPairedLine("sub.xyz VF10, VF07, VF08", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz VF08, VF07, VF06", "iaddiu VI04, VI10, 9");
-	emitRawPairedLine("mulw.xyz VF13, VF14, VF08w", "lq.xyz VF14, 0(VI03)");
-	emitRawPairedLine("mulax ACC, VF01, VF11x", "sq.xyz VF15, 6(VI09)");
-	emitRawPairedLine("madday ACC, VF02, VF11y", "mfir.w VF12, VI08");
-	emitRawPairedLine("maddaz ACC, VF03, VF11z", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddw VF15, VF04, VF00w", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulax ACC, VF01, VF14x", "lq.xyz VF11, " + offsetBase(thirdVertexOffset, "VI03"));
-	emitRawPairedLine("madday ACC, VF02, VF14y", "sq VF12, 2(VI09)");
-	emitRawPairedLine("maddaz ACC, VF03, VF14z", "iaddiu VI11, VI03, 0");
-	emitRawPairedLine("maddw VF14, VF04, VF00w", "div q, VF00w, VF15w");
-	emitRawPairedLine("mulax ACC, VF01, VF11x", "lq.xyz VF16, " + offsetBase(secondTexOffset, "VI03"));
-	emitRawPairedLine("madday ACC, VF02, VF11y", "iaddiu VI10, VI04, 0");
-	emitRawPairedLine("maddaz ACC, VF03, VF11z", "sq.xyz VF09, 1(VI04)");
-	emitRawPairedLine("maddw VF12, VF04, VF00w", "lq.xyz VF11, " + offsetBase(thirdTexOffset, "VI03"));
-	emitRawPairedLine("clipw.xyz VF08xyz, VF07w", "sq.xyz VF09, 4(VI04)");
-	emitRawPairedLine("opmula.xyz ACCxyz, VF13xyz, VF10xyz", "mfir.w VF10, VI08");
-	emitRawPairedLine("mulq.xyz VF08, VF15, q", "div q, VF00w, VF14w");
-	emitRawPairedLine("mulq.xyz VF16, VF16, q", "lq.xyz VF15, 2(VI03)");
-	emitRawPairedLine("opmsub.xyz VF00xyz, VF10xyz, VF13xyz", "fcand VI01, 262143");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI03, VI01, VI02");
-	emitRawPairedLine("mul.xyz VF13, VF08, VF06", "sq.xyz VF09, 7(VI04)");
-	emitRawPairedLine("add.xyz VF10, VF08, VF05", "sq.xyz VF16, 3(VI04)");
-	emitRawPairedLine("add.xyz VF17, VF07, VF05", "fmand VI01, VI07");
-	emitRawPairedLine("mulq.xyz VF07, VF14, q", "div q, VF00w, VF12w");
-	emitRawPairedLine("mulq.xyz VF16, VF15, q", "ior VI01, VI03, VI01");
-	emitRawPairedLine("ftoi4.xyz VF10, VF10", "iaddiu VI03, VI11, 0");
-	emitRawPairedLine("ftoi4.xyz VF15, VF17", "iaddiu VI11, VI01, 0x7fff");
-	emitRawPairedLine("sub.xyz VF14, VF07, VF08", "mfir.w VF15, VI11");
-	emitRawPairedLine("mul.xyz VF16, VF07, VF06", "sq.xyz VF16, 0(VI04)");
-	emitRawPairedLine("add.xyz VF10, VF07, VF05", "sq VF10, 5(VI04)");
-	emitRawPairedLine("mulq.xyz VF07, VF12, q", "iaddiu VI03, VI03, " + integerText(inputStep));
-	emitRawPairedLine("mulq.xyz VF15, VF11, q", "sq VF15, 8(VI09)");
-	emitRawPairedLine("clipw.xyz VF16xyz, VF07w", "ibne VI03, VI06, " + mainLabel);
-	emitRawPairedLine("clipw.xyz VF13xyz, VF07w", "iaddiu VI09, VI04, 0");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF12, VF10", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF11, " + offsetBase(secondVertexOffset, "VI03"));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + "VF10, VF07, VF08", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF08, VF07, VF06", vuInstrPrefix(VU_OP_IADDIU) + "VI04, VI10, 9");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + "VF13, VF14, VF08w", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF14, 0(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF11x", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF15, 6(VI09)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF11y", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF12, VI08");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF11z", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF15, VF04, VF00w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF14x", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF11, " + offsetBase(thirdVertexOffset, "VI03"));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF14y", vuInstrPrefix(VU_OP_SQ) + "VF12, 2(VI09)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF14z", vuInstrPrefix(VU_OP_IADDIU) + "VI11, VI03, 0");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF14, VF04, VF00w", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF15w");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF11x", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF16, " + offsetBase(secondTexOffset, "VI03"));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF11y", vuInstrPrefix(VU_OP_IADDIU) + "VI10, VI04, 0");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF11z", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 1(VI04)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF12, VF04, VF00w", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF11, " + offsetBase(thirdTexOffset, "VI03"));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF08xyz, VF07w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 4(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMULA, "xyz") + "ACCxyz, VF13xyz, VF10xyz", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF10, VI08");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF08, VF15, q", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF14w");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF16, VF16, q", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF15, 2(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMSUB, "xyz") + "VF00xyz, VF10xyz, VF13xyz", vuInstrPrefix(VU_OP_FCAND) + "VI01, 262143");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IAND) + "VI03, VI01, VI02");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF13, VF08, VF06", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 7(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF10, VF08, VF05", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF16, 3(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF17, VF07, VF05", vuInstrPrefix(VU_OP_FMAND) + "VI01, VI07");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF07, VF14, q", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF12w");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF16, VF15, q", vuInstrPrefix(VU_OP_IOR) + "VI01, VI03, VI01");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF10, VF10", vuInstrPrefix(VU_OP_IADDIU) + "VI03, VI11, 0");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF15, VF17", vuInstrPrefix(VU_OP_IADDIU) + "VI11, VI01, 0x7fff");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + "VF14, VF07, VF08", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF15, VI11");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF16, VF07, VF06", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF16, 0(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF10, VF07, VF05", vuInstrPrefix(VU_OP_SQ) + "VF10, 5(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF07, VF12, q", vuInstrPrefix(VU_OP_IADDIU) + "VI03, VI03, " + integerText(inputStep));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF15, VF11, q", vuInstrPrefix(VU_OP_SQ) + "VF15, 8(VI09)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF16xyz, VF07w", vuInstrPrefix(VU_OP_IBNE) + "VI03, VI06, " + mainLabel);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF13xyz, VF07w", vuInstrPrefix(VU_OP_IADDIU) + "VI09, VI04, 0");
 
 	m_codeLines.push_back(epiLabel + ":");
-	emitRawPairedLine("ftoi4.xyz VF09, VF10", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("sub.xyz VF10, VF07, VF08", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz VF08, VF07, VF06", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulw.xyz VF14, VF14, VF08w", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("add.xyz VF07, VF07, VF05", "mfir.w VF09, VI08");
-	emitRawPairedLine("clipw.xyz VF08xyz, VF07w", "sq.xyz VF15, 6(VI09)");
-	emitRawPairedLine("opmula.xyz ACCxyz, VF14xyz, VF10xyz", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("opmsub.xyz VF11xyz, VF10xyz, VF14xyz", vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF09, 2(VI09)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand VI01, 262143");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI02, VI01, VI02");
-	emitRawPairedLine("abs.xyz VF00, VF11", "fmand VI07, VI07");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior VI02, VI02, VI07");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI02, VI02, 0x7fff");
-	emitRawPairedLine("ftoi4.xyz VF15, VF07", vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF15, VI02");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF09, VF10", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + "VF10, VF07, VF08", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF08, VF07, VF06", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + "VF14, VF14, VF08w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF07, VF07, VF05", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF09, VI08");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF08xyz, VF07w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF15, 6(VI09)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMULA, "xyz") + "ACCxyz, VF14xyz, VF10xyz", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMSUB, "xyz") + "VF11xyz, VF10xyz, VF14xyz", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF09, 2(VI09)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_FCAND) + "VI01, 262143");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IAND) + "VI02, VI01, VI02");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ABS, "xyz") + "VF00, VF11", vuInstrPrefix(VU_OP_FMAND) + "VI07, VI07");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IOR) + "VI02, VI02, VI07");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + "VI02, VI02, 0x7fff");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF15, VF07", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF15, VI02");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + exitLabel);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF15, 8(VI09)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + exitLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF15, 8(VI09)");
 
 	m_codeLines.push_back(exitLabel + ":");
 }
@@ -4194,217 +4219,217 @@ void CodeGenerator::emitPs2glQuadXformSoftwarePipelineLoop()
 	const std::string doneLabel = "xform_loop_lid__AFTER_FALLBACK";
 
 	m_codeLines.push_back("xform_loop_lid__ENTRY_POINT:");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isub VI01, VI05, VI03");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu VI01, VI01, 384");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iblez VI01, " + fallbackLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUB) + "VI01, VI05, VI03");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + "VI01, VI01, 384");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IBLEZ) + "VI01, " + fallbackLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI08, VI07, VI00");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI07, VI06, VI00");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI06, VI05, VI00");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.w VF08, 0(VI00)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADD) + "VI08, VI07, VI00");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADD) + "VI07, VI06, VI00");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADD) + "VI06, VI05, VI00");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "w") + "VF08, 0(VI00)");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "loi 0x45000000");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF20, 0(VI03)");
-	emitRawPairedLine("mulax ACC, VF01, VF20x", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madday ACC, VF02, VF20y", "lq.xyz VF08, 6(VI03)");
-	emitRawPairedLine("maddaz ACC, VF03, VF20z", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddw VF20, VF04, VF00w", "lq.xyz VF14, 9(VI03)");
-	emitRawPairedLine("mulax ACC, VF01, VF08x", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madday ACC, VF02, VF08y", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddaz ACC, VF03, VF08z", "div q, VF00w, VF20w");
-	emitRawPairedLine("maddw VF16, VF04, VF00w", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulax ACC, VF01, VF14x", "lq.xyz VF13, 3(VI03)");
-	emitRawPairedLine("madday ACC, VF02, VF14y", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddaz ACC, VF03, VF14z", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddw VF14, VF04, VF00w", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulax ACC, VF01, VF13x", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madday ACC, VF02, VF13y", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddaz ACC, VF03, VF13z", "lq.xyz VF07, 7(VI03)");
-	emitRawPairedLine("maddw VF13, VF04, VF00w", vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ilw.w VI02, 76(VI00)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF13w");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_LOI) + "0x45000000");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF20, 0(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF20x", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF20y", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF08, 6(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF20z", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF20, VF04, VF00w", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF14, 9(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF08x", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF08y", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF08z", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF20w");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF16, VF04, VF00w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF14x", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF13, 3(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF14y", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF14z", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF14, VF04, VF00w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF13x", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF13y", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF13z", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF07, 7(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF13, VF04, VF00w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_ILW, "w") + "VI02, 76(VI00)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF13w");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF15, 2(VI03)");
-	emitRawPairedLine("mulq.xyz VF08, VF20, q", "lq.xyz VF06, 76(VI00)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcset 0");
-	emitRawPairedLine("maxi.w VF07, VF00, i", "lq.xyz VF17, 10(VI03)");
-	emitRawPairedLine("mulq.xyz VF15, VF15, q", "sq.xyz VF07, 10(VI03)");
-	emitRawPairedLine("mul.xyz VF10, VF08, VF06", "div q, VF00w, VF16w");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF07, 5(VI03)");
-	emitRawPairedLine("mulq.xyz VF13, VF13, q", "iaddiu VI01, VI03, 0");
-	emitRawPairedLine("add.xyz VF11, VF08, VF05", "sq.xyz VF17, 7(VI03)");
-	emitRawPairedLine("clipw.xyz VF10xyz, VF07w", "lq.xyz VF17, 11(VI03)");
-	emitRawPairedLine("mulq.xyz VF10, VF07, q", "lq.xyz VF20, 8(VI03)");
-	emitRawPairedLine("sub.xyz VF12, VF08, VF13", "iaddiu VI03, VI01, 12");
-	emitRawPairedLine("mul.xyz VF21, VF13, VF06", "div q, VF00w, VF14w");
-	emitRawPairedLine("add.xyz VF08, VF13, VF05", "ibeq VI03, VI06, " + epi1Label);
-	emitRawPairedLine("mulq.xyz VF16, VF16, q", "lq.w VF08, 0(VI00)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF15, 2(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF08, VF20, q", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF06, 76(VI00)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_FCSET) + "0");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MAXI, "w") + "VF07, VF00, i", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF17, 10(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF15, VF15, q", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF07, 10(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF10, VF08, VF06", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF16w");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF07, 5(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF13, VF13, q", vuInstrPrefix(VU_OP_IADDIU) + "VI01, VI03, 0");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF11, VF08, VF05", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF17, 7(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF10xyz, VF07w", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF17, 11(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF10, VF07, q", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF20, 8(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + "VF12, VF08, VF13", vuInstrPrefix(VU_OP_IADDIU) + "VI03, VI01, 12");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF21, VF13, VF06", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF14w");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF08, VF13, VF05", vuInstrPrefix(VU_OP_IBEQ) + "VI03, VI06, " + epi1Label);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF16, VF16, q", vuInstrPrefixFields(VU_OP_LQ, "w") + "VF08, 0(VI00)");
 
 	m_codeLines.push_back("xform_loop_lid__PRO1:");
-	emitRawPairedLine("mulq.xyz VF19, VF20, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF19, VF20, q", vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz VF17, VF17, q", "lq.xyz VF20, 0(VI03)");
-	emitRawPairedLine("mulq.xyz VF18, VF14, q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("sub.xyz VF13, VF16, VF13", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("add.xyz VF07, VF16, VF05", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulax ACC, VF01, VF20x", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madday ACC, VF02, VF20y", "lq.xyz VF22, 6(VI03)");
-	emitRawPairedLine("maddaz ACC, VF03, VF20z", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddw VF20, VF04, VF00w", "iaddiu VI01, VI03, 0");
-	emitRawPairedLine("mul.xyz VF21, VF16, VF06", "iaddiu VI09, VI04, 0");
-	emitRawPairedLine("mulax ACC, VF01, VF22x", "lq.xyz VF14, 9(VI03)");
-	emitRawPairedLine("madday ACC, VF02, VF22y", "lq.xyz VF25, 10(VI03)");
-	emitRawPairedLine("maddaz ACC, VF03, VF22z", "div q, VF00w, VF20w");
-	emitRawPairedLine("maddw VF16, VF04, VF00w", "lq.xyz VF23, 7(VI03)");
-	emitRawPairedLine("mulax ACC, VF01, VF14x", "sq.xyz VF15, 0(VI04)");
-	emitRawPairedLine("madday ACC, VF02, VF14y", "lq.xyz VF24, 3(VI03)");
-	emitRawPairedLine("mul.xyz VF15, VF18, VF06", "sq.xyz VF25, 7(VI03)");
-	emitRawPairedLine("maddaz ACC, VF03, VF14z", "sq.xyz VF23, 10(VI03)");
-	emitRawPairedLine("maddw VF14, VF04, VF00w", "sq.xyz VF17, 6(VI04)");
-	emitRawPairedLine("mulq.xyz VF22, VF20, q", "lq.xyz VF17, 11(VI03)");
-	emitRawPairedLine("mulax ACC, VF01, VF24x", "lq.xyz VF23, 5(VI03)");
-	emitRawPairedLine("madday ACC, VF02, VF24y", "lq.xyz VF25, 2(VI03)");
-	emitRawPairedLine("maddaz ACC, VF03, VF24z", "sq.xyz VF19, 9(VI04)");
-	emitRawPairedLine("maddw VF24, VF04, VF00w", "sq.xyz VF10, 3(VI04)");
-	emitRawPairedLine("ftoi4.xyz VF11, VF11", "sq.xyz VF09, 4(VI04)");
-	emitRawPairedLine("clipw.xyz VF15xyz, VF07w", "sq.xyz VF09, 7(VI04)");
-	emitRawPairedLine("mul.xyz VF19, VF22, VF06", "sq.xyz VF09, 1(VI04)");
-	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "div q, VF00w, VF24w");
-	emitRawPairedLine("mulw.xyz VF10, VF12, VF08w", "mfir.w VF11, VI08");
-	emitRawPairedLine("add.xyz VF12, VF18, VF05", "lq.xyz VF20, 8(VI03)");
-	emitRawPairedLine("clipw.xyz VF19xyz, VF07w", "iaddiu VI03, VI01, 12");
-	emitRawPairedLine("mulq.xyz VF15, VF25, q", "fcand VI01, 16777215");
-	emitRawPairedLine("opmula.xyz ACCxyz, VF10xyz, VF13xyz", "sq.xyz VF09, 10(VI04)");
-	emitRawPairedLine("opmsub.xyz VF00xyz, VF13xyz, VF10xyz", "sq VF11, 2(VI04)");
-	emitRawPairedLine("ftoi4.xyz VF18, VF08", "div q, VF00w, VF16w");
-	emitRawPairedLine("mulq.xyz VF13, VF24, q", "mfir.w VF18, VI08");
-	emitRawPairedLine("ftoi4.xyz VF19, VF12", "iand VI01, VI01, VI02");
-	emitRawPairedLine("mulq.xyz VF10, VF23, q", "fmand VI10, VI07");
-	emitRawPairedLine("add.xyz VF11, VF22, VF05", "ior VI01, VI01, VI10");
-	emitRawPairedLine("sub.xyz VF12, VF22, VF13", "iaddiu VI01, VI01, 0x7fff");
-	emitRawPairedLine("mul.xyz VF21, VF13, VF06", "mfir.w VF19, VI01");
-	emitRawPairedLine("add.xyz VF08, VF13, VF05", "div q, VF00w, VF14w");
-	emitRawPairedLine("ftoi4.xyz VF22, VF07", "ibeq VI03, VI06, " + epi0Label);
-	emitRawPairedLine("mulq.xyz VF16, VF16, q", "mfir.w VF22, VI01");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF21xyz, VF07w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF17, VF17, q", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF20, 0(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF18, VF14, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + "VF13, VF16, VF13", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF07, VF16, VF05", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF20x", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF20y", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF22, 6(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF20z", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF20, VF04, VF00w", vuInstrPrefix(VU_OP_IADDIU) + "VI01, VI03, 0");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF21, VF16, VF06", vuInstrPrefix(VU_OP_IADDIU) + "VI09, VI04, 0");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF22x", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF14, 9(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF22y", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF25, 10(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF22z", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF20w");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF16, VF04, VF00w", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF23, 7(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF14x", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF15, 0(VI04)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF14y", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF24, 3(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF15, VF18, VF06", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF25, 7(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF14z", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF23, 10(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF14, VF04, VF00w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF17, 6(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF22, VF20, q", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF17, 11(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF24x", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF23, 5(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF24y", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF25, 2(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF24z", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF19, 9(VI04)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF24, VF04, VF00w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF10, 3(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF11, VF11", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 4(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF15xyz, VF07w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 7(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF19, VF22, VF06", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 1(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF21xyz, VF07w", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF24w");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + "VF10, VF12, VF08w", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF11, VI08");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF12, VF18, VF05", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF20, 8(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF19xyz, VF07w", vuInstrPrefix(VU_OP_IADDIU) + "VI03, VI01, 12");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF15, VF25, q", vuInstrPrefix(VU_OP_FCAND) + "VI01, 16777215");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMULA, "xyz") + "ACCxyz, VF10xyz, VF13xyz", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 10(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMSUB, "xyz") + "VF00xyz, VF13xyz, VF10xyz", vuInstrPrefix(VU_OP_SQ) + "VF11, 2(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF18, VF08", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF16w");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF13, VF24, q", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF18, VI08");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF19, VF12", vuInstrPrefix(VU_OP_IAND) + "VI01, VI01, VI02");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF10, VF23, q", vuInstrPrefix(VU_OP_FMAND) + "VI10, VI07");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF11, VF22, VF05", vuInstrPrefix(VU_OP_IOR) + "VI01, VI01, VI10");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + "VF12, VF22, VF13", vuInstrPrefix(VU_OP_IADDIU) + "VI01, VI01, 0x7fff");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF21, VF13, VF06", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF19, VI01");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF08, VF13, VF05", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF14w");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF22, VF07", vuInstrPrefix(VU_OP_IBEQ) + "VI03, VI06, " + epi0Label);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF16, VF16, q", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF22, VI01");
 
 	m_codeLines.push_back(mainLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF19, 8(VI04)");
-	emitRawPairedLine("mulq.xyz VF19, VF20, q", "sq VF18, 5(VI04)");
-	emitRawPairedLine("ftoi4.xyz VF11, VF11", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("sub.xyz VF13, VF16, VF13", "sq VF22, 11(VI04)");
-	emitRawPairedLine("mulq.xyz VF17, VF17, q", "iaddiu VI04, VI09, 12");
-	emitRawPairedLine("add.xyz VF07, VF16, VF05", "lq.xyz VF20, 0(VI03)");
-	emitRawPairedLine("mulq.xyz VF18, VF14, q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "lq.xyz VF22, 6(VI03)");
-	emitRawPairedLine("mul.xyz VF21, VF16, VF06", "iaddiu VI01, VI03, 0");
-	emitRawPairedLine("mulax ACC, VF01, VF20x", "iaddiu VI09, VI04, 0");
-	emitRawPairedLine("madday ACC, VF02, VF20y", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddaz ACC, VF03, VF20z", "lq.xyz VF14, 9(VI03)");
-	emitRawPairedLine("maddw VF20, VF04, VF00w", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulax ACC, VF01, VF22x", "lq.xyz VF23, 7(VI03)");
-	emitRawPairedLine("madday ACC, VF02, VF22y", "lq.xyz VF25, 10(VI03)");
-	emitRawPairedLine("maddaz ACC, VF03, VF22z", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddw VF16, VF04, VF00w", "div q, VF00w, VF20w");
-	emitRawPairedLine("mulax ACC, VF01, VF14x", "sq.xyz VF15, 0(VI04)");
-	emitRawPairedLine("madday ACC, VF02, VF14y", "lq.xyz VF24, 3(VI03)");
-	emitRawPairedLine("mul.xyz VF15, VF18, VF06", "sq.xyz VF25, 7(VI03)");
-	emitRawPairedLine("maddaz ACC, VF03, VF14z", "sq.xyz VF23, 10(VI03)");
-	emitRawPairedLine("maddw VF14, VF04, VF00w", "sq.xyz VF17, 6(VI04)");
-	emitRawPairedLine("mulax ACC, VF01, VF24x", "lq.xyz VF17, 11(VI03)");
-	emitRawPairedLine("mulq.xyz VF22, VF20, q", "lq.xyz VF23, 5(VI03)");
-	emitRawPairedLine("madday ACC, VF02, VF24y", "lq.xyz VF20, 8(VI03)");
-	emitRawPairedLine("maddaz ACC, VF03, VF24z", "lq.xyz VF25, 2(VI03)");
-	emitRawPairedLine("maddw VF24, VF04, VF00w", "iaddiu VI03, VI01, 12");
-	emitRawPairedLine("mul.xyz VF19, VF22, VF06", "sq.xyz VF19, 9(VI04)");
-	emitRawPairedLine("clipw.xyz VF15xyz, VF07w", "sq.xyz VF10, 3(VI04)");
-	emitRawPairedLine("mulw.xyz VF10, VF12, VF08w", "sq.xyz VF09, 4(VI04)");
-	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "div q, VF00w, VF24w");
-	emitRawPairedLine("clipw.xyz VF19xyz, VF07w", "sq.xyz VF09, 7(VI04)");
-	emitRawPairedLine("add.xyz VF12, VF18, VF05", "sq.xyz VF09, 1(VI04)");
-	emitRawPairedLine("mulq.xyz VF15, VF25, q", "mfir.w VF11, VI08");
-	emitRawPairedLine("opmula.xyz ACCxyz, VF10xyz, VF13xyz", "fcand VI01, 16777215");
-	emitRawPairedLine("ftoi4.xyz VF18, VF08", "iand VI01, VI01, VI02");
-	emitRawPairedLine("opmsub.xyz VF00xyz, VF13xyz, VF10xyz", "sq.xyz VF09, 10(VI04)");
-	emitRawPairedLine("mulq.xyz VF13, VF24, q", "div q, VF00w, VF16w");
-	emitRawPairedLine("mulq.xyz VF10, VF23, q", "sq VF11, 2(VI04)");
-	emitRawPairedLine("add.xyz VF11, VF22, VF05", "mfir.w VF18, VI08");
-	emitRawPairedLine("ftoi4.xyz VF19, VF12", "fmand VI10, VI07");
-	emitRawPairedLine("sub.xyz VF12, VF22, VF13", "ior VI01, VI01, VI10");
-	emitRawPairedLine("mul.xyz VF21, VF13, VF06", "iaddiu VI01, VI01, 0x7fff");
-	emitRawPairedLine("add.xyz VF08, VF13, VF05", "mfir.w VF19, VI01");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF14w");
-	emitRawPairedLine("ftoi4.xyz VF22, VF07", "ibne VI03, VI06, " + mainLabel);
-	emitRawPairedLine("mulq.xyz VF16, VF16, q", "mfir.w VF22, VI01");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF19, 8(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF19, VF20, q", vuInstrPrefix(VU_OP_SQ) + "VF18, 5(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF11, VF11", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + "VF13, VF16, VF13", vuInstrPrefix(VU_OP_SQ) + "VF22, 11(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF17, VF17, q", vuInstrPrefix(VU_OP_IADDIU) + "VI04, VI09, 12");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF07, VF16, VF05", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF20, 0(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF18, VF14, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF21xyz, VF07w", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF22, 6(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF21, VF16, VF06", vuInstrPrefix(VU_OP_IADDIU) + "VI01, VI03, 0");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF20x", vuInstrPrefix(VU_OP_IADDIU) + "VI09, VI04, 0");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF20y", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF20z", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF14, 9(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF20, VF04, VF00w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF22x", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF23, 7(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF22y", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF25, 10(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF22z", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF16, VF04, VF00w", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF20w");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF14x", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF15, 0(VI04)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF14y", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF24, 3(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF15, VF18, VF06", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF25, 7(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF14z", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF23, 10(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF14, VF04, VF00w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF17, 6(VI04)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF24x", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF17, 11(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF22, VF20, q", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF23, 5(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF24y", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF20, 8(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF24z", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF25, 2(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF24, VF04, VF00w", vuInstrPrefix(VU_OP_IADDIU) + "VI03, VI01, 12");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF19, VF22, VF06", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF19, 9(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF15xyz, VF07w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF10, 3(VI04)");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + "VF10, VF12, VF08w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 4(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF21xyz, VF07w", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF24w");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF19xyz, VF07w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 7(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF12, VF18, VF05", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 1(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF15, VF25, q", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF11, VI08");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMULA, "xyz") + "ACCxyz, VF10xyz, VF13xyz", vuInstrPrefix(VU_OP_FCAND) + "VI01, 16777215");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF18, VF08", vuInstrPrefix(VU_OP_IAND) + "VI01, VI01, VI02");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMSUB, "xyz") + "VF00xyz, VF13xyz, VF10xyz", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 10(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF13, VF24, q", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF16w");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF10, VF23, q", vuInstrPrefix(VU_OP_SQ) + "VF11, 2(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF11, VF22, VF05", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF18, VI08");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF19, VF12", vuInstrPrefix(VU_OP_FMAND) + "VI10, VI07");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + "VF12, VF22, VF13", vuInstrPrefix(VU_OP_IOR) + "VI01, VI01, VI10");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF21, VF13, VF06", vuInstrPrefix(VU_OP_IADDIU) + "VI01, VI01, 0x7fff");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF08, VF13, VF05", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF19, VI01");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF14w");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF22, VF07", vuInstrPrefix(VU_OP_IBNE) + "VI03, VI06, " + mainLabel);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF16, VF16, q", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF22, VI01");
 
 	m_codeLines.push_back(epi0Label + ":");
-	emitRawPairedLine("mulq.xyz VF19, VF20, q", "sq VF19, 8(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF19, VF20, q", vuInstrPrefix(VU_OP_SQ) + "VF19, 8(VI04)");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz VF17, VF17, q", "mfir.w VF11, VI08");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF17, VF17, q", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF11, VI08");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz VF18, VF14, q", "sq VF18, 5(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF18, VF14, q", vuInstrPrefix(VU_OP_SQ) + "VF18, 5(VI04)");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "sq VF22, 11(VI04)");
-	emitRawPairedLine("sub.xyz VF13, VF16, VF13", "iaddiu VI04, VI09, 0");
-	emitRawPairedLine("mul.xyz VF15, VF18, VF06", "sq.xyz VF15, 12(VI04)");
-	emitRawPairedLine("mul.xyz VF21, VF16, VF06", "sq.xyz VF19, 21(VI04)");
-	emitRawPairedLine("mulw.xyz VF10, VF12, VF08w", "sq.xyz VF10, 15(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF17, 18(VI04)");
-	emitRawPairedLine("clipw.xyz VF15xyz, VF07w", "sq.xyz VF09, 16(VI04)");
-	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "sq.xyz VF09, 19(VI04)");
-	emitRawPairedLine("opmula.xyz ACCxyz, VF10xyz, VF13xyz", "sq.xyz VF09, 13(VI04)");
-	emitRawPairedLine("opmsub.xyz VF00xyz, VF13xyz, VF10xyz", "sq.xyz VF09, 22(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF18, VI08");
-	emitRawPairedLine("add.xyz VF12, VF18, VF05", "fcand VI01, 16777215");
-	emitRawPairedLine("ftoi4.xyz VF11, VF11", "iand VI02, VI01, VI02");
-	emitRawPairedLine("add.xyz VF07, VF16, VF05", "fmand VI07, VI07");
-	emitRawPairedLine("ftoi4.xyz VF18, VF08", "ior VI02, VI02, VI07");
-	emitRawPairedLine("ftoi4.xyz VF19, VF12", "iaddiu VI02, VI02, 0x7fff");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF19, VI02");
-	emitRawPairedLine("ftoi4.xyz VF22, VF07", "sq VF11, 14(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF22, VI02");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF18, 17(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF19, 20(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + exitLabel);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF22, 23(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF21xyz, VF07w", vuInstrPrefix(VU_OP_SQ) + "VF22, 11(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + "VF13, VF16, VF13", vuInstrPrefix(VU_OP_IADDIU) + "VI04, VI09, 0");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF15, VF18, VF06", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF15, 12(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF21, VF16, VF06", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF19, 21(VI04)");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + "VF10, VF12, VF08w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF10, 15(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF17, 18(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF15xyz, VF07w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 16(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF21xyz, VF07w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 19(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMULA, "xyz") + "ACCxyz, VF10xyz, VF13xyz", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 13(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMSUB, "xyz") + "VF00xyz, VF13xyz, VF10xyz", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 22(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF18, VI08");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF12, VF18, VF05", vuInstrPrefix(VU_OP_FCAND) + "VI01, 16777215");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF11, VF11", vuInstrPrefix(VU_OP_IAND) + "VI02, VI01, VI02");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF07, VF16, VF05", vuInstrPrefix(VU_OP_FMAND) + "VI07, VI07");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF18, VF08", vuInstrPrefix(VU_OP_IOR) + "VI02, VI02, VI07");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF19, VF12", vuInstrPrefix(VU_OP_IADDIU) + "VI02, VI02, 0x7fff");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF19, VI02");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF22, VF07", vuInstrPrefix(VU_OP_SQ) + "VF11, 14(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF22, VI02");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF18, 17(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF19, 20(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + exitLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF22, 23(VI04)");
 
 	m_codeLines.push_back(epi1Label + ":");
-	emitRawPairedLine("mulq.xyz VF20, VF20, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF20, VF20, q", vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz VF17, VF17, q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz VF14, VF14, q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("ftoi4.xyz VF11, VF11", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("sub.xyz VF13, VF16, VF13", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulw.xyz VF10, VF12, VF08w", "sq.xyz VF10, 3(VI04)");
-	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "sq.xyz VF15, 0(VI04)");
-	emitRawPairedLine("mul.xyz VF15, VF14, VF06", "sq.xyz VF09, 4(VI04)");
-	emitRawPairedLine("mul.xyz VF21, VF16, VF06", "sq.xyz VF09, 7(VI04)");
-	emitRawPairedLine("opmula.xyz ACCxyz, VF10xyz, VF13xyz", "mfir.w VF11, VI08");
-	emitRawPairedLine("opmsub.xyz VF18xyz, VF13xyz, VF10xyz", "sq.xyz VF20, 9(VI04)");
-	emitRawPairedLine("clipw.xyz VF15xyz, VF07w", "sq.xyz VF09, 1(VI04)");
-	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "sq.xyz VF09, 10(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF11, 2(VI04)");
-	emitRawPairedLine("abs.xyz VF00, VF18", "mfir.w VF08, VI08");
-	emitRawPairedLine("add.xyz VF12, VF14, VF05", "fmand VI07, VI07");
-	emitRawPairedLine("add.xyz VF07, VF16, VF05", "fcand VI01, 16777215");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI02, VI01, VI02");
-	emitRawPairedLine("ftoi4.xyz VF08, VF08", "ior VI02, VI02, VI07");
-	emitRawPairedLine("ftoi4.xyz VF11, VF12", "iaddiu VI02, VI02, 0x7fff");
-	emitRawPairedLine("ftoi4.xyz VF07, VF07", "mfir.w VF11, VI02");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF07, VI02");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF17, 6(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF08, 5(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF11, 8(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF07, 11(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF17, VF17, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF14, VF14, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF11, VF11", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + "VF13, VF16, VF13", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + "VF10, VF12, VF08w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF10, 3(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF21xyz, VF07w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF15, 0(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF15, VF14, VF06", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 4(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF21, VF16, VF06", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 7(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMULA, "xyz") + "ACCxyz, VF10xyz, VF13xyz", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF11, VI08");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMSUB, "xyz") + "VF18xyz, VF13xyz, VF10xyz", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF20, 9(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF15xyz, VF07w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 1(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF21xyz, VF07w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 10(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF11, 2(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ABS, "xyz") + "VF00, VF18", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF08, VI08");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF12, VF14, VF05", vuInstrPrefix(VU_OP_FMAND) + "VI07, VI07");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF07, VF16, VF05", vuInstrPrefix(VU_OP_FCAND) + "VI01, 16777215");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IAND) + "VI02, VI01, VI02");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF08, VF08", vuInstrPrefix(VU_OP_IOR) + "VI02, VI02, VI07");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF11, VF12", vuInstrPrefix(VU_OP_IADDIU) + "VI02, VI02, 0x7fff");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF07, VF07", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF11, VI02");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF07, VI02");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF17, 6(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF08, 5(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF11, 8(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF07, 11(VI04)");
 
 	m_codeLines.push_back(exitLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + doneLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + doneLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	emitPs2glQuadXformScalarFallbackLoop();
@@ -4417,157 +4442,157 @@ void CodeGenerator::emitPs2glQuadXformScalarFallbackLoop()
 	const std::string fallbackLabel = "xform_loop_lid__FALLBACK_SHORT";
 
 	m_codeLines.push_back(fallbackLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF08, 0(VI03)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF10, 2(VI03)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF11, VI07");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF13, VI07");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF09, 1(VI04)");
-	emitRawPairedLine("mulax.xyzw ACC, VF01, VF08x", "sq.xyz VF09, 4(VI04)");
-	emitRawPairedLine("madday.xyzw ACC, VF02, VF08y", "sq.xyz VF09, 7(VI04)");
-	emitRawPairedLine("maddaz.xyzw ACC, VF03, VF08z", "sq.xyz VF09, 10(VI04)");
-	emitRawPairedLine("maddw.xyzw VF08, VF04, VF00w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF08, 0(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF10, 2(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF11, VI07");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF13, VI07");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 1(VI04)");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "xyzw") + "ACC, VF01, VF08x", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 4(VI04)");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "xyzw") + "ACC, VF02, VF08y", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 7(VI04)");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "z", "xyzw") + "ACC, VF03, VF08z", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 10(VI04)");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "w", "xyzw") + "VF08, VF04, VF00w", vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF08w");
-	emitRawPairedLine("mulq.xyz VF08, VF08, q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF08w");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF08, VF08, q", vuInstr(VU_OP_WAITQ));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("add.xyz VF11, VF08, VF05", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF11, VF08, VF05", vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("ftoi4.xyz VF11, VF11", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz VF12, VF10, q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz VF10, VF08, VF07", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF11, VF11", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF12, VF10, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF10, VF08, VF07", vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("clipw.xyz VF10, VF07w", "sq.xyz VF12, 0(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF10, 3(VI03)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF12, 5(VI03)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF11, 2(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF10, VF07w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF12, 0(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF10, 3(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF12, 5(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF11, 2(VI04)");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulax.xyzw ACC, VF01, VF10x", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madday.xyzw ACC, VF02, VF10y", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddaz.xyzw ACC, VF03, VF10z", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddw.xyzw VF10, VF04, VF00w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "xyzw") + "ACC, VF01, VF10x", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "xyzw") + "ACC, VF02, VF10y", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "z", "xyzw") + "ACC, VF03, VF10z", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "w", "xyzw") + "VF10, VF04, VF00w", vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF10w");
-	emitRawPairedLine("mulq.xyz VF10, VF10, q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF10w");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF10, VF10, q", vuInstr(VU_OP_WAITQ));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("add.xyz VF13, VF10, VF05", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF13, VF10, VF05", vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("ftoi4.xyz VF13, VF13", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz VF14, VF12, q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz VF12, VF10, VF07", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF13, VF13", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF14, VF12, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF12, VF10, VF07", vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("clipw.xyz VF12, VF07w", "sq.xyz VF14, 3(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF12, 9(VI03)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF14, 11(VI03)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF13, 5(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF12, VF07w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF14, 3(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF12, 9(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF14, 11(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF13, 5(VI04)");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulax.xyzw ACC, VF01, VF12x", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madday.xyzw ACC, VF02, VF12y", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddaz.xyzw ACC, VF03, VF12z", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddw.xyzw VF12, VF04, VF00w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "xyzw") + "ACC, VF01, VF12x", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "xyzw") + "ACC, VF02, VF12y", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "z", "xyzw") + "ACC, VF03, VF12z", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "w", "xyzw") + "VF12, VF04, VF00w", vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF12w");
-	emitRawPairedLine("mulq.xyz VF12, VF12, q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF12w");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF12, VF12, q", vuInstr(VU_OP_WAITQ));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("add.xyz VF15, VF12, VF05", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF15, VF12, VF05", vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("ftoi4.xyz VF15, VF15", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz VF16, VF14, q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz VF14, VF12, VF07", vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF12, 6(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF15, VF15", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF16, VF14, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF14, VF12, VF07", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF12, 6(VI03)");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("clipw.xyz VF14, VF07w", "sq.xyz VF16, 6(VI04)");
-	emitRawPairedLine("mulax.xyzw ACC, VF01, VF12x", "lq.xyz VF14, 8(VI03)");
-	emitRawPairedLine("madday.xyzw ACC, VF02, VF12y", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddaz.xyzw ACC, VF03, VF12z", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddw.xyzw VF12, VF04, VF00w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF14, VF07w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF16, 6(VI04)");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "xyzw") + "ACC, VF01, VF12x", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF14, 8(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "xyzw") + "ACC, VF02, VF12y", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "z", "xyzw") + "ACC, VF03, VF12z", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "w", "xyzw") + "VF12, VF04, VF00w", vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF12w");
-	emitRawPairedLine("mulq.xyz VF12, VF12, q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF12w");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF12, VF12, q", vuInstr(VU_OP_WAITQ));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("add.xyz VF17, VF12, VF05", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF17, VF12, VF05", vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("ftoi4.xyz VF17, VF17", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz VF16, VF14, q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz VF14, VF12, VF07", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF17, VF17", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF16, VF14, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF14, VF12, VF07", vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("clipw.xyz VF14, VF07w", "sq.xyz VF16, 9(VI04)");
-	emitRawPairedLine("sub.xyz VF14, VF08, VF10", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("sub.xyz VF08, VF12, VF10", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF14, VF07w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF16, 9(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + "VF14, VF08, VF10", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + "VF08, VF12, VF10", vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulw.xyz VF10, VF14, VF06w", "fcand VI01, 0x0ffffff");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI01, VI01, VI02");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + "VF10, VF14, VF06w", vuInstrPrefix(VU_OP_FCAND) + "VI01, 0x0ffffff");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IAND) + "VI01, VI01, VI02");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("opmula.xyz ACC, VF10, VF08", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("opmsub.xyz VF12, VF08, VF10", vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF08, 7(VI03)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF10, 10(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMULA, "xyz") + "ACC, VF10, VF08", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMSUB, "xyz") + "VF12, VF08, VF10", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF08, 7(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF10, 10(VI03)");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "fmand VI08, VI06");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior VI09, VI01, VI08");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI09, VI09, 0x7fff");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF15, VI09");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF17, VI09");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF08, 10(VI03)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF10, 7(VI03)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI03, VI03, 12");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF15, 8(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF17, 11(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_FMAND) + "VI08, VI06");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IOR) + "VI09, VI01, VI08");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + "VI09, VI09, 0x7fff");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF15, VI09");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF17, VI09");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF08, 10(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF10, 7(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + "VI03, VI03, 12");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF15, 8(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF17, 11(VI04)");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibne VI03, VI05, " + fallbackLabel);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI04, VI04, 12");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IBNE) + "VI03, VI05, " + fallbackLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + "VI04, VI04, 12");
 }
 
 void CodeGenerator::emitPs2glPvDiffQuadXformSoftwarePipelineLoop()
@@ -4577,130 +4602,130 @@ void CodeGenerator::emitPs2glPvDiffQuadXformSoftwarePipelineLoop()
 	const std::string exitLabel = "xform_loop_lid__EXIT_POINT";
 
 	m_codeLines.push_back("xform_loop_lid__ENTRY_POINT:");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI08, VI07, VI00");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI07, VI06, VI00");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI06, VI05, VI00");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.w VF08, 0(VI00)");
-	emitRawPairedLine("max.xyz VF06, VF07, VF07", vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "loi 0x45000000");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF07, 0(VI03)");
-	emitRawPairedLine("mulax ACC, VF01, VF07x", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madday ACC, VF02, VF07y", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddaz ACC, VF03, VF07z", "lq.xyz VF20, 8(VI03)");
-	emitRawPairedLine("maddw VF22, VF04, VF00w", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulax ACC, VF01, VF20x", "lq.xyz VF15, 12(VI03)");
-	emitRawPairedLine("madday ACC, VF02, VF20y", "div q, VF00w, VF22w");
-	emitRawPairedLine("maddaz ACC, VF03, VF20z", "lq.xyz VF12, 15(VI03)");
-	emitRawPairedLine("maddw VF20, VF04, VF00w", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulax ACC, VF01, VF15x", "lq.xyz VF14, 4(VI03)");
-	emitRawPairedLine("madday ACC, VF02, VF15y", "lq.xyz VF07, 11(VI03)");
-	emitRawPairedLine("maddaz ACC, VF03, VF15z", "sq.xyz VF12, 11(VI03)");
-	emitRawPairedLine("maddw VF15, VF04, VF00w", "lq.xyz VF12, 9(VI03)");
-	emitRawPairedLine("mulax ACC, VF01, VF14x", "div q, VF00w, VF20w");
-	emitRawPairedLine("madday ACC, VF02, VF14y", "lq.xyz VF18, 13(VI03)");
-	emitRawPairedLine("maddaz ACC, VF03, VF14z", "lq.xyz VF10, 2(VI03)");
-	emitRawPairedLine("maddw VF12, VF04, VF00w", "sq.xyz VF12, 13(VI03)");
-	emitRawPairedLine("mulq.xyz VF13, VF22, q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz VF10, VF10, q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF12w");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ilw.w VI02, 76(VI00)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF11, 10(VI03)");
-	emitRawPairedLine("maxi.w VF07, VF00, i", "sq.xyz VF18, 9(VI03)");
-	emitRawPairedLine("mul.xyz VF08, VF13, VF06", "lq.xyz VF18, 6(VI03)");
-	emitRawPairedLine("mulq.xyz VF20, VF20, q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz VF11, VF11, q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("add.xyz VF14, VF13, VF05", "div q, VF00w, VF15w");
-	emitRawPairedLine("mulq.xyz VF16, VF12, q", "fcset 0");
-	emitRawPairedLine("clipw.xyz VF08xyz, VF07w", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("add.xyz VF07, VF20, VF05", "sq.xyz VF07, 15(VI03)");
-	emitRawPairedLine("mulq.xyz VF12, VF18, q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("sub.xyz VF22, VF13, VF16", "iaddiu VI08, VI08, 0");
-	emitRawPairedLine("mul.xyz VF17, VF16, VF06", "lq.w VF08, 0(VI00)");
-	emitRawPairedLine("mulq.xyz VF08, VF15, q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("add.xyz VF13, VF16, VF05", "iaddiu VI01, VI03, 0");
-	emitRawPairedLine("mul.xyz VF15, VF20, VF06", "iaddiu VI01, VI01, 0");
-	emitRawPairedLine("clipw.xyz VF17xyz, VF07w", "lq.xyz VF18, 14(VI03)");
-	emitRawPairedLine("mul.xyz VF17, VF08, VF06", "iaddiu VI03, VI01, 0");
-	emitRawPairedLine("mulw.xyz VF22, VF22, VF08w", "iaddiu VI03, VI03, 16");
-	emitRawPairedLine("sub.xyz VF20, VF20, VF16", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("add.xyz VF08, VF08, VF05", "ibeq VI03, VI06, " + epiLabel);
-	emitRawPairedLine("clipw.xyz VF17xyz, VF07w", "mfir.w VF10, VI08");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADD) + "VI08, VI07, VI00");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADD) + "VI07, VI06, VI00");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADD) + "VI06, VI05, VI00");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "w") + "VF08, 0(VI00)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MAX, "xyz") + "VF06, VF07, VF07", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_LOI) + "0x45000000");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF07, 0(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF07x", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF07y", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF07z", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF20, 8(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF22, VF04, VF00w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF20x", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF15, 12(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF20y", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF22w");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF20z", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF12, 15(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF20, VF04, VF00w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF15x", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF14, 4(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF15y", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF07, 11(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF15z", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF12, 11(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF15, VF04, VF00w", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF12, 9(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF14x", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF20w");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF14y", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF18, 13(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF14z", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF10, 2(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF12, VF04, VF00w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF12, 13(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF13, VF22, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF10, VF10, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF12w");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_ILW, "w") + "VI02, 76(VI00)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF11, 10(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MAXI, "w") + "VF07, VF00, i", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF18, 9(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF08, VF13, VF06", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF18, 6(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF20, VF20, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF11, VF11, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF14, VF13, VF05", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF15w");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF16, VF12, q", vuInstrPrefix(VU_OP_FCSET) + "0");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF08xyz, VF07w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF07, VF20, VF05", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF07, 15(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF12, VF18, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + "VF22, VF13, VF16", vuInstrPrefix(VU_OP_IADDIU) + "VI08, VI08, 0");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF17, VF16, VF06", vuInstrPrefixFields(VU_OP_LQ, "w") + "VF08, 0(VI00)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF08, VF15, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF13, VF16, VF05", vuInstrPrefix(VU_OP_IADDIU) + "VI01, VI03, 0");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF15, VF20, VF06", vuInstrPrefix(VU_OP_IADDIU) + "VI01, VI01, 0");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF17xyz, VF07w", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF18, 14(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF17, VF08, VF06", vuInstrPrefix(VU_OP_IADDIU) + "VI03, VI01, 0");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + "VF22, VF22, VF08w", vuInstrPrefix(VU_OP_IADDIU) + "VI03, VI03, 16");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + "VF20, VF20, VF16", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF08, VF08, VF05", vuInstrPrefix(VU_OP_IBEQ) + "VI03, VI06, " + epiLabel);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF17xyz, VF07w", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF10, VI08");
 
 	m_codeLines.push_back(mainLabel + ":");
-	emitRawPairedLine("ftoi4.xyz VF19, VF14", "lq.xyz VF16, 0(VI03)");
-	emitRawPairedLine("opmula.xyz ACCxyz, VF22xyz, VF20xyz", "lq.xyz VF17, 8(VI03)");
-	emitRawPairedLine("opmsub.xyz VF00xyz, VF20xyz, VF22xyz", "lq.xyz VF21, 12(VI03)");
-	emitRawPairedLine("mulq.xyz VF20, VF18, q", "iaddiu VI01, VI03, 0");
-	emitRawPairedLine("mulax ACC, VF01, VF16x", "iaddiu VI10, VI04, 0");
-	emitRawPairedLine("madday ACC, VF02, VF16y", "lq.xyz VF14, 4(VI03)");
-	emitRawPairedLine("maddaz ACC, VF03, VF16z", "fmand VI09, VI07");
-	emitRawPairedLine("maddw VF22, VF04, VF00w", "lq.xyz VF16, 11(VI03)");
-	emitRawPairedLine("mulax ACC, VF01, VF17x", "lq.xyz VF23, 15(VI03)");
-	emitRawPairedLine("madday ACC, VF02, VF17y", "lq.xyz VF18, 13(VI03)");
-	emitRawPairedLine("maddaz ACC, VF03, VF17z", "mfir.w VF19, VI08");
-	emitRawPairedLine("maddw VF17, VF04, VF00w", "div q, VF00w, VF22w");
-	emitRawPairedLine("mulax ACC, VF01, VF21x", "sq.xyz VF23, 11(VI03)");
-	emitRawPairedLine("madday ACC, VF02, VF21y", "lq.xyz VF23, 9(VI03)");
-	emitRawPairedLine("maddaz ACC, VF03, VF21z", "sq VF19, 2(VI04)");
-	emitRawPairedLine("clipw.xyz VF15xyz, VF07w", "sq.xyz VF20, 6(VI04)");
-	emitRawPairedLine("ftoi4.xyz VF10, VF13", "sq.xyz VF10, 0(VI04)");
-	emitRawPairedLine("maddw VF15, VF04, VF00w", "sq.xyz VF11, 9(VI04)");
-	emitRawPairedLine("mulq.xyz VF13, VF22, q", "sq.xyz VF12, 3(VI04)");
-	emitRawPairedLine("mulax ACC, VF01, VF14x", "div q, VF00w, VF17w");
-	emitRawPairedLine("madday ACC, VF02, VF14y", "sq VF10, 5(VI04)");
-	emitRawPairedLine("maddaz ACC, VF03, VF14z", "lq.xyz VF10, 2(VI03)");
-	emitRawPairedLine("mul.xyz VF19, VF13, VF06", "iaddiu VI11, VI10, 0");
-	emitRawPairedLine("maddw VF12, VF04, VF00w", "sq.xyz VF23, 13(VI03)");
-	emitRawPairedLine("add.xyz VF14, VF13, VF05", "sq.xyz VF18, 9(VI03)");
-	emitRawPairedLine("mulq.xyz VF10, VF10, q", "lq.xyz VF11, 10(VI03)");
-	emitRawPairedLine("clipw.xyz VF19xyz, VF07w", "sq.xyz VF16, 15(VI03)");
-	emitRawPairedLine("mulq.xyz VF16, VF17, q", "div q, VF00w, VF12w");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI10, VI01, 0");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand VI01, 16777215");
-	emitRawPairedLine("ftoi4.xyz VF19, VF07", "iand VI12, VI01, VI02");
-	emitRawPairedLine("add.xyz VF07, VF16, VF05", "lq.xyz VF18, 6(VI03)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI01, VI11, 0");
-	emitRawPairedLine("mulq.xyz VF11, VF11, q", "ior VI09, VI12, VI09");
-	emitRawPairedLine("mulq.xyz VF17, VF12, q", "div q, VF00w, VF15w");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI09, VI09, 0x7fff");
-	emitRawPairedLine("mulq.xyz VF12, VF18, q", "mfir.w VF20, VI09");
-	emitRawPairedLine("ftoi4.xyz VF20, VF08", "mfir.w VF19, VI09");
-	emitRawPairedLine("sub.xyz VF22, VF13, VF17", "sq.xyz VF09, 10(VI04)");
-	emitRawPairedLine("mul.xyz VF21, VF17, VF06", "sq.xyz VF09, 4(VI04)");
-	emitRawPairedLine("add.xyz VF13, VF17, VF05", "lq.xyz VF18, 14(VI03)");
-	emitRawPairedLine("mulq.xyz VF08, VF15, q", "sq VF19, 11(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF20, 8(VI04)");
-	emitRawPairedLine("clipw.xyz VF21xyz, VF07w", "sq.xyz VF09, 1(VI04)");
-	emitRawPairedLine("mul.xyz VF15, VF16, VF06", "sq.xyz VF09, 7(VI04)");
-	emitRawPairedLine("mul.xyz VF19, VF08, VF06", "iaddiu VI04, VI01, 12");
-	emitRawPairedLine("add.xyz VF08, VF08, VF05", "iaddiu VI03, VI10, 0");
-	emitRawPairedLine("mulw.xyz VF22, VF22, VF08w", "iaddiu VI03, VI03, 16");
-	emitRawPairedLine("sub.xyz VF20, VF16, VF17", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("clipw.xyz VF19xyz, VF07w", "ibne VI03, VI06, " + mainLabel);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF10, VI08");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF19, VF14", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF16, 0(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMULA, "xyz") + "ACCxyz, VF22xyz, VF20xyz", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF17, 8(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMSUB, "xyz") + "VF00xyz, VF20xyz, VF22xyz", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF21, 12(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF20, VF18, q", vuInstrPrefix(VU_OP_IADDIU) + "VI01, VI03, 0");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF16x", vuInstrPrefix(VU_OP_IADDIU) + "VI10, VI04, 0");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF16y", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF14, 4(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF16z", vuInstrPrefix(VU_OP_FMAND) + "VI09, VI07");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF22, VF04, VF00w", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF16, 11(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF17x", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF23, 15(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF17y", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF18, 13(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF17z", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF19, VI08");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF17, VF04, VF00w", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF22w");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF21x", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF23, 11(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF21y", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF23, 9(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF21z", vuInstrPrefix(VU_OP_SQ) + "VF19, 2(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF15xyz, VF07w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF20, 6(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF10, VF13", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF10, 0(VI04)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF15, VF04, VF00w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF11, 9(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF13, VF22, q", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF12, 3(VI04)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF14x", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF17w");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF14y", vuInstrPrefix(VU_OP_SQ) + "VF10, 5(VI04)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF14z", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF10, 2(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF19, VF13, VF06", vuInstrPrefix(VU_OP_IADDIU) + "VI11, VI10, 0");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF12, VF04, VF00w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF23, 13(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF14, VF13, VF05", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF18, 9(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF10, VF10, q", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF11, 10(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF19xyz, VF07w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF16, 15(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF16, VF17, q", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF12w");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + "VI10, VI01, 0");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_FCAND) + "VI01, 16777215");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF19, VF07", vuInstrPrefix(VU_OP_IAND) + "VI12, VI01, VI02");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF07, VF16, VF05", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF18, 6(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + "VI01, VI11, 0");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF11, VF11, q", vuInstrPrefix(VU_OP_IOR) + "VI09, VI12, VI09");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF17, VF12, q", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF15w");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + "VI09, VI09, 0x7fff");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF12, VF18, q", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF20, VI09");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF20, VF08", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF19, VI09");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + "VF22, VF13, VF17", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 10(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF21, VF17, VF06", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 4(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF13, VF17, VF05", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF18, 14(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF08, VF15, q", vuInstrPrefix(VU_OP_SQ) + "VF19, 11(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF20, 8(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF21xyz, VF07w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 1(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF15, VF16, VF06", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 7(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF19, VF08, VF06", vuInstrPrefix(VU_OP_IADDIU) + "VI04, VI01, 12");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF08, VF08, VF05", vuInstrPrefix(VU_OP_IADDIU) + "VI03, VI10, 0");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + "VF22, VF22, VF08w", vuInstrPrefix(VU_OP_IADDIU) + "VI03, VI03, 16");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + "VF20, VF16, VF17", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF19xyz, VF07w", vuInstrPrefix(VU_OP_IBNE) + "VI03, VI06, " + mainLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF10, VI08");
 
 	m_codeLines.push_back(epiLabel + ":");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("opmula.xyz ACCxyz, VF22xyz, VF20xyz", "sq.xyz VF10, 0(VI04)");
-	emitRawPairedLine("opmsub.xyz VF16xyz, VF20xyz, VF22xyz", "mfir.w VF05, VI08");
-	emitRawPairedLine("ftoi4.xyz VF05, VF14", "sq.xyz VF11, 9(VI04)");
-	emitRawPairedLine("mulq.xyz VF20, VF18, q", "sq.xyz VF12, 3(VI04)");
-	emitRawPairedLine("clipw.xyz VF15xyz, VF07w", "sq.xyz VF09, 10(VI04)");
-	emitRawPairedLine("abs.xyz VF00, VF16", "fmand VI07, VI07");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF05, 2(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF20, 6(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand VI01, 16777215");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI02, VI01, VI02");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior VI02, VI02, VI07");
-	emitRawPairedLine("ftoi4.xyz VF20, VF08", "iaddiu VI02, VI02, 0x7fff");
-	emitRawPairedLine("ftoi4.xyz VF07, VF07", "mfir.w VF20, VI02");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF07, VI02");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF09, 4(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF09, 1(VI04)");
-	emitRawPairedLine("ftoi4.xyz VF10, VF13", "sq VF20, 8(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF07, 11(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF09, 7(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF10, 5(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMULA, "xyz") + "ACCxyz, VF22xyz, VF20xyz", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF10, 0(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMSUB, "xyz") + "VF16xyz, VF20xyz, VF22xyz", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF05, VI08");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF05, VF14", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF11, 9(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF20, VF18, q", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF12, 3(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF15xyz, VF07w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 10(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ABS, "xyz") + "VF00, VF16", vuInstrPrefix(VU_OP_FMAND) + "VI07, VI07");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF05, 2(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF20, 6(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_FCAND) + "VI01, 16777215");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IAND) + "VI02, VI01, VI02");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IOR) + "VI02, VI02, VI07");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF20, VF08", vuInstrPrefix(VU_OP_IADDIU) + "VI02, VI02, 0x7fff");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF07, VF07", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF20, VI02");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF07, VI02");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 4(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 1(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF10, VF13", vuInstrPrefix(VU_OP_SQ) + "VF20, 8(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF07, 11(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 7(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF10, 5(VI04)");
 
 	m_codeLines.push_back(exitLabel + ":");
 }
@@ -4714,189 +4739,189 @@ void CodeGenerator::emitPs2glIndexedXformSoftwarePipelineLoop()
 	const std::string exitLabel = "xform_loop_lid__EXIT_POINT";
 
 	m_codeLines.push_back("xform_loop_lid__ENTRY_POINT:");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.w VF05, 60(VI00)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "loi 0x43000000");
-	emitRawPairedLine("muli.w VF10, VF05, i", "xtop VI04");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ilw.y VI08, 0(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "loi 0x437f0000");
-	emitRawPairedLine("maxi.w VF12, VF00, i", "ilw.z VI03, 0(VI04)");
-	emitRawPairedLine("minii.w VF10, VF10, i", "loi 0x437f0000");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF05, 75(VI00)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI06, VI04, 5");
-	emitRawPairedLine("maxi.y VF10, VF00, i", "loi 0x40400000");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mtir VI02, VF05x");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior VI03, VI02, VI03");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.x VF05, VI03");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI03, VI00, 0x4e");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF05, VI03");
-	emitRawPairedLine("maxi.z VF09, VF00, i", "loi 0x437d0000");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI08, VI06, VI08");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ilw.w VI09, 0(VI06)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF05, 77(VI00)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lqi.w VF05, (VI06++)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI05, VI04, 0xac");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI04, VI04, 5");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI07, VI00, 0xff");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI09, VI09, VI07");
-	emitRawPairedLine("maxi.w VF08, VF00, i", "iadd VI01, VI09, VI09");
-	emitRawPairedLine("addy.w VF06, VF05, VF10y", "iadd VI01, VI01, VI09");
-	emitRawPairedLine("mulz.w VF05, VF05, VF09z", "iadd VI10, VI01, VI04");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF11, 0(VI10)");
-	emitRawPairedLine("add.w VF05, VF05, VF08", "lq.w VF09, 57(VI00)");
-	emitRawPairedLine("mulax ACC, VF01, VF11x", "loi 0x45000000");
-	emitRawPairedLine("madday ACC, VF02, VF11y", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddaz ACC, VF03, VF11z", "iadd VI09, VI09, VI05");
-	emitRawPairedLine("maddw VF13, VF04, VF00w", "lq.xyz VF07, 0(VI09)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mtir VI11, VF05w");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF13w");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI09, VI11, VI04");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF12, 0(VI09)");
-	emitRawPairedLine("maxi.w VF07, VF00, i", "mr32.z VF05, VF09");
-	emitRawPairedLine("miniw.xyz VF11, VF07, VF12w", "loi 0x44fff000");
-	emitRawPairedLine("addi.xy VF05, VF00, i", "iaddiu VI02, VI00, 0x4b");
-	emitRawPairedLine("mulax ACC, VF01, VF12x", "xgkick VI02");
-	emitRawPairedLine("mulq.xyz VF08, VF13, q", "ilw.w VI02, 76(VI00)");
-	emitRawPairedLine("madday ACC, VF02, VF12y", "lq.xyz VF06, 76(VI00)");
-	emitRawPairedLine("maddaz ACC, VF03, VF12z", "fcset 0");
-	emitRawPairedLine("maddw VF16, VF04, VF00w", "mtir VI01, VF06w");
-	emitRawPairedLine("add.xyz VF13, VF08, VF05", "lq.xyz VF14, 2(VI10)");
-	emitRawPairedLine("mul.xyz VF08, VF08, VF06", "iadd VI01, VI01, VI05");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF12, 0(VI01)");
-	emitRawPairedLine("ftoi0.w VF11, VF10", "div q, VF00w, VF16w");
-	emitRawPairedLine("ftoi0.xyz VF11, VF11", "ibeq VI06, VI08, " + epi1Label);
-	emitRawPairedLine("clipw.xyz VF08xyz, VF07w", "lq.xyz VF08, 2(VI09)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "w") + "VF05, 60(VI00)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_LOI) + "0x43000000");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULI, "w") + "VF10, VF05, i", vuInstrPrefix(VU_OP_XTOP) + "VI04");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_ILW, "y") + "VI08, 0(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_LOI) + "0x437f0000");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MAXI, "w") + "VF12, VF00, i", vuInstrPrefixFields(VU_OP_ILW, "z") + "VI03, 0(VI04)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MINII, "w") + "VF10, VF10, i", vuInstrPrefix(VU_OP_LOI) + "0x437f0000");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF05, 75(VI00)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + "VI06, VI04, 5");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MAXI, "y") + "VF10, VF00, i", vuInstrPrefix(VU_OP_LOI) + "0x40400000");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_MTIR) + "VI02, VF05x");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IOR) + "VI03, VI02, VI03");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MFIR, "x") + "VF05, VI03");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + "VI03, VI00, 0x4e");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF05, VI03");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MAXI, "z") + "VF09, VF00, i", vuInstrPrefix(VU_OP_LOI) + "0x437d0000");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADD) + "VI08, VI06, VI08");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_ILW, "w") + "VI09, 0(VI06)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF05, 77(VI00)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQI, "w") + "VF05, (VI06++)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + "VI05, VI04, 0xac");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + "VI04, VI04, 5");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + "VI07, VI00, 0xff");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IAND) + "VI09, VI09, VI07");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MAXI, "w") + "VF08, VF00, i", vuInstrPrefix(VU_OP_IADD) + "VI01, VI09, VI09");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADD, "y", "w") + "VF06, VF05, VF10y", vuInstrPrefix(VU_OP_IADD) + "VI01, VI01, VI09");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "z", "w") + "VF05, VF05, VF09z", vuInstrPrefix(VU_OP_IADD) + "VI10, VI01, VI04");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF11, 0(VI10)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "w") + "VF05, VF05, VF08", vuInstrPrefixFields(VU_OP_LQ, "w") + "VF09, 57(VI00)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF11x", vuInstrPrefix(VU_OP_LOI) + "0x45000000");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF11y", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF11z", vuInstrPrefix(VU_OP_IADD) + "VI09, VI09, VI05");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF13, VF04, VF00w", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF07, 0(VI09)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_MTIR) + "VI11, VF05w");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF13w");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADD) + "VI09, VI11, VI04");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF12, 0(VI09)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MAXI, "w") + "VF07, VF00, i", vuInstrPrefixFields(VU_OP_MR32, "z") + "VF05, VF09");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MINI, "w", "xyz") + "VF11, VF07, VF12w", vuInstrPrefix(VU_OP_LOI) + "0x44fff000");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADDI, "xy") + "VF05, VF00, i", vuInstrPrefix(VU_OP_IADDIU) + "VI02, VI00, 0x4b");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF12x", vuInstrPrefix(VU_OP_XGKICK) + "VI02");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF08, VF13, q", vuInstrPrefixFields(VU_OP_ILW, "w") + "VI02, 76(VI00)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF12y", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF06, 76(VI00)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF12z", vuInstrPrefix(VU_OP_FCSET) + "0");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF16, VF04, VF00w", vuInstrPrefix(VU_OP_MTIR) + "VI01, VF06w");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF13, VF08, VF05", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF14, 2(VI10)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF08, VF08, VF06", vuInstrPrefix(VU_OP_IADD) + "VI01, VI01, VI05");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF12, 0(VI01)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI0, "w") + "VF11, VF10", vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF16w");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI0, "xyz") + "VF11, VF11", vuInstrPrefix(VU_OP_IBEQ) + "VI06, VI08, " + epi1Label);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF08xyz, VF07w", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF08, 2(VI09)");
 
 	m_codeLines.push_back(pro1Label + ":");
-	emitRawPairedLine("mulq.xyz VF15, VF14, q", "ilw.w VI11, 0(VI06)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF15, VF14, q", vuInstrPrefixFields(VU_OP_ILW, "w") + "VI11, 0(VI06)");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lqi.w VF05, (VI06++)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF11, 1(VI03)");
-	emitRawPairedLine("mulq.xyz VF11, VF16, q", "fcand VI01, 262143");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI11, VI11, VI07");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI10, VI11, VI11");
-	emitRawPairedLine("addy.w VF06, VF05, VF10y", "iadd VI10, VI10, VI11");
-	emitRawPairedLine("mulz.w VF05, VF05, VF09z", "iadd VI12, VI10, VI04");
-	emitRawPairedLine("mul.xyz VF07, VF11, VF06", "iadd VI11, VI11, VI05");
-	emitRawPairedLine("add.xyz VF14, VF11, VF05", "lq.xyz VF11, 0(VI12)");
-	emitRawPairedLine("ftoi4.xyz VF16, VF13", "iand VI09, VI01, VI02");
-	emitRawPairedLine("add.w VF05, VF05, VF08", "ior VI09, VI09, VI00");
-	emitRawPairedLine("clipw.xyz VF07xyz, VF07w", "iaddiu VI01, VI09, 0x7fff");
-	emitRawPairedLine("mulax ACC, VF01, VF11x", "mfir.w VF16, VI01");
-	emitRawPairedLine("madday ACC, VF02, VF11y", "mtir VI10, VF06w");
-	emitRawPairedLine("maddaz ACC, VF03, VF11z", "mtir VI09, VF05w");
-	emitRawPairedLine("maddw VF13, VF04, VF00w", "lq.xyz VF07, 0(VI11)");
-	emitRawPairedLine("mulq.xyz VF16, VF08, q", "sq VF16, 2(VI03)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI11, VI09, VI04");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF15, 0(VI03)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF13w");
-	emitRawPairedLine("miniw.xyz VF11, VF07, VF12w", "iaddiu VI09, VI03, 0");
-	emitRawPairedLine("miniw.xyz VF07, VF12, VF12w", "lq.xyz VF12, 0(VI11)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand VI01, 262143");
-	emitRawPairedLine("ftoi4.xyz VF15, VF14", "lq.xyz VF14, 2(VI12)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI03, VI01, VI02");
-	emitRawPairedLine("mulax ACC, VF01, VF12x", "ior VI03, VI03, VI00");
-	emitRawPairedLine("mulq.xyz VF08, VF13, q", "iaddiu VI03, VI03, 0x7fff");
-	emitRawPairedLine("madday ACC, VF02, VF12y", "mfir.w VF15, VI03");
-	emitRawPairedLine("maddaz ACC, VF03, VF12z", "iadd VI10, VI10, VI05");
-	emitRawPairedLine("maddw VF16, VF04, VF00w", "sq.xyz VF16, 3(VI09)");
-	emitRawPairedLine("add.xyz VF13, VF08, VF05", "iaddiu VI03, VI09, 6");
-	emitRawPairedLine("mul.xyz VF08, VF08, VF06", "lq.xyz VF12, 0(VI10)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF15, 5(VI09)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF16w");
-	emitRawPairedLine("ftoi0.xyz VF11, VF11", "ibeq VI06, VI08, " + epi0Label);
-	emitRawPairedLine("clipw.xyz VF08xyz, VF07w", "lq.xyz VF08, 2(VI11)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQI, "w") + "VF05, (VI06++)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF11, 1(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF11, VF16, q", vuInstrPrefix(VU_OP_FCAND) + "VI01, 262143");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IAND) + "VI11, VI11, VI07");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADD) + "VI10, VI11, VI11");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADD, "y", "w") + "VF06, VF05, VF10y", vuInstrPrefix(VU_OP_IADD) + "VI10, VI10, VI11");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "z", "w") + "VF05, VF05, VF09z", vuInstrPrefix(VU_OP_IADD) + "VI12, VI10, VI04");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF07, VF11, VF06", vuInstrPrefix(VU_OP_IADD) + "VI11, VI11, VI05");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF14, VF11, VF05", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF11, 0(VI12)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF16, VF13", vuInstrPrefix(VU_OP_IAND) + "VI09, VI01, VI02");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "w") + "VF05, VF05, VF08", vuInstrPrefix(VU_OP_IOR) + "VI09, VI09, VI00");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF07xyz, VF07w", vuInstrPrefix(VU_OP_IADDIU) + "VI01, VI09, 0x7fff");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF11x", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF16, VI01");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF11y", vuInstrPrefix(VU_OP_MTIR) + "VI10, VF06w");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF11z", vuInstrPrefix(VU_OP_MTIR) + "VI09, VF05w");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF13, VF04, VF00w", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF07, 0(VI11)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF16, VF08, q", vuInstrPrefix(VU_OP_SQ) + "VF16, 2(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADD) + "VI11, VI09, VI04");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF15, 0(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF13w");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MINI, "w", "xyz") + "VF11, VF07, VF12w", vuInstrPrefix(VU_OP_IADDIU) + "VI09, VI03, 0");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MINI, "w", "xyz") + "VF07, VF12, VF12w", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF12, 0(VI11)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_FCAND) + "VI01, 262143");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF15, VF14", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF14, 2(VI12)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IAND) + "VI03, VI01, VI02");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF12x", vuInstrPrefix(VU_OP_IOR) + "VI03, VI03, VI00");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF08, VF13, q", vuInstrPrefix(VU_OP_IADDIU) + "VI03, VI03, 0x7fff");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF12y", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF15, VI03");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF12z", vuInstrPrefix(VU_OP_IADD) + "VI10, VI10, VI05");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF16, VF04, VF00w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF16, 3(VI09)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF13, VF08, VF05", vuInstrPrefix(VU_OP_IADDIU) + "VI03, VI09, 6");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF08, VF08, VF06", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF12, 0(VI10)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF15, 5(VI09)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF16w");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI0, "xyz") + "VF11, VF11", vuInstrPrefix(VU_OP_IBEQ) + "VI06, VI08, " + epi0Label);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF08xyz, VF07w", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF08, 2(VI11)");
 
 	m_codeLines.push_back(mainLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ilw.w VI11, 0(VI06)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lqi.w VF05, (VI06++)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF11, 1(VI03)");
-	emitRawPairedLine("mulq.xyz VF15, VF14, q", "fcand VI01, 262143");
-	emitRawPairedLine("mulq.xyz VF11, VF16, q", "iand VI11, VI11, VI07");
-	emitRawPairedLine("addy.w VF06, VF05, VF10y", "iadd VI10, VI11, VI11");
-	emitRawPairedLine("mulz.w VF05, VF05, VF09z", "iadd VI10, VI10, VI11");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iadd VI12, VI10, VI04");
-	emitRawPairedLine("add.xyz VF14, VF11, VF05", "iadd VI11, VI11, VI05");
-	emitRawPairedLine("mul.xyz VF18, VF11, VF06", "mtir VI10, VF06w");
-	emitRawPairedLine("add.w VF05, VF05, VF08", "lq.xyz VF17, 0(VI12)");
-	emitRawPairedLine("ftoi4.xyz VF16, VF13", "iand VI01, VI01, VI02");
-	emitRawPairedLine("ftoi0.xyz VF11, VF07", "ior VI01, VI01, VI00");
-	emitRawPairedLine("clipw.xyz VF18xyz, VF07w", "iaddiu VI13, VI01, 0x7fff");
-	emitRawPairedLine("mulax ACC, VF01, VF17x", "mtir VI01, VF05w");
-	emitRawPairedLine("madday ACC, VF02, VF17y", "mfir.w VF16, VI13");
-	emitRawPairedLine("maddaz ACC, VF03, VF17z", "lq.xyz VF07, 0(VI11)");
-	emitRawPairedLine("maddw VF13, VF04, VF00w", "iadd VI11, VI01, VI04");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF15, 0(VI03)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF16, 2(VI03)");
-	emitRawPairedLine("miniw.xyz VF11, VF07, VF12w", "sq VF11, 4(VI09)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF13w");
-	emitRawPairedLine("miniw.xyz VF07, VF12, VF12w", "iaddiu VI09, VI03, 0");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz VF12, 0(VI11)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand VI01, 262143");
-	emitRawPairedLine("ftoi4.xyz VF15, VF14", "lq.xyz VF14, 2(VI12)");
-	emitRawPairedLine("mulq.xyz VF16, VF08, q", "iand VI03, VI01, VI02");
-	emitRawPairedLine("mulax ACC, VF01, VF12x", "ior VI03, VI03, VI00");
-	emitRawPairedLine("mulq.xyz VF08, VF13, q", "iaddiu VI03, VI03, 0x7fff");
-	emitRawPairedLine("madday ACC, VF02, VF12y", "mfir.w VF15, VI03");
-	emitRawPairedLine("maddaz ACC, VF03, VF12z", "iadd VI10, VI10, VI05");
-	emitRawPairedLine("maddw VF16, VF04, VF00w", "sq.xyz VF16, 3(VI09)");
-	emitRawPairedLine("add.xyz VF13, VF08, VF05", "iaddiu VI03, VI09, 6");
-	emitRawPairedLine("mul.xyz VF08, VF08, VF06", "lq.xyz VF12, 0(VI10)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF15, 5(VI09)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, VF00w, VF16w");
-	emitRawPairedLine("ftoi0.xyz VF11, VF11", "ibne VI06, VI08, " + mainLabel);
-	emitRawPairedLine("clipw.xyz VF08xyz, VF07w", "lq.xyz VF08, 2(VI11)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_ILW, "w") + "VI11, 0(VI06)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQI, "w") + "VF05, (VI06++)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF11, 1(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF15, VF14, q", vuInstrPrefix(VU_OP_FCAND) + "VI01, 262143");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF11, VF16, q", vuInstrPrefix(VU_OP_IAND) + "VI11, VI11, VI07");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADD, "y", "w") + "VF06, VF05, VF10y", vuInstrPrefix(VU_OP_IADD) + "VI10, VI11, VI11");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "z", "w") + "VF05, VF05, VF09z", vuInstrPrefix(VU_OP_IADD) + "VI10, VI10, VI11");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADD) + "VI12, VI10, VI04");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF14, VF11, VF05", vuInstrPrefix(VU_OP_IADD) + "VI11, VI11, VI05");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF18, VF11, VF06", vuInstrPrefix(VU_OP_MTIR) + "VI10, VF06w");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "w") + "VF05, VF05, VF08", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF17, 0(VI12)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF16, VF13", vuInstrPrefix(VU_OP_IAND) + "VI01, VI01, VI02");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI0, "xyz") + "VF11, VF07", vuInstrPrefix(VU_OP_IOR) + "VI01, VI01, VI00");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF18xyz, VF07w", vuInstrPrefix(VU_OP_IADDIU) + "VI13, VI01, 0x7fff");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF17x", vuInstrPrefix(VU_OP_MTIR) + "VI01, VF05w");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF17y", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF16, VI13");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF17z", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF07, 0(VI11)");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF13, VF04, VF00w", vuInstrPrefix(VU_OP_IADD) + "VI11, VI01, VI04");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF15, 0(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF16, 2(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MINI, "w", "xyz") + "VF11, VF07, VF12w", vuInstrPrefix(VU_OP_SQ) + "VF11, 4(VI09)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF13w");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MINI, "w", "xyz") + "VF07, VF12, VF12w", vuInstrPrefix(VU_OP_IADDIU) + "VI09, VI03, 0");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF12, 0(VI11)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_FCAND) + "VI01, 262143");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF15, VF14", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF14, 2(VI12)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF16, VF08, q", vuInstrPrefix(VU_OP_IAND) + "VI03, VI01, VI02");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MULA, "x") + "ACC, VF01, VF12x", vuInstrPrefix(VU_OP_IOR) + "VI03, VI03, VI00");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF08, VF13, q", vuInstrPrefix(VU_OP_IADDIU) + "VI03, VI03, 0x7fff");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "y") + "ACC, VF02, VF12y", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF15, VI03");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADDA, "z") + "ACC, VF03, VF12z", vuInstrPrefix(VU_OP_IADD) + "VI10, VI10, VI05");
+	emitRawPairedLine(vuInstrPrefixBroadcast(VU_OP_MADD, "w") + "VF16, VF04, VF00w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF16, 3(VI09)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF13, VF08, VF05", vuInstrPrefix(VU_OP_IADDIU) + "VI03, VI09, 6");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF08, VF08, VF06", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF12, 0(VI10)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF15, 5(VI09)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, VF00w, VF16w");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI0, "xyz") + "VF11, VF11", vuInstrPrefix(VU_OP_IBNE) + "VI06, VI08, " + mainLabel);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF08xyz, VF07w", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF08, 2(VI11)");
 
 	m_codeLines.push_back(epi0Label + ":");
-	emitRawPairedLine("mulq.xyz VF09, VF14, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF09, VF14, q", vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz VF11, VF16, q", "sq VF11, 1(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF11, VF16, q", vuInstrPrefix(VU_OP_SQ) + "VF11, 1(VI03)");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand VI01, 262143");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI01, VI01, VI02");
-	emitRawPairedLine("ftoi4.xyz VF16, VF13", "ior VI01, VI01, VI00");
-	emitRawPairedLine("mul.xyz VF06, VF11, VF06", "iaddiu VI01, VI01, 0x7fff");
-	emitRawPairedLine("add.xyz VF14, VF11, VF05", "mfir.w VF16, VI01");
-	emitRawPairedLine("ftoi0.xyz VF11, VF07", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("clipw.xyz VF06xyz, VF07w", "sq.xyz VF09, 0(VI03)");
-	emitRawPairedLine("mulq.xyz VF16, VF08, q", "sq VF16, 2(VI03)");
-	emitRawPairedLine("miniw.xyz VF07, VF12, VF12w", "sq VF11, 4(VI09)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu VI09, VI03, 0");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand VI01, 262143");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI03, VI01, VI02");
-	emitRawPairedLine("ftoi0.xyz VF11, VF07", "ior VI03, VI03, VI00");
-	emitRawPairedLine("ftoi4.xyz VF12, VF14", "iaddiu VI03, VI03, 0x7fff");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF12, VI03");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF16, 3(VI09)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF11, 4(VI09)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + exitLabel);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF12, 5(VI09)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_FCAND) + "VI01, 262143");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IAND) + "VI01, VI01, VI02");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF16, VF13", vuInstrPrefix(VU_OP_IOR) + "VI01, VI01, VI00");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF06, VF11, VF06", vuInstrPrefix(VU_OP_IADDIU) + "VI01, VI01, 0x7fff");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF14, VF11, VF05", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF16, VI01");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI0, "xyz") + "VF11, VF07", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF06xyz, VF07w", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF09, 0(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF16, VF08, q", vuInstrPrefix(VU_OP_SQ) + "VF16, 2(VI03)");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MINI, "w", "xyz") + "VF07, VF12, VF12w", vuInstrPrefix(VU_OP_SQ) + "VF11, 4(VI09)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + "VI09, VI03, 0");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_FCAND) + "VI01, 262143");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IAND) + "VI03, VI01, VI02");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI0, "xyz") + "VF11, VF07", vuInstrPrefix(VU_OP_IOR) + "VI03, VI03, VI00");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF12, VF14", vuInstrPrefix(VU_OP_IADDIU) + "VI03, VI03, 0x7fff");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF12, VI03");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF16, 3(VI09)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF11, 4(VI09)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + exitLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF12, 5(VI09)");
 
 	m_codeLines.push_back(epi1Label + ":");
-	emitRawPairedLine("mulq.xyz VF07, VF14, q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF07, VF14, q", vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF11, 1(VI03)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand VI01, 262143");
-	emitRawPairedLine("mulq.xyz VF11, VF16, q", "iand VI04, VI01, VI02");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior VI04, VI04, VI00");
-	emitRawPairedLine("ftoi4.xyz VF16, VF13", "iaddiu VI04, VI04, 0x7fff");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF16, VI04");
-	emitRawPairedLine("add.xyz VF14, VF11, VF05", "sq.xyz VF07, 0(VI03)");
-	emitRawPairedLine("mul.xyz VF11, VF11, VF06", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz VF16, VF08, q", "sq VF16, 2(VI03)");
-	emitRawPairedLine("clipw.xyz VF11xyz, VF07w", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF11, 1(VI03)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_FCAND) + "VI01, 262143");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF11, VF16, q", vuInstrPrefix(VU_OP_IAND) + "VI04, VI01, VI02");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IOR) + "VI04, VI04, VI00");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF16, VF13", vuInstrPrefix(VU_OP_IADDIU) + "VI04, VI04, 0x7fff");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF16, VI04");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF14, VF11, VF05", vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF07, 0(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + "VF11, VF11, VF06", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF16, VF08, q", vuInstrPrefix(VU_OP_SQ) + "VF16, 2(VI03)");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF11xyz, VF07w", vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("miniw.xyz VF07, VF12, VF12w", "iaddiu VI04, VI03, 0");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand VI01, 262143");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand VI03, VI01, VI02");
-	emitRawPairedLine("ftoi4.xyz VF12, VF14", "ior VI03, VI03, VI00");
-	emitRawPairedLine("ftoi0.xyz VF11, VF07", "iaddiu VI03, VI03, 0x7fff");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w VF12, VI03");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz VF16, 3(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF11, 4(VI04)");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq VF12, 5(VI04)");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MINI, "w", "xyz") + "VF07, VF12, VF12w", vuInstrPrefix(VU_OP_IADDIU) + "VI04, VI03, 0");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_FCAND) + "VI01, 262143");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IAND) + "VI03, VI01, VI02");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF12, VF14", vuInstrPrefix(VU_OP_IOR) + "VI03, VI03, VI00");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI0, "xyz") + "VF11, VF07", vuInstrPrefix(VU_OP_IADDIU) + "VI03, VI03, 0x7fff");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF12, VI03");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + "VF16, 3(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF11, 4(VI04)");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF12, 5(VI04)");
 
 	m_codeLines.push_back(exitLabel + ":");
 }
@@ -5550,67 +5575,67 @@ void CodeGenerator::emitLinearXformScalarBody( const LinearXformLoopPipelinePatt
 	const std::string tex = p.texReg;
 	const std::string vf00 = "VF00";
 
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + vert + ", " + offsetBase(0, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ilw.w " + strip + ", " + offsetBase(0, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + tex + ", " + offsetBase(2, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + p.constantColorReg + ", " + offsetBase(1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + vert + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_ILW, "w") + strip + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + tex + ", " + offsetBase(2, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + p.constantColorReg + ", " + offsetBase(1, out));
 	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"),
-	                  "iand " + stripFlip + ", " + strip + ", " + p.zSignMaskReg);
+	                  vuInstrPrefix(VU_OP_IAND) + stripFlip + ", " + strip + ", " + p.zSignMaskReg);
 	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
-	emitRawPairedLine("mulq.xyz " + x + ", " + x + ", q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + x + ", " + x + ", q", vuInstr(VU_OP_WAITQ));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("add.xyz " + gs + ", " + x + ", " + p.gsOffsetsReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + gs + ", " + x + ", " + p.gsOffsetsReg, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("ftoi4.xyz " + gs + ", " + gs, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("sub.xyz " + delta + ", " + p.oldVertexReg + ", " + x, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + gs + ", " + gs, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + delta + ", " + p.oldVertexReg + ", " + x, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("opmula.xyz ACCxyz, " + fieldArg(delta, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("opmsub.xyz " + fieldArg(p.bfcNormalReg, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz") + ", " + fieldArg(delta, "xyz"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMULA, "xyz") + "ACCxyz, " + fieldArg(delta, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMSUB, "xyz") + fieldArg(p.bfcNormalReg, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz") + ", " + fieldArg(delta, "xyz"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "fmand " + zSign + ", " + p.zSignMaskReg);
-	emitRawPairedLine("mul.xyz " + clip + ", " + x + ", " + p.clipScalesReg,
-	                  "isub " + zSign + ", " + zSign + ", " + zSwitch);
-	emitRawPairedLine("mulw.xyz " + p.oldDeltaReg + ", " + delta + ", " + fieldArg(p.bfcMultiplierReg, "w"),
-	                  "isub " + zSwitch + ", " + p.zSignMaskReg + ", " + zSwitch);
-	emitRawPairedLine("max.xyz " + p.oldVertexReg + ", " + x + ", " + x,
-	                  "iand " + zSign + ", " + zSign + ", " + p.zSignMaskReg);
-	emitRawPairedLine("mulq.xyz " + tex + ", " + tex + ", q",
-	                  "ior " + zSwitch + ", " + zSwitch + ", " + stripFlip);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_FMAND) + zSign + ", " + p.zSignMaskReg);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + clip + ", " + x + ", " + p.clipScalesReg,
+	                  vuInstrPrefix(VU_OP_ISUB) + zSign + ", " + zSign + ", " + zSwitch);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + p.oldDeltaReg + ", " + delta + ", " + fieldArg(p.bfcMultiplierReg, "w"),
+	                  vuInstrPrefix(VU_OP_ISUB) + zSwitch + ", " + p.zSignMaskReg + ", " + zSwitch);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MAX, "xyz") + p.oldVertexReg + ", " + x + ", " + x,
+	                  vuInstrPrefix(VU_OP_IAND) + zSign + ", " + zSign + ", " + p.zSignMaskReg);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + tex + ", " + tex + ", q",
+	                  vuInstrPrefix(VU_OP_IOR) + zSwitch + ", " + zSwitch + ", " + stripFlip);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("clipw.xyz " + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand " + clipResult + ", " + p.clipImmediate);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand " + clipResult + ", " + clipResult + ", " + p.doClippingReg);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior " + adc + ", " + clipResult + ", " + zSign);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior " + adc + ", " + adc + ", " + strip);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + adc + ", " + adc + ", " + p.adcImmediate);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w " + gs + ", " + adc);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + tex + ", " + offsetBase(0, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_FCAND) + clipResult + ", " + p.clipImmediate);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IAND) + clipResult + ", " + clipResult + ", " + p.doClippingReg);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IOR) + adc + ", " + clipResult + ", " + zSign);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IOR) + adc + ", " + adc + ", " + strip);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + adc + ", " + adc + ", " + p.adcImmediate);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MFIR, "w") + gs + ", " + adc);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + tex + ", " + offsetBase(0, out));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + gs + ", " + offsetBase(2, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + gs + ", " + offsetBase(2, out));
 }
 
 void CodeGenerator::emitLinearXformSoftwarePipelineLoop( const LinearXformLoopPipelinePattern& p )
@@ -5634,100 +5659,100 @@ void CodeGenerator::emitLinearXformSoftwarePipelineLoop( const LinearXformLoopPi
 
 	m_codeLines.push_back(p.entryLabel + ":");
 	emitLinearXformScalarBody(p);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", " + integerText(p.inputStep));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibne " + in + ", " + last + ", " + p.prologLabel);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + out + ", " + out + ", " + integerText(p.outputStep));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.exitLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", " + integerText(p.inputStep));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IBNE) + in + ", " + last + ", " + p.prologLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + out + ", " + out + ", " + integerText(p.outputStep));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.exitLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.prologLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + vert + ", " + offsetBase(0, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ilw.w " + strip + ", " + offsetBase(0, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + tex + ", " + offsetBase(2, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + vert + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_ILW, "w") + strip + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + tex + ", " + offsetBase(2, in));
 	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"),
-	                  "iand " + stripFlip + ", " + strip + ", " + p.zSignMaskReg);
+	                  vuInstrPrefix(VU_OP_IAND) + stripFlip + ", " + strip + ", " + p.zSignMaskReg);
 	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
-	emitRawPairedLine("mulq.xyz " + x + ", " + x + ", q", vuInstr(VU_OP_WAITQ));
-	emitRawPairedLine("add.xyz " + gs + ", " + x + ", " + p.gsOffsetsReg, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("sub.xyz " + delta + ", " + p.oldVertexReg + ", " + x, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + clip + ", " + x + ", " + p.clipScalesReg, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("opmula.xyz ACCxyz, " + fieldArg(delta, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("opmsub.xyz " + fieldArg(p.bfcNormalReg, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz") + ", " + fieldArg(delta, "xyz"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + x + ", " + x + ", q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + gs + ", " + x + ", " + p.gsOffsetsReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + delta + ", " + p.oldVertexReg + ", " + x, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + clip + ", " + x + ", " + p.clipScalesReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMULA, "xyz") + "ACCxyz, " + fieldArg(delta, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMSUB, "xyz") + fieldArg(p.bfcNormalReg, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz") + ", " + fieldArg(delta, "xyz"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("clipw.xyz " + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "fmand " + zSign + ", " + p.zSignMaskReg);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isub " + zSign + ", " + zSign + ", " + zSwitch);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand " + zSign + ", " + zSign + ", " + p.zSignMaskReg);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isub " + zSwitch + ", " + p.zSignMaskReg + ", " + zSwitch);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior " + zSwitch + ", " + zSwitch + ", " + stripFlip);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand " + clipResult + ", " + p.clipImmediate);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", " + integerText(p.inputStep));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibeq " + in + ", " + last + ", " + p.epilogLabel);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_FMAND) + zSign + ", " + p.zSignMaskReg);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUB) + zSign + ", " + zSign + ", " + zSwitch);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IAND) + zSign + ", " + zSign + ", " + p.zSignMaskReg);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUB) + zSwitch + ", " + p.zSignMaskReg + ", " + zSwitch);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IOR) + zSwitch + ", " + zSwitch + ", " + stripFlip);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_FCAND) + clipResult + ", " + p.clipImmediate);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", " + integerText(p.inputStep));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.epilogLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.mainLabel + ":");
-	emitRawPairedLine("ftoi4.xyz " + gs + ", " + gs,
-	                  "iand " + clipResult + ", " + clipResult + ", " + p.doClippingReg);
-	emitRawPairedLine("mulq.xyz " + tex + ", " + tex + ", q",
-	                  "ior " + adc + ", " + clipResult + ", " + zSign);
-	emitRawPairedLine("max.xyz " + p.oldVertexReg + ", " + x + ", " + x,
-	                  "ior " + adc + ", " + adc + ", " + strip);
-	emitRawPairedLine("mulw.xyz " + p.oldDeltaReg + ", " + delta + ", " + fieldArg(p.bfcMultiplierReg, "w"),
-	                  "iaddiu " + adc + ", " + adc + ", " + p.adcImmediate);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfir.w " + gs + ", " + adc);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + p.constantColorReg + ", " + offsetBase(1, out));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + tex + ", " + offsetBase(0, out));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + gs + ", " + offsetBase(2, out));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + vert + ", " + offsetBase(0, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ilw.w " + strip + ", " + offsetBase(0, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + tex + ", " + offsetBase(2, in));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + gs + ", " + gs,
+	                  vuInstrPrefix(VU_OP_IAND) + clipResult + ", " + clipResult + ", " + p.doClippingReg);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + tex + ", " + tex + ", q",
+	                  vuInstrPrefix(VU_OP_IOR) + adc + ", " + clipResult + ", " + zSign);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MAX, "xyz") + p.oldVertexReg + ", " + x + ", " + x,
+	                  vuInstrPrefix(VU_OP_IOR) + adc + ", " + adc + ", " + strip);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + p.oldDeltaReg + ", " + delta + ", " + fieldArg(p.bfcMultiplierReg, "w"),
+	                  vuInstrPrefix(VU_OP_IADDIU) + adc + ", " + adc + ", " + p.adcImmediate);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MFIR, "w") + gs + ", " + adc);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + p.constantColorReg + ", " + offsetBase(1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + tex + ", " + offsetBase(0, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + gs + ", " + offsetBase(2, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + vert + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_ILW, "w") + strip + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + tex + ", " + offsetBase(2, in));
 	emitRawPairedLine(p.transformMulaxOp + " ACC, " + p.row0Reg + ", " + fieldArg(vert, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.transformMaddayOp + " ACC, " + p.row1Reg + ", " + fieldArg(vert, "y"),
-	                  "iand " + stripFlip + ", " + strip + ", " + p.zSignMaskReg);
+	                  vuInstrPrefix(VU_OP_IAND) + stripFlip + ", " + strip + ", " + p.zSignMaskReg);
 	emitRawPairedLine(p.transformMaddazOp + " ACC, " + p.row2Reg + ", " + fieldArg(vert, "z"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(p.transformMaddwOp + " " + x + ", " + p.row3Reg + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
-	emitRawPairedLine("mulq.xyz " + x + ", " + x + ", q", vuInstr(VU_OP_WAITQ));
-	emitRawPairedLine("add.xyz " + gs + ", " + x + ", " + p.gsOffsetsReg, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("sub.xyz " + delta + ", " + p.oldVertexReg + ", " + x, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + clip + ", " + x + ", " + p.clipScalesReg, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("opmula.xyz ACCxyz, " + fieldArg(delta, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("opmsub.xyz " + fieldArg(p.bfcNormalReg, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz") + ", " + fieldArg(delta, "xyz"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(x, "w"));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + x + ", " + x + ", q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + gs + ", " + x + ", " + p.gsOffsetsReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + delta + ", " + p.oldVertexReg + ", " + x, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + clip + ", " + x + ", " + p.clipScalesReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMULA, "xyz") + "ACCxyz, " + fieldArg(delta, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMSUB, "xyz") + fieldArg(p.bfcNormalReg, "xyz") + ", " + fieldArg(p.oldDeltaReg, "xyz") + ", " + fieldArg(delta, "xyz"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("clipw.xyz " + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + fieldArg(clip, "xyz") + ", " + fieldArg(p.clipScalesReg, "w"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "fmand " + zSign + ", " + p.zSignMaskReg);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isub " + zSign + ", " + zSign + ", " + zSwitch);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iand " + zSign + ", " + zSign + ", " + p.zSignMaskReg);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isub " + zSwitch + ", " + p.zSignMaskReg + ", " + zSwitch);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior " + zSwitch + ", " + zSwitch + ", " + stripFlip);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "fcand " + clipResult + ", " + p.clipImmediate);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", " + integerText(p.inputStep));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibne " + in + ", " + last + ", " + p.mainLabel);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + out + ", " + out + ", " + integerText(p.outputStep));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_FMAND) + zSign + ", " + p.zSignMaskReg);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUB) + zSign + ", " + zSign + ", " + zSwitch);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IAND) + zSign + ", " + zSign + ", " + p.zSignMaskReg);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUB) + zSwitch + ", " + p.zSignMaskReg + ", " + zSwitch);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IOR) + zSwitch + ", " + zSwitch + ", " + stripFlip);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_FCAND) + clipResult + ", " + p.clipImmediate);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", " + integerText(p.inputStep));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IBNE) + in + ", " + last + ", " + p.mainLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + out + ", " + out + ", " + integerText(p.outputStep));
 
 	m_codeLines.push_back(p.epilogLabel + ":");
-	emitRawPairedLine("ftoi4.xyz " + gs + ", " + gs,
-	                  "iand " + clipResult + ", " + clipResult + ", " + p.doClippingReg);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior " + adc + ", " + clipResult + ", " + zSign);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ior " + adc + ", " + adc + ", " + strip);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + adc + ", " + adc + ", " + p.adcImmediate);
-	emitRawPairedLine("mulq.xyz " + tex + ", " + tex + ", q",
-	                  "mfir.w " + gs + ", " + adc);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + p.constantColorReg + ", " + offsetBase(1, out));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + tex + ", " + offsetBase(0, out));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + gs + ", " + gs,
+	                  vuInstrPrefix(VU_OP_IAND) + clipResult + ", " + clipResult + ", " + p.doClippingReg);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IOR) + adc + ", " + clipResult + ", " + zSign);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IOR) + adc + ", " + adc + ", " + strip);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + adc + ", " + adc + ", " + p.adcImmediate);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + tex + ", " + tex + ", q",
+	                  vuInstrPrefixFields(VU_OP_MFIR, "w") + gs + ", " + adc);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + p.constantColorReg + ", " + offsetBase(1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + tex + ", " + offsetBase(0, out));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + gs + ", " + offsetBase(2, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + gs + ", " + offsetBase(2, out));
 
 	m_codeLines.push_back(p.exitLabel + ":");
 }
@@ -6283,118 +6308,118 @@ void CodeGenerator::emitDirLightSpecSoftwarePipelineLoop( const DirLightSpecLoop
 	const std::string result = reserveScratchReg(reserved);
 	const std::string materialDiff = p.materialDiffFromInput ? reserveScratchReg(reserved)
 	                                                        : p.materialDiffReg;
-	const std::string mainOutputStep = p.postIncrementStore ? vuInstr(VU_OP_NOP) : "iaddiu " + out + ", " + out + ", 3";
+	const std::string mainOutputStep = p.postIncrementStore ? vuInstr(VU_OP_NOP) : vuInstrPrefix(VU_OP_IADDIU) + out + ", " + out + ", 3";
 	const std::string mainColorLoad = p.postIncrementStore ? offsetBase(0, out) : offsetBase(-2, out);
 	const std::string mainStore = p.postIncrementStore
-	                            ? "sqi.xyz " + result + ", (" + out + "++)"
-	                            : "sq.xyz " + result + ", " + offsetBase(-2, out);
+	                            ? vuInstrPrefixFields(VU_OP_SQI, "xyz") + result + ", (" + out + "++)"
+	                            : vuInstrPrefixFields(VU_OP_SQ, "xyz") + result + ", " + offsetBase(-2, out);
 	const std::string prologOneMaterialLoad = p.materialDiffFromInput
-	                                        ? "lq.xyz " + materialDiff + ", "
+	                                        ? vuInstrPrefixFields(VU_OP_LQ, "xyz") + materialDiff + ", "
 	                                          + offsetBase(p.materialDiffOffset - p.inputStep, in)
 	                                        : vuInstr(VU_OP_NOP);
 	const std::string pipelinedMaterialLoad = p.materialDiffFromInput
-	                                        ? "lq.xyz " + materialDiff + ", "
+	                                        ? vuInstrPrefixFields(VU_OP_LQ, "xyz") + materialDiff + ", "
 	                                          + offsetBase(p.materialDiffOffset - (2 * p.inputStep), in)
 	                                        : vuInstr(VU_OP_NOP);
 
 	m_codeLines.push_back(p.entryLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", " + inputStep);
-	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal, vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mr32.xyw " + specSwizzle + ", " + specProd);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibeq " + in + ", " + last + ", " + p.fallbackOneLabel);
-	emitRawPairedLine("addax.w ACC, " + specSwizzle + ", " + fieldArg(specSwizzle, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", " + inputStep);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + specProd + ", " + p.halfAngleReg + ", " + normal, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + diff + ", " + p.lightDirReg + ", " + normal, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MR32, "xyw") + specSwizzle + ", " + specProd);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.fallbackOneLabel);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "x", "w") + "ACC, " + specSwizzle + ", " + fieldArg(specSwizzle, "x"), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.prologOneLabel + ":");
-	emitRawPairedLine("maddy.w " + specScratch + ", " + vf00 + ", " + fieldArg(specSwizzle, "y"),
-	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("adday.z ACC, " + diff + ", " + fieldArg(diff, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddx.z " + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maxx.w " + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maxx.z " + diffClamp + ", " + diff + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mr32.xyw " + specSwizzle + ", " + specProd);
-	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity,
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "y", "w") + specScratch + ", " + vf00 + ", " + fieldArg(specSwizzle, "y"),
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + diff + ", " + fieldArg(diff, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "w") + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "z") + diffClamp + ", " + diff + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + specProd + ", " + p.halfAngleReg + ", " + normal, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + specIntensity + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MR32, "xyw") + specSwizzle + ", " + specProd);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + specIntensity + ", " + specIntensity + ", " + specIntensity,
 	                  prologOneMaterialLoad);
-	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal,
-	                  "iaddiu " + in + ", " + in + ", " + inputStep);
-	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diffClamp, "z"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("addax.w ACC, " + specSwizzle + ", " + fieldArg(specSwizzle, "x"),
-	                  "ibeq " + in + ", " + last + ", " + p.fallbackTwoLabel);
-	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + diff + ", " + p.lightDirReg + ", " + normal,
+	                  vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", " + inputStep);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "z", "xyz") + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diffClamp, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "x", "w") + "ACC, " + specSwizzle + ", " + fieldArg(specSwizzle, "x"),
+	                  vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.fallbackTwoLabel);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + specIntensity + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.prologTwoLabel + ":");
-	emitRawPairedLine("maddy.w " + specScratch + ", " + vf00 + ", " + fieldArg(specSwizzle, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("adday.z ACC, " + diff + ", " + fieldArg(diff, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddx.z " + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + specPower + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maxx.w " + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mula.xyz ACC, " + localDiff + ", " + materialDiff,
-	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("maxx.z " + diffClamp + ", " + diff + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(specPower, "w"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg,
-	                  "mr32.xyw " + specSwizzle + ", " + specProd);
-	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal,
-	                  "iaddiu " + in + ", " + in + ", " + inputStep);
-	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diffClamp, "z"),
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "y", "w") + specScratch + ", " + vf00 + ", " + fieldArg(specSwizzle, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + diff + ", " + fieldArg(diff, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + specPower + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "w") + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULA, "xyz") + "ACC, " + localDiff + ", " + materialDiff,
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "z") + diffClamp + ", " + diff + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + specPower + ", " + specPower + ", " + specPower, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + specIntensity + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + specProd + ", " + p.halfAngleReg + ", " + normal, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "w", "xyz") + "ACC, " + p.localSpecReg + ", " + fieldArg(specPower, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + specIntensity + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MADD, "xyz") + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg,
+	                  vuInstrPrefixFields(VU_OP_MR32, "xyw") + specSwizzle + ", " + specProd);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + diff + ", " + p.lightDirReg + ", " + normal,
+	                  vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", " + inputStep);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "z", "xyz") + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diffClamp, "z"),
 	                  pipelinedMaterialLoad);
-	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity,
-	                  "ibeq " + in + ", " + last + ", " + p.fallbackThreeLabel);
-	emitRawPairedLine("addax.w ACC, " + specSwizzle + ", " + fieldArg(specSwizzle, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + specIntensity + ", " + specIntensity + ", " + specIntensity,
+	                  vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.fallbackThreeLabel);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "x", "w") + "ACC, " + specSwizzle + ", " + fieldArg(specSwizzle, "x"), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.mainLabel + ":");
-	emitRawPairedLine("maddy.w " + specScratch + ", " + vf00 + ", " + fieldArg(specSwizzle, "y"),
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "y", "w") + specScratch + ", " + vf00 + ", " + fieldArg(specSwizzle, "y"),
 	                  mainOutputStep);
-	emitRawPairedLine("adday.z ACC, " + diff + ", " + fieldArg(diff, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddx.z " + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + specPower + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maxx.w " + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mula.xyz ACC, " + localDiff + ", " + materialDiff,
-	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("maxx.z " + diffClamp + ", " + diff + ", " + fieldArg(vf00, "x"),
-	                  "lq.xyz " + color + ", " + mainColorLoad);
-	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("add.xyz " + result + ", " + color + ", " + lit, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(specPower, "w"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity,
-	                  "iaddiu " + in + ", " + in + ", " + inputStep);
-	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg,
-	                  "mr32.xyw " + specSwizzle + ", " + specProd);
-	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal,
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + diff + ", " + fieldArg(diff, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + specPower + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "w") + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULA, "xyz") + "ACC, " + localDiff + ", " + materialDiff,
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "z") + diffClamp + ", " + diff + ", " + fieldArg(vf00, "x"),
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + color + ", " + mainColorLoad);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + specPower + ", " + specPower + ", " + specPower, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + specIntensity + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + specProd + ", " + p.halfAngleReg + ", " + normal, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + result + ", " + color + ", " + lit, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "w", "xyz") + "ACC, " + p.localSpecReg + ", " + fieldArg(specPower, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + specIntensity + ", " + specIntensity + ", " + specIntensity,
+	                  vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", " + inputStep);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MADD, "xyz") + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg,
+	                  vuInstrPrefixFields(VU_OP_MR32, "xyw") + specSwizzle + ", " + specProd);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + diff + ", " + p.lightDirReg + ", " + normal,
 	                  mainStore);
-	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diffClamp, "z"),
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "z", "xyz") + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diffClamp, "z"),
 	                  pipelinedMaterialLoad);
-	emitRawPairedLine("mul.w " + specIntensity + ", " + specIntensity + ", " + specIntensity,
-	                  "ibne " + in + ", " + last + ", " + p.mainLabel);
-	emitRawPairedLine("addax.w ACC, " + specSwizzle + ", " + fieldArg(specSwizzle, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + specIntensity + ", " + specIntensity + ", " + specIntensity,
+	                  vuInstrPrefix(VU_OP_IBNE) + in + ", " + last + ", " + p.mainLabel);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "x", "w") + "ACC, " + specSwizzle + ", " + fieldArg(specSwizzle, "x"), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.drainLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepThree);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + in + ", " + in + ", " + inputStepThree);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.scalarLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackOneLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepOne);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + in + ", " + in + ", " + inputStepOne);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.scalarLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackTwoLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepTwo);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + in + ", " + in + ", " + inputStepTwo);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.scalarLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackThreeLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepThree);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + in + ", " + in + ", " + inputStepThree);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.scalarLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	emitDirLightSpecScalarFallbackLoop(p);
@@ -6419,67 +6444,67 @@ void CodeGenerator::emitDirLightSpecScalarFallbackLoop( const DirLightSpecLoopPi
 	const std::string inputStep = integerText(p.inputStep);
 	const std::string scalarColorLoad = offsetBase(p.colorOffset, out);
 	const std::string scalarStore = p.postIncrementStore
-	                              ? "sqi.xyz " + result + ", (" + out + "++)"
-	                              : "sq.xyz " + result + ", " + offsetBase(1, out);
-	const std::string scalarOutputStep = p.postIncrementStore ? vuInstr(VU_OP_NOP) : "iaddiu " + out + ", " + out + ", 3";
+	                              ? vuInstrPrefixFields(VU_OP_SQI, "xyz") + result + ", (" + out + "++)"
+	                              : vuInstrPrefixFields(VU_OP_SQ, "xyz") + result + ", " + offsetBase(1, out);
+	const std::string scalarOutputStep = p.postIncrementStore ? vuInstr(VU_OP_NOP) : vuInstrPrefix(VU_OP_IADDIU) + out + ", " + out + ", 3";
 
 	m_codeLines.push_back(p.scalarLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + color + ", " + scalarColorLoad);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + color + ", " + scalarColorLoad);
 	if( p.materialDiffFromInput )
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + p.materialDiffReg + ", " + offsetBase(p.materialDiffOffset, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", " + inputStep);
-	emitRawPairedLine("mul.xyz " + diff + ", " + p.lightDirReg + ", " + normal, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + specProd + ", " + p.halfAngleReg + ", " + normal, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + p.materialDiffReg + ", " + offsetBase(p.materialDiffOffset, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", " + inputStep);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + diff + ", " + p.lightDirReg + ", " + normal, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + specProd + ", " + p.halfAngleReg + ", " + normal, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mr32.xyw " + p.specSwizzleReg + ", " + specProd);
-	emitRawPairedLine("adday.z ACC, " + diff + ", " + fieldArg(diff, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddx.z " + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MR32, "xyw") + p.specSwizzleReg + ", " + specProd);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + diff + ", " + fieldArg(diff, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + diff + ", " + p.onesReg + ", " + fieldArg(diff, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maxx.z " + diff + ", " + diff + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("addax.w ACC, " + p.specSwizzleReg + ", " + fieldArg(p.specSwizzleReg, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddy.w " + specScratch + ", " + vf00 + ", " + fieldArg(p.specSwizzleReg, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulz.xyz " + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diff, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "z") + diff + ", " + diff + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "x", "w") + "ACC, " + p.specSwizzleReg + ", " + fieldArg(p.specSwizzleReg, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "y", "w") + specScratch + ", " + vf00 + ", " + fieldArg(p.specSwizzleReg, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "z", "xyz") + localDiff + ", " + p.lightDiffReg + ", " + fieldArg(diff, "z"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maxx.w " + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mula.xyz ACC, " + localDiff + ", " + p.materialDiffReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "w") + specIntensity + ", " + specScratch + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULA, "xyz") + "ACC, " + localDiff + ", " + p.materialDiffReg, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + specPower + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + specPower + ", " + specIntensity + ", " + specIntensity, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + specPower + ", " + specPower + ", " + specPower, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + specPower + ", " + specPower + ", " + specPower, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + specPower + ", " + specPower + ", " + specPower, vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(specPower, "w"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + specPower + ", " + specPower + ", " + specPower, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("add.xyz " + result + ", " + color + ", " + lit, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + specPower + ", " + specPower + ", " + specPower, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "w", "xyz") + "ACC, " + p.localSpecReg + ", " + fieldArg(specPower, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MADD, "xyz") + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + result + ", " + color + ", " + lit, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), scalarStore);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibne " + in + ", " + last + ", " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IBNE) + in + ", " + last + ", " + p.scalarLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), scalarOutputStep);
 
 	m_codeLines.push_back(p.exitLabel + ":");
@@ -6816,87 +6841,87 @@ void CodeGenerator::emitDirLightNoSpecSoftwarePipelineLoop( const DirLightNoSpec
 	const std::string vf00 = "VF00";
 
 	m_codeLines.push_back(p.entryLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + color + ", " + offsetBase(1, out));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + color + ", " + offsetBase(1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", 3");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + product + ", " + p.lightDirReg + ", " + normal,
-	                  "ibeq " + in + ", " + last + ", " + p.fallbackOneLabel);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + product + ", " + p.lightDirReg + ", " + normal,
+	                  vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.fallbackOneLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.prologOneLabel + ":");
-	emitRawPairedLine("adday.z ACC, " + product + ", " + fieldArg(product, "y"),
-	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("maddx.z " + dot + ", " + p.dotBaseReg + ", " + fieldArg(product, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + product + ", " + p.lightDirReg + ", " + normal,
-	                  "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + product + ", " + fieldArg(product, "y"),
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + dot + ", " + p.dotBaseReg + ", " + fieldArg(product, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + product + ", " + p.lightDirReg + ", " + normal,
+	                  vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", 3");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibeq " + in + ", " + last + ", " + p.fallbackTwoLabel);
-	emitRawPairedLine("maxx.z " + dot + ", " + dot + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.fallbackTwoLabel);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "z") + dot + ", " + dot + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.prologTwoLabel + ":");
-	emitRawPairedLine("adday.z ACC, " + product + ", " + fieldArg(product, "y"),
-	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("maddx.z " + dotNext + ", " + p.dotBaseReg + ", " + fieldArg(product, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + product + ", " + p.lightDirReg + ", " + normal,
-	                  "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + product + ", " + fieldArg(product, "y"),
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + dotNext + ", " + p.dotBaseReg + ", " + fieldArg(product, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + product + ", " + p.lightDirReg + ", " + normal,
+	                  vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", 3");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulz.xyz " + scaled + ", " + p.lightColorReg + ", " + fieldArg(dot, "z"),
-	                  "ibeq " + in + ", " + last + ", " + p.fallbackThreeLabel);
-	emitRawPairedLine("maxx.z " + dot + ", " + dotNext + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "z", "xyz") + scaled + ", " + p.lightColorReg + ", " + fieldArg(dot, "z"),
+	                  vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.fallbackThreeLabel);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "z") + dot + ", " + dotNext + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.prologThreeLabel + ":");
-	emitRawPairedLine("adday.z ACC, " + product + ", " + fieldArg(product, "y"),
-	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("maddx.z " + dotNext + ", " + p.dotBaseReg + ", " + fieldArg(product, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mula.xyz ACC, " + scaled + ", " + p.materialMulReg, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + product + ", " + p.lightDirReg + ", " + normal,
-	                  "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("mulz.xyz " + scaled + ", " + p.lightColorReg + ", " + fieldArg(dot, "z"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madd.xyz " + lit + ", " + p.materialAddReg + ", " + p.ambientReg,
-	                  "ibeq " + in + ", " + last + ", " + p.fallbackFourLabel);
-	emitRawPairedLine("maxx.z " + dot + ", " + dotNext + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + product + ", " + fieldArg(product, "y"),
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + dotNext + ", " + p.dotBaseReg + ", " + fieldArg(product, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULA, "xyz") + "ACC, " + scaled + ", " + p.materialMulReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + product + ", " + p.lightDirReg + ", " + normal,
+	                  vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "z", "xyz") + scaled + ", " + p.lightColorReg + ", " + fieldArg(dot, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MADD, "xyz") + lit + ", " + p.materialAddReg + ", " + p.ambientReg,
+	                  vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.fallbackFourLabel);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "z") + dot + ", " + dotNext + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.mainLabel + ":");
-	emitRawPairedLine("adday.z ACC, " + product + ", " + fieldArg(product, "y"),
-	                  "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine("maddx.z " + dotNext + ", " + p.dotBaseReg + ", " + fieldArg(product, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("add.xyz " + result + ", " + color + ", " + lit,
-	                  "iaddiu " + out + ", " + out + ", 3");
-	emitRawPairedLine("mula.xyz ACC, " + scaled + ", " + p.materialMulReg, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + product + ", " + p.lightDirReg + ", " + normal,
-	                  "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("madd.xyz " + lit + ", " + p.materialAddReg + ", " + p.ambientReg,
-	                  "lq.xyz " + color + ", " + offsetBase(1, out));
-	emitRawPairedLine("mulz.xyz " + scaled + ", " + p.lightColorReg + ", " + fieldArg(dot, "z"),
-	                  "ibne " + in + ", " + last + ", " + p.mainLabel);
-	emitRawPairedLine("maxx.z " + dot + ", " + dotNext + ", " + fieldArg(vf00, "x"),
-	                  "sq.xyz " + result + ", " + offsetBase(-2, out));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + product + ", " + fieldArg(product, "y"),
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + dotNext + ", " + p.dotBaseReg + ", " + fieldArg(product, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + result + ", " + color + ", " + lit,
+	                  vuInstrPrefix(VU_OP_IADDIU) + out + ", " + out + ", 3");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULA, "xyz") + "ACC, " + scaled + ", " + p.materialMulReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + product + ", " + p.lightDirReg + ", " + normal,
+	                  vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MADD, "xyz") + lit + ", " + p.materialAddReg + ", " + p.ambientReg,
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + color + ", " + offsetBase(1, out));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "z", "xyz") + scaled + ", " + p.lightColorReg + ", " + fieldArg(dot, "z"),
+	                  vuInstrPrefix(VU_OP_IBNE) + in + ", " + last + ", " + p.mainLabel);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "z") + dot + ", " + dotNext + ", " + fieldArg(vf00, "x"),
+	                  vuInstrPrefixFields(VU_OP_SQ, "xyz") + result + ", " + offsetBase(-2, out));
 
 	m_codeLines.push_back(p.drainLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", 12");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + in + ", " + in + ", 12");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.scalarLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackOneLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", 3");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.scalarLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackTwoLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", 6");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + in + ", " + in + ", 6");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.scalarLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackThreeLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", 9");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + in + ", " + in + ", 9");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.scalarLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackFourLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", 12");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + in + ", " + in + ", 12");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.scalarLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	emitDirLightNoSpecScalarFallbackLoop(p);
@@ -6916,46 +6941,46 @@ void CodeGenerator::emitDirLightNoSpecScalarFallbackLoop( const DirLightNoSpecLo
 	const std::string vf00 = "VF00";
 
 	m_codeLines.push_back(p.scalarLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + color + ", " + offsetBase(1, out));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + color + ", " + offsetBase(1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", 3");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + product + ", " + p.lightDirReg + ", " + normal, vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("adday.z ACC, " + product + ", " + fieldArg(product, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddx.z " + product + ", " + p.dotBaseReg + ", " + fieldArg(product, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + product + ", " + p.lightDirReg + ", " + normal, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maxx.z " + product + ", " + product + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + product + ", " + fieldArg(product, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + product + ", " + p.dotBaseReg + ", " + fieldArg(product, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulz.xyz " + scaled + ", " + p.lightColorReg + ", " + fieldArg(product, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "z") + product + ", " + product + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mula.xyz ACC, " + scaled + ", " + p.materialMulReg, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madd.xyz " + lit + ", " + p.materialAddReg + ", " + p.ambientReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "z", "xyz") + scaled + ", " + p.lightColorReg + ", " + fieldArg(product, "z"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("add.xyz " + result + ", " + color + ", " + lit, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULA, "xyz") + "ACC, " + scaled + ", " + p.materialMulReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MADD, "xyz") + lit + ", " + p.materialAddReg + ", " + p.ambientReg, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + result + ", " + offsetBase(1, out));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibne " + in + ", " + last + ", " + p.scalarLabel);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + out + ", " + out + ", 3");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + result + ", " + color + ", " + lit, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + result + ", " + offsetBase(1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IBNE) + in + ", " + last + ", " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + out + ", " + out + ", 3");
 
 	m_codeLines.push_back(p.exitLabel + ":");
 }
@@ -7299,7 +7324,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( (mnemonic == vuInstr(VU_OP_MULA) || mnemonic == "mulax") && token.broadcast() == Token::X
+		if( (mnemonic == vuInstr(VU_OP_MULA) || mnemonic == vuInstrBroadcastName(VU_OP_MULA, "x")) && token.broadcast() == Token::X
 		    && tokenHasFields(token, Token::W) )
 		{
 			std::string src;
@@ -7314,7 +7339,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( (mnemonic == vuInstr(VU_OP_MADDA) || mnemonic == "madday") && token.broadcast() == Token::Y
+		if( (mnemonic == vuInstr(VU_OP_MADDA) || mnemonic == vuInstrBroadcastName(VU_OP_MADDA, "y")) && token.broadcast() == Token::Y
 		    && tokenHasFields(token, Token::W) )
 		{
 			std::string src;
@@ -7484,7 +7509,7 @@ bool CodeGenerator::collectPtLightSpecLoopPipelinePattern( std::list<Token>::ite
 			continue;
 		}
 
-		if( (mnemonic == vuInstr(VU_OP_MADDA) || mnemonic == "maddaw") && token.broadcast() == Token::W
+		if( (mnemonic == vuInstr(VU_OP_MADDA) || mnemonic == vuInstrBroadcastName(VU_OP_MADDA, "w")) && token.broadcast() == Token::W
 		    && tokenHasFields(token, Token::X | Token::Y | Token::Z) )
 		{
 			std::string src;
@@ -7619,11 +7644,11 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 	const std::string inputStepOne = integerText(p.inputStep);
 	const std::string inputStepTwo = integerText(p.inputStep * 2);
 	const std::string inputStepThree = integerText(p.inputStep * 3);
-	const std::string mainOutputStep = p.postIncrementStore ? vuInstr(VU_OP_NOP) : "iaddiu " + out + ", " + out + ", 3";
+	const std::string mainOutputStep = p.postIncrementStore ? vuInstr(VU_OP_NOP) : vuInstrPrefix(VU_OP_IADDIU) + out + ", " + out + ", 3";
 	const std::string mainColorLoad = p.postIncrementStore ? offsetBase(0, out) : offsetBase(-2, out);
 	const std::string mainStore = p.postIncrementStore
-	                            ? "sqi.xyz r22, (" + out + "++)"
-	                            : "sq.xyz r22, " + offsetBase(-2, out);
+	                            ? vuInstrPrefixFields(VU_OP_SQI, "xyz") + "r22, (" + out + "++)"
+	                            : vuInstrPrefixFields(VU_OP_SQ, "xyz") + "r22, " + offsetBase(-2, out);
 
 	std::list<std::string> reserved;
 	addScratchReservation(reserved, p.lightPosReg);
@@ -7652,195 +7677,195 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 	const std::string color = reserveScratchReg(reserved);
 
 	const std::string store = p.postIncrementStore
-	                        ? "sqi.xyz " + r22 + ", (" + out + "++)"
-	                        : "sq.xyz " + r22 + ", " + offsetBase(-2, out);
+	                        ? vuInstrPrefixFields(VU_OP_SQI, "xyz") + r22 + ", (" + out + "++)"
+	                        : vuInstrPrefixFields(VU_OP_SQ, "xyz") + r22 + ", " + offsetBase(-2, out);
 
 	if( p.materialDiffFromInput )
 	{
-		const std::string materialLoad = "lq.xyz " + r22 + ", "
+		const std::string materialLoad = vuInstrPrefixFields(VU_OP_LQ, "xyz") + r22 + ", "
 		                               + offsetBase(p.materialDiffOffset - (2 * p.inputStep), in);
-		const std::string normalLoad = "lq.xyz " + r19 + ", "
+		const std::string normalLoad = vuInstrPrefixFields(VU_OP_LQ, "xyz") + r19 + ", "
 		                             + offsetBase(p.normalOffset - p.inputStep, in);
 		const std::string pvStore = p.postIncrementStore
-		                          ? "sqi.xyz " + r19 + ", (" + out + "++)"
-		                          : "sq.xyz " + r19 + ", " + offsetBase(-2, out);
+		                          ? vuInstrPrefixFields(VU_OP_SQI, "xyz") + r19 + ", (" + out + "++)"
+		                          : vuInstrPrefixFields(VU_OP_SQ, "xyz") + r19 + ", " + offsetBase(-2, out);
 
 		m_codeLines.push_back(p.entryLabel + ":");
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + r16 + ", " + offsetBase(0, in));
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", " + inputStep);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + r16 + ", " + offsetBase(0, in));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", " + inputStep);
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("sub.xyz " + r16 + ", " + p.lightPosReg + ", " + r16, vuInstr(VU_OP_NOP));
-		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("mul.xyz " + r15 + ", " + r16 + ", " + r16, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + r16 + ", " + p.lightPosReg + ", " + r16, vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("adday.z ACC, " + r15 + ", " + fieldArg(r15, "y"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("maddx.z " + r15 + ", " + p.onesReg + ", " + fieldArg(r15, "x"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "sqrt q, " + fieldArg(r15, "z"));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r15 + ", " + r16 + ", " + r16, vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("addq.y " + r15 + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r15, "y"));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + r15 + ", " + fieldArg(r15, "y"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + r15 + ", " + p.onesReg + ", " + fieldArg(r15, "x"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQRT) + "q, " + fieldArg(r15, "z"));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADDQ, "y") + r15 + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(r15, "y"));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("addw.x " + r15 + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADD, "w", "x") + r15 + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITQ));
-		emitRawPairedLine("mulq.xyz " + r16 + ", " + r16 + ", q",
-		                  "ibeq " + in + ", " + last + ", " + p.fallbackOneLabel);
-		emitRawPairedLine("mul.xyz " + r15 + ", " + r15 + ", " + p.attenCoeffReg, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + r16 + ", " + r16 + ", q",
+		                  vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.fallbackOneLabel);
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r15 + ", " + r15 + ", " + p.attenCoeffReg, vuInstr(VU_OP_NOP));
 
 		m_codeLines.push_back(p.prologOneLabel + ":");
-		emitRawPairedLine("add.xyz " + r17 + ", " + p.viewDirReg + ", " + r16,
-		                  "lq.xyz " + r18 + ", " + offsetBase(0, in));
-		emitRawPairedLine("sub.xyz " + r18 + ", " + p.lightPosReg + ", " + r18,
-		                  "esadd p, " + r17);
-		emitRawPairedLine("mul.xyz " + r20 + ", " + r18 + ", " + r18, normalLoad);
-		emitRawPairedLine("adday.z ACC, " + r20 + ", " + fieldArg(r20, "y"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("maddx.z " + r20 + ", " + p.onesReg + ", " + fieldArg(r20, "x"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + r17 + ", " + p.viewDirReg + ", " + r16,
+		                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + r18 + ", " + offsetBase(0, in));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + r18 + ", " + p.lightPosReg + ", " + r18,
+		                  vuInstrPrefix(VU_OP_ESADD) + "p, " + r17);
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r20 + ", " + r18 + ", " + r18, normalLoad);
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + r20 + ", " + fieldArg(r20, "y"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + r20 + ", " + p.onesReg + ", " + fieldArg(r20, "x"), vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITP));
-		emitRawPairedLine("addw.x " + r20 + ", " + vf00 + ", " + fieldArg(vf00, "w"),
-		                  "mfp.w " + r06 + ", p");
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "sqrt q, " + fieldArg(r20, "z"));
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "ersqrt p, " + fieldArg(r06, "w"));
-		emitRawPairedLine("addq.y " + r20 + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r20, "y"));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADD, "w", "x") + r20 + ", " + vf00 + ", " + fieldArg(vf00, "w"),
+		                  vuInstrPrefixFields(VU_OP_MFP, "w") + r06 + ", p");
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQRT) + "q, " + fieldArg(r20, "z"));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ERSQRT) + "p, " + fieldArg(r06, "w"));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADDQ, "y") + r20 + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(r20, "y"));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("mul.xyz " + r15 + ", " + r20 + ", " + p.attenCoeffReg,
-		                  "move.xyz " + r14 + ", " + r15);
-		emitRawPairedLine("mul.xyz " + r20 + ", " + r16 + ", " + r19, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r15 + ", " + r20 + ", " + p.attenCoeffReg,
+		                  vuInstrPrefixFields(VU_OP_MOVE, "xyz") + r14 + ", " + r15);
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r20 + ", " + r16 + ", " + r19, vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITQ));
-		emitRawPairedLine("mulq.xyz " + r16 + ", " + r18 + ", q",
-		                  "iaddiu " + in + ", " + in + ", " + inputStep);
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "move.xyz " + r18 + ", " + r17);
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "ibeq " + in + ", " + last + ", " + p.fallbackTwoLabel);
-		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r20, "x"),
-		                  "mfp.w " + r06 + ", p");
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + r16 + ", " + r18 + ", q",
+		                  vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", " + inputStep);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MOVE, "xyz") + r18 + ", " + r17);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.fallbackTwoLabel);
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(r20, "x"),
+		                  vuInstrPrefixFields(VU_OP_MFP, "w") + r06 + ", p");
 
 		m_codeLines.push_back(p.prologTwoLabel + ":");
-		emitRawPairedLine("add.xyz " + r17 + ", " + p.viewDirReg + ", " + r16,
-		                  "lq.xyz " + r22 + ", " + offsetBase(0, in));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + r17 + ", " + p.viewDirReg + ", " + r16,
+		                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + r22 + ", " + offsetBase(0, in));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("mulw.xyz " + r21 + ", " + r18 + ", " + fieldArg(r06, "w"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("sub.xyz " + r18 + ", " + p.lightPosReg + ", " + r22, vuInstr(VU_OP_NOP));
-		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r20, "y"),
-		                  "esadd p, " + r17);
-		emitRawPairedLine("maddz.w " + r06 + ", " + vf00 + ", " + fieldArg(r20, "z"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("mul.xyz " + r21 + ", " + r21 + ", " + r19, vuInstr(VU_OP_NOP));
-		emitRawPairedLine("mul.xyz " + r20 + ", " + r18 + ", " + r18, vuInstr(VU_OP_NOP));
-		emitRawPairedLine("maxx.w " + r05 + ", " + r06 + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r21, "x"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("adday.z ACC, " + r20 + ", " + fieldArg(r20, "y"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("maddx.z " + r20 + ", " + p.onesReg + ", " + fieldArg(r20, "x"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r21, "y"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("maddz.w " + r07 + ", " + vf00 + ", " + fieldArg(r21, "z"), vuInstr(VU_OP_WAITP));
-		emitRawPairedLine("mulw.xyz " + r21 + ", " + p.lightDiffReg + ", " + fieldArg(r05, "w"),
-		                  "mfp.w " + r06 + ", p");
-		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r14, "x"),
-		                  "sqrt q, " + fieldArg(r20, "z"));
-		emitRawPairedLine("maxx.w " + r05 + ", " + r07 + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("addw.x " + r20 + ", " + vf00 + ", " + fieldArg(vf00, "w"),
-		                  "ersqrt p, " + fieldArg(r06, "w"));
-		emitRawPairedLine("mul.w " + r06 + ", " + r05 + ", " + r05, vuInstr(VU_OP_NOP));
-		emitRawPairedLine("addq.y " + r20 + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
-		emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06,
-		                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r20, "y"));
-		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r14, "y"), normalLoad);
-		emitRawPairedLine("maddz.w " + r05 + ", " + vf00 + ", " + fieldArg(r14, "z"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06, materialLoad);
-		emitRawPairedLine("mul.xyz " + r15 + ", " + r20 + ", " + p.attenCoeffReg,
-		                  "move.xyz " + r14 + ", " + r15);
-		emitRawPairedLine("mul.xyz " + r20 + ", " + r16 + ", " + r19, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + r21 + ", " + r18 + ", " + fieldArg(r06, "w"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + r18 + ", " + p.lightPosReg + ", " + r22, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(r20, "y"),
+		                  vuInstrPrefix(VU_OP_ESADD) + "p, " + r17);
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + r06 + ", " + vf00 + ", " + fieldArg(r20, "z"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r21 + ", " + r21 + ", " + r19, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r20 + ", " + r18 + ", " + r18, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "w") + r05 + ", " + r06 + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(r21, "x"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + r20 + ", " + fieldArg(r20, "y"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + r20 + ", " + p.onesReg + ", " + fieldArg(r20, "x"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(r21, "y"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + r07 + ", " + vf00 + ", " + fieldArg(r21, "z"), vuInstr(VU_OP_WAITP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + r21 + ", " + p.lightDiffReg + ", " + fieldArg(r05, "w"),
+		                  vuInstrPrefixFields(VU_OP_MFP, "w") + r06 + ", p");
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(r14, "x"),
+		                  vuInstrPrefix(VU_OP_SQRT) + "q, " + fieldArg(r20, "z"));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "w") + r05 + ", " + r07 + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADD, "w", "x") + r20 + ", " + vf00 + ", " + fieldArg(vf00, "w"),
+		                  vuInstrPrefix(VU_OP_ERSQRT) + "p, " + fieldArg(r06, "w"));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + r06 + ", " + r05 + ", " + r05, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADDQ, "y") + r20 + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + r06 + ", " + r06 + ", " + r06,
+		                  vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(r20, "y"));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(r14, "y"), normalLoad);
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + r05 + ", " + vf00 + ", " + fieldArg(r14, "z"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + r06 + ", " + r06 + ", " + r06, materialLoad);
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r15 + ", " + r20 + ", " + p.attenCoeffReg,
+		                  vuInstrPrefixFields(VU_OP_MOVE, "xyz") + r14 + ", " + r15);
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r20 + ", " + r16 + ", " + r19, vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITQ));
-		emitRawPairedLine("mulq.xyz " + r16 + ", " + r18 + ", q",
-		                  "iaddiu " + in + ", " + in + ", " + inputStep);
-		emitRawPairedLine("mul.w " + r07 + ", " + r06 + ", " + r06,
-		                  "move.xyz " + r18 + ", " + r17);
-		emitRawPairedLine("mula.xyz ACC, " + r21 + ", " + r22,
-		                  "ibeq " + in + ", " + last + ", " + p.fallbackThreeLabel);
-		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r20, "x"),
-		                  "mfp.w " + r06 + ", p");
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + r16 + ", " + r18 + ", q",
+		                  vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", " + inputStep);
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + r07 + ", " + r06 + ", " + r06,
+		                  vuInstrPrefixFields(VU_OP_MOVE, "xyz") + r18 + ", " + r17);
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULA, "xyz") + "ACC, " + r21 + ", " + r22,
+		                  vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.fallbackThreeLabel);
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(r20, "x"),
+		                  vuInstrPrefixFields(VU_OP_MFP, "w") + r06 + ", p");
 
 		m_codeLines.push_back(p.mainLabel + ":");
-		emitRawPairedLine("add.xyz " + r17 + ", " + p.viewDirReg + ", " + r16,
-		                  "lq.xyz " + r22 + ", " + offsetBase(0, in));
-		emitRawPairedLine("mul.w " + r07 + ", " + r07 + ", " + r07, mainOutputStep);
-		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r20, "y"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("mulw.xyz " + r21 + ", " + r18 + ", " + fieldArg(r06, "w"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("sub.xyz " + r18 + ", " + p.lightPosReg + ", " + r22,
-		                  "esadd p, " + r17);
-		emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(r07, "w"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("maddz.w " + r06 + ", " + vf00 + ", " + fieldArg(r20, "z"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("mul.xyz " + r21 + ", " + r21 + ", " + r19, vuInstr(VU_OP_NOP));
-		emitRawPairedLine("mul.xyz " + r20 + ", " + r18 + ", " + r18, vuInstr(VU_OP_NOP));
-		emitRawPairedLine("madd.xyz " + r19 + ", " + p.lightAmbReg + ", " + p.materialAmbReg, vuInstr(VU_OP_NOP));
-		emitRawPairedLine("maxx.w " + r05 + ", " + r06 + ", " + fieldArg(vf00, "x"),
-		                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r05, "w"));
-		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r21, "x"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("adday.z ACC, " + r20 + ", " + fieldArg(r20, "y"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("maddx.z " + r20 + ", " + p.onesReg + ", " + fieldArg(r20, "x"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r21, "y"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("maddz.w " + r07 + ", " + vf00 + ", " + fieldArg(r21, "z"),
-		                  "mfp.w " + r06 + ", p");
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + color + ", " + mainColorLoad);
-		emitRawPairedLine("mulq.xyz " + r19 + ", " + r19 + ", q",
-		                  "sqrt q, " + fieldArg(r20, "z"));
-		emitRawPairedLine("mulw.xyz " + r21 + ", " + p.lightDiffReg + ", " + fieldArg(r05, "w"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("maxx.w " + r05 + ", " + r07 + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r14, "x"),
-		                  "ersqrt p, " + fieldArg(r06, "w"));
-		emitRawPairedLine("add.xyz " + r19 + ", " + color + ", " + r19, vuInstr(VU_OP_NOP));
-		emitRawPairedLine("addw.x " + r20 + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("mul.w " + r06 + ", " + r05 + ", " + r05, vuInstr(VU_OP_NOP));
-		emitRawPairedLine("addq.y " + r20 + ", " + vf00 + ", q", materialLoad);
-		emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r14, "y"), pvStore);
-		emitRawPairedLine("maddz.w " + r05 + ", " + vf00 + ", " + fieldArg(r14, "z"),
-		                  "move.xyz " + r14 + ", " + r15);
-		emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06, normalLoad);
-		emitRawPairedLine("mul.xyz " + r15 + ", " + r20 + ", " + p.attenCoeffReg,
-		                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r20, "y"));
-		emitRawPairedLine("mula.xyz ACC, " + r21 + ", " + r22, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + r17 + ", " + p.viewDirReg + ", " + r16,
+		                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + r22 + ", " + offsetBase(0, in));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + r07 + ", " + r07 + ", " + r07, mainOutputStep);
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(r20, "y"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + r21 + ", " + r18 + ", " + fieldArg(r06, "w"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + r18 + ", " + p.lightPosReg + ", " + r22,
+		                  vuInstrPrefix(VU_OP_ESADD) + "p, " + r17);
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "w", "xyz") + "ACC, " + p.localSpecReg + ", " + fieldArg(r07, "w"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + r06 + ", " + vf00 + ", " + fieldArg(r20, "z"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r21 + ", " + r21 + ", " + r19, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r20 + ", " + r18 + ", " + r18, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MADD, "xyz") + r19 + ", " + p.lightAmbReg + ", " + p.materialAmbReg, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "w") + r05 + ", " + r06 + ", " + fieldArg(vf00, "x"),
+		                  vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(r05, "w"));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(r21, "x"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + r20 + ", " + fieldArg(r20, "y"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + r20 + ", " + p.onesReg + ", " + fieldArg(r20, "x"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(r21, "y"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + r07 + ", " + vf00 + ", " + fieldArg(r21, "z"),
+		                  vuInstrPrefixFields(VU_OP_MFP, "w") + r06 + ", p");
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + color + ", " + mainColorLoad);
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + r19 + ", " + r19 + ", q",
+		                  vuInstrPrefix(VU_OP_SQRT) + "q, " + fieldArg(r20, "z"));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + r21 + ", " + p.lightDiffReg + ", " + fieldArg(r05, "w"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "w") + r05 + ", " + r07 + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(r14, "x"),
+		                  vuInstrPrefix(VU_OP_ERSQRT) + "p, " + fieldArg(r06, "w"));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + r19 + ", " + color + ", " + r19, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADD, "w", "x") + r20 + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + r06 + ", " + r05 + ", " + r05, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADDQ, "y") + r20 + ", " + vf00 + ", q", materialLoad);
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(r14, "y"), pvStore);
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + r05 + ", " + vf00 + ", " + fieldArg(r14, "z"),
+		                  vuInstrPrefixFields(VU_OP_MOVE, "xyz") + r14 + ", " + r15);
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + r06 + ", " + r06 + ", " + r06, normalLoad);
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r15 + ", " + r20 + ", " + p.attenCoeffReg,
+		                  vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(r20, "y"));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULA, "xyz") + "ACC, " + r21 + ", " + r22, vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06, vuInstr(VU_OP_NOP));
-		emitRawPairedLine("mul.xyz " + r20 + ", " + r16 + ", " + r19, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + r06 + ", " + r06 + ", " + r06, vuInstr(VU_OP_NOP));
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r20 + ", " + r16 + ", " + r19, vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-		emitRawPairedLine("mulq.xyz " + r16 + ", " + r18 + ", q",
-		                  "iaddiu " + in + ", " + in + ", " + inputStep);
-		emitRawPairedLine("mul.w " + r07 + ", " + r06 + ", " + r06,
-		                  "move.xyz " + r18 + ", " + r17);
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "ibne " + in + ", " + last + ", " + p.mainLabel);
-		emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r20, "x"),
-		                  "mfp.w " + r06 + ", p");
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + r16 + ", " + r18 + ", q",
+		                  vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", " + inputStep);
+		emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + r07 + ", " + r06 + ", " + r06,
+		                  vuInstrPrefixFields(VU_OP_MOVE, "xyz") + r18 + ", " + r17);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IBNE) + in + ", " + last + ", " + p.mainLabel);
+		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(r20, "x"),
+		                  vuInstrPrefixFields(VU_OP_MFP, "w") + r06 + ", p");
 
 		m_codeLines.push_back(p.drainLabel + ":");
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepThree);
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + in + ", " + in + ", " + inputStepThree);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.scalarLabel);
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 		m_codeLines.push_back(p.fallbackOneLabel + ":");
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepOne);
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + in + ", " + in + ", " + inputStepOne);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.scalarLabel);
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 		m_codeLines.push_back(p.fallbackTwoLabel + ":");
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepTwo);
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + in + ", " + in + ", " + inputStepTwo);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.scalarLabel);
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 		m_codeLines.push_back(p.fallbackThreeLabel + ":");
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepThree);
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + in + ", " + in + ", " + inputStepThree);
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.scalarLabel);
 		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 		emitPtLightSpecScalarFallbackLoop(p);
@@ -7848,185 +7873,185 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 	}
 
 	m_codeLines.push_back(p.entryLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + r17 + ", " + offsetBase(0, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", " + inputStep);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + r17 + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", " + inputStep);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("sub.xyz " + r17 + ", " + p.lightPosReg + ", " + r17, vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + r16 + ", " + r17 + ", " + r17, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + r17 + ", " + p.lightPosReg + ", " + r17, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("adday.z ACC, " + r16 + ", " + fieldArg(r16, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddx.z " + r16 + ", " + p.onesReg + ", " + fieldArg(r16, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sqrt q, " + fieldArg(r16, "z"));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r16 + ", " + r17 + ", " + r17, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("addq.y " + r16 + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r16, "y"));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + r16 + ", " + fieldArg(r16, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + r16 + ", " + p.onesReg + ", " + fieldArg(r16, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQRT) + "q, " + fieldArg(r16, "z"));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADDQ, "y") + r16 + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(r16, "y"));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("addw.x " + r16 + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADD, "w", "x") + r16 + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITQ));
-	emitRawPairedLine("mulq.xyz " + r17 + ", " + r17 + ", q",
-	                  "ibeq " + in + ", " + last + ", " + p.fallbackOneLabel);
-	emitRawPairedLine("mul.xyz " + r16 + ", " + r16 + ", " + p.attenCoeffReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + r17 + ", " + r17 + ", q",
+	                  vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.fallbackOneLabel);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r16 + ", " + r16 + ", " + p.attenCoeffReg, vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.prologOneLabel + ":");
-	emitRawPairedLine("add.xyz " + r18 + ", " + p.viewDirReg + ", " + r17,
-	                  "lq.xyz " + r19 + ", " + offsetBase(0, in));
-	emitRawPairedLine("sub.xyz " + r19 + ", " + p.lightPosReg + ", " + r19,
-	                  "esadd p, " + r18);
-	emitRawPairedLine("mul.xyz " + r21 + ", " + r19 + ", " + r19,
-	                  "lq.xyz " + r20 + ", " + offsetBase(p.normalOffset - p.inputStep, in));
-	emitRawPairedLine("adday.z ACC, " + r21 + ", " + fieldArg(r21, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddx.z " + r21 + ", " + p.onesReg + ", " + fieldArg(r21, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + r18 + ", " + p.viewDirReg + ", " + r17,
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + r19 + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + r19 + ", " + p.lightPosReg + ", " + r19,
+	                  vuInstrPrefix(VU_OP_ESADD) + "p, " + r18);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r21 + ", " + r19 + ", " + r19,
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + r20 + ", " + offsetBase(p.normalOffset - p.inputStep, in));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + r21 + ", " + fieldArg(r21, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + r21 + ", " + p.onesReg + ", " + fieldArg(r21, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITP));
-	emitRawPairedLine("addw.x " + r21 + ", " + vf00 + ", " + fieldArg(vf00, "w"),
-	                  "mfp.w " + r06 + ", p");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sqrt q, " + fieldArg(r21, "z"));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ersqrt p, " + fieldArg(r06, "w"));
-	emitRawPairedLine("addq.y " + r21 + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r21, "y"));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADD, "w", "x") + r21 + ", " + vf00 + ", " + fieldArg(vf00, "w"),
+	                  vuInstrPrefixFields(VU_OP_MFP, "w") + r06 + ", p");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQRT) + "q, " + fieldArg(r21, "z"));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ERSQRT) + "p, " + fieldArg(r06, "w"));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADDQ, "y") + r21 + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(r21, "y"));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + r16 + ", " + r21 + ", " + p.attenCoeffReg,
-	                  "move.xyz " + r15 + ", " + r16);
-	emitRawPairedLine("mul.xyz " + r21 + ", " + r17 + ", " + r20, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r16 + ", " + r21 + ", " + p.attenCoeffReg,
+	                  vuInstrPrefixFields(VU_OP_MOVE, "xyz") + r15 + ", " + r16);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r21 + ", " + r17 + ", " + r20, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITQ));
-	emitRawPairedLine("mulq.xyz " + r17 + ", " + r19 + ", q",
-	                  "iaddiu " + in + ", " + in + ", " + inputStep);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "move.xyz " + r19 + ", " + r18);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibeq " + in + ", " + last + ", " + p.fallbackTwoLabel);
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r21, "x"),
-	                  "mfp.w " + r06 + ", p");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + r17 + ", " + r19 + ", q",
+	                  vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", " + inputStep);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MOVE, "xyz") + r19 + ", " + r18);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.fallbackTwoLabel);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(r21, "x"),
+	                  vuInstrPrefixFields(VU_OP_MFP, "w") + r06 + ", p");
 
 	m_codeLines.push_back(p.prologTwoLabel + ":");
-	emitRawPairedLine("add.xyz " + r18 + ", " + p.viewDirReg + ", " + r17,
-	                  "lq.xyz " + r23 + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + r18 + ", " + p.viewDirReg + ", " + r17,
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + r23 + ", " + offsetBase(0, in));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulw.xyz " + r22 + ", " + r19 + ", " + fieldArg(r06, "w"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("sub.xyz " + r19 + ", " + p.lightPosReg + ", " + r23, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r21, "y"),
-	                  "esadd p, " + r18);
-	emitRawPairedLine("maddz.w " + r06 + ", " + vf00 + ", " + fieldArg(r21, "z"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + r20 + ", " + r22 + ", " + r20, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + r21 + ", " + r19 + ", " + r19, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r20, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("adday.z ACC, " + r21 + ", " + fieldArg(r21, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddx.z " + r21 + ", " + p.onesReg + ", " + fieldArg(r21, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r20, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddz.w " + r07 + ", " + vf00 + ", " + fieldArg(r20, "z"), vuInstr(VU_OP_WAITP));
-	emitRawPairedLine("maxx.w " + r05 + ", " + r06 + ", " + fieldArg(vf00, "x"),
-	                  "mfp.w " + r06 + ", p");
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r15, "x"),
-	                  "sqrt q, " + fieldArg(r21, "z"));
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r15, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maxx.w " + r07 + ", " + r07 + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulw.xyz " + r20 + ", " + p.lightDiffReg + ", " + fieldArg(r05, "w"),
-	                  "ersqrt p, " + fieldArg(r06, "w"));
-	emitRawPairedLine("mul.w " + r06 + ", " + r07 + ", " + r07, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("addq.y " + r21 + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
-	emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06,
-	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r21, "y"));
-	emitRawPairedLine("addw.x " + r21 + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mula.xyz ACC, " + r20 + ", " + p.materialDiffReg,
-	                  "lq.xyz " + r20 + ", " + offsetBase(p.normalOffset - p.inputStep, in));
-	emitRawPairedLine("maddz.w " + r05 + ", " + vf00 + ", " + fieldArg(r15, "z"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + r16 + ", " + r21 + ", " + p.attenCoeffReg,
-	                  "move.xyz " + r15 + ", " + r16);
-	emitRawPairedLine("mul.xyz " + r21 + ", " + r17 + ", " + r20, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + r22 + ", " + r19 + ", " + fieldArg(r06, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + r19 + ", " + p.lightPosReg + ", " + r23, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(r21, "y"),
+	                  vuInstrPrefix(VU_OP_ESADD) + "p, " + r18);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + r06 + ", " + vf00 + ", " + fieldArg(r21, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r20 + ", " + r22 + ", " + r20, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r21 + ", " + r19 + ", " + r19, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(r20, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + r21 + ", " + fieldArg(r21, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + r21 + ", " + p.onesReg + ", " + fieldArg(r21, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(r20, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + r07 + ", " + vf00 + ", " + fieldArg(r20, "z"), vuInstr(VU_OP_WAITP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "w") + r05 + ", " + r06 + ", " + fieldArg(vf00, "x"),
+	                  vuInstrPrefixFields(VU_OP_MFP, "w") + r06 + ", p");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(r15, "x"),
+	                  vuInstrPrefix(VU_OP_SQRT) + "q, " + fieldArg(r21, "z"));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(r15, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "w") + r07 + ", " + r07 + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + r20 + ", " + p.lightDiffReg + ", " + fieldArg(r05, "w"),
+	                  vuInstrPrefix(VU_OP_ERSQRT) + "p, " + fieldArg(r06, "w"));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + r06 + ", " + r07 + ", " + r07, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADDQ, "y") + r21 + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + r06 + ", " + r06 + ", " + r06,
+	                  vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(r21, "y"));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADD, "w", "x") + r21 + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULA, "xyz") + "ACC, " + r20 + ", " + p.materialDiffReg,
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + r20 + ", " + offsetBase(p.normalOffset - p.inputStep, in));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + r05 + ", " + vf00 + ", " + fieldArg(r15, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + r06 + ", " + r06 + ", " + r06, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r16 + ", " + r21 + ", " + p.attenCoeffReg,
+	                  vuInstrPrefixFields(VU_OP_MOVE, "xyz") + r15 + ", " + r16);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r21 + ", " + r17 + ", " + r20, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITQ));
-	emitRawPairedLine("mulq.xyz " + r17 + ", " + r19 + ", q",
-	                  "iaddiu " + in + ", " + in + ", " + inputStep);
-	emitRawPairedLine("mul.w " + r07 + ", " + r06 + ", " + r06,
-	                  "move.xyz " + r19 + ", " + r18);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibeq " + in + ", " + last + ", " + p.fallbackThreeLabel);
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r21, "x"),
-	                  "mfp.w " + r06 + ", p");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + r17 + ", " + r19 + ", q",
+	                  vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", " + inputStep);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + r07 + ", " + r06 + ", " + r06,
+	                  vuInstrPrefixFields(VU_OP_MOVE, "xyz") + r19 + ", " + r18);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.fallbackThreeLabel);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(r21, "x"),
+	                  vuInstrPrefixFields(VU_OP_MFP, "w") + r06 + ", p");
 
 	m_codeLines.push_back(p.mainLabel + ":");
-	emitRawPairedLine("add.xyz " + r18 + ", " + p.viewDirReg + ", " + r17,
-	                  "lq.xyz " + r23 + ", " + offsetBase(0, in));
-	emitRawPairedLine("mul.w " + r07 + ", " + r07 + ", " + r07, mainOutputStep);
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r21, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulw.xyz " + r22 + ", " + r19 + ", " + fieldArg(r06, "w"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("sub.xyz " + r19 + ", " + p.lightPosReg + ", " + r23,
-	                  "esadd p, " + r18);
-	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(r07, "w"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddz.w " + r06 + ", " + vf00 + ", " + fieldArg(r21, "z"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + r20 + ", " + r22 + ", " + r20, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + r21 + ", " + r19 + ", " + r19, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madd.xyz " + r22 + ", " + p.lightAmbReg + ", " + p.materialAmbReg,
-	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r05, "w"));
-	emitRawPairedLine("maxx.w " + r05 + ", " + r06 + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r20, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("adday.z ACC, " + r21 + ", " + fieldArg(r21, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddx.z " + r21 + ", " + p.onesReg + ", " + fieldArg(r21, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r20, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddz.w " + r07 + ", " + vf00 + ", " + fieldArg(r20, "z"),
-	                  "mfp.w " + r06 + ", p");
-	emitRawPairedLine("mulq.xyz " + r23 + ", " + r22 + ", q",
-	                  "lq.xyz " + color + ", " + mainColorLoad);
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r15, "x"),
-	                  "sqrt q, " + fieldArg(r21, "z"));
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(r15, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maxx.w " + r07 + ", " + r07 + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulw.xyz " + r20 + ", " + p.lightDiffReg + ", " + fieldArg(r05, "w"),
-	                  "ersqrt p, " + fieldArg(r06, "w"));
-	emitRawPairedLine("add.xyz " + r22 + ", " + color + ", " + r23, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("addw.x " + r21 + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + r06 + ", " + r07 + ", " + r07, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("addq.y " + r21 + ", " + vf00 + ", q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mula.xyz ACC, " + r20 + ", " + p.materialDiffReg, store);
-	emitRawPairedLine("maddz.w " + r05 + ", " + vf00 + ", " + fieldArg(r15, "z"),
-	                  "move.xyz " + r15 + ", " + r16);
-	emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06,
-	                  "lq.xyz " + r20 + ", " + offsetBase(p.normalOffset - p.inputStep, in));
-	emitRawPairedLine("mul.xyz " + r16 + ", " + r21 + ", " + p.attenCoeffReg,
-	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(r21, "y"));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + r18 + ", " + p.viewDirReg + ", " + r17,
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + r23 + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + r07 + ", " + r07 + ", " + r07, mainOutputStep);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(r21, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + r22 + ", " + r19 + ", " + fieldArg(r06, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + r19 + ", " + p.lightPosReg + ", " + r23,
+	                  vuInstrPrefix(VU_OP_ESADD) + "p, " + r18);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "w", "xyz") + "ACC, " + p.localSpecReg + ", " + fieldArg(r07, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + r06 + ", " + vf00 + ", " + fieldArg(r21, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r20 + ", " + r22 + ", " + r20, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r21 + ", " + r19 + ", " + r19, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MADD, "xyz") + r22 + ", " + p.lightAmbReg + ", " + p.materialAmbReg,
+	                  vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(r05, "w"));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "w") + r05 + ", " + r06 + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(r20, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + r21 + ", " + fieldArg(r21, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + r21 + ", " + p.onesReg + ", " + fieldArg(r21, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(r20, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + r07 + ", " + vf00 + ", " + fieldArg(r20, "z"),
+	                  vuInstrPrefixFields(VU_OP_MFP, "w") + r06 + ", p");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + r23 + ", " + r22 + ", q",
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + color + ", " + mainColorLoad);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(r15, "x"),
+	                  vuInstrPrefix(VU_OP_SQRT) + "q, " + fieldArg(r21, "z"));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(r15, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "w") + r07 + ", " + r07 + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + r20 + ", " + p.lightDiffReg + ", " + fieldArg(r05, "w"),
+	                  vuInstrPrefix(VU_OP_ERSQRT) + "p, " + fieldArg(r06, "w"));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + r22 + ", " + color + ", " + r23, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADD, "w", "x") + r21 + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + r06 + ", " + r07 + ", " + r07, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADDQ, "y") + r21 + ", " + vf00 + ", q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULA, "xyz") + "ACC, " + r20 + ", " + p.materialDiffReg, store);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + r05 + ", " + vf00 + ", " + fieldArg(r15, "z"),
+	                  vuInstrPrefixFields(VU_OP_MOVE, "xyz") + r15 + ", " + r16);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + r06 + ", " + r06 + ", " + r06,
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + r20 + ", " + offsetBase(p.normalOffset - p.inputStep, in));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r16 + ", " + r21 + ", " + p.attenCoeffReg,
+	                  vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(r21, "y"));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + r06 + ", " + r06 + ", " + r06, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + r21 + ", " + r17 + ", " + r20, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + r06 + ", " + r06 + ", " + r06, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + r21 + ", " + r17 + ", " + r20, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz " + r17 + ", " + r19 + ", q",
-	                  "iaddiu " + in + ", " + in + ", " + inputStep);
-	emitRawPairedLine("mul.w " + r07 + ", " + r06 + ", " + r06,
-	                  "move.xyz " + r19 + ", " + r18);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibne " + in + ", " + last + ", " + p.mainLabel);
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(r21, "x"),
-	                  "mfp.w " + r06 + ", p");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + r17 + ", " + r19 + ", q",
+	                  vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", " + inputStep);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + r07 + ", " + r06 + ", " + r06,
+	                  vuInstrPrefixFields(VU_OP_MOVE, "xyz") + r19 + ", " + r18);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IBNE) + in + ", " + last + ", " + p.mainLabel);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(r21, "x"),
+	                  vuInstrPrefixFields(VU_OP_MFP, "w") + r06 + ", p");
 
 	m_codeLines.push_back(p.drainLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepThree);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + in + ", " + in + ", " + inputStepThree);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.scalarLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackOneLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepOne);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + in + ", " + in + ", " + inputStepOne);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.scalarLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackTwoLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepTwo);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + in + ", " + in + ", " + inputStepTwo);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.scalarLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackThreeLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", " + inputStepThree);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + in + ", " + in + ", " + inputStepThree);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.scalarLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	emitPtLightSpecScalarFallbackLoop(p);
@@ -8038,11 +8063,11 @@ void CodeGenerator::emitPtLightSpecScalarFallbackLoop( const PtLightSpecLoopPipe
 	const std::string out = p.outputReg;
 	const std::string last = p.lastInputReg;
 	const std::string vf00 = "VF00";
-	const std::string scalarOutputStep = p.postIncrementStore ? vuInstr(VU_OP_NOP) : "iaddiu " + out + ", " + out + ", 3";
+	const std::string scalarOutputStep = p.postIncrementStore ? vuInstr(VU_OP_NOP) : vuInstrPrefix(VU_OP_IADDIU) + out + ", " + out + ", 3";
 	const std::string scalarColorLoad = offsetBase(p.colorOffset, out);
 	const std::string scalarStore = p.postIncrementStore
-	                              ? "sqi.xyz " + p.resultReg + ", (" + out + "++)"
-	                              : "sq.xyz " + p.resultReg + ", " + offsetBase(p.storeOffset, out);
+	                              ? vuInstrPrefixFields(VU_OP_SQI, "xyz") + p.resultReg + ", (" + out + "++)"
+	                              : vuInstrPrefixFields(VU_OP_SQ, "xyz") + p.resultReg + ", " + offsetBase(p.storeOffset, out);
 	std::list<std::string> reserved;
 	addScratchReservation(reserved, p.vertexReg);
 	addScratchReservation(reserved, p.normalReg);
@@ -8074,83 +8099,83 @@ void CodeGenerator::emitPtLightSpecScalarFallbackLoop( const PtLightSpecLoopPipe
 	const std::string scalarColor = reserveScratchReg(reserved);
 
 	m_codeLines.push_back(p.scalarLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + p.vertexReg + ", " + offsetBase(p.vertexOffset, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + p.normalReg + ", " + offsetBase(p.normalOffset, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + scalarColor + ", " + scalarColorLoad);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + p.vertexReg + ", " + offsetBase(p.vertexOffset, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + p.normalReg + ", " + offsetBase(p.normalOffset, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + scalarColor + ", " + scalarColorLoad);
 	if( p.materialDiffFromInput )
-		emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + p.materialDiffReg + ", "
+		emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + p.materialDiffReg + ", "
 		                         + offsetBase(p.materialDiffOffset, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", " + integerText(p.inputStep));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", " + integerText(p.inputStep));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("sub.xyz " + p.toLightReg + ", " + p.lightPosReg + ", " + p.vertexReg, vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + p.attenReg + ", " + p.toLightReg + ", " + p.toLightReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + p.toLightReg + ", " + p.lightPosReg + ", " + p.vertexReg, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("adday.z ACC, " + p.attenReg + ", " + fieldArg(p.attenReg, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddx.z " + p.attenReg + ", " + p.onesReg + ", " + fieldArg(p.attenReg, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("addw.x " + p.attenReg + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sqrt q, " + fieldArg(p.attenReg, "z"));
-	emitRawPairedLine("addq.y " + p.attenReg + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(p.attenReg, "y"));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + p.attenReg + ", " + p.toLightReg + ", " + p.toLightReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + p.attenReg + ", " + fieldArg(p.attenReg, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + p.attenReg + ", " + p.onesReg + ", " + fieldArg(p.attenReg, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADD, "w", "x") + p.attenReg + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQRT) + "q, " + fieldArg(p.attenReg, "z"));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADDQ, "y") + p.attenReg + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(p.attenReg, "y"));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITQ));
-	emitRawPairedLine("mulq.xyz " + p.normalizedLightReg + ", " + p.toLightReg + ", q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + p.attenProductReg + ", " + p.attenReg + ", " + p.attenCoeffReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + p.normalizedLightReg + ", " + p.toLightReg + ", q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + p.attenProductReg + ", " + p.attenReg + ", " + p.attenCoeffReg, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(p.attenProductReg, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(p.attenProductReg, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddz.w " + p.attenReg + ", " + vf00 + ", " + fieldArg(p.attenProductReg, "z"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("add.xyz " + p.halfAngleReg + ", " + p.viewDirReg + ", " + p.normalizedLightReg, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + p.normalProductReg + ", " + p.normalizedLightReg + ", " + p.normalReg,
-	                  "esadd p, " + p.halfAngleReg);
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(p.normalProductReg, "x"), vuInstr(VU_OP_WAITP));
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(p.normalProductReg, "y"),
-	                  "mfp.w " + p.halfAngleReg + ", p");
-	emitRawPairedLine("maddz.w " + p.intensityReg + ", " + vf00 + ", " + fieldArg(p.normalProductReg, "z"),
-	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(p.attenReg, "w"));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ersqrt p, " + fieldArg(p.halfAngleReg, "w"));
-	emitRawPairedLine("maxx.w " + p.clampedIntensityReg + ", " + p.intensityReg + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_WAITP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "mfp.w " + p.halfAngleReg + ", p");
-	emitRawPairedLine("mulw.xyz " + p.localDiffuseReg + ", " + p.lightDiffReg + ", " + fieldArg(p.clampedIntensityReg, "w"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulw.xyz " + p.halfAngleReg + ", " + p.halfAngleReg + ", " + fieldArg(p.halfAngleReg, "w"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mula.xyz ACC, " + p.localDiffuseReg + ", " + p.materialDiffReg, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + p.specProductReg + ", " + p.halfAngleReg + ", " + p.normalReg, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(p.specProductReg, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(p.specProductReg, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddz.w " + p.specIntensityReg + ", " + vf00 + ", " + fieldArg(p.specProductReg, "z"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maxx.w " + p.specIntensityReg + ", " + p.specIntensityReg + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + p.specPowerReg + ", " + p.specIntensityReg + ", " + p.specIntensityReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(p.attenProductReg, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(p.attenProductReg, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + p.attenReg + ", " + vf00 + ", " + fieldArg(p.attenProductReg, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + p.halfAngleReg + ", " + p.viewDirReg + ", " + p.normalizedLightReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + p.normalProductReg + ", " + p.normalizedLightReg + ", " + p.normalReg,
+	                  vuInstrPrefix(VU_OP_ESADD) + "p, " + p.halfAngleReg);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(p.normalProductReg, "x"), vuInstr(VU_OP_WAITP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(p.normalProductReg, "y"),
+	                  vuInstrPrefixFields(VU_OP_MFP, "w") + p.halfAngleReg + ", p");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + p.intensityReg + ", " + vf00 + ", " + fieldArg(p.normalProductReg, "z"),
+	                  vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(p.attenReg, "w"));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ERSQRT) + "p, " + fieldArg(p.halfAngleReg, "w"));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "w") + p.clampedIntensityReg + ", " + p.intensityReg + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_WAITP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_MFP, "w") + p.halfAngleReg + ", p");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + p.localDiffuseReg + ", " + p.lightDiffReg + ", " + fieldArg(p.clampedIntensityReg, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + p.halfAngleReg + ", " + p.halfAngleReg + ", " + fieldArg(p.halfAngleReg, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULA, "xyz") + "ACC, " + p.localDiffuseReg + ", " + p.materialDiffReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + p.specProductReg + ", " + p.halfAngleReg + ", " + p.normalReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(p.specProductReg, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(p.specProductReg, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + p.specIntensityReg + ", " + vf00 + ", " + fieldArg(p.specProductReg, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "w") + p.specIntensityReg + ", " + p.specIntensityReg + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + p.specPowerReg + ", " + p.specIntensityReg + ", " + p.specIntensityReg, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + p.specPowerReg + ", " + p.specPowerReg + ", " + p.specPowerReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + p.specPowerReg + ", " + p.specPowerReg + ", " + p.specPowerReg, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + p.specPowerReg + ", " + p.specPowerReg + ", " + p.specPowerReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + p.specPowerReg + ", " + p.specPowerReg + ", " + p.specPowerReg, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + p.specPowerReg + ", " + p.specPowerReg + ", " + p.specPowerReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + p.specPowerReg + ", " + p.specPowerReg + ", " + p.specPowerReg, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.w " + p.specPowerReg + ", " + p.specPowerReg + ", " + p.specPowerReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "w") + p.specPowerReg + ", " + p.specPowerReg + ", " + p.specPowerReg, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddaw.xyz ACC, " + p.localSpecReg + ", " + fieldArg(p.specPowerReg, "w"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madd.xyz " + p.litColorReg + ", " + p.lightAmbReg + ", " + p.materialAmbReg, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz " + p.attenuatedColorReg + ", " + p.litColorReg + ", q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine("add.xyz " + p.resultReg + ", " + scalarColor + ", " + p.attenuatedColorReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "w", "xyz") + "ACC, " + p.localSpecReg + ", " + fieldArg(p.specPowerReg, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MADD, "xyz") + p.litColorReg + ", " + p.lightAmbReg + ", " + p.materialAmbReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + p.attenuatedColorReg + ", " + p.litColorReg + ", q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + p.resultReg + ", " + scalarColor + ", " + p.attenuatedColorReg, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), scalarStore);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibne " + in + ", " + last + ", " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IBNE) + in + ", " + last + ", " + p.scalarLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), scalarOutputStep);
 
 	m_codeLines.push_back(p.exitLabel + ":");
@@ -8691,109 +8716,109 @@ void CodeGenerator::emitPtLightNoSpecSoftwarePipelineLoop( const PtLightNoSpecLo
 	const std::string vf00 = "VF00";
 
 	m_codeLines.push_back(p.entryLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + delta + ", " + offsetBase(0, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + delta + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", 3");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("sub.xyz " + delta + ", " + lightPos + ", " + delta, vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + atten + ", " + delta + ", " + delta, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + delta + ", " + lightPos + ", " + delta, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("adday.z ACC, " + atten + ", " + fieldArg(atten, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddx.z " + atten + ", " + p.onesReg + ", " + fieldArg(atten, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("addw.x " + atten + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sqrt q, " + fieldArg(atten, "z"));
-	emitRawPairedLine("addq.y " + atten + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibeq " + in + ", " + last + ", " + p.fallbackOneLabel);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + atten + ", " + delta + ", " + delta, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + atten + ", " + fieldArg(atten, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + atten + ", " + p.onesReg + ", " + fieldArg(atten, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADD, "w", "x") + atten + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQRT) + "q, " + fieldArg(atten, "z"));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADDQ, "y") + atten + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.fallbackOneLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.prologLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + vertex + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + vertex + ", " + offsetBase(0, in));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + attenProduct + ", " + atten + ", " + p.attenCoeffReg,
-	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(atten, "y"));
-	emitRawPairedLine("sub.xyz " + delta + ", " + lightPos + ", " + vertex,
-	                  "move.xyz " + vertex + ", " + delta);
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "x"),
-	                  "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("mul.xyz " + atten + ", " + delta + ", " + delta, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + attenProduct + ", " + atten + ", " + p.attenCoeffReg,
+	                  vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(atten, "y"));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + delta + ", " + lightPos + ", " + vertex,
+	                  vuInstrPrefixFields(VU_OP_MOVE, "xyz") + vertex + ", " + delta);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(attenProduct, "x"),
+	                  vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + atten + ", " + delta + ", " + delta, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_WAITQ));
-	emitRawPairedLine("mulq.xyz " + vertex + ", " + vertex + ", q",
-	                  "lq.xyz " + normal + ", " + offsetBase(-5, in));
-	emitRawPairedLine("adday.z ACC, " + atten + ", " + fieldArg(atten, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddx.z " + atten + ", " + p.onesReg + ", " + fieldArg(atten, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + vertex + ", " + vertex + ", " + normal, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "y"),
-	                  "sqrt q, " + fieldArg(atten, "z"));
-	emitRawPairedLine("maddz.w " + p.materialAmbReg + ", " + vf00 + ", " + fieldArg(attenProduct, "z"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(vertex, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(vertex, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddz.w " + p.materialDiffReg + ", " + vf00 + ", " + fieldArg(vertex, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + vertex + ", " + vertex + ", q",
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + normal + ", " + offsetBase(-5, in));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + atten + ", " + fieldArg(atten, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + atten + ", " + p.onesReg + ", " + fieldArg(atten, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + vertex + ", " + vertex + ", " + normal, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(attenProduct, "y"),
+	                  vuInstrPrefix(VU_OP_SQRT) + "q, " + fieldArg(atten, "z"));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + p.materialAmbReg + ", " + vf00 + ", " + fieldArg(attenProduct, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(vertex, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(vertex, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + p.materialDiffReg + ", " + vf00 + ", " + fieldArg(vertex, "z"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("addw.x " + atten + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("addq.y " + atten + ", " + vf00 + ", q",
-	                  "ibeq " + in + ", " + last + ", " + p.fallbackTwoLabel);
-	emitRawPairedLine("maxx.w " + p.materialDiffReg + ", " + p.materialDiffReg + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + out + ", " + out + ", 6");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADD, "w", "x") + atten + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADDQ, "y") + atten + ", " + vf00 + ", q",
+	                  vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.fallbackTwoLabel);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "w") + p.materialDiffReg + ", " + p.materialDiffReg + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + out + ", " + out + ", 6");
 
 	m_codeLines.push_back(p.mainLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + vertex + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + vertex + ", " + offsetBase(0, in));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + attenProduct + ", " + atten + ", " + p.attenCoeffReg,
-	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(atten, "y"));
-	emitRawPairedLine("mulw.xyz " + atten + ", " + p.lightDiffReg + ", " + fieldArg(p.materialDiffReg, "w"),
-	                  "iaddiu " + out + ", " + out + ", 3");
-	emitRawPairedLine("sub.xyz " + delta + ", " + lightPos + ", " + vertex,
-	                  "move.xyz " + vertex + ", " + delta);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + attenProduct + ", " + atten + ", " + p.attenCoeffReg,
+	                  vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(atten, "y"));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + atten + ", " + p.lightDiffReg + ", " + fieldArg(p.materialDiffReg, "w"),
+	                  vuInstrPrefix(VU_OP_IADDIU) + out + ", " + out + ", 3");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + delta + ", " + lightPos + ", " + vertex,
+	                  vuInstrPrefixFields(VU_OP_MOVE, "xyz") + vertex + ", " + delta);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mula.xyz ACC, " + atten + ", " + p.materialDiffReg, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + atten + ", " + delta + ", " + delta, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz " + vertex + ", " + vertex + ", q",
-	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(p.materialAmbReg, "w"));
-	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg,
-	                  "lq.xyz " + normal + ", " + offsetBase(-2, in));
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("adday.z ACC, " + atten + ", " + fieldArg(atten, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddx.z " + atten + ", " + p.onesReg + ", " + fieldArg(atten, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + vertex + ", " + vertex + ", " + normal, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddz.w " + p.materialAmbReg + ", " + vf00 + ", " + fieldArg(attenProduct, "z"),
-	                  "lq.xyz " + attenProduct + ", " + offsetBase(-8, out));
-	emitRawPairedLine("mulq.xyz " + lit + ", " + lit + ", q",
-	                  "sqrt q, " + fieldArg(atten, "z"));
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(vertex, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(vertex, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddz.w " + p.materialDiffReg + ", " + vf00 + ", " + fieldArg(vertex, "z"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("add.xyz " + attenProduct + ", " + attenProduct + ", " + lit, vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("addw.x " + atten + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("addq.y " + atten + ", " + vf00 + ", q",
-	                  "ibne " + in + ", " + last + ", " + p.mainLabel);
-	emitRawPairedLine("maxx.w " + p.materialDiffReg + ", " + p.materialDiffReg + ", " + fieldArg(vf00, "x"),
-	                  "sq.xyz " + attenProduct + ", " + offsetBase(-8, out));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULA, "xyz") + "ACC, " + atten + ", " + p.materialDiffReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + atten + ", " + delta + ", " + delta, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + vertex + ", " + vertex + ", q",
+	                  vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(p.materialAmbReg, "w"));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MADD, "xyz") + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg,
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + normal + ", " + offsetBase(-2, in));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(attenProduct, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + atten + ", " + fieldArg(atten, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + atten + ", " + p.onesReg + ", " + fieldArg(atten, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + vertex + ", " + vertex + ", " + normal, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(attenProduct, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + p.materialAmbReg + ", " + vf00 + ", " + fieldArg(attenProduct, "z"),
+	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + attenProduct + ", " + offsetBase(-8, out));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + lit + ", " + lit + ", q",
+	                  vuInstrPrefix(VU_OP_SQRT) + "q, " + fieldArg(atten, "z"));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(vertex, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(vertex, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + p.materialDiffReg + ", " + vf00 + ", " + fieldArg(vertex, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + attenProduct + ", " + attenProduct + ", " + lit, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADD, "w", "x") + atten + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADDQ, "y") + atten + ", " + vf00 + ", q",
+	                  vuInstrPrefix(VU_OP_IBNE) + in + ", " + last + ", " + p.mainLabel);
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "w") + p.materialDiffReg + ", " + p.materialDiffReg + ", " + fieldArg(vf00, "x"),
+	                  vuInstrPrefixFields(VU_OP_SQ, "xyz") + attenProduct + ", " + offsetBase(-8, out));
 
 	m_codeLines.push_back(p.drainLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", 6");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + out + ", " + out + ", 6");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + in + ", " + in + ", 6");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + out + ", " + out + ", 6");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.scalarLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackOneLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", 3");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.scalarLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.fallbackTwoLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "isubiu " + in + ", " + in + ", 6");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_ISUBIU) + in + ", " + in + ", 6");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.scalarLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	emitPtLightNoSpecScalarFallbackLoop(p);
@@ -8821,81 +8846,81 @@ void CodeGenerator::emitPtLightNoSpecScalarFallbackLoop( const PtLightNoSpecLoop
 	const std::string vf00 = "VF00";
 
 	m_codeLines.push_back(p.scalarLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + normal + ", " + offsetBase(1, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + vertex + ", " + offsetBase(0, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + currentColor + ", " + offsetBase(1, out));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + normal + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + vertex + ", " + offsetBase(0, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + currentColor + ", " + offsetBase(1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", 3");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("sub.xyz " + delta + ", " + p.lightPosReg + ", " + vertex, vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mul.xyz " + atten + ", " + delta + ", " + delta, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + delta + ", " + p.lightPosReg + ", " + vertex, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("adday.z ACC, " + atten + ", " + fieldArg(atten, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddx.z " + atten + ", " + p.onesReg + ", " + fieldArg(atten, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("addw.x " + atten + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sqrt q, " + fieldArg(atten, "z"));
-	emitRawPairedLine("addq.y " + atten + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
-	emitRawPairedLine("mul.xyz " + attenProduct + ", " + atten + ", " + p.attenCoeffReg,
-	                  "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(atten, "y"));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + atten + ", " + delta + ", " + delta, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(attenProduct, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddz.w " + atten + ", " + vf00 + ", " + fieldArg(attenProduct, "z"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz " + normalized + ", " + delta + ", q", vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "div q, " + fieldArg(vf00, "w") + ", " + fieldArg(atten, "w"));
-	emitRawPairedLine("mul.xyz " + normalProduct + ", " + normalized + ", " + normal, vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulax.w ACC, " + vf00 + ", " + fieldArg(normalProduct, "x"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madday.w ACC, " + vf00 + ", " + fieldArg(normalProduct, "y"), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maddz.w " + intensity + ", " + vf00 + ", " + fieldArg(normalProduct, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + atten + ", " + fieldArg(atten, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "x", "z") + atten + ", " + p.onesReg + ", " + fieldArg(atten, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADD, "w", "x") + atten + ", " + vf00 + ", " + fieldArg(vf00, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQRT) + "q, " + fieldArg(atten, "z"));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADDQ, "y") + atten + ", " + vf00 + ", q", vuInstr(VU_OP_WAITQ));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + attenProduct + ", " + atten + ", " + p.attenCoeffReg,
+	                  vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(atten, "y"));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("maxx.w " + clamped + ", " + intensity + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(attenProduct, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(attenProduct, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + atten + ", " + vf00 + ", " + fieldArg(attenProduct, "z"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + normalized + ", " + delta + ", q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_DIV) + "q, " + fieldArg(vf00, "w") + ", " + fieldArg(atten, "w"));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MUL, "xyz") + normalProduct + ", " + normalized + ", " + normal, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulw.xyz " + localDiffuse + ", " + p.lightDiffReg + ", " + fieldArg(clamped, "w"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(normalProduct, "x"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADDA, "y", "w") + "ACC, " + vf00 + ", " + fieldArg(normalProduct, "y"), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "z", "w") + intensity + ", " + vf00 + ", " + fieldArg(normalProduct, "z"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mula.xyz ACC, " + localDiffuse + ", " + p.materialDiffReg, vuInstr(VU_OP_NOP));
-	emitRawPairedLine("madd.xyz " + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "w") + clamped + ", " + intensity + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("mulq.xyz " + attenuated + ", " + lit + ", q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MUL, "w", "xyz") + localDiffuse + ", " + p.lightDiffReg + ", " + fieldArg(clamped, "w"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("add.xyz " + result + ", " + currentColor + ", " + attenuated, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULA, "xyz") + "ACC, " + localDiffuse + ", " + p.materialDiffReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MADD, "xyz") + lit + ", " + p.lightAmbReg + ", " + p.materialAmbReg, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq.xyz " + result + ", " + offsetBase(1, out));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "ibne " + in + ", " + last + ", " + p.scalarLabel);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + out + ", " + out + ", 3");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + attenuated + ", " + lit + ", q", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + result + ", " + currentColor + ", " + attenuated, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_SQ, "xyz") + result + ", " + offsetBase(1, out));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IBNE) + in + ", " + last + ", " + p.scalarLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + out + ", " + out + ", 3");
 
 	m_codeLines.push_back(p.exitLabel + ":");
 }
@@ -9099,43 +9124,43 @@ void CodeGenerator::emitFinalColorSoftwarePipelineLoop( const FinalColorLoopPipe
 	const std::string load = p.outputReg;
 
 	m_codeLines.push_back(p.entryLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + output + ", " + offsetBase(1, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine("minii.xyz " + minReg + ", " + output + ", i",
-	                  "ibeq " + in + ", " + last + ", " + p.epilogOneLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + output + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MINII, "xyz") + minReg + ", " + output + ", i",
+	                  vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.epilogOneLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.prologLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + load + ", " + offsetBase(1, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + load + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", 3");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("ftoi0.xyz " + output + ", " + minReg,
-	                  "ibeq " + in + ", " + last + ", " + p.epilogTwoLabel);
-	emitRawPairedLine("minii.xyz " + minReg + ", " + load + ", i", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI0, "xyz") + output + ", " + minReg,
+	                  vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.epilogTwoLabel);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MINII, "xyz") + minReg + ", " + load + ", i", vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.mainLabel + ":");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "lq.xyz " + load + ", " + offsetBase(1, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "iaddiu " + in + ", " + in + ", 3");
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + output + ", " + offsetBase(-8, in));
-	emitRawPairedLine("ftoi0.xyz " + output + ", " + minReg,
-	                  "ibne " + in + ", " + last + ", " + p.mainLabel);
-	emitRawPairedLine("minii.xyz " + minReg + ", " + load + ", i", vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + load + ", " + offsetBase(1, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", 3");
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + output + ", " + offsetBase(-8, in));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI0, "xyz") + output + ", " + minReg,
+	                  vuInstrPrefix(VU_OP_IBNE) + in + ", " + last + ", " + p.mainLabel);
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MINII, "xyz") + minReg + ", " + load + ", i", vuInstr(VU_OP_NOP));
 
 	m_codeLines.push_back(p.epilogTwoLabel + ":");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("ftoi0.xyz " + output + ", " + minReg,
-	                  "sq " + output + ", " + offsetBase(-5, in));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "b " + p.exitLabel);
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + output + ", " + offsetBase(-2, in));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI0, "xyz") + output + ", " + minReg,
+	                  vuInstrPrefix(VU_OP_SQ) + output + ", " + offsetBase(-5, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_B) + p.exitLabel);
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + output + ", " + offsetBase(-2, in));
 
 	m_codeLines.push_back(p.epilogOneLabel + ":");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine("ftoi0.xyz " + output + ", " + minReg, vuInstr(VU_OP_NOP));
+	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI0, "xyz") + output + ", " + minReg, vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
-	emitRawPairedLine(vuInstr(VU_OP_NOP), "sq " + output + ", " + offsetBase(-2, in));
+	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + output + ", " + offsetBase(-2, in));
 
 	m_codeLines.push_back(p.exitLabel + ":");
 }
