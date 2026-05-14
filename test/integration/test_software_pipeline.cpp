@@ -55,7 +55,7 @@ namespace
         return count;
     }
 
-    std::string runEmit(const std::string& source)
+    std::string runEmitWithExtraArgs(const std::string& source, const std::vector<std::string>& extraArgs)
     {
         char tmpl[] = "/tmp/openvcl_pipe_XXXXXX.vsm";
         int fd = mkstemps(tmpl, 4);
@@ -64,6 +64,8 @@ namespace
         close(fd);
 
         std::vector<std::string> args;
+        for (std::vector<std::string>::const_iterator i = extraArgs.begin(); i != extraArgs.end(); ++i)
+            args.push_back(*i);
         args.push_back("-o");
         args.push_back(tmpl);
         ::test::RunResult r = ::test::run_openvcl(args, source);
@@ -78,6 +80,11 @@ namespace
         ss << f.rdbuf();
         std::remove(tmpl);
         return ss.str();
+    }
+
+    std::string runEmit(const std::string& source)
+    {
+        return runEmitWithExtraArgs(source, std::vector<std::string>());
     }
 
     std::string ps2glNamedXformLoopSource(const std::string& name)
@@ -817,6 +824,20 @@ TEST_CASE("Software pipeline: fast_nolights transform loop emits a 12-cycle stea
     CHECK(contains(vsm, "ibne VI02, VI05, xform_loop_lid__MAIN_LOOP"));
     CHECK(contains(vsm, "mulq.xyz VF10, VF10, q          div q, VF00w, VF07w"));
     CHECK(countSubstrings(vsm, "waitq") == 0);
+}
+
+TEST_CASE("Software pipeline: known-loop optimizations can be disabled")
+{
+    std::vector<std::string> args;
+    args.push_back("--disable-known-loop-optimizations");
+
+    std::string vsm = runEmitWithExtraArgs(fastNoLightsPipelineSource(), args);
+    REQUIRE(vsm.length() > 0);
+
+    CHECK(contains(vsm, "xform_loop_lid:"));
+    CHECK(contains(vsm, "ibne VI02, VI05, xform_loop_lid"));
+    CHECK(!contains(vsm, "xform_loop_lid__ENTRY_POINT:"));
+    CHECK(!contains(vsm, "xform_loop_lid__MAIN_LOOP:"));
 }
 
 TEST_CASE("Software pipeline: fast lit transform loop emits a 16-cycle steady state")

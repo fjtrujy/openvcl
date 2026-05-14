@@ -930,6 +930,7 @@ namespace
 CodeGenerator::CodeGenerator()
 {
 	m_currentCycle    = 0;
+	m_knownLoopOptimizations = true;
 	m_enableUpperZeroMoves = false;
 	m_ignoredImplicitWawResources = VU_RESOURCE_NONE;
 	// Sentinels < 0 by more than FMAC latency so the first flag-reader
@@ -995,55 +996,58 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 	{
 		m_ignoredImplicitWawResources = ignoredImplicitWawResourcesForRemaining(k, workTokens.end());
 
-		if( tryEmitFastNoLightsSoftwarePipelineLoop(workTokens, k) )
+		if( m_knownLoopOptimizations )
 		{
-			exitWritten = false;
-			continue;
-		}
-		if( tryEmitFastLitSoftwarePipelineLoop(workTokens, k) )
-		{
-			exitWritten = false;
-			continue;
-		}
-		if( tryEmitSceiSoftwarePipelineLoop(workTokens, k) )
-		{
-			exitWritten = false;
-			continue;
-		}
-		if( tryEmitPs2glPrimitiveXformSoftwarePipelineLoop(workTokens, k) )
-		{
-			exitWritten = false;
-			continue;
-		}
-		if( tryEmitLinearXformSoftwarePipelineLoop(workTokens, k) )
-		{
-			exitWritten = false;
-			continue;
-		}
-		if( tryEmitDirLightSpecSoftwarePipelineLoop(workTokens, k) )
-		{
-			exitWritten = false;
-			continue;
-		}
-		if( tryEmitDirLightNoSpecSoftwarePipelineLoop(workTokens, k) )
-		{
-			exitWritten = false;
-			continue;
-		}
-		if( tryEmitPtLightSpecSoftwarePipelineLoop(workTokens, k) )
-		{
-			exitWritten = false;
-			continue;
-		}
-		if( tryEmitPtLightNoSpecSoftwarePipelineLoop(workTokens, k) )
-		{
-			exitWritten = false;
-			continue;
-		}
-		if( tryEmitFinalColorSoftwarePipelineLoop(workTokens, k) )
-		{
-			exitWritten = false;
-			continue;
+			if( tryEmitFastNoLightsSoftwarePipelineLoop(workTokens, k) )
+			{
+				exitWritten = false;
+				continue;
+			}
+			if( tryEmitFastLitSoftwarePipelineLoop(workTokens, k) )
+			{
+				exitWritten = false;
+				continue;
+			}
+			if( tryEmitSceiSoftwarePipelineLoop(workTokens, k) )
+			{
+				exitWritten = false;
+				continue;
+			}
+			if( tryEmitPs2glPrimitiveXformSoftwarePipelineLoop(workTokens, k) )
+			{
+				exitWritten = false;
+				continue;
+			}
+			if( tryEmitLinearXformSoftwarePipelineLoop(workTokens, k) )
+			{
+				exitWritten = false;
+				continue;
+			}
+			if( tryEmitDirLightSpecSoftwarePipelineLoop(workTokens, k) )
+			{
+				exitWritten = false;
+				continue;
+			}
+			if( tryEmitDirLightNoSpecSoftwarePipelineLoop(workTokens, k) )
+			{
+				exitWritten = false;
+				continue;
+			}
+			if( tryEmitPtLightSpecSoftwarePipelineLoop(workTokens, k) )
+			{
+				exitWritten = false;
+				continue;
+			}
+			if( tryEmitPtLightNoSpecSoftwarePipelineLoop(workTokens, k) )
+			{
+				exitWritten = false;
+				continue;
+			}
+			if( tryEmitFinalColorSoftwarePipelineLoop(workTokens, k) )
+			{
+				exitWritten = false;
+				continue;
+			}
 		}
 
 		Token token = *k;

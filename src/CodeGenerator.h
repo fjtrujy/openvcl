@@ -42,6 +42,9 @@ public:
 	void setEmitSource( bool emitSource );
 	bool emitSource() const;
 
+	void setKnownLoopOptimizations( bool enabled );
+	bool knownLoopOptimizations() const;
+
 	void setName( const std::string& name );
 	const std::string& name() const;
 
@@ -175,6 +178,7 @@ private:
 	std::list<std::string> m_codeLines;
 
 	bool m_emitSource;
+	bool m_knownLoopOptimizations;
 	bool m_enableUpperZeroMoves;
 	unsigned int m_ignoredImplicitWawResources;
 	std::string m_name;

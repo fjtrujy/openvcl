@@ -53,6 +53,7 @@ public:
 	bool dumpInstructionInfoJson() const;
 	bool dumpLoopPipelineInfo() const;
 	bool dumpLoopPipelineInfoJson() const;
+	bool knownLoopOptimizations() const;
 	const std::vector< std::pair<std::string, unsigned int> >& costLoops() const;
 	const std::string& costCompareBaseline() const;
 	const std::string& costCompareListCheckMetric() const;
@@ -122,6 +123,7 @@ private:
 		DUMP_INSTRUCTION_INFO_JSON,
 		DUMP_LOOP_PIPELINE_INFO,
 		DUMP_LOOP_PIPELINE_INFO_JSON,
+		DISABLE_KNOWN_LOOP_OPTIMIZATIONS,
 
 		IGNORE
 	};
@@ -170,6 +172,7 @@ private:
 	bool m_dumpInstructionInfoJson;
 	bool m_dumpLoopPipelineInfo;
 	bool m_dumpLoopPipelineInfoJson;
+	bool m_knownLoopOptimizations;
 	std::vector< std::pair<std::string, unsigned int> > m_costLoops;
 	std::string m_costCompareBaseline;
 	std::string m_costCompareListCheckMetric;
