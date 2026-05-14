@@ -631,6 +631,87 @@ namespace
 			addRotationField( rotations, *i, input );
 	}
 
+	const VuLoopInductionUpdate* findInductionUpdate( const std::vector<VuLoopInductionUpdate>& updates,
+	                                                  const std::string& registerName )
+	{
+		for( std::vector<VuLoopInductionUpdate>::const_iterator i = updates.begin(); i != updates.end(); ++i )
+		{
+			if( i->registerName == registerName )
+				return &*i;
+		}
+		return NULL;
+	}
+
+	void appendSoftwarePipelinePrefetchDescriptor( const Token& token,
+	                                               unsigned int tokenIndex,
+	                                               const VuLoopPipelineOpportunity& opportunity,
+	                                               std::vector<VuSoftwarePipelinePrefetch>& prefetches )
+	{
+		VuSoftwarePipelinePrefetch prefetch;
+		prefetch.tokenIndex = tokenIndex;
+		prefetch.mnemonic = lowerVuTokenName( token );
+		prefetch.memoryKind = VU_MEMORY_NONE;
+		prefetch.hasMemoryBase = false;
+		prefetch.memoryBaseRegister = "";
+		prefetch.hasMemoryOffset = false;
+		prefetch.memoryOffset = 0;
+		prefetch.readsInductionRegister = false;
+		prefetch.inductionRegister = "";
+		prefetch.hasNextIterationOffset = false;
+		prefetch.nextIterationOffset = 0;
+
+		VuTokenResourceAccess access;
+		if( buildVuTokenResourceAccess( token, access ) )
+		{
+			prefetch.memoryKind = access.memoryKind;
+			prefetch.hasMemoryBase = access.hasMemoryBase;
+			prefetch.memoryBaseRegister = access.memoryBaseRegister;
+			prefetch.hasMemoryOffset = access.hasMemoryOffset;
+			prefetch.memoryOffset = access.memoryOffset;
+
+			for( std::list<std::string>::const_iterator i = opportunity.inductionRegisters.begin();
+			     i != opportunity.inductionRegisters.end(); ++i )
+			{
+				if( containsKey( access.registerReads, *i )
+				    || (access.hasMemoryBase && access.memoryBaseRegister == *i) )
+				{
+					prefetch.readsInductionRegister = true;
+					prefetch.inductionRegister = *i;
+					break;
+				}
+			}
+
+			const VuLoopInductionUpdate* update =
+			    access.hasMemoryBase
+			    ? findInductionUpdate( opportunity.inductionUpdates, access.memoryBaseRegister )
+			    : NULL;
+			if( update && update->stepKnown && access.hasMemoryOffset )
+			{
+				prefetch.hasNextIterationOffset = true;
+				prefetch.nextIterationOffset = access.memoryOffset + update->step;
+			}
+		}
+
+		prefetches.push_back( prefetch );
+	}
+
+	void collectSoftwarePipelinePrefetchDescriptors( const std::vector<unsigned int>& prologTokenIndices,
+	                                                unsigned int qProducerTokenIndex,
+	                                                const std::vector<const Token*>& indexedTokens,
+	                                                VuLoopPipelineOpportunity& opportunity )
+	{
+		for( std::vector<unsigned int>::const_iterator i = prologTokenIndices.begin();
+		     i != prologTokenIndices.end(); ++i )
+		{
+			if( *i == qProducerTokenIndex || *i >= indexedTokens.size() )
+				continue;
+			appendSoftwarePipelinePrefetchDescriptor( *indexedTokens[*i],
+			                                          *i,
+			                                          opportunity,
+			                                          opportunity.softwarePipelinePrefetches );
+		}
+	}
+
 	VuLoopQSchedulingStrategy classifyLoopQSchedulingStrategy( const VuLoopPipelineOpportunity& opportunity )
 	{
 		if( opportunity.qProducerConsumerGapDeficitCycles == 0 )
@@ -673,6 +754,10 @@ namespace
 		collectRotationDescriptors( opportunity.carriedQOutputRegisters,
 		                            false,
 		                            opportunity.softwarePipelineRotations );
+		collectSoftwarePipelinePrefetchDescriptors( opportunity.prologTokenIndices,
+		                                            opportunity.qProducerTokenIndex,
+		                                            indexedTokens,
+		                                            opportunity );
 
 		if( !opportunity.softwarePipelineRotatedRegisters.empty() )
 			addPipelineBlocker( opportunity, "requires_register_rotation" );

@@ -103,6 +103,17 @@ namespace
         return NULL;
     }
 
+    const vcl::VuSoftwarePipelinePrefetch* findPrefetch(const std::vector<vcl::VuSoftwarePipelinePrefetch>& prefetches,
+                                                        unsigned int tokenIndex)
+    {
+        for (std::vector<vcl::VuSoftwarePipelinePrefetch>::const_iterator i = prefetches.begin(); i != prefetches.end(); ++i)
+        {
+            if (i->tokenIndex == tokenIndex)
+                return &*i;
+        }
+        return NULL;
+    }
+
     std::string terminatorName(const vcl::VuBasicBlock& block)
     {
         if (!block.terminator || !block.terminator->operand())
@@ -320,6 +331,22 @@ TEST_CASE("VuSchedulerAnalysis: pipeline opportunities expose loop-carried Q sta
     CHECK(hasString(opportunities[0].softwarePipelineBlockers, "multi_instruction_prefetch"));
     CHECK(hasString(opportunities[0].softwarePipelineRotatedRegisters, "VF03"));
     CHECK(hasString(opportunities[0].softwarePipelineRotatedRegisters, "VF06"));
+    const vcl::VuSoftwarePipelinePrefetch* lqPrefetch = findPrefetch(opportunities[0].softwarePipelinePrefetches, 2u);
+    REQUIRE(lqPrefetch != NULL);
+    CHECK(lqPrefetch->mnemonic == "lq");
+    CHECK(lqPrefetch->memoryKind == vcl::VU_MEMORY_LOAD);
+    CHECK(lqPrefetch->hasMemoryBase);
+    CHECK(lqPrefetch->memoryBaseRegister == "VI01");
+    CHECK(lqPrefetch->hasMemoryOffset);
+    CHECK(lqPrefetch->memoryOffset == 0);
+    CHECK(lqPrefetch->readsInductionRegister);
+    CHECK(lqPrefetch->inductionRegister == "VI01");
+    CHECK(lqPrefetch->hasNextIterationOffset);
+    CHECK(lqPrefetch->nextIterationOffset == 3);
+    const vcl::VuSoftwarePipelinePrefetch* mulPrefetch = findPrefetch(opportunities[0].softwarePipelinePrefetches, 3u);
+    REQUIRE(mulPrefetch != NULL);
+    CHECK(mulPrefetch->memoryKind == vcl::VU_MEMORY_NONE);
+    CHECK(!mulPrefetch->readsInductionRegister);
     const vcl::VuSoftwarePipelineRotation* vf03Rotation = findRotation(opportunities[0].softwarePipelineRotations, "VF03");
     REQUIRE(vf03Rotation != NULL);
     CHECK(hasString(vf03Rotation->inputFields, "x"));

@@ -8,6 +8,7 @@
  */
 
 #include "Token.h"
+#include "VuInstructionInfo.h"
 
 #include <list>
 #include <vector>
@@ -112,6 +113,21 @@ struct VuSoftwarePipelineRotation
 	std::list<std::string> outputFields;
 };
 
+struct VuSoftwarePipelinePrefetch
+{
+	unsigned int tokenIndex;
+	std::string mnemonic;
+	VuMemoryKind memoryKind;
+	bool hasMemoryBase;
+	std::string memoryBaseRegister;
+	bool hasMemoryOffset;
+	long memoryOffset;
+	bool readsInductionRegister;
+	std::string inductionRegister;
+	bool hasNextIterationOffset;
+	long nextIterationOffset;
+};
+
 struct VuLoopPipelineOpportunity
 {
 	VuLoopPipelineOpportunity();
@@ -143,6 +159,7 @@ struct VuLoopPipelineOpportunity
 	std::list<std::string> softwarePipelineBlockers;
 	std::list<std::string> softwarePipelineRotatedRegisters;
 	std::vector<VuSoftwarePipelineRotation> softwarePipelineRotations;
+	std::vector<VuSoftwarePipelinePrefetch> softwarePipelinePrefetches;
 	std::list<std::string> carriedQInputRegisters;
 	std::list<std::string> carriedQOutputRegisters;
 	unsigned int memoryLoadCount;

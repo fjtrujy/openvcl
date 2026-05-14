@@ -454,6 +454,13 @@ namespace
 		stream << "]";
 	}
 
+	void writeSignedLongText( std::ostream& stream, long value )
+	{
+		if( value >= 0 )
+			stream << "+";
+		stream << value;
+	}
+
 	void writeSignedStepText( std::ostream& stream, const VuLoopInductionUpdate& update )
 	{
 		if( !update.stepKnown )
@@ -461,9 +468,7 @@ namespace
 			stream << "?";
 			return;
 		}
-		if( update.step >= 0 )
-			stream << "+";
-		stream << update.step;
+		writeSignedLongText( stream, update.step );
 	}
 
 	void writeInductionUpdateListText( std::ostream& stream, const std::vector<VuLoopInductionUpdate>& updates )
@@ -498,6 +503,62 @@ namespace
 			stream << "\"step_known\": " << (updates[i].stepKnown ? "true" : "false") << ", ";
 			stream << "\"step\": " << updates[i].step << ", ";
 			stream << "\"token_index\": " << updates[i].tokenIndex;
+			stream << "}";
+		}
+		stream << "]";
+	}
+
+	void writePrefetchListText( std::ostream& stream, const std::vector<VuSoftwarePipelinePrefetch>& prefetches )
+	{
+		if( prefetches.empty() )
+		{
+			stream << "-";
+			return;
+		}
+
+		for( unsigned int i = 0; i < prefetches.size(); ++i )
+		{
+			if( i != 0 )
+				stream << "|";
+			stream << prefetches[i].tokenIndex << ":" << prefetches[i].mnemonic
+			       << "(" << memoryKindName( prefetches[i].memoryKind );
+			if( prefetches[i].hasMemoryBase )
+				stream << ",base=" << prefetches[i].memoryBaseRegister;
+			if( prefetches[i].hasMemoryOffset )
+			{
+				stream << ",offset=";
+				writeSignedLongText( stream, prefetches[i].memoryOffset );
+			}
+			stream << ",reads_induction=" << (prefetches[i].readsInductionRegister ? "yes" : "no");
+			if( prefetches[i].readsInductionRegister )
+				stream << ":" << prefetches[i].inductionRegister;
+			if( prefetches[i].hasNextIterationOffset )
+			{
+				stream << ",next_offset=";
+				writeSignedLongText( stream, prefetches[i].nextIterationOffset );
+			}
+			stream << ")";
+		}
+	}
+
+	void writePrefetchListJson( std::ostream& stream, const std::vector<VuSoftwarePipelinePrefetch>& prefetches )
+	{
+		stream << "[";
+		for( unsigned int i = 0; i < prefetches.size(); ++i )
+		{
+			if( i != 0 )
+				stream << ", ";
+			stream << "{";
+			stream << "\"token_index\": " << prefetches[i].tokenIndex << ", ";
+			stream << "\"mnemonic\": "; writeJsonString( stream, prefetches[i].mnemonic.c_str() ); stream << ", ";
+			stream << "\"memory\": "; writeJsonString( stream, memoryKindName( prefetches[i].memoryKind ) ); stream << ", ";
+			stream << "\"memory_base\": "; writeJsonString( stream, prefetches[i].hasMemoryBase ? prefetches[i].memoryBaseRegister.c_str() : "" ); stream << ", ";
+			stream << "\"memory_offset_known\": " << (prefetches[i].hasMemoryOffset ? "true" : "false") << ", ";
+			stream << "\"memory_offset\": " << prefetches[i].memoryOffset << ", ";
+			stream << "\"reads_induction_register\": " << (prefetches[i].readsInductionRegister ? "true" : "false") << ", ";
+			stream << "\"induction_register\": "; writeJsonString( stream, prefetches[i].inductionRegister.c_str() ); stream << ", ";
+			stream << "\"next_iteration_offset_known\": " << (prefetches[i].hasNextIterationOffset ? "true" : "false") << ", ";
+			stream << "\"next_iteration_offset\": " << prefetches[i].nextIterationOffset;
 			stream << "}";
 		}
 		stream << "]";
@@ -576,6 +637,8 @@ namespace
 			writeStringListText( stream, i->softwarePipelineRotatedRegisters );
 			stream << " rotation_descriptors=";
 			writeRotationListText( stream, i->softwarePipelineRotations );
+			stream << " prefetch_descriptors=";
+			writePrefetchListText( stream, i->softwarePipelinePrefetches );
 			stream << " induction_registers=";
 			writeStringListText( stream, i->inductionRegisters );
 			stream << " induction_updates=";
@@ -630,6 +693,7 @@ namespace
 			stream << "        \"blockers\": "; writeStringListJson( stream, opportunity.softwarePipelineBlockers ); stream << ",\n";
 			stream << "        \"rotated_registers\": "; writeStringListJson( stream, opportunity.softwarePipelineRotatedRegisters ); stream << ",\n";
 			stream << "        \"rotation_descriptors\": "; writeRotationListJson( stream, opportunity.softwarePipelineRotations ); stream << ",\n";
+			stream << "        \"prefetch_descriptors\": "; writePrefetchListJson( stream, opportunity.softwarePipelinePrefetches ); stream << ",\n";
 			stream << "        \"prolog_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.prologTokenIndices ); stream << ",\n";
 			stream << "        \"main_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.mainTokenIndices ); stream << ",\n";
 			stream << "        \"drain_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.drainTokenIndices ); stream << "\n";
