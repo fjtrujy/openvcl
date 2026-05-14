@@ -1210,6 +1210,27 @@ TEST_CASE("VuSchedulerAnalysis: generic software pipeline matches alias rotation
     const vcl::VuSoftwarePipelineRotation* rotation = findRotation(opportunities[0].softwarePipelineRotations, "temp_a");
     REQUIRE(rotation != NULL);
     CHECK(rotation->hasScratchRegister);
+
+    std::list<vcl::Token> transformed = vcl::applyVuSoftwarePipelinePlans(program.tokenizer.tokens());
+    bool sawAliasRestoreMove = false;
+    bool sawInvalidVf00RestoreMove = false;
+    for (std::list<vcl::Token>::const_iterator i = transformed.begin(); i != transformed.end(); ++i)
+    {
+        if (vcl::normalizeVuMnemonic(i->name()) != "move")
+            continue;
+
+        vcl::VuTokenResourceAccess access;
+        REQUIRE(vcl::buildVuTokenResourceAccess(*i, access));
+        if (hasString(access.registerReads, rotation->scratchRegister + ".x")
+            && hasString(access.registerWrites, "temp_a.x"))
+            sawAliasRestoreMove = true;
+        if (hasString(access.registerReads, rotation->scratchRegister + ".x")
+            && hasString(access.registerWrites, "VF00.x"))
+            sawInvalidVf00RestoreMove = true;
+    }
+
+    CHECK(sawAliasRestoreMove);
+    CHECK(!sawInvalidVf00RestoreMove);
 }
 
 TEST_CASE("VuSchedulerAnalysis: generic software pipeline ignores non-prefetched Q consumer rotations")

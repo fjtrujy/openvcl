@@ -2358,6 +2358,113 @@ namespace
 
 	bool cyclicPrefixReadsSuffixClobbers( const VuLoopPipelineOpportunity& opportunity,
 	                                      const std::vector<const Token*>& indexedTokens );
+	Token tokenWithoutLabel( const Token& token );
+	void rewriteRotatedRegistersToScratch( Token& token,
+	                                       const std::vector<VuSoftwarePipelineRotation>& rotations );
+	Token makeRotationMoveToken( const Token& donor,
+	                             const VuSoftwarePipelineRotation& rotation );
+
+	Token adjustedMultiQCyclicPrefixToken( const Token& token,
+	                                       const std::vector<VuSoftwarePipelineRotation>& rotations )
+	{
+		Token copy = tokenWithoutLabel( token );
+		rewriteRotatedRegistersToScratch( copy, rotations );
+		return copy;
+	}
+
+	void collectFloatWriteRotationFields( const Token& token,
+	                                      std::vector<VuSoftwarePipelineRotation>& rotations )
+	{
+		for( std::list<Token::Argument>::const_iterator i = token.arguments().begin();
+		     i != token.arguments().end(); ++i )
+		{
+			if( i->type() != Token::Argument::FLOAT_REGISTER
+			    || !(i->flags() & Token::Argument::WRITE)
+			    || (i->flags() & Token::Argument::INDIRECT) )
+				continue;
+			std::string key;
+			if( !vuRegisterKey( *i, key ) )
+				continue;
+			const unsigned int fields = vuWriteFieldMask( token, *i );
+			if( fields & Token::X ) addRotationField( rotations, registerBaseKey( key ) + ".x", false );
+			if( fields & Token::Y ) addRotationField( rotations, registerBaseKey( key ) + ".y", false );
+			if( fields & Token::Z ) addRotationField( rotations, registerBaseKey( key ) + ".z", false );
+			if( fields & Token::W ) addRotationField( rotations, registerBaseKey( key ) + ".w", false );
+		}
+	}
+
+	bool prefixRotationsHaveNoReadBeforeWrite( const std::vector<unsigned int>& tokenIndices,
+	                                           const std::vector<const Token*>& indexedTokens,
+	                                           const std::vector<VuSoftwarePipelineRotation>& rotations )
+	{
+		std::list<std::string> producedBases;
+		for( std::vector<unsigned int>::const_iterator tokenIndex = tokenIndices.begin();
+		     tokenIndex != tokenIndices.end(); ++tokenIndex )
+		{
+			if( *tokenIndex >= indexedTokens.size() )
+				return false;
+
+			VuTokenResourceAccess access;
+			if( !buildVuTokenResourceAccess( *indexedTokens[*tokenIndex], access ) )
+				return false;
+
+			for( std::list<std::string>::const_iterator read = access.registerReads.begin();
+			     read != access.registerReads.end(); ++read )
+			{
+				const std::string base = registerBaseKey( *read );
+				if( findRotationForBase( rotations, base )
+				    && !containsKey( producedBases, base ) )
+					return false;
+			}
+
+			for( std::list<std::string>::const_iterator write = access.registerWrites.begin();
+			     write != access.registerWrites.end(); ++write )
+			{
+				const std::string base = registerBaseKey( *write );
+				if( findRotationForBase( rotations, base ) )
+					addUniqueString( producedBases, base );
+			}
+		}
+
+		return true;
+	}
+
+	bool assignMultiQCyclicPrefixRotations( const VuLoopCandidate& loop,
+	                                        const std::vector<const Token*>& indexedTokens,
+	                                        VuLoopPipelineOpportunity& opportunity )
+	{
+		opportunity.multiQCyclicPrefixRotations.clear();
+		for( std::vector<unsigned int>::const_iterator i = opportunity.multiQCyclicPrefixTokenIndices.begin();
+		     i != opportunity.multiQCyclicPrefixTokenIndices.end(); ++i )
+		{
+			if( *i < indexedTokens.size() )
+				collectFloatWriteRotationFields( *indexedTokens[*i],
+				                                  opportunity.multiQCyclicPrefixRotations );
+		}
+
+		if( opportunity.multiQCyclicPrefixRotations.empty() )
+			return false;
+		if( !prefixRotationsHaveNoReadBeforeWrite( opportunity.multiQCyclicPrefixTokenIndices,
+		                                           indexedTokens,
+		                                           opportunity.multiQCyclicPrefixRotations ) )
+		{
+			opportunity.multiQCyclicPrefixRotations.clear();
+			return false;
+		}
+
+		assignRotationScratchRegisters( loop, opportunity.multiQCyclicPrefixRotations );
+		for( std::vector<VuSoftwarePipelineRotation>::const_iterator i =
+		         opportunity.multiQCyclicPrefixRotations.begin();
+		     i != opportunity.multiQCyclicPrefixRotations.end(); ++i )
+		{
+			if( !i->hasScratchRegister )
+			{
+				opportunity.multiQCyclicPrefixRotations.clear();
+				return false;
+			}
+		}
+		return true;
+	}
 
 	void assignMultiQPipelineCandidate( const VuLoopCandidate& loop,
 	                                    unsigned int prefixEndOffset,
@@ -2368,6 +2475,7 @@ namespace
 		opportunity.multiQPrologTokenIndices.clear();
 		opportunity.multiQMainTokenIndices.clear();
 		opportunity.multiQCyclicPrefixTokenIndices.clear();
+		opportunity.multiQCyclicPrefixRotations.clear();
 		appendPipelineInstructionIndices( loop,
 		                                  0,
 		                                  prefixEndOffset,
@@ -2421,8 +2529,30 @@ namespace
 		     i != candidate.multiQCyclicPrefixTokenIndices.end(); ++i )
 		{
 			if( *i < indexedTokens.size() )
-				appendUnlabeledTokenForScheduleCost( tokens, *indexedTokens[*i] );
+				tokens.push_back( adjustedMultiQCyclicPrefixToken( *indexedTokens[*i],
+				                                                   candidate.multiQCyclicPrefixRotations ) );
 		}
+	}
+
+	void appendMultiQRotationMovesForScheduleCost( std::list<Token>& tokens,
+	                                               const VuLoopPipelineOpportunity& candidate,
+	                                               const std::vector<const Token*>& indexedTokens )
+	{
+		if( candidate.multiQCyclicPrefixRotations.empty() )
+			return;
+		const Token* donor = NULL;
+		if( !candidate.multiQMainTokenIndices.empty()
+		    && candidate.multiQMainTokenIndices.front() < indexedTokens.size() )
+			donor = indexedTokens[candidate.multiQMainTokenIndices.front()];
+		else if( !candidate.multiQCyclicPrefixTokenIndices.empty()
+		         && candidate.multiQCyclicPrefixTokenIndices.front() < indexedTokens.size() )
+			donor = indexedTokens[candidate.multiQCyclicPrefixTokenIndices.front()];
+		if( !donor )
+			return;
+		for( std::vector<VuSoftwarePipelineRotation>::const_iterator i =
+		         candidate.multiQCyclicPrefixRotations.begin();
+		     i != candidate.multiQCyclicPrefixRotations.end(); ++i )
+			tokens.push_back( makeRotationMoveToken( *donor, *i ) );
 	}
 
 	bool multiQPipelinePrefixCanMoveBeforeTail( const VuLoopPipelineOpportunity& candidate,
@@ -2441,7 +2571,10 @@ namespace
 			{
 				if( *prefix >= indexedTokens.size() )
 					return false;
-				if( !vuTokenCanMoveBefore( *indexedTokens[*prefix], *indexedTokens[*crossed] ) )
+				const Token adjustedPrefix =
+				    adjustedMultiQCyclicPrefixToken( *indexedTokens[*prefix],
+				                                     candidate.multiQCyclicPrefixRotations );
+				if( !vuTokenCanMoveBefore( adjustedPrefix, *indexedTokens[*crossed] ) )
 					return false;
 			}
 		}
@@ -2463,6 +2596,7 @@ namespace
 	                                                const std::vector<const Token*>& indexedTokens )
 	{
 		std::list<Token> mainTokens;
+		appendMultiQRotationMovesForScheduleCost( mainTokens, candidate, indexedTokens );
 		bool emittedPrefix = false;
 		for( std::vector<unsigned int>::const_iterator i = candidate.multiQMainTokenIndices.begin();
 		     i != candidate.multiQMainTokenIndices.end(); ++i )
@@ -2497,25 +2631,35 @@ namespace
 		                               mainBeginOffset,
 		                               branchOffset,
 		                               candidate );
-		if( !multiQPipelineCandidateStructurallySafe( candidate, indexedTokens ) )
-			return false;
+		std::vector<VuLoopPipelineOpportunity> candidates;
+		candidates.push_back( candidate );
+		VuLoopPipelineOpportunity rotatedCandidate = candidate;
+		if( assignMultiQCyclicPrefixRotations( loop, indexedTokens, rotatedCandidate ) )
+			candidates.push_back( rotatedCandidate );
+
 		bool found = false;
-		for( std::vector<unsigned int>::const_iterator i = candidate.multiQMainTokenIndices.begin();
-		     i != candidate.multiQMainTokenIndices.end(); ++i )
+		for( std::vector<VuLoopPipelineOpportunity>::const_iterator candidateIt = candidates.begin();
+		     candidateIt != candidates.end(); ++candidateIt )
 		{
-			if( *i <= candidate.lastQConsumerTokenIndex || *i > candidate.branchTokenIndex )
+			if( !multiQPipelineCandidateStructurallySafe( *candidateIt, indexedTokens ) )
 				continue;
-			VuLoopPipelineOpportunity insertedCandidate = candidate;
-			setMultiQPipelineCandidateInsertionPoint( insertedCandidate, indexedTokens, *i );
-			if( insertedCandidate.multiQCyclicPrefixInsertBeforeTokenIndex != *i )
-				continue;
-			const unsigned int cycles = multiQPipelineCandidateMainCycles( insertedCandidate, indexedTokens );
-			if( cycles < bestMainCycles )
+			for( std::vector<unsigned int>::const_iterator i = candidateIt->multiQMainTokenIndices.begin();
+			     i != candidateIt->multiQMainTokenIndices.end(); ++i )
 			{
-				bestMainCycles = cycles;
-				bestOpportunity = insertedCandidate;
+				if( *i <= candidateIt->lastQConsumerTokenIndex || *i > candidateIt->branchTokenIndex )
+					continue;
+				VuLoopPipelineOpportunity insertedCandidate = *candidateIt;
+				setMultiQPipelineCandidateInsertionPoint( insertedCandidate, indexedTokens, *i );
+				if( insertedCandidate.multiQCyclicPrefixInsertBeforeTokenIndex != *i )
+					continue;
+				const unsigned int cycles = multiQPipelineCandidateMainCycles( insertedCandidate, indexedTokens );
+				if( cycles < bestMainCycles )
+				{
+					bestMainCycles = cycles;
+					bestOpportunity = insertedCandidate;
+				}
+				found = true;
 			}
-			found = true;
 		}
 		return found;
 	}
@@ -2800,6 +2944,24 @@ namespace
 		return static_cast<unsigned int>( std::atoi( reg.substr( 2 ).c_str() ) );
 	}
 
+	bool physicalVfRegisterName( const std::string& reg )
+	{
+		return reg.size() >= 3
+		    && reg[0] == 'V'
+		    && reg[1] == 'F'
+		    && reg[2] >= '0'
+		    && reg[2] <= '9';
+	}
+
+	void setFloatRegisterArgumentBase( Token::Argument& argument,
+	                                   const std::string& base )
+	{
+		if( physicalVfRegisterName( base ) )
+			argument.setRegNumber( static_cast<int>( vfRegisterNumber( base ) ) );
+		else
+			argument.setAlias( base );
+	}
+
 	unsigned int fieldMaskForFieldList( const std::list<std::string>& fields )
 	{
 		unsigned int mask = 0;
@@ -2850,14 +3012,14 @@ namespace
 
 		Token::Argument dst( rotation.registerBase );
 		dst.setType( Token::Argument::FLOAT_REGISTER );
-		dst.setRegNumber( static_cast<int>( vfRegisterNumber( rotation.registerBase ) ) );
+		setFloatRegisterArgumentBase( dst, rotation.registerBase );
 		dst.setFlags( Token::Argument::WRITE | Token::Argument::DEST );
 		dst.setFields( rotationFieldMask( rotation ) );
 		token.arguments().push_back( dst );
 
 		Token::Argument src( rotation.scratchRegister );
 		src.setType( Token::Argument::FLOAT_REGISTER );
-		src.setRegNumber( static_cast<int>( vfRegisterNumber( rotation.scratchRegister ) ) );
+		setFloatRegisterArgumentBase( src, rotation.scratchRegister );
 		src.setFlags( 0 );
 		src.setFields( 0 );
 		token.arguments().push_back( src );
@@ -2879,14 +3041,14 @@ namespace
 
 		Token::Argument dst( store.valueScratchRegister );
 		dst.setType( Token::Argument::FLOAT_REGISTER );
-		dst.setRegNumber( static_cast<int>( vfRegisterNumber( store.valueScratchRegister ) ) );
+		setFloatRegisterArgumentBase( dst, store.valueScratchRegister );
 		dst.setFlags( Token::Argument::WRITE | Token::Argument::DEST );
 		dst.setFields( fieldMaskForFieldList( store.storedValueFields ) );
 		token.arguments().push_back( dst );
 
 		Token::Argument src( store.storedValueRegister );
 		src.setType( Token::Argument::FLOAT_REGISTER );
-		src.setRegNumber( static_cast<int>( vfRegisterNumber( store.storedValueRegister ) ) );
+		setFloatRegisterArgumentBase( src, store.storedValueRegister );
 		src.setFlags( 0 );
 		src.setFields( 0 );
 		token.arguments().push_back( src );
@@ -3870,6 +4032,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 				opportunity.multiQPrologTokenIndices = bestOpportunity.multiQPrologTokenIndices;
 				opportunity.multiQMainTokenIndices = bestOpportunity.multiQMainTokenIndices;
 				opportunity.multiQCyclicPrefixTokenIndices = bestOpportunity.multiQCyclicPrefixTokenIndices;
+				opportunity.multiQCyclicPrefixRotations = bestOpportunity.multiQCyclicPrefixRotations;
 				opportunity.multiQCyclicPrefixInsertBeforeTokenIndex =
 				    bestOpportunity.multiQCyclicPrefixInsertBeforeTokenIndex;
 			}
@@ -3923,6 +4086,7 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 			plan.prologTokenIndices = i->multiQPrologTokenIndices;
 			plan.mainTokenIndices = i->multiQMainTokenIndices;
 			plan.cyclicPrefixTokenIndices = i->multiQCyclicPrefixTokenIndices;
+			plan.cyclicPrefixRotations = i->multiQCyclicPrefixRotations;
 			plan.cyclicPrefixInsertBeforeTokenIndex =
 			    i->multiQCyclicPrefixInsertBeforeTokenIndex;
 			plans.push_back( plan );
@@ -4011,7 +4175,13 @@ std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens )
 		     p != rewrite.prologTokenIndices.end(); ++p )
 		{
 			if( *p < indexedTokens.size() )
-				output.push_back( tokenWithoutLabel( *indexedTokens[*p] ) );
+			{
+				if( rewrite.cyclicPrefixBeforeBranch )
+					output.push_back( adjustedMultiQCyclicPrefixToken( *indexedTokens[*p],
+					                                                   rewrite.cyclicPrefixRotations ) );
+				else
+					output.push_back( tokenWithoutLabel( *indexedTokens[*p] ) );
+			}
 		}
 
 		if( rewrite.drainsSuffixStores )
@@ -4029,6 +4199,8 @@ std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens )
 		Token mainLabel( *i );
 		mainLabel.setLabel( rewrite.mainLabel );
 		output.push_back( mainLabel );
+		if( rewrite.cyclicPrefixBeforeBranch )
+			appendRotationMoves( output, *i, rewrite.cyclicPrefixRotations );
 
 		if( rewrite.cyclicPrefixBeforeBranch )
 		{
@@ -4042,7 +4214,8 @@ std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens )
 					     p != rewrite.cyclicPrefixTokenIndices.end(); ++p )
 					{
 						if( *p < indexedTokens.size() )
-							output.push_back( tokenWithoutLabel( *indexedTokens[*p] ) );
+							output.push_back( adjustedMultiQCyclicPrefixToken( *indexedTokens[*p],
+							                                                   rewrite.cyclicPrefixRotations ) );
 					}
 					emittedCyclicPrefix = true;
 				}
@@ -4055,7 +4228,8 @@ std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens )
 				     p != rewrite.cyclicPrefixTokenIndices.end(); ++p )
 				{
 					if( *p < indexedTokens.size() )
-						output.push_back( tokenWithoutLabel( *indexedTokens[*p] ) );
+						output.push_back( adjustedMultiQCyclicPrefixToken( *indexedTokens[*p],
+						                                                   rewrite.cyclicPrefixRotations ) );
 				}
 			}
 			if( rewrite.branchTokenIndex < indexedTokens.size() )

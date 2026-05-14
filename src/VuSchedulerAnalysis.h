@@ -251,6 +251,7 @@ struct VuLoopPipelineOpportunity
 	std::vector<unsigned int> multiQPrologTokenIndices;
 	std::vector<unsigned int> multiQMainTokenIndices;
 	std::vector<unsigned int> multiQCyclicPrefixTokenIndices;
+	std::vector<VuSoftwarePipelineRotation> multiQCyclicPrefixRotations;
 	unsigned int multiQCyclicPrefixInsertBeforeTokenIndex;
 	std::list<std::string> softwarePipelineBlockers;
 	std::list<std::string> multiQSoftwarePipelineBlockers;
@@ -292,6 +293,7 @@ struct VuSoftwarePipelineRewritePlan
 	bool emitsDrain;
 	std::vector<unsigned int> prefetchTokenIndices;
 	std::vector<unsigned int> cyclicPrefixTokenIndices;
+	std::vector<VuSoftwarePipelineRotation> cyclicPrefixRotations;
 	std::vector<VuSoftwarePipelinePrefetch> prefetches;
 	std::vector<VuSoftwarePipelineRotation> rotations;
 	std::vector<VuSoftwarePipelineSuffixStore> suffixStores;

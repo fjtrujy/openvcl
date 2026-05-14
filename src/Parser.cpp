@@ -820,6 +820,8 @@ namespace
 			writeUnsignedVectorText( stream, i->multiQMainTokenIndices );
 			stream << " multi_q_cyclic_prefix_tokens=";
 			writeUnsignedVectorText( stream, i->multiQCyclicPrefixTokenIndices );
+			stream << " multi_q_cyclic_prefix_rotations=";
+			writeRotationListText( stream, i->multiQCyclicPrefixRotations );
 			stream << " multi_q_cyclic_prefix_insert_before="
 			       << i->multiQCyclicPrefixInsertBeforeTokenIndex;
 			stream << " multi_q_blockers=";
@@ -913,6 +915,7 @@ namespace
 			stream << "        \"prolog_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.multiQPrologTokenIndices ); stream << ",\n";
 			stream << "        \"main_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.multiQMainTokenIndices ); stream << ",\n";
 			stream << "        \"cyclic_prefix_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.multiQCyclicPrefixTokenIndices ); stream << ",\n";
+			stream << "        \"cyclic_prefix_rotations\": "; writeRotationListJson( stream, opportunity.multiQCyclicPrefixRotations ); stream << ",\n";
 			stream << "        \"cyclic_prefix_insert_before_token_index\": "
 			       << opportunity.multiQCyclicPrefixInsertBeforeTokenIndex << "\n";
 			stream << "      },\n";
@@ -939,6 +942,7 @@ namespace
 			       << (rewritePlan ? rewritePlan->qProducerBranchDelaySuffixBlockerTokenIndex : 0) << ",\n";
 			stream << "        \"prefetch_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->prefetchTokenIndices ); else stream << "[]"; stream << ",\n";
 			stream << "        \"cyclic_prefix_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->cyclicPrefixTokenIndices ); else stream << "[]"; stream << ",\n";
+			stream << "        \"cyclic_prefix_rotations\": "; if( rewritePlan ) writeRotationListJson( stream, rewritePlan->cyclicPrefixRotations ); else stream << "[]"; stream << ",\n";
 			stream << "        \"suffix_store_descriptors\": "; if( rewritePlan ) writeSuffixStoreListJson( stream, rewritePlan->suffixStores ); else stream << "[]"; stream << ",\n";
 			stream << "        \"prolog_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->prologTokenIndices ); else stream << "[]"; stream << ",\n";
 			stream << "        \"main_token_indices\": "; if( rewritePlan ) writeUnsignedVectorJson( stream, rewritePlan->mainTokenIndices ); else stream << "[]"; stream << ",\n";
