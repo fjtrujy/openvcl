@@ -12,6 +12,7 @@
 #include "RegisterAllocator.h"
 #include "BranchState.h"
 #include "Error.h"
+#include "VuTokenResourceAccess.h"
 
 #include <iostream>
 #include <iomanip>
@@ -264,6 +265,7 @@ bool RegisterAllocator::process( std::list<Token>& tokens )
 	collectLiteralRegisterUsage( tokens );
 	extendContinuationLiveRanges( tokens );
 	extendLoopDirectiveLiveRanges( tokens );
+	extendMultiQStageLiveRanges( tokens );
 
 	if( m_aliases.size() > 0 )
 	{
@@ -975,6 +977,284 @@ void RegisterAllocator::extendLoopDirectiveLiveRanges( std::list<Token>& tokens 
 			continue;
 
 		extendLoopDirectiveRange( tokens, target->lineNumber(), branch->lineNumber() );
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+	struct MultiQStage
+	{
+		MultiQStage()
+		{
+			producerLine = 0;
+		}
+
+		unsigned int producerLine;
+		std::vector<unsigned int> consumerLines;
+	};
+
+	bool tokenTouchesQ( const Token& token, bool& readsQ, bool& writesQ )
+	{
+		readsQ = false;
+		writesQ = false;
+		for( std::list<Token::Argument>::const_iterator a = token.arguments().begin();
+		     a != token.arguments().end(); ++a )
+		{
+			if( a->type() != Token::Argument::Q )
+				continue;
+			if( a->flags() & Token::Argument::WRITE )
+				writesQ = true;
+			else
+				readsQ = true;
+		}
+		return readsQ || writesQ;
+	}
+
+	void collectFloatAliasesFromToken( const Token& token, std::set<Alias*>& aliases )
+	{
+		for( std::list<Token::Argument>::const_iterator a = token.arguments().begin();
+		     a != token.arguments().end(); ++a )
+		{
+			if( a->type() != Token::Argument::FLOAT_REGISTER )
+				continue;
+			if( a->content() != Token::Argument::ALIAS || !a->dependency() || !a->dependency()->alias() )
+				continue;
+			Alias* alias = a->dependency()->alias();
+			if( alias->type() == Alias::FLOAT )
+				aliases.insert( alias );
+		}
+	}
+
+	bool stringListContains( const std::list<std::string>& values, const std::string& value )
+	{
+		for( std::list<std::string>::const_iterator i = values.begin(); i != values.end(); ++i )
+		{
+			if( *i == value )
+				return true;
+		}
+		return false;
+	}
+
+	bool stringListsIntersect( const std::list<std::string>& a, const std::list<std::string>& b )
+	{
+		for( std::list<std::string>::const_iterator i = a.begin(); i != a.end(); ++i )
+		{
+			if( stringListContains( b, *i ) )
+				return true;
+		}
+		return false;
+	}
+
+	void addUniqueStrings( std::list<std::string>& dest, const std::list<std::string>& src )
+	{
+		for( std::list<std::string>::const_iterator i = src.begin(); i != src.end(); ++i )
+		{
+			if( !stringListContains( dest, *i ) )
+				dest.push_back( *i );
+		}
+	}
+
+	void addAliasRange( const std::set<Alias*>& aliases, unsigned int beginLine, unsigned int endLine )
+	{
+		if( beginLine > endLine )
+			return;
+		for( std::set<Alias*>::const_iterator a = aliases.begin(); a != aliases.end(); ++a )
+			(*a)->addRange( beginLine, endLine );
+	}
+
+	void collectMultiQStages( std::list<Token>& tokens,
+	                          unsigned int loopStart,
+	                          unsigned int loopEnd,
+	                          std::vector<MultiQStage>& stages,
+	                          unsigned int& qReads,
+	                          unsigned int& qWrites )
+	{
+		qReads = 0;
+		qWrites = 0;
+		for( std::list<Token>::iterator t = tokens.begin(); t != tokens.end(); ++t )
+		{
+			if( t->lineNumber() < loopStart || t->lineNumber() > loopEnd )
+				continue;
+
+			bool readsQ = false;
+			bool writesQ = false;
+			if( !tokenTouchesQ( *t, readsQ, writesQ ) )
+				continue;
+
+			if( writesQ )
+			{
+				MultiQStage stage;
+				stage.producerLine = t->lineNumber();
+				stages.push_back( stage );
+				++qWrites;
+			}
+
+			if( readsQ )
+			{
+				++qReads;
+				if( !stages.empty() )
+					stages.back().consumerLines.push_back( t->lineNumber() );
+			}
+		}
+	}
+
+	void collectMultiQProducerDependencySliceAliases( std::list<Token>& tokens,
+	                                                  unsigned int beginLine,
+	                                                  unsigned int producerLine,
+	                                                  std::set<Alias*>& aliases )
+	{
+		std::vector<Token*> rangeTokens;
+		for( std::list<Token>::iterator t = tokens.begin(); t != tokens.end(); ++t )
+		{
+			if( t->lineNumber() < beginLine || t->lineNumber() > producerLine )
+				continue;
+			rangeTokens.push_back( &*t );
+		}
+		if( rangeTokens.empty() )
+			return;
+
+		VuTokenResourceAccess producerAccess;
+		if( !buildVuTokenResourceAccess( *rangeTokens.back(), producerAccess ) )
+			return;
+
+		std::list<std::string> neededRegisters = producerAccess.registerReads;
+		unsigned int neededResources = producerAccess.implicitReads;
+		collectFloatAliasesFromToken( *rangeTokens.back(), aliases );
+
+		for( unsigned int reverse = static_cast<unsigned int>( rangeTokens.size() ); reverse > 0; --reverse )
+		{
+			Token& token = *rangeTokens[reverse - 1];
+			VuTokenResourceAccess access;
+			if( !buildVuTokenResourceAccess( token, access ) )
+				continue;
+
+			const bool feedsNeededRegister = stringListsIntersect( access.registerWrites, neededRegisters );
+			const bool feedsNeededResource = (access.implicitWrites & neededResources) != 0;
+			if( !feedsNeededRegister && !feedsNeededResource )
+				continue;
+
+			collectFloatAliasesFromToken( token, aliases );
+			addUniqueStrings( neededRegisters, access.registerReads );
+			neededResources |= access.implicitReads;
+		}
+	}
+
+	void extendAdjacentMultiQStageAliases( std::list<Token>& tokens,
+	                                       const std::vector<MultiQStage>& stages,
+	                                       unsigned int loopEnd )
+	{
+		if( stages.size() < 2 )
+			return;
+
+		for( unsigned int stage = 1; stage < stages.size(); ++stage )
+		{
+			if( stages[stage - 1].consumerLines.empty() )
+				continue;
+
+			const unsigned int previousProducerLine = stages[stage - 1].producerLine;
+			const unsigned int previousLastConsumerLine = stages[stage - 1].consumerLines.back();
+			const unsigned int currentProducerLine = stages[stage].producerLine;
+			if( previousProducerLine == 0
+			    || currentProducerLine == 0
+			    || previousLastConsumerLine >= currentProducerLine )
+				continue;
+
+			std::set<Alias*> aliases;
+			collectMultiQProducerDependencySliceAliases( tokens,
+			                                             previousLastConsumerLine + 1,
+			                                             currentProducerLine,
+			                                             aliases );
+			addAliasRange( aliases, previousProducerLine, currentProducerLine );
+		}
+		(void)loopEnd;
+	}
+}
+
+void RegisterAllocator::extendMultiQStageRange( std::list<Token>& tokens, unsigned int loopStart, unsigned int loopEnd )
+{
+	std::set<Alias*> qStageAliases;
+	std::vector<MultiQStage> stages;
+	unsigned int qReads = 0;
+	unsigned int qWrites = 0;
+
+	collectMultiQStages( tokens, loopStart, loopEnd, stages, qReads, qWrites );
+	if( qWrites > 1 && qReads > 0 )
+		extendAdjacentMultiQStageAliases( tokens, stages, loopEnd );
+
+	for( std::list<Token>::iterator t = tokens.begin(); t != tokens.end(); ++t )
+	{
+		if( t->lineNumber() < loopStart || t->lineNumber() > loopEnd )
+			continue;
+
+		bool readsQ = false;
+		bool writesQ = false;
+		if( !tokenTouchesQ( *t, readsQ, writesQ ) )
+			continue;
+
+		collectFloatAliasesFromToken( *t, qStageAliases );
+	}
+
+	if( qWrites <= 1 || qReads == 0 || qStageAliases.empty() )
+		return;
+
+	unsigned int availableFloats = 0;
+	for( unsigned int i = 0; i < 32; ++i )
+	{
+		if( m_floats[i].available() )
+			++availableFloats;
+	}
+
+	std::set<Alias*> overlappingAliases;
+	for( AliasMap::iterator i = m_aliases.begin(); i != m_aliases.end(); ++i )
+	{
+		Alias* alias = i->first;
+		if( alias->type() != Alias::FLOAT )
+			continue;
+		if( qStageAliases.find( alias ) != qStageAliases.end() || alias->hasRangeOverlapping( loopStart, loopEnd ) )
+			overlappingAliases.insert( alias );
+	}
+
+	if( overlappingAliases.size() > availableFloats )
+		return;
+
+	for( std::set<Alias*>::iterator a = qStageAliases.begin(); a != qStageAliases.end(); ++a )
+		(*a)->addRange( loopStart, loopEnd );
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void RegisterAllocator::extendMultiQStageLiveRanges( std::list<Token>& tokens )
+{
+	for( std::list<Token>::iterator branch = tokens.begin(); branch != tokens.end(); ++branch )
+	{
+		if( !branch->operand() || branch->operand()->unit() != Operand::BRU )
+			continue;
+
+		std::list<Token::Argument>::const_iterator branchDest = branch->arguments().end();
+		for( std::list<Token::Argument>::const_iterator a = branch->arguments().begin(); a != branch->arguments().end(); ++a )
+		{
+			if( a->flags() & Token::Argument::BRANCH )
+			{
+				branchDest = a;
+				break;
+			}
+		}
+		if( branchDest == branch->arguments().end() || branchDest->type() != Token::Argument::IMMEDIATE )
+			continue;
+
+		std::map< std::string, std::list<Token>::iterator >::iterator label = m_labels.find( branchDest->immediate() );
+		if( label == m_labels.end() )
+			continue;
+
+		std::list<Token>::iterator target = label->second;
+		if( target->lineNumber() >= branch->lineNumber() )
+			continue;
+		if( !loopTargetHasLoopDirective( target, tokens.end() ) )
+			continue;
+
+		extendMultiQStageRange( tokens, target->lineNumber(), branch->lineNumber() );
 	}
 }
 

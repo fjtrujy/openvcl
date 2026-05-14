@@ -794,6 +794,8 @@ namespace
 			       << " rewrite_drains_suffix_stores=" << (rewritePlan && rewritePlan->drainsSuffixStores ? "yes" : "no")
 			       << " rewrite_cyclic_prefix_before_branch="
 			       << (rewritePlan && rewritePlan->cyclicPrefixBeforeBranch ? "yes" : "no")
+			       << " rewrite_cyclic_prefix_guarded="
+			       << (rewritePlan && rewritePlan->cyclicPrefixNeedsGuard ? "yes" : "no")
 			       << " rewrite_cyclic_prefix_insert_before="
 			       << (rewritePlan ? rewritePlan->cyclicPrefixInsertBeforeTokenIndex : 0)
 			       << " rewrite_prefetch_tokens=";
@@ -824,6 +826,8 @@ namespace
 			writeRotationListText( stream, i->multiQCyclicPrefixRotations );
 			stream << " multi_q_cyclic_prefix_insert_before="
 			       << i->multiQCyclicPrefixInsertBeforeTokenIndex;
+			stream << " multi_q_cyclic_prefix_guarded="
+			       << (i->multiQCyclicPrefixNeedsGuard ? "yes" : "no");
 			stream << " multi_q_blockers=";
 			writeStringListText( stream, i->multiQSoftwarePipelineBlockers );
 			stream << " suffix_store_drain_blockers=";
@@ -917,7 +921,9 @@ namespace
 			stream << "        \"cyclic_prefix_token_indices\": "; writeUnsignedVectorJson( stream, opportunity.multiQCyclicPrefixTokenIndices ); stream << ",\n";
 			stream << "        \"cyclic_prefix_rotations\": "; writeRotationListJson( stream, opportunity.multiQCyclicPrefixRotations ); stream << ",\n";
 			stream << "        \"cyclic_prefix_insert_before_token_index\": "
-			       << opportunity.multiQCyclicPrefixInsertBeforeTokenIndex << "\n";
+			       << opportunity.multiQCyclicPrefixInsertBeforeTokenIndex << ",\n";
+			stream << "        \"cyclic_prefix_guarded\": "
+			       << (opportunity.multiQCyclicPrefixNeedsGuard ? "true" : "false") << "\n";
 			stream << "      },\n";
 			stream << "      \"rewrite_plan\": {\n";
 			stream << "        \"available\": " << (rewritePlan ? "true" : "false") << ",\n";
@@ -928,6 +934,8 @@ namespace
 			stream << "        \"drains_suffix_stores\": " << (rewritePlan && rewritePlan->drainsSuffixStores ? "true" : "false") << ",\n";
 			stream << "        \"cyclic_prefix_before_branch\": "
 			       << (rewritePlan && rewritePlan->cyclicPrefixBeforeBranch ? "true" : "false") << ",\n";
+			stream << "        \"cyclic_prefix_guarded\": "
+			       << (rewritePlan && rewritePlan->cyclicPrefixNeedsGuard ? "true" : "false") << ",\n";
 			stream << "        \"cyclic_prefix_insert_before_token_index\": "
 			       << (rewritePlan ? rewritePlan->cyclicPrefixInsertBeforeTokenIndex : 0) << ",\n";
 			stream << "        \"prefetch_insert_after_token_index\": "

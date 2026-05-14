@@ -131,6 +131,12 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: software-pipeline rewrites now support labels carried by `--LoopCS` directives, which lets ps2gl-style `label: --LoopCS ...` transform loops enter the generic prolog/main/drain path.
    - Done: multi-Q cyclic-prefix planning can now prime producer-only first-stage prefixes whenever the loop-carried insertion gap is sufficient, enabling the first generic modulo shape for quad transform loops without duplicating the first Q consumer.
    - Done: cyclic-prefix planning now has scratch-rotation metadata and emission support for cloned next-iteration value prefixes, and synthetic rotation moves preserve alias registers instead of collapsing them to `VF00`.
+   - Done: dependency graphs now model MAC/CLIP flag readers against the final live flag writer instead of serializing every overwritten flag writer, allowing the generic scheduler to hoist later transform slices across waiting Q consumers when the values are independently allocated.
+   - Done: register allocation now has a guarded multi-Q live-range extension for Q-stage aliases, giving small generic modulo-scheduling loops distinct value registers without applying a ps2gl-specific emitter.
+   - Done: cyclic-prefix clones can adjust induction-based memory offsets when the clone is inserted before the pointer update that normally advances to the next iteration.
+   - Done: generic no-Q counted loops can use the same cyclic-prefix scratch-rotation path, giving W-power/final-color style loops a non-pattern modulo-scheduling route.
+   - Done: no-Q cyclic-prefix planning now searches safe insertion points inside the main loop, letting rotated next-iteration loads/fma work fill value-chain latency instead of always sitting at the branch.
+   - Done: ACC dependency graphs now track the last live ACC writer before ACC readers, reducing false cross-chain serialization while preserving accumulator read/write order.
 
 8. **Retire Pattern Emitters Incrementally** - started
    - Replace each hand emitter only after generic scheduling/software pipelining matches correctness and reaches equal or better loop cost.

@@ -100,8 +100,10 @@ private:
 	void collectLiteralRegisterUsage( std::list<Token>& tokens );
 	void extendContinuationLiveRanges( std::list<Token>& tokens );
 	void extendLoopDirectiveLiveRanges( std::list<Token>& tokens );
+	void extendMultiQStageLiveRanges( std::list<Token>& tokens );
 	bool loopTargetHasLoopDirective( std::list<Token>::iterator target, std::list<Token>::iterator end ) const;
 	void extendLoopDirectiveRange( std::list<Token>& tokens, unsigned int loopStart, unsigned int loopEnd );
+	void extendMultiQStageRange( std::list<Token>& tokens, unsigned int loopStart, unsigned int loopEnd );
 
 	bool updateDynamicTracker( const Token* src );
 

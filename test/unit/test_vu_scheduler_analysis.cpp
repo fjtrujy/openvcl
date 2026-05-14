@@ -4,6 +4,7 @@
 #include "../../src/File.h"
 #include "../../src/Line.h"
 #include "../../src/Operand.h"
+#include "../../src/RegisterAllocator.h"
 #include "../../src/Token.h"
 #include "../../src/Tokenizer.h"
 #include "../../src/VuInstructionInfo.h"
@@ -124,6 +125,26 @@ namespace
         {
             if (i->tokenIndex == tokenIndex)
                 return &*i;
+        }
+        return NULL;
+    }
+
+    const vcl::Register* allocatedFloatRegisterForAlias(const std::list<vcl::Token>& tokens,
+                                                        const std::string& alias)
+    {
+        for (std::list<vcl::Token>::const_iterator token = tokens.begin(); token != tokens.end(); ++token)
+        {
+            for (std::list<vcl::Token::Argument>::const_iterator arg = token->arguments().begin();
+                 arg != token->arguments().end(); ++arg)
+            {
+                if (arg->type() != vcl::Token::Argument::FLOAT_REGISTER
+                    || arg->content() != vcl::Token::Argument::ALIAS
+                    || arg->alias() != alias
+                    || !arg->dependency()
+                    || !arg->dependency()->alias())
+                    continue;
+                return arg->dependency()->alias()->allocatedRegister();
+            }
         }
         return NULL;
     }
@@ -1666,6 +1687,208 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline can rotate producer-si
     CHECK(sawProducerPrefixBeforeBranch);
 }
 
+TEST_CASE("VuSchedulerAnalysis: multi-Q cyclic prefixes can guard plain store side effects")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 1"));
+    REQUIRE(program.parse("add.xyz vf02, vf00, vf00"));
+    REQUIRE(program.parse("sq.xyz vf02, 0(vi03)"));
+    REQUIRE(program.parse("div q, vf00[w], vf00[w]"));
+    REQUIRE(program.parse("mulq.xyz vf03, vf00, q"));
+    REQUIRE(program.parse("add.xyz vf20, vf00, vf00"));
+    REQUIRE(program.parse("add.xyz vf21, vf00, vf00"));
+    REQUIRE(program.parse("div q, vf00[w], vf00[w]"));
+    REQUIRE(program.parse("mulq.xyz vf06, vf00, q"));
+    REQUIRE(program.parse("add.xyz vf22, vf00, vf00"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
+    REQUIRE(program.parse("iaddiu vi03, vi03, 1"));
+    REQUIRE(program.parse("ibne vi01, vi02, loop_lid"));
+
+    std::vector<vcl::VuLoopPipelineOpportunity> opportunities =
+        vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
+    REQUIRE(opportunities.size() == 1u);
+    CHECK(opportunities[0].hasMultiQSoftwarePipelinePlan);
+    CHECK(opportunities[0].canEmitMultiQSoftwarePipeline);
+    CHECK(opportunities[0].multiQCyclicPrefixNeedsGuard);
+    CHECK(opportunities[0].multiQSoftwarePipelineBlockers.empty());
+
+    std::vector<vcl::VuSoftwarePipelineRewritePlan> plans =
+        vcl::buildVuSoftwarePipelineRewritePlans(program.tokenizer.tokens());
+    REQUIRE(plans.size() == 1u);
+    CHECK(plans[0].cyclicPrefixBeforeBranch);
+    CHECK(plans[0].cyclicPrefixNeedsGuard);
+    CHECK(plans[0].emitsDrain);
+
+    std::list<vcl::Token> transformed =
+        vcl::applyVuSoftwarePipelinePlans(program.tokenizer.tokens());
+
+    bool inMain = false;
+    bool inDrain = false;
+    bool sawGuardBranch = false;
+    bool sawGuardedStore = false;
+    bool sawLoopBranchAfterGuardedStore = false;
+    bool sawDivAfterDrain = false;
+    unsigned int storeCount = 0;
+    for (std::list<vcl::Token>::const_iterator i = transformed.begin(); i != transformed.end(); ++i)
+    {
+        if (i->label() == "loop_lid")
+            inMain = true;
+        if (i->label() == "loop_lid__DRAIN")
+        {
+            inMain = false;
+            inDrain = true;
+        }
+
+        const std::string mnemonic = vcl::normalizeVuMnemonic(i->name());
+        if (inMain && mnemonic == "ibeq" && tokenBranchesTo(*i, "loop_lid__DRAIN"))
+            sawGuardBranch = true;
+        if (inMain && sawGuardBranch && mnemonic == "sq")
+        {
+            ++storeCount;
+            sawGuardedStore = true;
+        }
+        if (inMain && sawGuardedStore && mnemonic == "ibne" && tokenBranchesTo(*i, "loop_lid"))
+            sawLoopBranchAfterGuardedStore = true;
+        if (inDrain && mnemonic == "div")
+            sawDivAfterDrain = true;
+    }
+
+    CHECK(sawGuardBranch);
+    CHECK(sawGuardedStore);
+    CHECK(sawLoopBranchAfterGuardedStore);
+    CHECK(!sawDivAfterDrain);
+    CHECK(storeCount == 1u);
+}
+
+TEST_CASE("VuSchedulerAnalysis: generic cyclic prefixes can rotate no-Q counted loops")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("--enter"));
+    REQUIRE(program.parse("--endenter"));
+    REQUIRE(program.parse("loi 1.0"));
+    REQUIRE(program.parse("move.xyz vf08, vf00"));
+    REQUIRE(program.parse("iaddiu vi04, vi00, 0"));
+    REQUIRE(program.parse("iaddiu vi02, vi00, 9"));
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 3"));
+    REQUIRE(program.parse("lq.xyz vf01, 1(vi04)"));
+    REQUIRE(program.parse("minii.xyz vf01, vf01, i"));
+    REQUIRE(program.parse("ftoi0.xyz vf02, vf01"));
+    REQUIRE(program.parse("mul.xyz vf03, vf02, vf02"));
+    REQUIRE(program.parse("mul.xyz vf05, vf03, vf03"));
+    REQUIRE(program.parse("mul.xyz vf06, vf05, vf05"));
+    REQUIRE(program.parse("add.xyz vf07, vf06, vf08"));
+    REQUIRE(program.parse("iaddiu vi04, vi04, 3"));
+    REQUIRE(program.parse("ibne vi04, vi02, loop_lid"));
+    REQUIRE(program.parse("--exit"));
+    REQUIRE(program.parse("--endexit"));
+
+    vcl::RegisterAllocator allocator;
+    allocator.setAvailableFloats(0xffffffffu);
+    allocator.setAvailableIntegers(0xffffu);
+    REQUIRE(allocator.process(program.tokenizer.tokens()));
+
+    std::vector<vcl::VuSoftwarePipelineRewritePlan> plans =
+        vcl::buildVuSoftwarePipelineRewritePlans(program.tokenizer.tokens());
+    REQUIRE(plans.size() == 1u);
+    CHECK(plans[0].cyclicPrefixBeforeBranch);
+    CHECK(plans[0].qProducerTokenIndex == vcl::VU_SCHEDULED_TOKEN_INDEX_NONE);
+    CHECK(!plans[0].prologTokenIndices.empty());
+    CHECK(!plans[0].mainTokenIndices.empty());
+    CHECK(!plans[0].cyclicPrefixTokenIndices.empty());
+    CHECK(!plans[0].cyclicPrefixRotations.empty());
+    CHECK(plans[0].cyclicPrefixInsertBeforeTokenIndex <= plans[0].branchTokenIndex);
+
+    std::list<vcl::Token> transformed =
+        vcl::applyVuSoftwarePipelinePlans(program.tokenizer.tokens());
+
+    bool sawProlog = false;
+    bool sawMain = false;
+    bool sawRotationMove = false;
+    bool sawClonedLoadAfterMain = false;
+    for (std::list<vcl::Token>::const_iterator i = transformed.begin(); i != transformed.end(); ++i)
+    {
+        if (i->label() == "loop_lid__PROLOG")
+            sawProlog = true;
+        if (i->label() == "loop_lid")
+            sawMain = true;
+        if (!sawMain)
+            continue;
+
+        if (vcl::normalizeVuMnemonic(i->name()) == "move")
+            sawRotationMove = true;
+
+        vcl::VuTokenResourceAccess access;
+        if (vcl::buildVuTokenResourceAccess(*i, access)
+            && access.memoryKind == vcl::VU_MEMORY_LOAD
+            && access.hasMemoryBase
+            && access.memoryBaseRegister == "VI04")
+            sawClonedLoadAfterMain = true;
+    }
+
+    CHECK(sawProlog);
+    CHECK(sawMain);
+    CHECK(sawRotationMove);
+    CHECK(sawClonedLoadAfterMain);
+}
+
+TEST_CASE("VuSchedulerAnalysis: no-Q cyclic prefixes can fill value-chain latency")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 1"));
+    REQUIRE(program.parse("lq.xyz vf01, 0(vi01)"));
+    REQUIRE(program.parse("add.xyz vf02, vf01, vf00"));
+    REQUIRE(program.parse("mul.w vf02, vf02, vf02"));
+    REQUIRE(program.parse("mul.w vf02, vf02, vf02"));
+    REQUIRE(program.parse("mul.w vf02, vf02, vf02"));
+    REQUIRE(program.parse("mul.w vf02, vf02, vf02"));
+    REQUIRE(program.parse("maddaw.xyz acc, vf03, vf02"));
+    REQUIRE(program.parse("madd.xyz vf04, vf05, vf06"));
+    REQUIRE(program.parse("sq.xyz vf04, 0(vi02)"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
+    REQUIRE(program.parse("iaddiu vi02, vi02, 1"));
+    REQUIRE(program.parse("ibne vi01, vi03, loop_lid"));
+
+    std::vector<vcl::VuSoftwarePipelineRewritePlan> plans =
+        vcl::buildVuSoftwarePipelineRewritePlans(program.tokenizer.tokens());
+    REQUIRE(plans.size() == 1u);
+    CHECK(plans[0].cyclicPrefixBeforeBranch);
+    CHECK(!plans[0].cyclicPrefixRotations.empty());
+    CHECK(plans[0].cyclicPrefixInsertBeforeTokenIndex < plans[0].branchTokenIndex);
+
+    std::list<vcl::Token> transformed =
+        vcl::applyVuSoftwarePipelinePlans(program.tokenizer.tokens());
+
+    bool inMain = false;
+    bool sawClonedLoadBeforeFirstMul = false;
+    bool sawFirstMainMul = false;
+    for (std::list<vcl::Token>::const_iterator i = transformed.begin(); i != transformed.end(); ++i)
+    {
+        if (i->label() == "loop_lid")
+            inMain = true;
+        if (!inMain)
+            continue;
+
+        const std::string mnemonic = vcl::normalizeVuMnemonic(i->name());
+        if (mnemonic == "mul")
+            sawFirstMainMul = true;
+        vcl::VuTokenResourceAccess access;
+        if (!sawFirstMainMul
+            && vcl::buildVuTokenResourceAccess(*i, access)
+            && access.memoryKind == vcl::VU_MEMORY_LOAD
+            && access.hasMemoryBase
+            && access.memoryBaseRegister == "VI01")
+            sawClonedLoadBeforeFirstMul = true;
+    }
+
+    CHECK(sawClonedLoadBeforeFirstMul);
+}
+
 TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline blocks cyclic prefixes that read clobbered suffix values")
 {
     vcl::Error::ResetErrorCount();
@@ -1695,13 +1918,13 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline blocks cyclic prefixes
     CHECK(plans.empty());
 }
 
-TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline blocks cyclic prefix stores")
+TEST_CASE("VuSchedulerAnalysis: multi-Q software pipeline blocks unguardable cyclic prefix stores")
 {
     vcl::Error::ResetErrorCount();
     ParsedProgram program;
     REQUIRE(program.parse("loop_lid:"));
     REQUIRE(program.parse("--LoopCS 1, 1"));
-    REQUIRE(program.parse("sq.xyz vf02, 0(vi03)"));
+    REQUIRE(program.parse("sqi.xyz vf02, (vi03++)"));
     REQUIRE(program.parse("div q, vf00[w], vf01[w]"));
     REQUIRE(program.parse("mulq.xyz vf02, vf03, q"));
     REQUIRE(program.parse("div q, vf00[w], vf04[w]"));
@@ -1772,6 +1995,25 @@ TEST_CASE("VuSchedulerAnalysis: dependency graph keeps ACC multiply-add chains o
     CHECK(hasEdge(edges, 1u, 2u, vcl::VU_DEPENDENCY_RESOURCE_RAW));
 }
 
+TEST_CASE("VuSchedulerAnalysis: dependency graph keeps only the live ACC writer before ACC reads")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("mulax acc, vf01, vf02"));
+    REQUIRE(program.parse("maddw vf03, vf04, vf05"));
+    REQUIRE(program.parse("mulax acc, vf06, vf07"));
+    REQUIRE(program.parse("maddw vf08, vf09, vf10"));
+
+    std::vector<vcl::VuBasicBlock> blocks = vcl::buildVuBasicBlocks(program.tokenizer.tokens());
+    REQUIRE(blocks.size() == 1u);
+
+    std::vector<vcl::VuDependencyEdge> edges = vcl::buildVuDependencyGraph(blocks[0]);
+    CHECK(hasEdge(edges, 0u, 1u, vcl::VU_DEPENDENCY_RESOURCE_RAW));
+    CHECK(hasEdge(edges, 2u, 3u, vcl::VU_DEPENDENCY_RESOURCE_RAW));
+    CHECK(!hasEdge(edges, 0u, 3u, vcl::VU_DEPENDENCY_RESOURCE_RAW));
+    CHECK(hasEdge(edges, 1u, 2u, vcl::VU_DEPENDENCY_RESOURCE_WAR));
+}
+
 TEST_CASE("VuSchedulerAnalysis: dependency graph can ignore dead MAC WAW edges")
 {
     vcl::Error::ResetErrorCount();
@@ -1787,6 +2029,98 @@ TEST_CASE("VuSchedulerAnalysis: dependency graph can ignore dead MAC WAW edges")
 
     std::vector<vcl::VuDependencyEdge> deadMacEdges = vcl::buildVuDependencyGraph(blocks[0], vcl::VU_RESOURCE_MAC);
     CHECK(!hasEdge(deadMacEdges, 0u, 1u, vcl::VU_DEPENDENCY_RESOURCE_WAW));
+}
+
+TEST_CASE("VuSchedulerAnalysis: dependency graph keeps only final live MAC writer before flag reads")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xy vf01, vf02, vf03"));
+    REQUIRE(program.parse("mul.xy vf04, vf05, vf06"));
+    REQUIRE(program.parse("sub.xy vf07, vf08, vf09"));
+    REQUIRE(program.parse("fmand vi01, vi02"));
+
+    std::vector<vcl::VuBasicBlock> blocks = vcl::buildVuBasicBlocks(program.tokenizer.tokens());
+    REQUIRE(blocks.size() == 1u);
+
+    std::vector<vcl::VuDependencyEdge> edges = vcl::buildVuDependencyGraph(blocks[0]);
+    CHECK(!hasEdge(edges, 0u, 1u, vcl::VU_DEPENDENCY_RESOURCE_WAW));
+    CHECK(hasEdge(edges, 0u, 2u, vcl::VU_DEPENDENCY_RESOURCE_WAW));
+    CHECK(hasEdge(edges, 1u, 2u, vcl::VU_DEPENDENCY_RESOURCE_WAW));
+    CHECK(!hasEdge(edges, 0u, 3u, vcl::VU_DEPENDENCY_RESOURCE_RAW));
+    CHECK(!hasEdge(edges, 1u, 3u, vcl::VU_DEPENDENCY_RESOURCE_RAW));
+    CHECK(hasEdge(edges, 2u, 3u, vcl::VU_DEPENDENCY_RESOURCE_RAW));
+}
+
+TEST_CASE("VuSchedulerAnalysis: ready scheduler can hoist overwritten MAC writers across waiting Q consumers")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("div q, vf00[w], vf01[w]"));
+    REQUIRE(program.parse("mulq.xyz vf02, vf01, q"));
+    REQUIRE(program.parse("mulax acc, vf03, vf04"));
+    REQUIRE(program.parse("madday acc, vf05, vf06"));
+    REQUIRE(program.parse("maddw vf07, vf08, vf09"));
+    REQUIRE(program.parse("opmula.xyz acc, vf10, vf11"));
+    REQUIRE(program.parse("opmsub.xyz vf12, vf11, vf10"));
+    REQUIRE(program.parse("fmand vi01, vi02"));
+
+    std::list<vcl::Token> scheduled =
+        vcl::scheduleVuTokensReadySetWithFlagLiveness(program.tokenizer.tokens());
+
+    unsigned int index = 0;
+    unsigned int mulqIndex = 100u;
+    unsigned int mulaIndex = 100u;
+    for (std::list<vcl::Token>::const_iterator i = scheduled.begin(); i != scheduled.end(); ++i, ++index)
+    {
+        const std::string mnemonic = vcl::normalizeVuMnemonic(i->name());
+        if (mnemonic == "mulq")
+            mulqIndex = index;
+        if (mnemonic == "mula")
+            mulaIndex = index;
+    }
+
+    REQUIRE(mulqIndex != 100u);
+    REQUIRE(mulaIndex != 100u);
+    CHECK(mulaIndex < mulqIndex);
+}
+
+TEST_CASE("RegisterAllocator: multi-Q loop keeps Q stage aliases distinct for scheduling")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("--enter"));
+    REQUIRE(program.parse("--endenter"));
+    REQUIRE(program.parse("iaddiu ptr, vi00, 0"));
+    REQUIRE(program.parse("iaddiu limit, vi00, 2"));
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 1"));
+    REQUIRE(program.parse("lq.xyz source0, 0(ptr)"));
+    REQUIRE(program.parse("lq.xyz tex0, 1(ptr)"));
+    REQUIRE(program.parse("mulax acc, vf00, source0"));
+    REQUIRE(program.parse("maddw stage0, vf00, vf00"));
+    REQUIRE(program.parse("div q, vf00[w], stage0[w]"));
+    REQUIRE(program.parse("mulq.xyz out0, tex0, q"));
+    REQUIRE(program.parse("lq.xyz source1, 2(ptr)"));
+    REQUIRE(program.parse("mulax acc, vf00, source1"));
+    REQUIRE(program.parse("maddw stage1, vf00, vf00"));
+    REQUIRE(program.parse("div q, vf00[w], stage1[w]"));
+    REQUIRE(program.parse("mulq.xyz out1, stage1, q"));
+    REQUIRE(program.parse("iaddiu ptr, ptr, 1"));
+    REQUIRE(program.parse("ibne ptr, limit, loop_lid"));
+    REQUIRE(program.parse("--exit"));
+    REQUIRE(program.parse("--endexit"));
+
+    vcl::RegisterAllocator allocator;
+    allocator.setAvailableFloats(0xffffffffu);
+    allocator.setAvailableIntegers(0xffffu);
+    REQUIRE(allocator.process(program.tokenizer.tokens()));
+
+    const vcl::Register* tex0 = allocatedFloatRegisterForAlias(program.tokenizer.tokens(), "tex0");
+    const vcl::Register* stage1 = allocatedFloatRegisterForAlias(program.tokenizer.tokens(), "stage1");
+    REQUIRE(tex0 != NULL);
+    REQUIRE(stage1 != NULL);
+    CHECK(tex0 != stage1);
 }
 
 TEST_CASE("VuSchedulerAnalysis: dependency graph keeps CLIP WAW unless CLIP is dead")
