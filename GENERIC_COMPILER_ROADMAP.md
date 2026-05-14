@@ -63,6 +63,7 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: loop-pipeline analysis now reports Q gap deficit and loop-carried Q gap cycles, giving the future modulo scheduler an explicit latency-hiding target.
    - Done: loop-pipeline analysis classifies Q latency strategy as `local`, `loop_carried`, or `insufficient`, making the future scheduler decision explicit in text/JSON dumps.
    - Done: generic software-pipeline emission now skips loops whose local Q producer/consumer gap already hides latency, preventing structurally valid but unnecessary rewrites.
+   - Done: tests cover all three Q scheduling strategy outcomes, including loops with insufficient local and loop-carried work.
 
 8. **Retire Pattern Emitters Incrementally** - started
    - Replace each hand emitter only after generic scheduling/software pipelining matches correctness and reaches equal or better loop cost.
