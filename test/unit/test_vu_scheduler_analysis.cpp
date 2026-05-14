@@ -1145,15 +1145,49 @@ TEST_CASE("VuSchedulerAnalysis: ready issue slots expose latency padding cycles"
     REQUIRE(slots.size() == 6u);
     CHECK(slots[0].firstToken != NULL);
     CHECK(!slots[0].padding);
+    CHECK(slots[0].paddingKind == vcl::VU_SCHEDULED_PADDING_NONE);
     for (unsigned int i = 1; i < 5; ++i)
     {
         CHECK(slots[i].firstToken == NULL);
         CHECK(slots[i].secondToken == NULL);
         CHECK(slots[i].padding);
+        CHECK(slots[i].paddingKind == vcl::VU_SCHEDULED_PADDING_NOP);
     }
     REQUIRE(slots[5].firstToken != NULL);
     CHECK(vcl::normalizeVuMnemonic(slots[5].firstToken->name()) == "add");
     CHECK(!slots[5].padding);
+    CHECK(slots[5].paddingKind == vcl::VU_SCHEDULED_PADDING_NONE);
+}
+
+TEST_CASE("VuSchedulerAnalysis: ready issue slots classify Q and P wait padding")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram qProgram;
+    REQUIRE(qProgram.parse("div q, vf01[w], vf02[w]"));
+    REQUIRE(qProgram.parse("mulq.xy vf03, vf04, q"));
+
+    std::vector<vcl::VuBasicBlock> qBlocks = vcl::buildVuBasicBlocks(qProgram.tokenizer.tokens());
+    REQUIRE(qBlocks.size() == 1u);
+    std::vector<vcl::VuScheduledIssueSlot> qSlots = vcl::scheduleVuBasicBlockReadyIssueSlots(qBlocks[0]);
+    REQUIRE(qSlots.size() == 3u);
+    CHECK(qSlots[1].padding);
+    CHECK(qSlots[1].paddingKind == vcl::VU_SCHEDULED_PADDING_WAITQ);
+    REQUIRE(qSlots[2].firstToken != NULL);
+    CHECK(vcl::normalizeVuMnemonic(qSlots[2].firstToken->name()) == "mulq");
+
+    vcl::Error::ResetErrorCount();
+    ParsedProgram pProgram;
+    REQUIRE(pProgram.parse("esin p, vf01[x]"));
+    REQUIRE(pProgram.parse("mfp.xy vf02, p"));
+
+    std::vector<vcl::VuBasicBlock> pBlocks = vcl::buildVuBasicBlocks(pProgram.tokenizer.tokens());
+    REQUIRE(pBlocks.size() == 1u);
+    std::vector<vcl::VuScheduledIssueSlot> pSlots = vcl::scheduleVuBasicBlockReadyIssueSlots(pBlocks[0]);
+    REQUIRE(pSlots.size() == 3u);
+    CHECK(pSlots[1].padding);
+    CHECK(pSlots[1].paddingKind == vcl::VU_SCHEDULED_PADDING_WAITP);
+    REQUIRE(pSlots[2].firstToken != NULL);
+    CHECK(vcl::normalizeVuMnemonic(pSlots[2].firstToken->name()) == "mfp");
 }
 
 TEST_CASE("VuSchedulerAnalysis: ready-set scheduler keeps dependencies and barriers ordered")
@@ -1297,7 +1331,10 @@ TEST_CASE("VuSchedulerAnalysis: issue slots expose generic dual-pipe pair choice
     CHECK(vcl::normalizeVuMnemonic(slots[0].lowerToken->name()) == "iaddiu");
 
     for (unsigned int i = 1; i < 5; ++i)
+    {
         CHECK(slots[i].padding);
+        CHECK(slots[i].paddingKind == vcl::VU_SCHEDULED_PADDING_NOP);
+    }
 
     REQUIRE(slots[5].firstToken != 0);
     CHECK(slots[5].secondToken == 0);

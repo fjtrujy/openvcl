@@ -89,6 +89,14 @@ struct VuDependencyEdge
 	VuDependencyKind kind;
 };
 
+enum VuScheduledPaddingKind
+{
+	VU_SCHEDULED_PADDING_NONE,
+	VU_SCHEDULED_PADDING_NOP,
+	VU_SCHEDULED_PADDING_WAITQ,
+	VU_SCHEDULED_PADDING_WAITP
+};
+
 struct VuScheduledIssueSlot
 {
 	VuScheduledIssueSlot();
@@ -98,6 +106,7 @@ struct VuScheduledIssueSlot
 	const Token* upperToken;
 	const Token* lowerToken;
 	bool padding;
+	VuScheduledPaddingKind paddingKind;
 };
 
 struct VuLoopCandidate

@@ -882,6 +882,18 @@ namespace
 			stream << "null";
 	}
 
+	const char* scheduledPaddingKindName( VuScheduledPaddingKind kind )
+	{
+		switch( kind )
+		{
+			case VU_SCHEDULED_PADDING_NOP: return "nop";
+			case VU_SCHEDULED_PADDING_WAITQ: return "waitq";
+			case VU_SCHEDULED_PADDING_WAITP: return "waitp";
+			case VU_SCHEDULED_PADDING_NONE:
+			default: return "none";
+		}
+	}
+
 	void writeScheduleInfoText( std::ostream& stream, const std::list<Token>& tokens )
 	{
 		const std::vector<VuBasicBlock> blocks = buildVuBasicBlocks( tokens );
@@ -909,6 +921,7 @@ namespace
 				stream << " lower=";
 				writeScheduleTokenText( stream, tokenIndices, slot.lowerToken );
 				stream << " padding=" << (slot.padding ? "yes" : "no");
+				stream << " padding_kind=" << scheduledPaddingKindName( slot.paddingKind );
 				stream << std::endl;
 			}
 		}
@@ -946,7 +959,8 @@ namespace
 				stream << "          \"second\": "; writeNullableTokenNameJson( stream, slot.secondToken ); stream << ",\n";
 				stream << "          \"upper\": "; writeNullableTokenNameJson( stream, slot.upperToken ); stream << ",\n";
 				stream << "          \"lower\": "; writeNullableTokenNameJson( stream, slot.lowerToken ); stream << ",\n";
-				stream << "          \"padding\": " << (slot.padding ? "true" : "false") << "\n";
+				stream << "          \"padding\": " << (slot.padding ? "true" : "false") << ",\n";
+				stream << "          \"padding_kind\": "; writeJsonString( stream, scheduledPaddingKindName( slot.paddingKind ) ); stream << "\n";
 				stream << "        }";
 			}
 			stream << "\n      ]\n";

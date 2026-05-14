@@ -192,6 +192,7 @@ namespace
 		slot.firstToken = first;
 		slot.secondToken = second;
 		slot.padding = first == NULL && second == NULL;
+		slot.paddingKind = slot.padding ? VU_SCHEDULED_PADDING_NOP : VU_SCHEDULED_PADDING_NONE;
 
 		if( first )
 		{
@@ -210,6 +211,35 @@ namespace
 		}
 
 		return slot;
+	}
+
+	VuScheduledIssueSlot makePaddingIssueSlot( VuScheduledPaddingKind paddingKind )
+	{
+		VuScheduledIssueSlot slot = makeIssueSlot( NULL, NULL );
+		slot.paddingKind = paddingKind;
+		return slot;
+	}
+
+	VuScheduledPaddingKind choosePaddingKind( const Token& token,
+	                                          const Token* partner,
+	                                          const VuLatencyTracker& latencyTracker,
+	                                          int currentCycle )
+	{
+		bool readsQ = vuTokenReadsQ( token );
+		bool readsP = vuTokenReadsP( token );
+		if( partner )
+		{
+			readsQ = readsQ || vuTokenReadsQ( *partner );
+			readsP = readsP || vuTokenReadsP( *partner );
+		}
+
+		const int qGap = readsQ ? (latencyTracker.qReadyCycle() - currentCycle) : 0;
+		const int pGap = readsP ? (latencyTracker.pReadyCycle() - currentCycle) : 0;
+		if( qGap > 1 && qGap >= pGap )
+			return VU_SCHEDULED_PADDING_WAITQ;
+		if( pGap > 1 )
+			return VU_SCHEDULED_PADDING_WAITP;
+		return VU_SCHEDULED_PADDING_NOP;
 	}
 
 	std::vector<VuScheduledIssueSlot> scheduleReadySegmentIssueSlots( const std::vector<const Token*>& segment,
@@ -244,10 +274,10 @@ namespace
 		VuLatencyTracker latencyTracker;
 		bool haveLastPipe = false;
 		bool lastWasLower = false;
+		unsigned int currentCycle = 0;
 
 		while( emittedCount < block.tokens.size() )
 		{
-			unsigned int currentCycle = static_cast<unsigned int>( slots.size() );
 			unsigned int best = static_cast<unsigned int>( block.tokens.size() );
 			int bestScore = 0;
 
@@ -293,9 +323,28 @@ namespace
 			                                                 static_cast<int>( currentCycle ) );
 			while( issueDelay > 0 )
 			{
-				slots.push_back( makeIssueSlot( NULL, NULL ) );
-				++currentCycle;
-				--issueDelay;
+				const VuScheduledPaddingKind paddingKind =
+					choosePaddingKind( *block.tokens[best], partnerToken, latencyTracker, currentCycle );
+				slots.push_back( makePaddingIssueSlot( paddingKind ) );
+				if( paddingKind == VU_SCHEDULED_PADDING_WAITQ )
+				{
+					const int readyCycle = latencyTracker.qReadyCycle();
+					currentCycle = static_cast<unsigned int>( readyCycle > static_cast<int>( currentCycle + 1 )
+					                                        ? readyCycle
+					                                        : static_cast<int>( currentCycle + 1 ) );
+				}
+				else if( paddingKind == VU_SCHEDULED_PADDING_WAITP )
+				{
+					const int readyCycle = latencyTracker.pReadyCycle();
+					currentCycle = static_cast<unsigned int>( readyCycle > static_cast<int>( currentCycle + 1 )
+					                                        ? readyCycle
+					                                        : static_cast<int>( currentCycle + 1 ) );
+				}
+				else
+					++currentCycle;
+				issueDelay = latencyTracker.readHazardDelay( *block.tokens[best],
+				                                             partnerToken,
+				                                             static_cast<int>( currentCycle ) );
 			}
 			slots.push_back( makeIssueSlot( block.tokens[best],
 			                                partnerToken ) );
@@ -313,6 +362,7 @@ namespace
 				haveLastPipe = true;
 				lastWasLower = isVuLowerPipe( *block.tokens[best] );
 			}
+			++currentCycle;
 		}
 
 		return slots;
@@ -1460,6 +1510,7 @@ VuScheduledIssueSlot::VuScheduledIssueSlot()
 	upperToken = NULL;
 	lowerToken = NULL;
 	padding = false;
+	paddingKind = VU_SCHEDULED_PADDING_NONE;
 }
 
 VuLoopCandidate::VuLoopCandidate()

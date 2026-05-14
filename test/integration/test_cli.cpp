@@ -198,9 +198,9 @@ TEST_CASE("CLI: schedule text dump exposes ready-set issue slots")
     CHECK(r.stderr_data.empty());
     CHECK(contains(r.stdout_data, "OpenVCL VU ready scheduler issue slots"));
     CHECK(contains(r.stdout_data, "block 0 first_token=0 terminator=none slots=6"));
-    CHECK(contains(r.stdout_data, "slot 0 first=0:add second=2:iaddiu upper=0:add lower=2:iaddiu padding=no"));
-    CHECK(contains(r.stdout_data, "slot 1 first=- second=- upper=- lower=- padding=yes"));
-    CHECK(contains(r.stdout_data, "slot 5 first=1:mul second=- upper=1:mul lower=- padding=no"));
+    CHECK(contains(r.stdout_data, "slot 0 first=0:add second=2:iaddiu upper=0:add lower=2:iaddiu padding=no padding_kind=none"));
+    CHECK(contains(r.stdout_data, "slot 1 first=- second=- upper=- lower=- padding=yes padding_kind=nop"));
+    CHECK(contains(r.stdout_data, "slot 5 first=1:mul second=- upper=1:mul lower=- padding=no padding_kind=none"));
 }
 
 TEST_CASE("CLI: schedule text dump honors generic software-pipeline rewrites")
@@ -235,6 +235,8 @@ TEST_CASE("CLI: schedule JSON dump is stable enough for generic emission tooling
     CHECK(contains(r.stdout_data, "\"upper\": \"add\""));
     CHECK(contains(r.stdout_data, "\"lower\": \"iaddiu\""));
     CHECK(contains(r.stdout_data, "\"padding\": false"));
+    CHECK(contains(r.stdout_data, "\"padding_kind\": \"none\""));
+    CHECK(contains(r.stdout_data, "\"padding_kind\": \"nop\""));
 }
 
 TEST_CASE("CLI: schedule JSON dump honors generic software-pipeline rewrites")

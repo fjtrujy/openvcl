@@ -10,6 +10,9 @@
 - Cost reports now include static cycles, estimated cycles, FDIV/EFU producer
   issue stalls, explicit `waitq`/`waitp` stalls, slot usage, paired cycles,
   NOP slots, per-label block costs, and weighted hot-block rankings.
+- Generic scheduler issue-slot dumps now classify latency padding as `nop`,
+  `waitq`, or `waitp`, so tooling can distinguish idle cycles from explicit
+  long-latency waits.
 - Added regression fixtures and unit/integration tests for cost analysis.
 - Added conservative VU scheduling improvements used by ps2gl:
   - upper/lower pairing lookahead;
