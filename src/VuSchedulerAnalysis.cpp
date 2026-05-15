@@ -2444,6 +2444,46 @@ namespace
 		                                       store.memoryBaseRegister );
 	}
 
+	bool loadedMultiQDrainLeavesPartialStoreStream(
+	    const std::vector<VuSoftwarePipelineSuffixStore>& stores )
+	{
+		std::list<std::string> delayedBases;
+		for( std::vector<VuSoftwarePipelineSuffixStore>::const_iterator store =
+		         stores.begin(); store != stores.end(); ++store )
+		{
+			if( store->delayedDrain && store->hasMemoryBase )
+				addUniqueString( delayedBases, store->memoryBaseRegister );
+		}
+		if( delayedBases.empty() )
+			return false;
+
+		for( std::vector<VuSoftwarePipelineSuffixStore>::const_iterator store =
+		         stores.begin(); store != stores.end(); ++store )
+		{
+			if( store->drainCandidate
+			    && store->hasMemoryBase
+			    && containsKey( delayedBases, store->memoryBaseRegister )
+			    && !store->delayedDrain )
+				return true;
+		}
+
+		return false;
+	}
+
+	void clearSuffixStoreDrainSelection( std::vector<VuSoftwarePipelineSuffixStore>& stores )
+	{
+		for( std::vector<VuSoftwarePipelineSuffixStore>::iterator store =
+		         stores.begin(); store != stores.end(); ++store )
+		{
+			store->requiresValueRotation = false;
+			store->hasValueScratchRegister = false;
+			store->valueScratchRegister = "";
+			store->delayedDrain = false;
+			store->rotateValueBeforePrefetch = false;
+			store->rotateValueAtStore = false;
+		}
+	}
+
 	void classifyMultiQCyclicPrefixSuffixStoreDrains( VuLoopPipelineOpportunity& opportunity,
 	                                                  const VuLoopCandidate& loop,
 	                                                  const std::vector<const Token*>& indexedTokens )
@@ -2476,8 +2516,6 @@ namespace
 			addSuffixStoreDrainBlocker( opportunity, "non_invertible_loop_branch" );
 		if( opportunity.qLiveOut )
 			addSuffixStoreDrainBlocker( opportunity, "q_live_out" );
-		if( opportunity.memoryLoadCount > 0 && opportunity.qProducerTokenIndices.size() > 1 )
-			addSuffixStoreDrainBlocker( opportunity, "loaded_multi_q_boundary_rotation" );
 		if( !opportunity.suffixStoreDrainBlockers.empty() )
 			return;
 
@@ -2489,6 +2527,7 @@ namespace
 		                               opportunity.softwarePipelineSuffixStores,
 		                               used );
 
+		bool readWriteMemoryStreamConflict = false;
 		for( std::vector<VuSoftwarePipelineSuffixStore>::iterator store =
 		         opportunity.softwarePipelineSuffixStores.begin();
 		     store != opportunity.softwarePipelineSuffixStores.end(); ++store )
@@ -2504,7 +2543,10 @@ namespace
 			if( suffixStoreHasReadWriteMemoryStreamConflict( *store,
 			                                                 opportunity,
 			                                                 indexedTokens ) )
+			{
+				readWriteMemoryStreamConflict = true;
 				continue;
+			}
 			if( indexedTokens[store->tokenIndex]->flags() & (Token::PREORDERED | Token::E | Token::D
 			                                                | Token::T | Token::BRANCH_DELAY_FILLER) )
 				continue;
@@ -2542,12 +2584,50 @@ namespace
 		}
 
 		bool hasDelayedStore = false;
+		unsigned int delayedStoreCount = 0;
 		for( std::vector<VuSoftwarePipelineSuffixStore>::const_iterator store =
 		         opportunity.softwarePipelineSuffixStores.begin();
 		     store != opportunity.softwarePipelineSuffixStores.end(); ++store )
 		{
 			if( store->delayedDrain )
+			{
 				hasDelayedStore = true;
+				++delayedStoreCount;
+			}
+		}
+		if( hasDelayedStore
+		    && delayedStoreCount > 1
+		    && opportunity.memoryLoadCount > 0
+		    && opportunity.qProducerTokenIndices.size() > 1 )
+		{
+			addSuffixStoreDrainBlocker( opportunity, "multi_store_loaded_suffix_stream" );
+			addMultiQPipelineBlocker( opportunity, "multi_store_loaded_suffix_stream" );
+			opportunity.eligibleMultiQSoftwarePipeline = false;
+			opportunity.canEmitMultiQSoftwarePipeline = false;
+			clearSuffixStoreDrainSelection( opportunity.softwarePipelineSuffixStores );
+			hasDelayedStore = false;
+		}
+		if( hasDelayedStore
+		    && opportunity.memoryLoadCount > 0
+		    && opportunity.qProducerTokenIndices.size() > 1
+		    && loadedMultiQDrainLeavesPartialStoreStream( opportunity.softwarePipelineSuffixStores ) )
+		{
+			addSuffixStoreDrainBlocker( opportunity, "partial_loaded_suffix_store_stream" );
+			addMultiQPipelineBlocker( opportunity, "partial_loaded_suffix_store_stream" );
+			opportunity.eligibleMultiQSoftwarePipeline = false;
+			opportunity.canEmitMultiQSoftwarePipeline = false;
+			clearSuffixStoreDrainSelection( opportunity.softwarePipelineSuffixStores );
+			hasDelayedStore = false;
+		}
+		if( !hasDelayedStore && readWriteMemoryStreamConflict )
+		{
+			addSuffixStoreDrainBlocker( opportunity, "read_write_memory_stream_conflict" );
+			if( opportunity.memoryLoadCount > 0 && opportunity.qProducerTokenIndices.size() > 1 )
+			{
+				addMultiQPipelineBlocker( opportunity, "read_write_memory_stream_conflict" );
+				opportunity.eligibleMultiQSoftwarePipeline = false;
+				opportunity.canEmitMultiQSoftwarePipeline = false;
+			}
 		}
 		if( hasDelayedStore && opportunity.suffixStoreDrainBlockers.empty() )
 			opportunity.canEmitSuffixStoreDrain = true;
@@ -5325,7 +5405,7 @@ std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens )
 				                            rewrite,
 				                            true,
 				                            true,
-				                            false );
+				                            true );
 			}
 			else
 				appendTokenRangeWithInsertedPrefetchAndQProducer(

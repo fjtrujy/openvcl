@@ -143,7 +143,9 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: generic multi-Q cyclic-prefix loops can now emit delayed suffix-store drains for no-load/write-only counted loops; ps2gl transform/light loops remain gated until read/write memory-stream value rotation is modeled safely.
    - Done: delayed suffix-store offset calculation now uses the aggregate per-iteration induction step, so loops with multiple pointer increments model their drain addresses correctly.
    - Done: suffix-store value dependency keys now preserve vector fields for float aliases, so future delayed stores can reason about alias-backed `sq` values the same way as physical `VFxx` registers.
-   - Done: loaded multi-Q suffix-store drains now stay blocked with an explicit `loaded_multi_q_boundary_rotation` reason until the prolog/main/drain Q boundary can be emitted safely; this keeps ps2gl transform loops visually correct while exposing the next required scheduler model.
+   - Done: loaded multi-Q suffix-store drains now keep same-base read/write memory streams blocked with an explicit `read_write_memory_stream_conflict` reason.
+   - Done: loaded multi-Q single-store suffix drains can emit when read/write memory streams are separated; the peeled prolog primes the same cyclic-prefix branch-delay Q producer as the main loop and the suffix-store value rotates through scratch before later loads/clobbers.
+   - Done: loaded multi-Q multi-store suffix streams are blocked with `multi_store_loaded_suffix_stream` until the generic drain model can rotate every stored value across the prolog/main/drain boundary; this keeps ps2gl transform loops visually correct.
 
 8. **Retire Pattern Emitters Incrementally** - started
    - Replace each hand emitter only after generic scheduling/software pipelining matches correctness and reaches equal or better loop cost.

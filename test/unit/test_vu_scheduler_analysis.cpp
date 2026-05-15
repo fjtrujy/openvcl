@@ -1774,7 +1774,7 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q cyclic prefixes can guard plain store si
     CHECK(storeCount == 1u);
 }
 
-TEST_CASE("VuSchedulerAnalysis: loaded multi-Q suffix drains wait for boundary value rotation")
+TEST_CASE("VuSchedulerAnalysis: loaded multi-Q suffix drains rotate values across the prolog boundary")
 {
     vcl::Error::ResetErrorCount();
     ParsedProgram program;
@@ -1796,6 +1796,13 @@ TEST_CASE("VuSchedulerAnalysis: loaded multi-Q suffix drains wait for boundary v
     REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
     REQUIRE(program.parse("ibne vi01, vi02, loop_lid"));
 
+    for (std::list<vcl::Token>::iterator i = program.tokenizer.tokens().begin();
+         i != program.tokenizer.tokens().end(); ++i)
+    {
+        if (i->operand() && !i->operand()->isPreprocessor())
+            i->setFlags(i->flags() | vcl::Token::PROCESSED);
+    }
+
     std::vector<vcl::VuLoopPipelineOpportunity> opportunities =
         vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
     REQUIRE(opportunities.size() == 1u);
@@ -1803,19 +1810,66 @@ TEST_CASE("VuSchedulerAnalysis: loaded multi-Q suffix drains wait for boundary v
     CHECK(opportunities[0].hasMultiQSoftwarePipelinePlan);
     CHECK(opportunities[0].canEmitMultiQSoftwarePipeline);
     CHECK(opportunities[0].hasSuffixStoreDrainPlan);
-    CHECK(!opportunities[0].canEmitSuffixStoreDrain);
-    CHECK(hasString(opportunities[0].suffixStoreDrainBlockers,
-                    "loaded_multi_q_boundary_rotation"));
+    CHECK(opportunities[0].canEmitSuffixStoreDrain);
+    CHECK(!hasString(opportunities[0].suffixStoreDrainBlockers,
+                     "loaded_multi_q_boundary_rotation"));
+    REQUIRE(opportunities[0].softwarePipelineSuffixStores.size() == 1u);
+    CHECK(opportunities[0].softwarePipelineSuffixStores[0].delayedDrain);
+    CHECK(opportunities[0].softwarePipelineSuffixStores[0].requiresValueRotation);
+    CHECK(opportunities[0].softwarePipelineSuffixStores[0].hasValueScratchRegister);
 
     std::vector<vcl::VuSoftwarePipelineRewritePlan> plans =
         vcl::buildVuSoftwarePipelineRewritePlans(program.tokenizer.tokens());
     REQUIRE(plans.size() == 1u);
-    CHECK(!plans[0].drainsSuffixStores);
+    CHECK(plans[0].drainsSuffixStores);
 
-    for (std::vector<vcl::VuSoftwarePipelineSuffixStore>::const_iterator i =
-             opportunities[0].softwarePipelineSuffixStores.begin();
-         i != opportunities[0].softwarePipelineSuffixStores.end(); ++i)
-        CHECK(!i->delayedDrain);
+    std::list<vcl::Token> transformed =
+        vcl::applyVuSoftwarePipelinePlans(program.tokenizer.tokens());
+
+    bool sawProlog = false;
+    bool sawMain = false;
+    bool sawDrain = false;
+    bool sawInvertedBranch = false;
+    bool sawBoundaryQProducer = false;
+    bool sawMainDelayedStore = false;
+    bool sawDrainDelayedStore = false;
+    for (std::list<vcl::Token>::const_iterator i = transformed.begin(); i != transformed.end(); ++i)
+    {
+        if (i->label() == "loop_lid__PROLOG")
+            sawProlog = true;
+        if (i->label() == "loop_lid")
+            sawMain = true;
+        if (i->label() == "loop_lid__DRAIN")
+        {
+            sawMain = false;
+            sawDrain = true;
+        }
+
+        const std::string mnemonic = vcl::normalizeVuMnemonic(i->name());
+        if (mnemonic == "ibeq" && tokenBranchesTo(*i, "loop_lid__DRAIN"))
+        {
+            sawInvertedBranch = true;
+            std::list<vcl::Token>::const_iterator next = i;
+            ++next;
+            REQUIRE(next != transformed.end());
+            if ((next->flags() & vcl::Token::BRANCH_DELAY_FILLER) != 0)
+            {
+                CHECK(vcl::normalizeVuMnemonic(next->name()) == "div");
+                sawBoundaryQProducer = true;
+            }
+        }
+        if (sawMain && mnemonic == "sq")
+            sawMainDelayedStore = true;
+        if (sawDrain && mnemonic == "sq")
+            sawDrainDelayedStore = true;
+    }
+
+    CHECK(sawProlog);
+    CHECK(sawInvertedBranch);
+    CHECK(sawBoundaryQProducer);
+    CHECK(sawMainDelayedStore);
+    CHECK(sawDrain);
+    CHECK(sawDrainDelayedStore);
 }
 
 TEST_CASE("VuSchedulerAnalysis: multi-Q suffix drains keep same-base load and store streams ordered")
@@ -1842,10 +1896,62 @@ TEST_CASE("VuSchedulerAnalysis: multi-Q suffix drains keep same-base load and st
         vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
     REQUIRE(opportunities.size() == 1u);
     CHECK(opportunities[0].memoryLoadCount == 1u);
+    CHECK(!opportunities[0].canEmitMultiQSoftwarePipeline);
+    CHECK(hasString(opportunities[0].multiQSoftwarePipelineBlockers,
+                    "read_write_memory_stream_conflict"));
     CHECK(opportunities[0].hasSuffixStoreDrainPlan);
     CHECK(!opportunities[0].canEmitSuffixStoreDrain);
     CHECK(hasString(opportunities[0].suffixStoreDrainBlockers,
-                    "loaded_multi_q_boundary_rotation"));
+                    "read_write_memory_stream_conflict"));
+    CHECK(!hasString(opportunities[0].suffixStoreDrainBlockers,
+                     "loaded_multi_q_boundary_rotation"));
+
+    for (std::vector<vcl::VuSoftwarePipelineSuffixStore>::const_iterator i =
+             opportunities[0].softwarePipelineSuffixStores.begin();
+         i != opportunities[0].softwarePipelineSuffixStores.end(); ++i)
+        CHECK(!i->delayedDrain);
+}
+
+TEST_CASE("VuSchedulerAnalysis: loaded multi-Q multi-store drains wait for value rotation")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 1"));
+    REQUIRE(program.parse("div q, vf00[w], vf00[w]"));
+    REQUIRE(program.parse("mulq.xyz vf02, vf00, q"));
+    REQUIRE(program.parse("add.xyz vf10, vf00, vf00"));
+    REQUIRE(program.parse("add.xyz vf11, vf00, vf00"));
+    REQUIRE(program.parse("div q, vf00[w], vf00[w]"));
+    REQUIRE(program.parse("add.xyz vf12, vf00, vf00"));
+    REQUIRE(program.parse("add.xyz vf13, vf00, vf00"));
+    REQUIRE(program.parse("mulq.xyz vf05, vf00, q"));
+    REQUIRE(program.parse("sq.xyz vf05, 0(vi03)"));
+    REQUIRE(program.parse("sq.xyz vf02, 1(vi03)"));
+    REQUIRE(program.parse("lq.xyz vf24, 0(vi04)"));
+    REQUIRE(program.parse("add.xyz vf05, vf24, vf00"));
+    REQUIRE(program.parse("iaddiu vi04, vi04, 1"));
+    REQUIRE(program.parse("iaddiu vi03, vi03, 2"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 1"));
+    REQUIRE(program.parse("ibne vi01, vi02, loop_lid"));
+
+    for (std::list<vcl::Token>::iterator i = program.tokenizer.tokens().begin();
+         i != program.tokenizer.tokens().end(); ++i)
+    {
+        if (i->operand() && !i->operand()->isPreprocessor())
+            i->setFlags(i->flags() | vcl::Token::PROCESSED);
+    }
+
+    std::vector<vcl::VuLoopPipelineOpportunity> opportunities =
+        vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
+    REQUIRE(opportunities.size() == 1u);
+    CHECK(opportunities[0].hasSuffixStoreDrainPlan);
+    CHECK(!opportunities[0].canEmitSuffixStoreDrain);
+    CHECK(!opportunities[0].canEmitMultiQSoftwarePipeline);
+    CHECK(hasString(opportunities[0].suffixStoreDrainBlockers,
+                    "multi_store_loaded_suffix_stream"));
+    CHECK(hasString(opportunities[0].multiQSoftwarePipelineBlockers,
+                    "multi_store_loaded_suffix_stream"));
 
     for (std::vector<vcl::VuSoftwarePipelineSuffixStore>::const_iterator i =
              opportunities[0].softwarePipelineSuffixStores.begin();
