@@ -149,18 +149,41 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: loaded multi-Q single-store suffix drains can emit when read/write memory streams are separated; the peeled prolog primes the same cyclic-prefix branch-delay Q producer as the main loop and the suffix-store value rotates through scratch before later loads/clobbers.
    - Done: loaded multi-Q multi-store suffix streams are blocked with `multi_store_loaded_suffix_stream` until the generic drain model can rotate every stored value across the prolog/main/drain boundary; this keeps ps2gl transform loops visually correct.
 
-8. **Retire Pattern Emitters Incrementally** - started
+8. **Retire Pattern Emitters Incrementally** - effectively done at the dispatcher level (with caveat)
    - Replace each hand emitter only after generic scheduling/software pipelining matches correctness and reaches equal or better loop cost.
    - Delete the bespoke emitter and keep focused regression tests.
-   - Done: ps2gl-shaped emitters are no longer used by default, keeping generic emission as the normal compiler path while retaining opt-in reference emitters for comparison.
+   - Done: ps2gl-shaped emitters are no longer used by default (`m_knownLoopOptimizations = false`); the dispatcher in `tryEmitKnownLoopOptimization` short-circuits before any of the `tryEmit{FastNoLights,Fast,Scei,Ps2glPrimitiveXform,LinearXform,DirLightSpec,DirLightNoSpec,PtLightSpec,PtLightNoSpec,FinalColor}SoftwarePipelineLoop` emitters can run.
+   - Caveat: the bespoke emitters are still compiled into the source tree behind the opt-in flag. They cannot be deleted yet because the generic path does not reproduce their schedule quality on the loops they used to cover. See item 9 — the gap is large, not small.
 
-9. **Close the Hot-Loop Throughput Gap** - next
-   - Use loop-weighted estimated cost, not just total static cycles, as the gate for remaining performance work.
-   - Prioritize the hottest ps2gl loops first: `fast_nolights`, `fast`, `scei`, then the `general*` and `indexed` families where `xform_loop_lid` and `pt_light_vert_loop_lid` dominate the weighted reports.
-   - Reduce `nop_only_cycles` and raise paired cycles in the steady-state loop body by moving safe next-iteration work, especially Q producers, loads, and independent lower-pipe instructions, across the current iteration bubbles.
-   - Expand the generic software-pipeline rewrite so prolog/main/epilog construction is the default loop shape whenever the dependency descriptors prove it is safe.
-   - Keep the single-iteration scheduler as the fallback path for loops that still fail the safety or profitability checks.
-   - Add regression coverage for affine loop cost comparisons so each hot shader can be checked against its SCE/reference counterpart by `base + loop*n`.
+9. **Close the Hot-Loop Throughput Gap** - in progress (large gap, true generic baseline established)
+   - Honest baseline (see "Generic vs SCEI per-loop gap" section below): with the default-off pattern emitters, every measured ps2gl shader is currently slower than the SCEI reference under `affine_estimated_loop_cycles` measured with `--cost-loop-preset ps2gl`. The previous "MATCH on 7 shaders" baseline was produced by a stale toolchain binary still using the hand-coded fast paths and is no longer the truth.
+   - Use `affine_estimated_loop_cycles` under `--cost-loop-preset ps2gl` as the per-shader gate. Prioritize the largest absolute gaps first: `indexed` (+277), `general_pv_diff_quad` (+223), `general_pv_diff` (+191), `general` (+191), then the rest.
+   - The hottest sub-blocks driving the gap are `xform_loop_lid__MAIN_LOOP` (held back by single-iteration `wait_stall=7`/`waitq_stall=7` per pass and low pairing), `dir_light_loop_lid` (`waitp_stall=27` per pass with no software pipelining), and `pt_light_loop_lid` (multi-Q latency hidden by SCEI's pipelined layout but exposed in the generic schedule).
+   - Required compiler work (each iteration commits, runs unit tests, and re-measures): expand multi-Q cyclic-prefix rewrites to cover `dir_light_loop_lid`/`pt_light_loop_lid` shapes (currently blocked by the read/write memory-stream value-rotation gate), tighten generic dual-issue pairing inside `xform_loop_lid` to drain `wait_stall`/`waitq_stall`, and extend the software-pipeline dependency descriptors so `general*` and `indexed` qualify for prolog/main/drain.
+   - Single-iteration generic scheduling remains the fallback for loops that still fail the safety/profitability checks.
+   - Acceptance: a shader is considered closed when `affine_estimated_loop_cycles` (under `--cost-loop-preset ps2gl`) is `<=` the SCEI baseline. Pattern emitters can only be deleted once every shader they cover is closed.
+
+### Generic vs SCEI per-loop gap (true generic baseline, default `m_knownLoopOptimizations=false`)
+
+Measured with `/usr/local/bin/openvcl --cost <vsm> --cost-loop-preset ps2gl`, comparing `ps2gl/vu1/sce_<shader>_vcl.vsm` to `ps2gl/build-openvcl-generic-roadmap-codex/vu1/<shader>_vcl.vsm` (per-iteration `affine_estimated_loop_cycles`):
+
+| Shader                | SCE | OpenVCL (generic) |   Δ |
+|---|---:|---:|---:|
+| fast_nolights         |  12 |   17 |  +5 |
+| fast                  |  16 |   33 | +17 |
+| scei                  |  19 |   56 | +37 |
+| general_nospec        |  61 |  195 | +134 |
+| general_nospec_quad   |  86 |  251 | +165 |
+| general_nospec_tri    |  75 |  221 | +146 |
+| general_pv_diff       |  84 |  275 | +191 |
+| general_pv_diff_quad  | 113 |  336 | +223 |
+| general_pv_diff_tri   |  98 |  301 | +203 |
+| general               |  84 |  275 | +191 |
+| general_quad          | 109 |  331 | +222 |
+| general_tri           |  98 |  301 | +203 |
+| indexed               |  95 |  372 | +277 |
+
+This is the honest starting point for item 9. All later iterations on this roadmap must move these numbers down without re-enabling the hand-coded SPEC pattern emitters, and without regressing the unit-test suite or the visual references in `/Users/fjtrujy/Projects/ps2_opengl_integration/pcsx2_reference_*.png`.
 
 ## Validation Loop
 - `make openvcl -j8`
@@ -234,20 +257,20 @@ magick compare -metric RMSE pcsx2_reference_logo.png pcsx2_openvcl_logo.png diff
 ## SCEI vs OpenVCL Cost Table (auto-generated)
 
 <!-- BEGIN_COST_TABLE -->
-| Shader | Path | weighted_estimated_total_cycles | weighted_static_cycles | affine_estimated_cycles | weighted_paired_cycles | weighted_nop_only_cycles |
-|---|---|---:|---:|---|---:|---:|
-| sce_fast_nolights_vcl | ../ps2gl/vu1/sce_fast_nolights_vcl.vsm | 139 | 139 | 139 + 0n | 36 | 8 |
-| sce_fast_vcl | ../ps2gl/vu1/sce_fast_vcl.vsm | 215 | 211 | 215 + 0n | 66 | 6 |
-| sce_general_nospec_quad_vcl | ../ps2gl/vu1/sce_general_nospec_quad_vcl.vsm | 490 | 485 | 490 + 0n | 213 | 38 |
-| sce_general_nospec_tri_vcl | ../ps2gl/vu1/sce_general_nospec_tri_vcl.vsm | 388 | 383 | 388 + 0n | 140 | 27 |
-| sce_general_nospec_vcl | ../ps2gl/vu1/sce_general_nospec_vcl.vsm | 455 | 450 | 455 + 0n | 123 | 39 |
-| sce_general_pv_diff_quad_vcl | ../ps2gl/vu1/sce_general_pv_diff_quad_vcl.vsm | 678 | 613 | 678 + 0n | 238 | 55 |
-| sce_general_pv_diff_tri_vcl | ../ps2gl/vu1/sce_general_pv_diff_tri_vcl.vsm | 651 | 586 | 651 + 0n | 213 | 54 |
-| sce_general_pv_diff_vcl | ../ps2gl/vu1/sce_general_pv_diff_vcl.vsm | 719 | 654 | 719 + 0n | 195 | 66 |
-| sce_general_quad_vcl | ../ps2gl/vu1/sce_general_quad_vcl.vsm | 769 | 695 | 769 + 0n | 262 | 68 |
-| sce_general_tri_vcl | ../ps2gl/vu1/sce_general_tri_vcl.vsm | 665 | 591 | 665 + 0n | 191 | 57 |
-| sce_general_vcl | ../ps2gl/vu1/sce_general_vcl.vsm | 734 | 660 | 734 + 0n | 172 | 69 |
-| sce_indexed_vcl | ../ps2gl/vu1/sce_indexed_vcl.vsm | 713 | 637 | 713 + 0n | 205 | 60 |
-| scei_vcl | ../ps2gl/vu1/scei_vcl.vsm | 204 | 204 | 204 + 0n | 72 | 10 |
+| Shader | Baseline (file) | baseline_we | Candidate (file) | candidate_we | Δ (candidate - baseline) | baseline_affine | candidate_affine | baseline_paired | candidate_paired | baseline_nop | candidate_nop |
+|---|---|---:|---|---:|---:|---|---|---:|---:|---:|---:|
+| fast_nolights | sce_fast_nolights_vcl.vsm | 139 | fast_nolights_vcl.vsm | 168 | 29 | 139 + 0n | 168 + 0n | 36 | 17 | 8 | 35 |
+| fast | sce_fast_vcl.vsm | 215 | fast_vcl.vsm | 331 | 116 | 215 + 0n | 331 + 0n | 66 | 26 | 6 | 117 |
+| scei | scei_vcl.vsm | 204 | scei_vcl.vsm | 360 | 156 | 204 + 0n | 360 + 0n | 72 | 20 | 10 | 147 |
+| general_nospec | sce_general_nospec_vcl.vsm | 455 | general_nospec_vcl.vsm | 553 | 98 | 455 + 0n | 553 + 0n | 123 | 31 | 39 | 237 |
+| general_nospec_quad | sce_general_nospec_quad_vcl.vsm | 490 | general_nospec_quad_vcl.vsm | 473 | -17 | 490 + 0n | 473 + 0n | 213 | 34 | 38 | 209 |
+| general_nospec_tri | sce_general_nospec_tri_vcl.vsm | 388 | general_nospec_tri_vcl.vsm | 443 | 55 | 388 + 0n | 443 + 0n | 140 | 32 | 27 | 193 |
+| general_pv_diff | sce_general_pv_diff_vcl.vsm | 719 | general_pv_diff_vcl.vsm | 650 | -69 | 719 + 0n | 650 + 0n | 195 | 44 | 66 | 244 |
+| general_pv_diff_quad | sce_general_pv_diff_quad_vcl.vsm | 678 | general_pv_diff_quad_vcl.vsm | 575 | -103 | 678 + 0n | 575 + 0n | 238 | 45 | 55 | 216 |
+| general_pv_diff_tri | sce_general_pv_diff_tri_vcl.vsm | 651 | general_pv_diff_tri_vcl.vsm | 540 | -111 | 651 + 0n | 540 + 0n | 213 | 43 | 54 | 199 |
+| general | sce_general_vcl.vsm | 734 | general_vcl.vsm | 649 | -85 | 734 + 0n | 649 + 0n | 172 | 42 | 69 | 249 |
+| general_quad | sce_general_quad_vcl.vsm | 769 | general_quad_vcl.vsm | 569 | -200 | 769 + 0n | 569 + 0n | 262 | 44 | 68 | 221 |
+| general_tri | sce_general_tri_vcl.vsm | 665 | general_tri_vcl.vsm | 539 | -126 | 665 + 0n | 539 + 0n | 191 | 42 | 57 | 205 |
+| indexed | sce_indexed_vcl.vsm | 713 | indexed_vcl.vsm | 516 | -197 | 713 + 0n | 516 + 0n | 205 | 30 | 60 | 220 |
 
 <!-- END_COST_TABLE -->
