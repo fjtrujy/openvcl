@@ -167,5 +167,64 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
 - `git diff --check`
 - For scheduler-affecting phases:
   - regenerate ps2gl pure-OpenVCL VSMs;
-  - compare `fixed + loop*n` and loop-weighted estimated cost against SCEI/reference per shader;
-  - smoke-run representative PCSX2 examples, especially `logo.elf` and `box.elf`. You can take screenshot with F8 and check the content is still correct.
+   - compare `fixed + loop*n` and loop-weighted estimated cost against SCEI/reference per shader;
+   - smoke-run representative PCSX2 examples, especially `logo.elf` and `box.elf`.
+
+Visual reference workflow (SCEI → OpenVCL)
+
+- Purpose: first capture reference screenshots produced with the SCEI VSM shaders, then capture the same view when using OpenVCL-generated VSM and compare the images side-by-side. Use the image diffs together with the cost reports to judge regressions or wins.
+
+- Acquire SCEI reference images
+   - Ensure SCE/reference VSMs are available (example location in this workspace: `ps2gl/vu1/sce_*_vcl.vsm`).
+   - Run the chosen PCSX2 example (e.g. `logo.elf` or `box.elf`) with the SCEI VSMs in place and capture a screenshot after the relevant frame(s).
+   - Manual capture: press F8 in PCSX2 to save a screenshot. Save as `pcsx2_reference_<name>.png`.
+
+- Produce OpenVCL candidate images
+   - Build OpenVCL and regenerate the ps2gl pure-OpenVCL VSMs (example commands):
+
+```bash
+cd /Users/fjtrujy/Projects/openvcl
+make openvcl -j8
+cd /Users/fjtrujy/Projects/ps2gl
+rm -f build-openvcl-pure/vu1/*_vcl.vsm build-openvcl-pure/vu1/*.vo
+PATH=/Users/fjtrujy/toolchains/ps2/ps2dev/dvp/bin:$PATH cmake --build build-openvcl-pure -j8
+PATH=/Users/fjtrujy/toolchains/ps2/ps2dev/dvp/bin:$PATH ctest --test-dir build-openvcl-pure --output-on-failure
+```
+
+   - Run the same PCSX2 example with the OpenVCL-generated VSMs and capture the same frame(s). Save as `pcsx2_openvcl_<name>.png`.
+
+- Image comparison
+   - Use ImageMagick to produce a diff and a numeric metric:
+
+```bash
+# absolute-error (count of differing pixels)
+magick compare -metric AE pcsx2_reference_logo.png pcsx2_openvcl_logo.png diff_ae.png
+
+# root-mean-square (normalized) for perceptual magnitude
+magick compare -metric RMSE pcsx2_reference_logo.png pcsx2_openvcl_logo.png diff_rmse.png
+```
+
+   - Interpret results: `AE == 0` means pixel-perfect; non-zero AE/RMSE should be inspected via the generated `diff_*.png`. Choose a project threshold (for example, visual noise tolerance or PR-level acceptance) and record the measured metrics alongside the cost reports.
+
+- Optional automation notes
+   - If your PCSX2 build supports automated screenshots (CLI or hotkey scripting), script the run + capture step to produce reproducible frames. Otherwise prefer manual capture to ensure identical frame timing.
+
+- Cost reports to accompany visuals
+   - For each candidate/reference pair also run OpenVCL's cost analysis and comparisons:
+
+```bash
+# Per-shader cost (text)
+/path/to/openvcl --cost --cost-loop-preset ps2gl /path/to/shader_vcl.vsm
+
+# Compare SCE/reference vs OpenVCL candidate
+/path/to/openvcl --cost-compare /path/to/scei_reference.vsm /path/to/openvcl_candidate.vsm
+
+# Produce manifest table across many pairs
+/path/to/openvcl --cost-compare-list-markdown --cost-loop-preset ps2gl pairs.txt
+```
+
+- Record and store
+   - Save reference images, candidate images, diffs, and cost JSON into a consistent location such as `openvcl/ci/visuals/<renderer>/` so future regressions can be tracked and (optionally) checked into a guarded branch or artifact store.
+
+- Acceptance
+   - A change passes visual validation when the chosen visual metric is within the accepted threshold and the `weighted_estimated_total_cycles` or `affine_estimated_loop_cycles` is equal-to-or-better-than the SCE/reference baseline for the targeted hot loop.
