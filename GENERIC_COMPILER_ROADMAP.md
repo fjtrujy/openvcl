@@ -3,6 +3,8 @@
 ## Goal
 Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pipeline emitters are useful performance references, but they must not become the compiler architecture. Any valid VCL should compile through the generic path; known-loop emitters are transitional optimizations until the generic scheduler and software pipeliner can match or beat them.
 
+**Objective:** Reach performance parity with the original SCEI VCL compiler on representative hot loops. All performance and visual comparisons MUST use the SCEI-generated shaders (the canonical SCEI VSM outputs) as the baseline: run the same input assets, deterministic frame/timing, and emulator configuration so that per-shader `fixed + loop*n` costs and visual output are directly comparable. Use the SCEI baseline for both cost gating and for acceptance of visual equivalence; only then retire hand-written emitters for those shaders.
+
 ## Principles
 - Generic correctness comes first: valid VCL must produce valid VSM without relying on ps2gl-specific pattern emitters.
 - Hand-written emitters are benchmarks/oracles, not the long-term implementation.
