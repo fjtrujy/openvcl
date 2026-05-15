@@ -142,6 +142,8 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Done: the shared latency model now includes the narrow SCE-observed `lq`/`lqi`/`lqd` to `minii` bypass, improving modulo-scheduled final-color/store-drain loops without relaxing ordinary load-to-FMAC padding.
    - Done: generic multi-Q cyclic-prefix loops can now emit delayed suffix-store drains for no-load/write-only counted loops; ps2gl transform/light loops remain gated until read/write memory-stream value rotation is modeled safely.
    - Done: delayed suffix-store offset calculation now uses the aggregate per-iteration induction step, so loops with multiple pointer increments model their drain addresses correctly.
+   - Done: suffix-store value dependency keys now preserve vector fields for float aliases, so future delayed stores can reason about alias-backed `sq` values the same way as physical `VFxx` registers.
+   - Done: loaded multi-Q suffix-store drains now stay blocked with an explicit `loaded_multi_q_boundary_rotation` reason until the prolog/main/drain Q boundary can be emitted safely; this keeps ps2gl transform loops visually correct while exposing the next required scheduler model.
 
 8. **Retire Pattern Emitters Incrementally** - started
    - Replace each hand emitter only after generic scheduling/software pipelining matches correctness and reaches equal or better loop cost.

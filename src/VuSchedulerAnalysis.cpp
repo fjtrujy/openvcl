@@ -1324,7 +1324,8 @@ namespace
 
 	bool describeStoreValueRegister( const Token& token,
 	                                 std::string& registerName,
-	                                 std::list<std::string>& fields )
+	                                 std::list<std::string>& fields,
+	                                 bool& isFloatRegister )
 	{
 		for( std::list<Token::Argument>::const_iterator i = token.arguments().begin();
 		     i != token.arguments().end(); ++i )
@@ -1336,6 +1337,7 @@ namespace
 				continue;
 			if( !vuRegisterKey( *i, registerName ) )
 				return false;
+			isFloatRegister = (*i).type() == Token::Argument::FLOAT_REGISTER;
 			if( (*i).type() == Token::Argument::FLOAT_REGISTER )
 				appendFieldNames( vuReadFieldMask( token, *i ), fields );
 			return true;
@@ -1445,17 +1447,12 @@ namespace
 		}
 	}
 
-	bool isVfRegisterName( const std::string& reg )
-	{
-		return reg.size() >= 2 && reg[0] == 'V' && reg[1] == 'F';
-	}
-
 	void collectSuffixStoreValueKeys( const VuSoftwarePipelineSuffixStore& store,
 	                                  std::list<std::string>& keys )
 	{
 		if( !store.hasStoredValueRegister )
 			return;
-		if( !isVfRegisterName( store.storedValueRegister ) )
+		if( !store.storedValueIsFloatRegister )
 		{
 			addUniqueString( keys, store.storedValueRegister );
 			return;
@@ -1536,7 +1533,7 @@ namespace
 			store->valueScratchRegister = "";
 
 			if( !store->hasStoredValueRegister
-			    || !isVfRegisterName( store->storedValueRegister )
+			    || !store->storedValueIsFloatRegister
 			    || !suffixStoreNeedsValueRotation( *store, clobberedKeys ) )
 				continue;
 
@@ -1681,7 +1678,7 @@ namespace
 			    suffixStoreNeedsValueRotation( *store, prefetchWrites );
 			if( valueWrittenAfterStore || prefetchClobbersValue )
 			{
-				if( !isVfRegisterName( store->storedValueRegister ) )
+				if( !store->storedValueIsFloatRegister )
 				{
 					addSuffixStoreDrainBlocker( opportunity, "non_vf_store_value_rotation" );
 					continue;
@@ -1842,6 +1839,7 @@ namespace
 		suffixStore.nextIterationOffset = 0;
 		suffixStore.drainCandidate = false;
 		suffixStore.hasStoredValueRegister = false;
+		suffixStore.storedValueIsFloatRegister = false;
 		suffixStore.storedValueRegister = "";
 		suffixStore.requiresValueRotation = false;
 		suffixStore.hasValueScratchRegister = false;
@@ -1887,7 +1885,8 @@ namespace
 			suffixStore.hasStoredValueRegister =
 			    describeStoreValueRegister( token,
 			                                suffixStore.storedValueRegister,
-			                                suffixStore.storedValueFields );
+			                                suffixStore.storedValueFields,
+			                                suffixStore.storedValueIsFloatRegister );
 		}
 
 		suffixStores.push_back( suffixStore );
@@ -2431,6 +2430,20 @@ namespace
 		return false;
 	}
 
+	bool suffixStoreHasReadWriteMemoryStreamConflict( const VuSoftwarePipelineSuffixStore& store,
+	                                                  const VuLoopPipelineOpportunity& opportunity,
+	                                                  const std::vector<const Token*>& indexedTokens )
+	{
+		if( !store.hasMemoryBase )
+			return true;
+		return tokenIndicesLoadFromMemoryBase( opportunity.multiQMainTokenIndices,
+		                                       indexedTokens,
+		                                       store.memoryBaseRegister )
+		    || tokenIndicesLoadFromMemoryBase( opportunity.multiQCyclicPrefixTokenIndices,
+		                                       indexedTokens,
+		                                       store.memoryBaseRegister );
+	}
+
 	void classifyMultiQCyclicPrefixSuffixStoreDrains( VuLoopPipelineOpportunity& opportunity,
 	                                                  const VuLoopCandidate& loop,
 	                                                  const std::vector<const Token*>& indexedTokens )
@@ -2463,6 +2476,10 @@ namespace
 			addSuffixStoreDrainBlocker( opportunity, "non_invertible_loop_branch" );
 		if( opportunity.qLiveOut )
 			addSuffixStoreDrainBlocker( opportunity, "q_live_out" );
+		if( opportunity.memoryLoadCount > 0 && opportunity.qProducerTokenIndices.size() > 1 )
+			addSuffixStoreDrainBlocker( opportunity, "loaded_multi_q_boundary_rotation" );
+		if( !opportunity.suffixStoreDrainBlockers.empty() )
+			return;
 
 		std::list<std::string> cyclicPrefixWrites;
 		collectAdjustedCyclicPrefixWriteKeys( opportunity, indexedTokens, cyclicPrefixWrites );
@@ -2484,10 +2501,9 @@ namespace
 				continue;
 			if( store->tokenIndex >= indexedTokens.size() )
 				continue;
-			if( store->hasMemoryBase
-			    && tokenIndicesLoadFromMemoryBase( opportunity.multiQMainTokenIndices,
-			                                      indexedTokens,
-			                                      store->memoryBaseRegister ) )
+			if( suffixStoreHasReadWriteMemoryStreamConflict( *store,
+			                                                 opportunity,
+			                                                 indexedTokens ) )
 				continue;
 			if( indexedTokens[store->tokenIndex]->flags() & (Token::PREORDERED | Token::E | Token::D
 			                                                | Token::T | Token::BRANCH_DELAY_FILLER) )
@@ -2515,7 +2531,7 @@ namespace
 				continue;
 			if( valueWrittenAfterStore || cyclicPrefixClobbersValue )
 			{
-				if( !isVfRegisterName( store->storedValueRegister ) )
+				if( !store->storedValueIsFloatRegister )
 					continue;
 				store->requiresValueRotation = true;
 				store->rotateValueAtStore = true;
@@ -5135,7 +5151,6 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		    && !opportunity.multiQMainTokenIndices.empty()
 		    && !opportunity.multiQCyclicPrefixTokenIndices.empty()
 		    && !opportunity.multiQCyclicPrefixNeedsGuard
-		    && opportunity.memoryLoadCount == 0
 		    && !loopUsesLoopExtraDirective( *loop, indexedTokens ) )
 			classifyMultiQCyclicPrefixSuffixStoreDrains( opportunity,
 			                                             *loop,
@@ -5304,12 +5319,14 @@ std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens )
 		if( rewrite.drainsSuffixStores )
 		{
 			if( rewrite.cyclicPrefixBeforeBranch )
+			{
 				appendCyclicPrefixMainBody( output,
 				                            indexedTokens,
 				                            rewrite,
 				                            true,
 				                            true,
 				                            false );
+			}
 			else
 				appendTokenRangeWithInsertedPrefetchAndQProducer(
 				    output,

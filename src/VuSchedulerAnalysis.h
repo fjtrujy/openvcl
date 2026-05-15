@@ -201,6 +201,7 @@ struct VuSoftwarePipelineSuffixStore
 	long nextIterationOffset;
 	bool drainCandidate;
 	bool hasStoredValueRegister;
+	bool storedValueIsFloatRegister;
 	std::string storedValueRegister;
 	std::list<std::string> storedValueFields;
 	bool requiresValueRotation;
