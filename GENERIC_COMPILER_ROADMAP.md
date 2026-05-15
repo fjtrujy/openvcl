@@ -236,8 +236,18 @@ magick compare -metric RMSE pcsx2_reference_logo.png pcsx2_openvcl_logo.png diff
 <!-- BEGIN_COST_TABLE -->
 | Shader | Path | weighted_estimated_total_cycles | weighted_static_cycles | affine_estimated_cycles | weighted_paired_cycles | weighted_nop_only_cycles |
 |---|---|---:|---:|---|---:|---:|
-| long_latency_weighted | test/fixtures/vsm_cost/long_latency_weighted.vsm | 33 | 4 | 33 + 0n | 3 | 0 |
-| sce_padded_columns | test/fixtures/vsm_cost/sce_padded_columns.vsm | 2 | 2 | 2 + 0n | 1 | 0 |
-| simple_scheduled | test/fixtures/vsm_cost/simple_scheduled.vsm | 5 | 5 | 5 + 0n | 1 | 1 |
+| sce_fast_nolights_vcl | ../ps2gl/vu1/sce_fast_nolights_vcl.vsm | 139 | 139 | 139 + 0n | 36 | 8 |
+| sce_fast_vcl | ../ps2gl/vu1/sce_fast_vcl.vsm | 215 | 211 | 215 + 0n | 66 | 6 |
+| sce_general_nospec_quad_vcl | ../ps2gl/vu1/sce_general_nospec_quad_vcl.vsm | 490 | 485 | 490 + 0n | 213 | 38 |
+| sce_general_nospec_tri_vcl | ../ps2gl/vu1/sce_general_nospec_tri_vcl.vsm | 388 | 383 | 388 + 0n | 140 | 27 |
+| sce_general_nospec_vcl | ../ps2gl/vu1/sce_general_nospec_vcl.vsm | 455 | 450 | 455 + 0n | 123 | 39 |
+| sce_general_pv_diff_quad_vcl | ../ps2gl/vu1/sce_general_pv_diff_quad_vcl.vsm | 678 | 613 | 678 + 0n | 238 | 55 |
+| sce_general_pv_diff_tri_vcl | ../ps2gl/vu1/sce_general_pv_diff_tri_vcl.vsm | 651 | 586 | 651 + 0n | 213 | 54 |
+| sce_general_pv_diff_vcl | ../ps2gl/vu1/sce_general_pv_diff_vcl.vsm | 719 | 654 | 719 + 0n | 195 | 66 |
+| sce_general_quad_vcl | ../ps2gl/vu1/sce_general_quad_vcl.vsm | 769 | 695 | 769 + 0n | 262 | 68 |
+| sce_general_tri_vcl | ../ps2gl/vu1/sce_general_tri_vcl.vsm | 665 | 591 | 665 + 0n | 191 | 57 |
+| sce_general_vcl | ../ps2gl/vu1/sce_general_vcl.vsm | 734 | 660 | 734 + 0n | 172 | 69 |
+| sce_indexed_vcl | ../ps2gl/vu1/sce_indexed_vcl.vsm | 713 | 637 | 713 + 0n | 205 | 60 |
+| scei_vcl | ../ps2gl/vu1/scei_vcl.vsm | 204 | 204 | 204 + 0n | 72 | 10 |
 
 <!-- END_COST_TABLE -->
