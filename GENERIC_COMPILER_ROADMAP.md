@@ -152,6 +152,14 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
    - Delete the bespoke emitter and keep focused regression tests.
    - Done: ps2gl-shaped emitters are no longer used by default, keeping generic emission as the normal compiler path while retaining opt-in reference emitters for comparison.
 
+9. **Close the Hot-Loop Throughput Gap** - next
+   - Use loop-weighted estimated cost, not just total static cycles, as the gate for remaining performance work.
+   - Prioritize the hottest ps2gl loops first: `fast_nolights`, `fast`, `scei`, then the `general*` and `indexed` families where `xform_loop_lid` and `pt_light_vert_loop_lid` dominate the weighted reports.
+   - Reduce `nop_only_cycles` and raise paired cycles in the steady-state loop body by moving safe next-iteration work, especially Q producers, loads, and independent lower-pipe instructions, across the current iteration bubbles.
+   - Expand the generic software-pipeline rewrite so prolog/main/epilog construction is the default loop shape whenever the dependency descriptors prove it is safe.
+   - Keep the single-iteration scheduler as the fallback path for loops that still fail the safety or profitability checks.
+   - Add regression coverage for affine loop cost comparisons so each hot shader can be checked against its SCE/reference counterpart by `base + loop*n`.
+
 ## Validation Loop
 - `make openvcl -j8`
 - `cmake --build test/build --target openvcl_unit_tests -j8`
@@ -159,5 +167,5 @@ Keep OpenVCL a general VCL-to-VSM compiler. The current ps2gl-shaped software pi
 - `git diff --check`
 - For scheduler-affecting phases:
   - regenerate ps2gl pure-OpenVCL VSMs;
-  - compare `fixed + loop*n` against SCEI per shader;
-  - smoke-run representative PCSX2 examples, especially `logo.elf` and `box.elf`.
+  - compare `fixed + loop*n` and loop-weighted estimated cost against SCEI/reference per shader;
+  - smoke-run representative PCSX2 examples, especially `logo.elf` and `box.elf`. You can take screenshot with F8 and check the content is still correct.

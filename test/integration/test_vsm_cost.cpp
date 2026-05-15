@@ -122,6 +122,18 @@ namespace
         return ::test::run_openvcl(args, manifest);
     }
 
+    ::test::RunResult runCostCompareListCheckWithLoop(const std::string& metric,
+                                                      const std::string& loop,
+                                                      const std::string& manifest)
+    {
+        std::vector<std::string> args;
+        args.push_back("--cost-compare-list-check");
+        args.push_back(metric);
+        args.push_back("--cost-loop");
+        args.push_back(loop);
+        return ::test::run_openvcl(args, manifest);
+    }
+
     ::test::RunResult runCostLoop(const std::string& fixture, const std::string& loop)
     {
         std::vector<std::string> args;
@@ -283,25 +295,25 @@ TEST_CASE("VSM cost CLI: malformed Markdown comparison list is rejected")
     CHECK(contains(r.stderr_data, "Invalid cost comparison list entry at line 1"));
 }
 
-TEST_CASE("VSM cost CLI: comparison list check passes each row independently")
+TEST_CASE("VSM cost CLI: comparison list check accepts weighted loop cost improvements")
 {
     const std::string manifest =
         fixturePath("simple_scheduled.vsm") + " " + fixturePath("sce_padded_columns.vsm") + "\n";
 
-    ::test::RunResult r = runCostCompareListCheck("estimated", manifest);
+    ::test::RunResult r = runCostCompareListCheckWithLoop("weighted-estimated", "entry_lid=4", manifest);
     CHECK(r.exit_code == 0);
     CHECK(r.stderr_data.empty());
 }
 
-TEST_CASE("VSM cost CLI: comparison list check rejects slower candidates")
+TEST_CASE("VSM cost CLI: comparison list check rejects slower weighted loop cost candidates")
 {
     const std::string manifest =
         fixturePath("sce_padded_columns.vsm") + " " + fixturePath("simple_scheduled.vsm") + "\n";
 
-    ::test::RunResult r = runCostCompareListCheck("estimated", manifest);
+    ::test::RunResult r = runCostCompareListCheckWithLoop("weighted-estimated", "entry_lid=4", manifest);
     CHECK(r.exit_code != 0);
     CHECK(contains(r.stderr_data, "Cost check failed for " + fixturePath("simple_scheduled.vsm")));
-    CHECK(contains(r.stderr_data, "metric=estimated baseline=2 candidate=5"));
+    CHECK(contains(r.stderr_data, "metric=weighted-estimated baseline=2 candidate=20"));
     CHECK(contains(r.stderr_data, "Cost comparison list check failed for 1 shader pair(s)"));
 }
 
