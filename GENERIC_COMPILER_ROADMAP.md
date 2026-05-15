@@ -230,3 +230,14 @@ magick compare -metric RMSE pcsx2_reference_logo.png pcsx2_openvcl_logo.png diff
 
 - Acceptance
    - A change passes visual validation when the chosen visual metric is within the accepted threshold and the `weighted_estimated_total_cycles` or `affine_estimated_loop_cycles` is equal-to-or-better-than the SCE/reference baseline for the targeted hot loop.
+
+## SCEI vs OpenVCL Cost Table (auto-generated)
+
+<!-- BEGIN_COST_TABLE -->
+| Shader | Path | weighted_estimated_total_cycles | weighted_static_cycles | affine_estimated_cycles | weighted_paired_cycles | weighted_nop_only_cycles |
+|---|---|---:|---:|---|---:|---:|
+| long_latency_weighted | test/fixtures/vsm_cost/long_latency_weighted.vsm | 33 | 4 | 33 + 0n | 3 | 0 |
+| sce_padded_columns | test/fixtures/vsm_cost/sce_padded_columns.vsm | 2 | 2 | 2 + 0n | 1 | 0 |
+| simple_scheduled | test/fixtures/vsm_cost/simple_scheduled.vsm | 5 | 5 | 5 + 0n | 1 | 1 |
+
+<!-- END_COST_TABLE -->
