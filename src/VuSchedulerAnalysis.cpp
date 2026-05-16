@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <map>
+#include <set>
 #include <sstream>
 #include <string>
 
@@ -7005,6 +7006,79 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 							          << " stageB=" << hz.stageB
 							          << " kindB=" << kb
 							          << "\n";
+						}
+					}
+					// Track 9.G step 5f: cross-validate regplan RAW hazards
+					// against the loop-carried RAW edges the placer used.
+					if( std::getenv( "OPENVCL_DUMP_KERNEL_REGISTER_CROSSCHECK" ) != NULL )
+					{
+						std::set<std::string> expectedRaw;
+						for( unsigned int i = 0; i < n; ++i )
+						{
+							for( unsigned int j = 0; j < n; ++j )
+							{
+								if( i == j ) continue;
+								if( i < j ) continue; // loop-carried only (dist=1)
+								for( unsigned int a = 0; a < nodeWritesP[i].size(); ++a )
+								{
+									const std::string& w = nodeWritesP[i][a];
+									if( w.size() < 2 || w[0] != 'V' || w[1] != 'F' ) continue;
+									for( unsigned int b = 0; b < nodeReadsP[j].size(); ++b )
+									{
+										if( nodeReadsP[j][b] == w )
+										{
+											expectedRaw.insert( w );
+											break;
+										}
+									}
+								}
+							}
+						}
+						std::set<std::string> actualRaw;
+						for( unsigned int h = 0; h < plan.hazards.size(); ++h )
+						{
+							const VuKernelRegisterHazard& hz = plan.hazards[h];
+							const bool isRaw = ( hz.kindA == 1 && hz.kindB == 0 )
+							                || ( hz.kindA == 0 && hz.kindB == 1 );
+							if( isRaw ) actualRaw.insert( registerBaseKey( hz.reg ) );
+						}
+						unsigned int matched = 0, onlyExpected = 0, onlyActual = 0;
+						for( std::set<std::string>::const_iterator it = expectedRaw.begin();
+						     it != expectedRaw.end(); ++it )
+						{
+							if( actualRaw.count( *it ) ) ++matched;
+							else ++onlyExpected;
+						}
+						for( std::set<std::string>::const_iterator it = actualRaw.begin();
+						     it != actualRaw.end(); ++it )
+						{
+							if( !expectedRaw.count( *it ) ) ++onlyActual;
+						}
+						std::cerr << "[kernel-regplan-crosscheck] loop=" << opportunity.label
+						          << " expectedRaw=" << expectedRaw.size()
+						          << " actualRaw=" << actualRaw.size()
+						          << " matched=" << matched
+						          << " onlyExpected=" << onlyExpected
+						          << " onlyActual=" << onlyActual
+						          << "\n";
+						if( std::getenv( "OPENVCL_DUMP_KERNEL_REGISTER_CROSSCHECK_DETAIL" ) != NULL )
+						{
+							for( std::set<std::string>::const_iterator it = expectedRaw.begin();
+							     it != expectedRaw.end(); ++it )
+								std::cerr << "[kernel-regplan-crosscheck-reg] loop=" << opportunity.label
+								          << " reg=" << *it
+								          << " expected=1"
+								          << " actual=" << ( actualRaw.count( *it ) ? 1 : 0 )
+								          << "\n";
+							for( std::set<std::string>::const_iterator it = actualRaw.begin();
+							     it != actualRaw.end(); ++it )
+							{
+								if( expectedRaw.count( *it ) ) continue;
+								std::cerr << "[kernel-regplan-crosscheck-reg] loop=" << opportunity.label
+								          << " reg=" << *it
+								          << " expected=0 actual=1"
+								          << "\n";
+							}
 						}
 					}
 				}
