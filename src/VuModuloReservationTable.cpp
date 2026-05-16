@@ -38,6 +38,18 @@ bool ModuloReservationTable::laneIsClear( const std::vector< unsigned int >& lan
     return true;
 }
 
+bool ModuloReservationTable::canReserveUpper( unsigned int cycle ) const
+{
+    return laneIsClear( m_upper, cycle, 1 );
+}
+
+bool ModuloReservationTable::reserveUpper( unsigned int cycle, unsigned int tokenIndex )
+{
+    if( !canReserveUpper( cycle ) )
+        return false;
+    markLane( m_upper, cycle, 1, tokenIndex, m_upperOccupancy );
+    return true;
+}
 void ModuloReservationTable::markLane( std::vector< unsigned int >& lane,
                                        unsigned int cycle,
                                        unsigned int duration,
@@ -57,19 +69,26 @@ void ModuloReservationTable::markLane( std::vector< unsigned int >& lane,
     }
 }
 
-bool ModuloReservationTable::canReserveUpper( unsigned int cycle ) const
+void ModuloReservationTable::clearLane( std::vector< unsigned int >& lane,
+                                        unsigned int cycle,
+                                        unsigned int duration,
+                                        unsigned int& occupancyCounter )
 {
-    return laneIsClear( m_upper, cycle, 1 );
-}
+    if( duration == 0 )
+        return;
+    if( duration > m_ii )
+        duration = m_ii;
 
-bool ModuloReservationTable::reserveUpper( unsigned int cycle, unsigned int tokenIndex )
-{
-    if( !canReserveUpper( cycle ) )
-        return false;
-    markLane( m_upper, cycle, 1, tokenIndex, m_upperOccupancy );
-    return true;
+    for( unsigned int k = 0; k < duration; ++k )
+    {
+        const unsigned int slot = ( cycle + k ) % m_ii;
+        if( lane[ slot ] != static_cast< unsigned int >( SLOT_FREE ) )
+        {
+            lane[ slot ] = static_cast< unsigned int >( SLOT_FREE );
+            if( occupancyCounter > 0 ) --occupancyCounter;
+        }
+    }
 }
-
 bool ModuloReservationTable::canReserveLower( unsigned int cycle ) const
 {
     return laneIsClear( m_lower, cycle, 1 );
@@ -107,6 +126,26 @@ bool ModuloReservationTable::reserveEfu( unsigned int cycle, unsigned int durati
         return false;
     markLane( m_efu, cycle, duration, tokenIndex, m_efuOccupancy );
     return true;
+}
+
+void ModuloReservationTable::releaseUpper( unsigned int cycle )
+{
+    clearLane( m_upper, cycle, 1, m_upperOccupancy );
+}
+
+void ModuloReservationTable::releaseLower( unsigned int cycle )
+{
+    clearLane( m_lower, cycle, 1, m_lowerOccupancy );
+}
+
+void ModuloReservationTable::releaseFdiv( unsigned int cycle, unsigned int duration )
+{
+    clearLane( m_fdiv, cycle, duration, m_fdivOccupancy );
+}
+
+void ModuloReservationTable::releaseEfu( unsigned int cycle, unsigned int duration )
+{
+    clearLane( m_efu, cycle, duration, m_efuOccupancy );
 }
 
 unsigned int ModuloReservationTable::upperAt( unsigned int cycle ) const

@@ -6373,6 +6373,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			std::vector<unsigned int> slotOf( n, static_cast<unsigned int>( -1 ) );
 			std::vector<unsigned int> stageOf( n, 0 );
 			std::vector<int>          pipeOf( n, 0 ); // 0=none 1=U 2=L 3=FDIV 4=EFU
+			std::vector<unsigned int> durationOf( n, 1 );
 			std::vector<bool>         placed( n, false );
 			unsigned int placedCount = 0, failedCount = 0, maxStage = 0;
 			// Track 9.G step 4f: II-bumping retry. If placement leaves any node
@@ -6382,6 +6383,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			const unsigned int iiCap    = miiStart + 32;
 			unsigned int tryII = miiStart;
 			unsigned int bumps = 0;
+			unsigned int evictions = 0, recoveries = 0;
 			unsigned int upperOccFinal = 0, lowerOccFinal = 0;
 			unsigned int fdivOccFinal  = 0, efuOccFinal   = 0;
 
@@ -6477,10 +6479,12 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 					slotOf[k]  = static_cast<unsigned int>( -1 );
 					stageOf[k] = 0;
 					pipeOf[k]  = 0;
+					durationOf[k] = 1;
 					placed[k]  = false;
 				}
 				placedCount = 0; failedCount = 0; maxStage = 0;
 				edgeViolations = 0;
+				evictions = 0; recoveries = 0;
 			for( unsigned int rank = 0; rank < pr.order.size(); ++rank )
 			{
 				const unsigned int i = pr.order[rank];
@@ -6514,6 +6518,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 					}
 				}
 				pipeOf[i] = pipeKind;
+				durationOf[i] = duration;
 				if( pipeKind == 0 )
 				{
 					// No resource modeled (NOP / unknown). Treat as placed at ASAP.
@@ -6588,6 +6593,195 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 				fdivOccFinal  = mrt.fdivOccupancy();
 				efuOccFinal   = mrt.efuOccupancy();
 				if( failedCount == 0 ) break;
+				// Track 9.G step 4g: bounded backtracking. For each failed
+				// node f, try evicting a single already-placed node b that
+				// occupies a same-pipe MRT slot in f's [asap..hi] range. If
+				// f then fits, attempt to re-place b anywhere in b's range.
+				// Accept the swap when both succeed; otherwise revert.
+				const unsigned int evictionBudget = n;
+				unsigned int spent = 0;
+				for( unsigned int rank = 0; rank < pr.order.size() && spent < evictionBudget; ++rank )
+				{
+					const unsigned int f = pr.order[rank];
+					if( placed[f] ) continue;
+					if( pipeOf[f] == 0 ) continue;
+					const unsigned int loF = pr.asap[f];
+					unsigned int hiF = pr.alap[f];
+					if( hiF < loF ) hiF = loF;
+					if( hiF < pr.scheduleLength ) hiF = pr.scheduleLength;
+					if( hiF < loF + tryII ) hiF = loF + tryII;
+					bool swapped = false;
+					for( unsigned int rb = 0; rb < pr.order.size() && !swapped; ++rb )
+					{
+						const unsigned int b = pr.order[rb];
+						if( b == f ) continue;
+						if( !placed[b] ) continue;
+						if( pipeOf[b] != pipeOf[f] ) continue;
+						const unsigned int slotB = slotOf[b];
+						const unsigned int durB  = durationOf[b];
+						const int          pipeB = pipeOf[b];
+						++spent; ++evictions;
+						// Evict b
+						switch( pipeB )
+						{
+						case 1: mrt.releaseUpper( slotB % tryII ); break;
+						case 2: mrt.releaseLower( slotB % tryII ); break;
+						case 3: mrt.releaseFdiv ( slotB % tryII, durB ); break;
+						case 4: mrt.releaseEfu  ( slotB % tryII, durB ); break;
+						default: break;
+						}
+						placed[b] = false;
+						const unsigned int savedSlotB = slotB;
+						// Try to place f at any slot in [loF,hiF]
+						bool fPlaced = false;
+						for( unsigned int s = loF; s <= hiF && !fPlaced; ++s )
+						{
+							bool edgeOk = true;
+							for( unsigned int e = 0; e < totalEdges && edgeOk; ++e )
+							{
+								const int Lat = static_cast<int>( dLat[e] );
+								const int Dii = static_cast<int>( dDist[e] ) * static_cast<int>( tryII );
+								if( dTo[e] == f && placed[ dFrom[e] ] )
+								{
+									const int from = static_cast<int>( slotOf[ dFrom[e] ] );
+									if( static_cast<int>( s ) - from < Lat - Dii ) edgeOk = false;
+								}
+								else if( dFrom[e] == f && placed[ dTo[e] ] )
+								{
+									const int to = static_cast<int>( slotOf[ dTo[e] ] );
+									if( to - static_cast<int>( s ) < Lat - Dii ) edgeOk = false;
+								}
+							}
+							if( !edgeOk ) continue;
+							const unsigned int mod = s % tryII;
+							bool canP = false;
+							switch( pipeOf[f] )
+							{
+							case 1: canP = mrt.canReserveUpper( mod ); break;
+							case 2: canP = mrt.canReserveLower( mod ); break;
+							case 3: canP = mrt.canReserveFdiv( mod, durationOf[f] ); break;
+							case 4: canP = mrt.canReserveEfu( mod, durationOf[f] ); break;
+							default: break;
+							}
+							if( !canP ) continue;
+							switch( pipeOf[f] )
+							{
+							case 1: mrt.reserveUpper( mod, mt[f] ); break;
+							case 2: mrt.reserveLower( mod, mt[f] ); break;
+							case 3: mrt.reserveFdiv( mod, durationOf[f], mt[f] ); break;
+							case 4: mrt.reserveEfu( mod, durationOf[f], mt[f] ); break;
+							default: break;
+							}
+							slotOf[f] = s;
+							stageOf[f] = tryII > 0 ? ( s / tryII ) : 0;
+							placed[f] = true;
+							fPlaced = true;
+						}
+						if( !fPlaced )
+						{
+							// Restore b at its original slot.
+							switch( pipeB )
+							{
+							case 1: mrt.reserveUpper( savedSlotB % tryII, mt[b] ); break;
+							case 2: mrt.reserveLower( savedSlotB % tryII, mt[b] ); break;
+							case 3: mrt.reserveFdiv( savedSlotB % tryII, durB, mt[b] ); break;
+							case 4: mrt.reserveEfu ( savedSlotB % tryII, durB, mt[b] ); break;
+							default: break;
+							}
+							placed[b] = true;
+							continue;
+						}
+						// Try to re-place b somewhere in its range.
+						const unsigned int loB = pr.asap[b];
+						unsigned int hiB = pr.alap[b];
+						if( hiB < loB ) hiB = loB;
+						if( hiB < pr.scheduleLength ) hiB = pr.scheduleLength;
+						if( hiB < loB + tryII ) hiB = loB + tryII;
+						bool bPlaced = false;
+						for( unsigned int s = loB; s <= hiB && !bPlaced; ++s )
+						{
+							bool edgeOk = true;
+							for( unsigned int e = 0; e < totalEdges && edgeOk; ++e )
+							{
+								const int Lat = static_cast<int>( dLat[e] );
+								const int Dii = static_cast<int>( dDist[e] ) * static_cast<int>( tryII );
+								if( dTo[e] == b && placed[ dFrom[e] ] )
+								{
+									const int from = static_cast<int>( slotOf[ dFrom[e] ] );
+									if( static_cast<int>( s ) - from < Lat - Dii ) edgeOk = false;
+								}
+								else if( dFrom[e] == b && placed[ dTo[e] ] )
+								{
+									const int to = static_cast<int>( slotOf[ dTo[e] ] );
+									if( to - static_cast<int>( s ) < Lat - Dii ) edgeOk = false;
+								}
+							}
+							if( !edgeOk ) continue;
+							const unsigned int mod = s % tryII;
+							bool canP = false;
+							switch( pipeB )
+							{
+							case 1: canP = mrt.canReserveUpper( mod ); break;
+							case 2: canP = mrt.canReserveLower( mod ); break;
+							case 3: canP = mrt.canReserveFdiv( mod, durB ); break;
+							case 4: canP = mrt.canReserveEfu( mod, durB ); break;
+							default: break;
+							}
+							if( !canP ) continue;
+							switch( pipeB )
+							{
+							case 1: mrt.reserveUpper( mod, mt[b] ); break;
+							case 2: mrt.reserveLower( mod, mt[b] ); break;
+							case 3: mrt.reserveFdiv( mod, durB, mt[b] ); break;
+							case 4: mrt.reserveEfu( mod, durB, mt[b] ); break;
+							default: break;
+							}
+							slotOf[b] = s;
+							stageOf[b] = tryII > 0 ? ( s / tryII ) : 0;
+							placed[b] = true;
+							bPlaced = true;
+						}
+						if( bPlaced )
+						{
+							// Swap succeeded.
+							++placedCount;
+							--failedCount;
+							++recoveries;
+							if( stageOf[f] > maxStage ) maxStage = stageOf[f];
+							if( stageOf[b] > maxStage ) maxStage = stageOf[b];
+							swapped = true;
+						}
+						else
+						{
+							// Revert: evict f, restore b.
+							switch( pipeOf[f] )
+							{
+							case 1: mrt.releaseUpper( slotOf[f] % tryII ); break;
+							case 2: mrt.releaseLower( slotOf[f] % tryII ); break;
+							case 3: mrt.releaseFdiv( slotOf[f] % tryII, durationOf[f] ); break;
+							case 4: mrt.releaseEfu ( slotOf[f] % tryII, durationOf[f] ); break;
+							default: break;
+							}
+							placed[f] = false;
+							slotOf[f] = static_cast<unsigned int>( -1 );
+							stageOf[f] = 0;
+							switch( pipeB )
+							{
+							case 1: mrt.reserveUpper( savedSlotB % tryII, mt[b] ); break;
+							case 2: mrt.reserveLower( savedSlotB % tryII, mt[b] ); break;
+							case 3: mrt.reserveFdiv( savedSlotB % tryII, durB, mt[b] ); break;
+							case 4: mrt.reserveEfu ( savedSlotB % tryII, durB, mt[b] ); break;
+							default: break;
+							}
+							placed[b] = true;
+						}
+					}
+				}
+				upperOccFinal = mrt.upperOccupancy();
+				lowerOccFinal = mrt.lowerOccupancy();
+				fdivOccFinal  = mrt.fdivOccupancy();
+				efuOccFinal   = mrt.efuOccupancy();
+				if( failedCount == 0 ) break;
 				if( tryII >= iiCap ) break;
 				++tryII; ++bumps;
 			}
@@ -6600,6 +6794,8 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			          << " maxStage=" << maxStage
 			          << " edges=" << totalEdges
 			          << " edgeViolations=" << edgeViolations
+			          << " evictions=" << evictions
+			          << " recoveries=" << recoveries
 			          << " upperOcc=" << upperOccFinal
 			          << " lowerOcc=" << lowerOccFinal
 			          << " fdivOcc=" << fdivOccFinal

@@ -52,6 +52,15 @@ public:
     bool canReserveEfu( unsigned int cycle, unsigned int duration ) const;
     bool reserveEfu( unsigned int cycle, unsigned int duration, unsigned int tokenIndex );
 
+    // Track 9.G step 4g: release a reservation so the placer can evict an
+    // already-placed instruction during backtracking. Single-cycle lanes
+    // ignore 'duration'; multi-cycle pipes free the same span the matching
+    // reserveX call claimed.
+    void releaseUpper( unsigned int cycle );
+    void releaseLower( unsigned int cycle );
+    void releaseFdiv( unsigned int cycle, unsigned int duration );
+    void releaseEfu( unsigned int cycle, unsigned int duration );
+
     // Lookup (returns SLOT_FREE if unoccupied).
     unsigned int upperAt( unsigned int cycle ) const;
     unsigned int lowerAt( unsigned int cycle ) const;
@@ -73,6 +82,11 @@ private:
                    unsigned int duration,
                    unsigned int tokenIndex,
                    unsigned int& occupancyCounter );
+
+    void clearLane( std::vector< unsigned int >& lane,
+                    unsigned int cycle,
+                    unsigned int duration,
+                    unsigned int& occupancyCounter );
 
     unsigned int m_ii;
     std::vector< unsigned int > m_upper;
