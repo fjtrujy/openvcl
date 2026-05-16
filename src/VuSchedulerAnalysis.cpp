@@ -2,6 +2,7 @@
 
 #include "VuLatencyTracker.h"
 #include "VuModuloReservationTable.h"
+#include "VuKernelLayout.h"
 #include "VuSchedulingRules.h"
 #include "VuTokenResourceAccess.h"
 
@@ -6784,6 +6785,71 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 				if( failedCount == 0 ) break;
 				if( tryII >= iiCap ) break;
 				++tryII; ++bumps;
+			}
+			// Track 9.G step 5a: structured kernel layout handoff. Populate a
+			// VuKernelLayout from the final placer state. The struct mirrors
+			// what a stage-aware emitter will need to consume (stage, modSlot,
+			// pipe, duration). Dumped under OPENVCL_DUMP_KERNEL_LAYOUT and
+			// (per-entry) OPENVCL_DUMP_KERNEL_LAYOUT_ENTRIES.
+			if( std::getenv( "OPENVCL_DUMP_KERNEL_LAYOUT" ) != NULL )
+			{
+				VuKernelLayout layout;
+				layout.II         = tryII;
+				layout.miiStart   = miiStart;
+				layout.bumps      = bumps;
+				layout.feasible   = ( failedCount == 0 );
+				layout.stageCount = layout.feasible ? ( maxStage + 1 ) : 0;
+				for( unsigned int k = 0; k < n; ++k )
+				{
+					if( !placed[k] ) continue;
+					VuKernelLayoutEntry ent;
+					ent.nodeIndex  = k;
+					ent.tokenIndex = mt[k];
+					ent.slot       = slotOf[k];
+					ent.stage      = stageOf[k];
+					ent.modSlot    = tryII > 0 ? ( slotOf[k] % tryII ) : 0;
+					ent.pipe       = pipeOf[k];
+					ent.duration   = durationOf[k];
+					layout.entries.push_back( ent );
+				}
+				// std::sort is allowed (C++98); the comparator is a free
+				// function in the VuKernelLayout TU.
+				std::sort( layout.entries.begin(), layout.entries.end(),
+				           vuKernelLayoutEntryLess );
+				std::cerr << "[kernel-layout] loop=" << opportunity.label
+				          << " II=" << layout.II
+				          << " miiStart=" << layout.miiStart
+				          << " bumps=" << layout.bumps
+				          << " stageCount=" << layout.stageCount
+				          << " feasible=" << ( layout.feasible ? 1 : 0 )
+				          << " entries=" << layout.entries.size()
+				          << "\n";
+				if( std::getenv( "OPENVCL_DUMP_KERNEL_LAYOUT_ENTRIES" ) != NULL )
+				{
+					for( unsigned int e = 0; e < layout.entries.size(); ++e )
+					{
+						const VuKernelLayoutEntry& ent = layout.entries[e];
+						const char* pname = "none";
+						switch( ent.pipe )
+						{
+						case 1: pname = "upper"; break;
+						case 2: pname = "lower"; break;
+						case 3: pname = "fdiv";  break;
+						case 4: pname = "efu";   break;
+						default: break;
+						}
+						std::cerr << "[kernel-entry] loop=" << opportunity.label
+						          << " idx=" << e
+						          << " node=" << ent.nodeIndex
+						          << " token=" << ent.tokenIndex
+						          << " stage=" << ent.stage
+						          << " modSlot=" << ent.modSlot
+						          << " slot=" << ent.slot
+						          << " pipe=" << pname
+						          << " duration=" << ent.duration
+						          << "\n";
+					}
+				}
 			}
 			std::cerr << "[loop-schedule] loop=" << opportunity.label
 			          << " II=" << tryII
