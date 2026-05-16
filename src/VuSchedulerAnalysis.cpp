@@ -1466,6 +1466,184 @@ namespace
 		return resmii;
 	}
 
+	// Track 9.G step 4c: per-node priority for iterative modulo scheduling.
+	// Compute ASAP / ALAP / height / mobility over the intra-iteration DDG
+	// (RAW via VuLatencyTracker, WAW/WAR with lat=1). The intra DDG is a DAG
+	// because intra edges are emitted only for i<j; topo order = ascending
+	// index. Loop-carried edges are intentionally excluded here: they are
+	// already captured by RecMII (which bounds II), and ASAP/ALAP within a
+	// single iteration are the inputs Lam's iterative modulo scheduler
+	// consumes to choose insertion order. Diagnostic / analysis only.
+	struct LoopPriorityResult
+	{
+		std::vector<unsigned int> asap;
+		std::vector<unsigned int> alap;
+		std::vector<unsigned int> height;
+		std::vector<unsigned int> mobility;
+		std::vector<unsigned int> order;     // descending priority
+		unsigned int              scheduleLength;
+	};
+
+	void computeLoopPriority( const std::vector<unsigned int>& mt,
+	                          const std::vector<const Token*>& indexedTokens,
+	                          unsigned int II,
+	                          LoopPriorityResult& out )
+	{
+		const unsigned int n = static_cast<unsigned int>( mt.size() );
+		out.asap.assign( n, 0 );
+		out.alap.assign( n, 0 );
+		out.height.assign( n, 0 );
+		out.mobility.assign( n, 0 );
+		out.order.clear();
+		out.scheduleLength = 0;
+		if( n == 0 ) return;
+
+		std::vector< std::vector<std::string> > nodeWrites( n ), nodeReads( n );
+		for( unsigned int k = 0; k < n; ++k )
+		{
+			if( mt[k] >= indexedTokens.size() ) continue;
+			VuTokenResourceAccess acc;
+			if( !buildVuTokenResourceAccess( *indexedTokens[mt[k]], acc ) ) continue;
+			for( std::list<std::string>::const_iterator it = acc.registerWrites.begin();
+			     it != acc.registerWrites.end(); ++it )
+				nodeWrites[k].push_back( registerBaseKey( *it ) );
+			for( std::list<std::string>::const_iterator it = acc.registerReads.begin();
+			     it != acc.registerReads.end(); ++it )
+				nodeReads[k].push_back( registerBaseKey( *it ) );
+			const unsigned int iw = acc.implicitWrites;
+			const unsigned int ir = acc.implicitReads;
+			if( iw & VU_RESOURCE_ACC )  nodeWrites[k].push_back( "@ACC" );
+			if( iw & VU_RESOURCE_Q )    nodeWrites[k].push_back( "@Q" );
+			if( iw & VU_RESOURCE_P )    nodeWrites[k].push_back( "@P" );
+			if( iw & VU_RESOURCE_R )    nodeWrites[k].push_back( "@R" );
+			if( iw & VU_RESOURCE_I )    nodeWrites[k].push_back( "@I" );
+			if( iw & VU_RESOURCE_MAC )  nodeWrites[k].push_back( "@MAC" );
+			if( iw & VU_RESOURCE_CLIP ) nodeWrites[k].push_back( "@CLIP" );
+			if( ir & VU_RESOURCE_ACC )  nodeReads[k].push_back( "@ACC" );
+			if( ir & VU_RESOURCE_Q )    nodeReads[k].push_back( "@Q" );
+			if( ir & VU_RESOURCE_P )    nodeReads[k].push_back( "@P" );
+			if( ir & VU_RESOURCE_R )    nodeReads[k].push_back( "@R" );
+			if( ir & VU_RESOURCE_I )    nodeReads[k].push_back( "@I" );
+			if( ir & VU_RESOURCE_MAC )  nodeReads[k].push_back( "@MAC" );
+			if( ir & VU_RESOURCE_CLIP ) nodeReads[k].push_back( "@CLIP" );
+		}
+
+		std::vector<unsigned int> eFrom, eTo, eLat;
+		for( unsigned int i = 0; i < n; ++i )
+		{
+			for( unsigned int j = i + 1; j < n; ++j )
+			{
+				std::string sharedRaw;
+				for( unsigned int a = 0; a < nodeWrites[i].size() && sharedRaw.empty(); ++a )
+					for( unsigned int b = 0; b < nodeReads[j].size() && sharedRaw.empty(); ++b )
+						if( nodeWrites[i][a] == nodeReads[j][b] )
+							sharedRaw = nodeWrites[i][a];
+				if( !sharedRaw.empty()
+				    && mt[i] < indexedTokens.size()
+				    && mt[j] < indexedTokens.size() )
+				{
+					VuLatencyTracker tr;
+					tr.reset();
+					tr.recordWrites( *indexedTokens[mt[i]], 0 );
+					const int d = tr.readHazardDelay( *indexedTokens[mt[j]], NULL, 0 );
+					const unsigned int lat = static_cast<unsigned int>( d > 0 ? d : 1 );
+					eFrom.push_back( i ); eTo.push_back( j ); eLat.push_back( lat );
+				}
+				std::string sharedWaw;
+				for( unsigned int a = 0; a < nodeWrites[i].size() && sharedWaw.empty(); ++a )
+					for( unsigned int b = 0; b < nodeWrites[j].size() && sharedWaw.empty(); ++b )
+						if( nodeWrites[i][a] == nodeWrites[j][b] )
+							sharedWaw = nodeWrites[i][a];
+				if( !sharedWaw.empty() )
+				{
+					eFrom.push_back( i ); eTo.push_back( j ); eLat.push_back( 1 );
+				}
+				std::string sharedWar;
+				for( unsigned int a = 0; a < nodeReads[i].size() && sharedWar.empty(); ++a )
+					for( unsigned int b = 0; b < nodeWrites[j].size() && sharedWar.empty(); ++b )
+						if( nodeReads[i][a] == nodeWrites[j][b] )
+							sharedWar = nodeReads[i][a];
+				if( !sharedWar.empty() )
+				{
+					eFrom.push_back( i ); eTo.push_back( j ); eLat.push_back( 1 );
+				}
+			}
+		}
+
+		const unsigned int E = static_cast<unsigned int>( eFrom.size() );
+
+		// ASAP via topological relaxation (i<j is a valid topo order).
+		for( unsigned int e = 0; e < E; ++e )
+		{
+			const unsigned int cand = out.asap[ eFrom[e] ] + eLat[e];
+			if( cand > out.asap[ eTo[e] ] )
+				out.asap[ eTo[e] ] = cand;
+		}
+
+		// Height: longest distance from node to any sink. Reverse topo (i: n-1..0).
+		for( unsigned int idx = n; idx-- > 0; )
+		{
+			unsigned int h = 0;
+			for( unsigned int e = 0; e < E; ++e )
+			{
+				if( eFrom[e] == idx )
+				{
+					const unsigned int cand = eLat[e] + out.height[ eTo[e] ];
+					if( cand > h ) h = cand;
+				}
+			}
+			out.height[idx] = h;
+		}
+
+		// Schedule length L = max(asap[i] + height[i]) over all nodes; never
+		// shorter than II-1 (a one-iteration window must hold at least II
+		// slots). ALAP[i] = L - height[i].
+		unsigned int L = 0;
+		for( unsigned int i = 0; i < n; ++i )
+		{
+			const unsigned int reach = out.asap[i] + out.height[i];
+			if( reach > L ) L = reach;
+		}
+		if( II > 0 && L + 1 < II ) L = II - 1;
+		out.scheduleLength = L;
+
+		for( unsigned int i = 0; i < n; ++i )
+			out.alap[i] = ( out.height[i] > L ) ? 0u : ( L - out.height[i] );
+
+		for( unsigned int i = 0; i < n; ++i )
+			out.mobility[i] = ( out.alap[i] > out.asap[i] )
+			                ? ( out.alap[i] - out.asap[i] ) : 0u;
+
+		// Order by descending height; tie-break by ascending mobility, then
+		// ascending node index. Selection sort (n is small, < 50 in practice).
+		out.order.resize( n );
+		for( unsigned int i = 0; i < n; ++i ) out.order[i] = i;
+		for( unsigned int a = 0; a < n; ++a )
+		{
+			unsigned int best = a;
+			for( unsigned int b = a + 1; b < n; ++b )
+			{
+				const unsigned int ib = out.order[b];
+				const unsigned int ia = out.order[best];
+				const bool hbBigger     = out.height[ib]   >  out.height[ia];
+				const bool hEqual       = out.height[ib]   == out.height[ia];
+				const bool mbSmaller    = out.mobility[ib] <  out.mobility[ia];
+				const bool mEqual       = out.mobility[ib] == out.mobility[ia];
+				const bool idxSmaller   = ib < ia;
+				if( hbBigger
+				    || ( hEqual && mbSmaller )
+				    || ( hEqual && mEqual && idxSmaller ) )
+					best = b;
+			}
+			if( best != a )
+			{
+				const unsigned int tmp = out.order[a];
+				out.order[a] = out.order[best];
+				out.order[best] = tmp;
+			}
+		}
+	}
+
 	std::string registerFieldKey( const std::string& key )
 	{
 		std::string::size_type field = key.find( '.' );
@@ -6119,6 +6297,57 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			          << " fdivOcc=" << mrt.fdivOccupancy()
 			          << " efuOcc=" << mrt.efuOccupancy()
 			          << "\n";
+		}
+
+		if( std::getenv( "OPENVCL_DUMP_LOOP_PRIORITY" ) != NULL
+		    && opportunity.simpleCountedLoop
+		    && !opportunity.mainTokenIndices.empty() )
+		{
+			// Track 9.G step 4c: node priority for iterative modulo scheduling.
+			// Compute ASAP/ALAP/height/mobility over the intra DDG and print
+			// an aggregate summary plus the priority order. Per-node detail
+			// behind OPENVCL_DUMP_LOOP_PRIORITY_NODES to avoid flooding the
+			// log on large bodies. Step 4d will consume this ordering to
+			// drive insertion into the Modulo Reservation Table.
+			const std::vector<unsigned int>& mt = opportunity.mainTokenIndices;
+			const unsigned int recmii = computeLoopRecMII( mt, indexedTokens );
+			const unsigned int resmii = computeLoopResMII( mt, indexedTokens );
+			const unsigned int mii    = ( recmii > resmii ) ? recmii : resmii;
+			LoopPriorityResult pr;
+			computeLoopPriority( mt, indexedTokens, mii, pr );
+			unsigned int maxHeight = 0, maxMobility = 0, maxAsap = 0, maxAlap = 0;
+			for( unsigned int i = 0; i < pr.height.size(); ++i )
+			{
+				if( pr.height[i]   > maxHeight )   maxHeight   = pr.height[i];
+				if( pr.mobility[i] > maxMobility ) maxMobility = pr.mobility[i];
+				if( pr.asap[i]     > maxAsap )     maxAsap     = pr.asap[i];
+				if( pr.alap[i]     > maxAlap )     maxAlap     = pr.alap[i];
+			}
+			std::cerr << "[loop-priority] loop=" << opportunity.label
+			          << " mainSize=" << mt.size()
+			          << " II=" << mii
+			          << " scheduleLength=" << pr.scheduleLength
+			          << " maxHeight=" << maxHeight
+			          << " maxMobility=" << maxMobility
+			          << " maxAsap=" << maxAsap
+			          << " maxAlap=" << maxAlap
+			          << "\n";
+			if( std::getenv( "OPENVCL_DUMP_LOOP_PRIORITY_NODES" ) != NULL )
+			{
+				for( unsigned int rank = 0; rank < pr.order.size(); ++rank )
+				{
+					const unsigned int i = pr.order[rank];
+					std::cerr << "[loop-priority-node] loop=" << opportunity.label
+					          << " rank=" << rank
+					          << " node=" << i
+					          << " token=" << mt[i]
+					          << " height=" << pr.height[i]
+					          << " mobility=" << pr.mobility[i]
+					          << " asap=" << pr.asap[i]
+					          << " alap=" << pr.alap[i]
+					          << "\n";
+				}
+			}
 		}
 
 		if( std::getenv( "OPENVCL_DUMP_MULTISTAGE_CANDIDATES" ) != NULL )
