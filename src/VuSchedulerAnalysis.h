@@ -171,6 +171,10 @@ struct VuSoftwarePipelineRotation
 	std::list<std::string> outputFields;
 	bool hasScratchRegister;
 	std::string scratchRegister;
+	// Track 9.E step 3: K-deep rotation bank for multi-stage SWP.
+	// bank[0] == scratchRegister when hasScratchRegister == true;
+	// bank[k] holds the scratch register for the (k+1)-th extra stage.
+	std::vector<std::string> rotationBank;
 };
 
 struct VuSoftwarePipelinePrefetch

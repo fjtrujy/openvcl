@@ -1424,8 +1424,14 @@ namespace
 		return s.str();
 	}
 
+	// Track 9.E step 3: K-deep rotation bank allocation.
+	// depth==1 behaves identically to the original single-scratch implementation;
+	// depth>1 fills rotationBank with up to `depth` scratch registers per carried
+	// register drawn from the free VF pool.  hasScratchRegister / scratchRegister
+	// are kept for backward compat (populated from bank[0] when available).
 	void assignRotationScratchRegisters( const VuLoopCandidate& loop,
-	                                     std::vector<VuSoftwarePipelineRotation>& rotations )
+	                                     std::vector<VuSoftwarePipelineRotation>& rotations,
+	                                     unsigned int depth = 1 )
 	{
 		std::list<std::string> used;
 		collectLoopVfBaseKeys( loop, used );
@@ -1435,15 +1441,25 @@ namespace
 		for( std::vector<VuSoftwarePipelineRotation>::iterator rotation = rotations.begin();
 		     rotation != rotations.end(); ++rotation )
 		{
-			for( unsigned int reverse = 32; reverse > 1; --reverse )
+			rotation->rotationBank.clear();
+			for( unsigned int k = 0; k < depth; ++k )
 			{
-				const std::string scratch = vfRegisterName( reverse - 1 );
-				if( containsKey( used, scratch ) )
-					continue;
+				for( unsigned int reverse = 32; reverse > 1; --reverse )
+				{
+					const std::string scratch = vfRegisterName( reverse - 1 );
+					if( containsKey( used, scratch ) )
+						continue;
+					rotation->rotationBank.push_back( scratch );
+					addUniqueString( used, scratch );
+					break;
+				}
+				if( rotation->rotationBank.size() <= k )
+					break;  // free VF pool exhausted for this depth
+			}
+			if( !rotation->rotationBank.empty() )
+			{
 				rotation->hasScratchRegister = true;
-				rotation->scratchRegister = scratch;
-				addUniqueString( used, scratch );
-				break;
+				rotation->scratchRegister = rotation->rotationBank[0];
 			}
 		}
 	}
@@ -5470,6 +5486,49 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 				         rotations.begin(); r != rotations.end(); ++r )
 				{
 					std::cerr << " " << r->registerBase << "->" << r->scratchRegister;
+				}
+				std::cerr << "\n";
+			}
+		}
+
+		if( std::getenv( "OPENVCL_DUMP_ROTATION_ALLOCATIONS" ) != NULL )
+		{
+			if( opportunity.eligibleSingleQSoftwarePipeline
+			    && !opportunity.carriedQOutputRegisters.empty() )
+			{
+				std::vector<VuSoftwarePipelineRotation> bankProbe;
+				for( std::list<std::string>::const_iterator reg =
+				         opportunity.carriedQOutputRegisters.begin();
+				     reg != opportunity.carriedQOutputRegisters.end(); ++reg )
+				{
+					VuSoftwarePipelineRotation rot;
+					rot.registerBase = *reg;
+					rot.hasScratchRegister = false;
+					bankProbe.push_back( rot );
+				}
+				assignRotationScratchRegisters( *loop, bankProbe, 2 );
+				unsigned int fullDepth2 = 0;
+				for( std::vector<VuSoftwarePipelineRotation>::const_iterator r =
+				         bankProbe.begin(); r != bankProbe.end(); ++r )
+				{
+					if( r->rotationBank.size() >= 2 )
+						++fullDepth2;
+				}
+				std::cerr << "[rotation-alloc] loop=" << opportunity.label
+				          << " carried=" << opportunity.carriedQOutputRegisters.size()
+				          << " depth2_full=" << fullDepth2;
+				for( std::vector<VuSoftwarePipelineRotation>::const_iterator r =
+				         bankProbe.begin(); r != bankProbe.end(); ++r )
+				{
+					std::cerr << " " << r->registerBase << "->[";
+					for( std::vector<std::string>::const_iterator b = r->rotationBank.begin();
+					     b != r->rotationBank.end(); ++b )
+					{
+						if( b != r->rotationBank.begin() )
+							std::cerr << ",";
+						std::cerr << *b;
+					}
+					std::cerr << "]";
 				}
 				std::cerr << "\n";
 			}
