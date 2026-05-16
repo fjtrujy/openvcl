@@ -3663,14 +3663,25 @@ namespace
 			return false;
 		}
 
-		// Allocate depth-2 rotation banks.
-		std::vector<VuSoftwarePipelineRotation> banks;
+		// Allocate depth-2 rotation banks. Collapse carriedQOutputRegisters to
+		// their base register key first: rewriteRotatedRegistersToScratch
+		// (line ~4288) looks up rotations via findRotationForBase against the
+		// base register name (registerBaseKey strips .x/.y/.z). Field-keyed
+		// rotations are silently ignored by the rewriter, so we MUST keep
+		// registerBase as the bare VF name. This also reduces the depth-2
+		// scratch VF demand from N_fields to N_bases (e.g. mulq.xyz VF8 uses
+		// 1 base, not 3 fields).
+		std::list<std::string> uniqueBases;
 		for( std::list<std::string>::const_iterator reg =
 		         opportunity.carriedQOutputRegisters.begin();
 		     reg != opportunity.carriedQOutputRegisters.end(); ++reg )
+			addUniqueString( uniqueBases, registerBaseKey( *reg ) );
+		std::vector<VuSoftwarePipelineRotation> banks;
+		for( std::list<std::string>::const_iterator base = uniqueBases.begin();
+		     base != uniqueBases.end(); ++base )
 		{
 			VuSoftwarePipelineRotation rot;
-			rot.registerBase = *reg;
+			rot.registerBase = *base;
 			rot.hasScratchRegister = false;
 			banks.push_back( rot );
 		}
