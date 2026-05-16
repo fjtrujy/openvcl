@@ -214,6 +214,18 @@ struct VuKernelRewritePlan
     std::vector< unsigned int > mainTokens;
     std::vector< unsigned int > drainTokens;
 
+    // Track 9.G step 6b — structured per-entry / per-stage views.
+    //
+    // entryStages[e] is the stage of layout.entries[e]. Convenience flat
+    // view used by emission and by stage-aware rename analysis.
+    //
+    // stageCells is a (stage, modSlot) grid of size stageCount * II,
+    // indexed (stage * II + modSlot). Each cell holds up to four lane
+    // entry-indices into layout.entries (upper, lower, fdiv, efu);
+    // VuKernelTemplateSlot::NO_ENTRY denotes an empty lane.
+    std::vector< unsigned int >         entryStages;
+    std::vector< VuKernelTemplateSlot > stageCells;
+
     VuKernelRewritePlan()
         : II( 0 ), stageCount( 0 ), conflicts( 0 ) {}
 };

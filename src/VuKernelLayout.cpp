@@ -201,8 +201,34 @@ void buildVuKernelRewritePlan( const VuKernelLayout& layout,
     plan.prologTokens.clear();
     plan.mainTokens.clear();
     plan.drainTokens.clear();
+    plan.entryStages.clear();
+    plan.stageCells.clear();
 
     if( envelope.stageCount == 0 || envelope.II == 0 ) return;
+
+    // Per-entry stage assignments.
+    plan.entryStages.reserve( layout.entries.size() );
+    for( unsigned int e = 0; e < layout.entries.size(); ++e )
+        plan.entryStages.push_back( layout.entries[ e ].stage );
+
+    // (stage, modSlot) grid: place each entry into its (stage, modSlot, pipe) lane.
+    plan.stageCells.resize( envelope.stageCount * envelope.II );
+    for( unsigned int e = 0; e < layout.entries.size(); ++e )
+    {
+        const VuKernelLayoutEntry& ent = layout.entries[ e ];
+        if( ent.stage >= envelope.stageCount || ent.modSlot >= envelope.II )
+            continue;
+        VuKernelTemplateSlot& cell = plan.stageCells[ ent.stage * envelope.II + ent.modSlot ];
+        const int ei = static_cast< int >( e );
+        switch( ent.pipe )
+        {
+        case 1: if( cell.upper == VuKernelTemplateSlot::NO_ENTRY ) cell.upper = ei; else ++plan.conflicts; break;
+        case 2: if( cell.lower == VuKernelTemplateSlot::NO_ENTRY ) cell.lower = ei; else ++plan.conflicts; break;
+        case 3: if( cell.fdiv  == VuKernelTemplateSlot::NO_ENTRY ) cell.fdiv  = ei; else ++plan.conflicts; break;
+        case 4: if( cell.efu   == VuKernelTemplateSlot::NO_ENTRY ) cell.efu   = ei; else ++plan.conflicts; break;
+        default: break;
+        }
+    }
 
     VuKernelTemplate tmpl;
     buildVuKernelTemplate( layout, tmpl );

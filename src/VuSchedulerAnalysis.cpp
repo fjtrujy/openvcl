@@ -7098,8 +7098,32 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 					          << " prolog=" << rp.prologTokens.size()
 					          << " main=" << rp.mainTokens.size()
 					          << " drain=" << rp.drainTokens.size()
+					          << " entryStages=" << rp.entryStages.size()
+					          << " stageCells=" << rp.stageCells.size()
 					          << " conflicts=" << rp.conflicts
 					          << "\n";
+					if( std::getenv( "OPENVCL_DUMP_KERNEL_REWRITE_PLAN_STAGES" ) != NULL )
+					{
+						for( unsigned int s = 0; s < rp.stageCount; ++s )
+						{
+							for( unsigned int c = 0; c < rp.II; ++c )
+							{
+								const VuKernelTemplateSlot& cell = rp.stageCells[ s * rp.II + c ];
+								if( cell.upper == VuKernelTemplateSlot::NO_ENTRY
+								 && cell.lower == VuKernelTemplateSlot::NO_ENTRY
+								 && cell.fdiv  == VuKernelTemplateSlot::NO_ENTRY
+								 && cell.efu   == VuKernelTemplateSlot::NO_ENTRY ) continue;
+								std::cerr << "[kernel-rewrite-plan-stage] loop=" << opportunity.label
+								          << " stage=" << s
+								          << " modSlot=" << c
+								          << " upper=" << cell.upper
+								          << " lower=" << cell.lower
+								          << " fdiv="  << cell.fdiv
+								          << " efu="   << cell.efu
+								          << "\n";
+							}
+						}
+					}
 					if( std::getenv( "OPENVCL_DUMP_KERNEL_REWRITE_PLAN_DETAIL" ) != NULL )
 					{
 						static const char* kSectionNames[3] = { "PRO", "MAIN", "DRAIN" };

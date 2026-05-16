@@ -430,3 +430,35 @@ TEST_CASE("VuKernelRewritePlan: two-stage layout produces prolog, main, drain")
     CHECK(plan.drainTokens[4] == VuKernelRewritePlan::NO_TOKEN);
     CHECK(plan.drainTokens[5] == 21u);
 }
+
+TEST_CASE("VuKernelRewritePlan: two-stage layout exposes entryStages + stageCells")
+{
+    // Same setup as the two-stage prolog/main/drain test above.
+    VuKernelLayout layout;
+    layout.II = 2; layout.stageCount = 2; layout.feasible = true;
+    layout.entries.push_back(makeRewriteEntry(10, 0, 0, 1));
+    layout.entries.push_back(makeRewriteEntry(11, 0, 1, 1));
+    layout.entries.push_back(makeRewriteEntry(20, 1, 0, 2));
+    layout.entries.push_back(makeRewriteEntry(21, 1, 1, 2));
+    VuKernelEnvelope env;
+    buildVuKernelEnvelope(layout, env);
+    VuKernelRewritePlan plan;
+    buildVuKernelRewritePlan(layout, env, plan);
+    REQUIRE(plan.entryStages.size() == 4u);
+    CHECK(plan.entryStages[0] == 0u);
+    CHECK(plan.entryStages[1] == 0u);
+    CHECK(plan.entryStages[2] == 1u);
+    CHECK(plan.entryStages[3] == 1u);
+    REQUIRE(plan.stageCells.size() == 4u); // stageCount(2) * II(2)
+    // (stage 0, modSlot 0): upper = entry 0
+    CHECK(plan.stageCells[0].upper == 0);
+    CHECK(plan.stageCells[0].lower == VuKernelTemplateSlot::NO_ENTRY);
+    // (stage 0, modSlot 1): upper = entry 1
+    CHECK(plan.stageCells[1].upper == 1);
+    // (stage 1, modSlot 0): lower = entry 2
+    CHECK(plan.stageCells[2].lower == 2);
+    CHECK(plan.stageCells[2].upper == VuKernelTemplateSlot::NO_ENTRY);
+    // (stage 1, modSlot 1): lower = entry 3
+    CHECK(plan.stageCells[3].lower == 3);
+    CHECK(plan.conflicts == 0u);
+}
