@@ -7172,6 +7172,50 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 							}
 						}
 					}
+					// Track 9.G step 6d: rewrite-plan coverage self-validation.
+					// Verify the modulo placer covered the original loop body
+					// exactly once (no dropped/duplicated tokens) and that the
+					// synthesized MAIN section of VuKernelRewritePlan reproduces
+					// the full layout. All comparisons are multiset-based and
+					// diagnostic-only; no emission change.
+					if( std::getenv( "OPENVCL_DUMP_KERNEL_REWRITE_COVERAGE" ) != NULL )
+					{
+						std::multiset< unsigned int > bodyTokens(
+							opportunity.mainTokenIndices.begin(),
+							opportunity.mainTokenIndices.end() );
+						std::multiset< unsigned int > layoutTokens;
+						for( unsigned int i = 0; i < layout.entries.size(); ++i )
+							layoutTokens.insert( layout.entries[i].tokenIndex );
+						std::multiset< unsigned int > mainTokens;
+						for( unsigned int i = 0; i < rp.mainTokens.size(); ++i )
+							if( rp.mainTokens[i] != VuKernelRewritePlan::NO_TOKEN )
+								mainTokens.insert( rp.mainTokens[i] );
+						const bool bodyEqualsLayout = ( bodyTokens == layoutTokens );
+						const bool layoutEqualsMain = ( layoutTokens == mainTokens );
+						unsigned int missingFromLayout = 0;
+						unsigned int extraInLayout = 0;
+						{
+							std::multiset< unsigned int >::const_iterator bi = bodyTokens.begin();
+							std::multiset< unsigned int >::const_iterator li = layoutTokens.begin();
+							while( bi != bodyTokens.end() || li != layoutTokens.end() )
+							{
+								if( li == layoutTokens.end() ) { ++missingFromLayout; ++bi; continue; }
+								if( bi == bodyTokens.end() )   { ++extraInLayout;     ++li; continue; }
+								if( *bi < *li )      { ++missingFromLayout; ++bi; }
+								else if( *li < *bi ) { ++extraInLayout;     ++li; }
+								else                 { ++bi; ++li; }
+							}
+						}
+						std::cerr << "[kernel-rewrite-coverage] loop=" << opportunity.label
+						          << " body=" << bodyTokens.size()
+						          << " layout=" << layoutTokens.size()
+						          << " main=" << mainTokens.size()
+						          << " bodyEqualsLayout=" << ( bodyEqualsLayout ? 1 : 0 )
+						          << " layoutEqualsMain=" << ( layoutEqualsMain ? 1 : 0 )
+						          << " missingFromLayout=" << missingFromLayout
+						          << " extraInLayout=" << extraInLayout
+						          << "\n";
+					}
 				}
 			}
 			std::cerr << "[loop-schedule] loop=" << opportunity.label

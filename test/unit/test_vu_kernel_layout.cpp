@@ -6,6 +6,7 @@
 #include "../../src/VuKernelLayout.h"
 
 #include <algorithm>
+#include <set>
 
 using namespace vcl;
 
@@ -499,4 +500,53 @@ TEST_CASE("VuKernelRenameHints: each hazard yields two hints, deduplicated")
     }
     CHECK(writeCount == 1u);
     CHECK(readCount == 2u);
+}
+
+// Track 9.G step 6d: layout-coverage self-validation.
+// The synthesized MAIN section of VuKernelRewritePlan must reproduce the
+// full multiset of layout token indices (no drops, no duplicates).
+TEST_CASE("VuKernelRewritePlan: main section reproduces layout multiset (single stage)")
+{
+    VuKernelLayout layout;
+    layout.II = 3; layout.stageCount = 1; layout.feasible = true;
+    layout.entries.push_back(makeRewriteEntry(100, 0, 0, 1));
+    layout.entries.push_back(makeRewriteEntry(101, 0, 1, 2));
+    layout.entries.push_back(makeRewriteEntry(102, 0, 2, 3));
+    layout.entries.push_back(makeRewriteEntry(103, 0, 2, 4));
+    VuKernelEnvelope env;
+    buildVuKernelEnvelope(layout, env);
+    VuKernelRewritePlan plan;
+    buildVuKernelRewritePlan(layout, env, plan);
+    std::multiset<unsigned int> layoutTokens;
+    for (unsigned i = 0; i < layout.entries.size(); ++i)
+        layoutTokens.insert(layout.entries[i].tokenIndex);
+    std::multiset<unsigned int> mainTokens;
+    for (unsigned i = 0; i < plan.mainTokens.size(); ++i)
+        if (plan.mainTokens[i] != VuKernelRewritePlan::NO_TOKEN)
+            mainTokens.insert(plan.mainTokens[i]);
+    CHECK(mainTokens == layoutTokens);
+    CHECK(plan.prologTokens.empty());
+    CHECK(plan.drainTokens.empty());
+}
+
+TEST_CASE("VuKernelRewritePlan: main section reproduces layout multiset (two stages)")
+{
+    VuKernelLayout layout;
+    layout.II = 2; layout.stageCount = 2; layout.feasible = true;
+    layout.entries.push_back(makeRewriteEntry(10, 0, 0, 1));
+    layout.entries.push_back(makeRewriteEntry(11, 0, 1, 1));
+    layout.entries.push_back(makeRewriteEntry(20, 1, 0, 2));
+    layout.entries.push_back(makeRewriteEntry(21, 1, 1, 2));
+    VuKernelEnvelope env;
+    buildVuKernelEnvelope(layout, env);
+    VuKernelRewritePlan plan;
+    buildVuKernelRewritePlan(layout, env, plan);
+    std::multiset<unsigned int> layoutTokens;
+    for (unsigned i = 0; i < layout.entries.size(); ++i)
+        layoutTokens.insert(layout.entries[i].tokenIndex);
+    std::multiset<unsigned int> mainTokens;
+    for (unsigned i = 0; i < plan.mainTokens.size(); ++i)
+        if (plan.mainTokens[i] != VuKernelRewritePlan::NO_TOKEN)
+            mainTokens.insert(plan.mainTokens[i]);
+    CHECK(mainTokens == layoutTokens);
 }
