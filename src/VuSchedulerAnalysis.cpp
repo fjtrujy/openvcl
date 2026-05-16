@@ -6850,6 +6850,45 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 						          << "\n";
 					}
 				}
+				// Track 9.G step 5b: derived per-modSlot VLIW template.
+				// Diagnostic-only: validates that the layout forms a
+				// conflict-free kernel body before any emitter consumes it.
+				if( std::getenv( "OPENVCL_DUMP_KERNEL_TEMPLATE" ) != NULL )
+				{
+					VuKernelTemplate tmpl;
+					buildVuKernelTemplate( layout, tmpl );
+					unsigned int filledUpper = 0, filledLower = 0;
+					unsigned int filledFdiv  = 0, filledEfu   = 0;
+					for( unsigned int s = 0; s < tmpl.slots.size(); ++s )
+					{
+						if( tmpl.slots[s].upper != VuKernelTemplateSlot::NO_ENTRY ) ++filledUpper;
+						if( tmpl.slots[s].lower != VuKernelTemplateSlot::NO_ENTRY ) ++filledLower;
+						if( tmpl.slots[s].fdiv  != VuKernelTemplateSlot::NO_ENTRY ) ++filledFdiv;
+						if( tmpl.slots[s].efu   != VuKernelTemplateSlot::NO_ENTRY ) ++filledEfu;
+					}
+					std::cerr << "[kernel-template] loop=" << opportunity.label
+					          << " II=" << tmpl.II
+					          << " conflicts=" << tmpl.conflicts
+					          << " upper=" << filledUpper
+					          << " lower=" << filledLower
+					          << " fdiv=" << filledFdiv
+					          << " efu=" << filledEfu
+					          << "\n";
+					if( std::getenv( "OPENVCL_DUMP_KERNEL_TEMPLATE_SLOTS" ) != NULL )
+					{
+						for( unsigned int s = 0; s < tmpl.slots.size(); ++s )
+						{
+							const VuKernelTemplateSlot& ks = tmpl.slots[s];
+							std::cerr << "[kernel-template-slot] loop=" << opportunity.label
+							          << " modSlot=" << s
+							          << " upper=" << ks.upper
+							          << " lower=" << ks.lower
+							          << " fdiv="  << ks.fdiv
+							          << " efu="   << ks.efu
+							          << "\n";
+						}
+					}
+				}
 			}
 			std::cerr << "[loop-schedule] loop=" << opportunity.label
 			          << " II=" << tryII

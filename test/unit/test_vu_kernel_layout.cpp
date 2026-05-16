@@ -75,3 +75,70 @@ TEST_CASE("VuKernelLayout: II/miiStart/bumps consistent with feasible round")
     CHECK(layout.stageCount >= 1u);
     CHECK(layout.feasible);
 }
+
+TEST_CASE("VuKernelTemplate: empty layout produces empty template")
+{
+    VuKernelLayout layout;
+    VuKernelTemplate t;
+    buildVuKernelTemplate(layout, t);
+    CHECK(t.II == 0u);
+    CHECK(t.slots.empty());
+    CHECK(t.conflicts == 0u);
+}
+
+TEST_CASE("VuKernelTemplate: conflict-free pairing of upper and lower")
+{
+    VuKernelLayout layout;
+    layout.II = 4;
+    VuKernelLayoutEntry u0; u0.nodeIndex = 0; u0.modSlot = 0; u0.pipe = 1;
+    VuKernelLayoutEntry l0; l0.nodeIndex = 1; l0.modSlot = 0; l0.pipe = 2;
+    VuKernelLayoutEntry u2; u2.nodeIndex = 2; u2.modSlot = 2; u2.pipe = 1;
+    VuKernelLayoutEntry f3; f3.nodeIndex = 3; f3.modSlot = 3; f3.pipe = 3;
+    layout.entries.push_back(u0);
+    layout.entries.push_back(l0);
+    layout.entries.push_back(u2);
+    layout.entries.push_back(f3);
+
+    VuKernelTemplate t;
+    buildVuKernelTemplate(layout, t);
+    CHECK(t.II == 4u);
+    CHECK(t.slots.size() == 4u);
+    CHECK(t.conflicts == 0u);
+    CHECK(t.slots[0].upper == 0);
+    CHECK(t.slots[0].lower == 1);
+    CHECK(t.slots[2].upper == 2);
+    CHECK(t.slots[2].lower == VuKernelTemplateSlot::NO_ENTRY);
+    CHECK(t.slots[3].fdiv  == 3);
+    CHECK(t.slots[1].upper == VuKernelTemplateSlot::NO_ENTRY);
+    CHECK(t.slots[1].lower == VuKernelTemplateSlot::NO_ENTRY);
+}
+
+TEST_CASE("VuKernelTemplate: same-lane collision at modSlot is counted")
+{
+    VuKernelLayout layout;
+    layout.II = 2;
+    VuKernelLayoutEntry a; a.nodeIndex = 0; a.modSlot = 1; a.pipe = 1;
+    VuKernelLayoutEntry b; b.nodeIndex = 1; b.modSlot = 1; b.pipe = 1;
+    layout.entries.push_back(a);
+    layout.entries.push_back(b);
+
+    VuKernelTemplate t;
+    buildVuKernelTemplate(layout, t);
+    CHECK(t.II == 2u);
+    CHECK(t.conflicts == 1u);
+    // Later entry overwrites earlier (diagnostic behavior).
+    CHECK(t.slots[1].upper == 1);
+}
+
+TEST_CASE("VuKernelTemplate: pipe=0 (none) entries are ignored")
+{
+    VuKernelLayout layout;
+    layout.II = 2;
+    VuKernelLayoutEntry n; n.nodeIndex = 0; n.modSlot = 0; n.pipe = 0;
+    layout.entries.push_back(n);
+    VuKernelTemplate t;
+    buildVuKernelTemplate(layout, t);
+    CHECK(t.conflicts == 0u);
+    CHECK(t.slots[0].upper == VuKernelTemplateSlot::NO_ENTRY);
+    CHECK(t.slots[0].lower == VuKernelTemplateSlot::NO_ENTRY);
+}

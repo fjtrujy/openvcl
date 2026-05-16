@@ -59,6 +59,46 @@ struct VuKernelLayout
 bool vuKernelLayoutEntryLess( const VuKernelLayoutEntry& a,
                               const VuKernelLayoutEntry& b );
 
+// Track 9.G step 5b — stage-aware kernel template.
+//
+// A kernel template is the per-modulo-slot VLIW shape of the steady-state
+// loop body: at each modSlot c in [0, II), at most one Upper instruction
+// pairs with at most one Lower instruction, and at most one each of the
+// FDIV / EFU multi-cycle pipes may be live.
+//
+// VuKernelTemplateSlot stores indices into VuKernelLayout::entries (or
+// VuKernelTemplateSlot::NO_ENTRY for an empty lane). The template is a
+// derived view: no information is added beyond what the layout already
+// captured.
+
+struct VuKernelTemplateSlot
+{
+    static const int NO_ENTRY = -1;
+    int upper;
+    int lower;
+    int fdiv;
+    int efu;
+
+    VuKernelTemplateSlot()
+        : upper( NO_ENTRY ), lower( NO_ENTRY ),
+          fdiv( NO_ENTRY ),  efu( NO_ENTRY ) {}
+};
+
+struct VuKernelTemplate
+{
+    unsigned int II;
+    unsigned int conflicts;
+    std::vector< VuKernelTemplateSlot > slots; // size == II
+
+    VuKernelTemplate() : II( 0 ), conflicts( 0 ) {}
+};
+
+// Build a kernel template from a layout. Pipe collisions at the same
+// modSlot increment `template_.conflicts` and the later entry overwrites
+// the earlier (diagnostic; planner is expected to keep this at 0).
+void buildVuKernelTemplate( const VuKernelLayout& layout,
+                            VuKernelTemplate& template_ );
+
 } // namespace vcl
 
 #endif
