@@ -5694,6 +5694,10 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			const bool dumpEdges = ( std::getenv( "OPENVCL_DUMP_LOOP_DDG_EDGES" ) != NULL );
 			unsigned int edges = 0, intra = 0, carried = 0;
 			unsigned int maxIntraLat = 0, maxCarriedLat = 0;
+			// Track 9.G step 2: collect edges into parallel arrays so we can
+			// compute RecMII (max cycle ratio of lat/dist) once enumeration is done.
+			std::vector<unsigned int> eFrom, eTo, eDist;
+			std::vector<int> eLat;
 			for( unsigned int i = 0; i < n; ++i )
 			{
 				for( unsigned int j = 0; j < n; ++j )
@@ -5723,6 +5727,8 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 						++edges;
 						if( dist == 0 ) { ++intra;   if( lat > maxIntraLat   ) maxIntraLat   = lat; }
 						else            { ++carried; if( lat > maxCarriedLat ) maxCarriedLat = lat; }
+						eFrom.push_back( i ); eTo.push_back( j ); eDist.push_back( dist );
+						eLat.push_back( static_cast<int>( lat ) );
 					}
 					std::string sharedWaw;
 					for( unsigned int a = 0; a < nodeWrites[i].size() && sharedWaw.empty(); ++a )
@@ -5739,6 +5745,8 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 							          << " res=" << sharedWaw << "\n";
 						++edges;
 						if( dist == 0 ) ++intra; else ++carried;
+						eFrom.push_back( i ); eTo.push_back( j ); eDist.push_back( dist );
+						eLat.push_back( 1 );
 					}
 					std::string sharedWar;
 					for( unsigned int a = 0; a < nodeReads[i].size() && sharedWar.empty(); ++a )
@@ -5755,6 +5763,8 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 							          << " res=" << sharedWar << "\n";
 						++edges;
 						if( dist == 0 ) ++intra; else ++carried;
+						eFrom.push_back( i ); eTo.push_back( j ); eDist.push_back( dist );
+						eLat.push_back( 1 );
 					}
 				}
 			}
@@ -5766,6 +5776,66 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			          << " maxIntraLat=" << maxIntraLat
 			          << " maxCarriedLat=" << maxCarriedLat
 			          << "\n";
+
+			// Track 9.G step 2: RecMII = max over cycles C of sum(lat)/sum(dist).
+			// dist in {0,1}; only cycles with at least one dist=1 edge are finite.
+			// Solve via binary search on lambda: a positive cycle in the reweighted
+			// graph w(e) = lat(e) - lambda*dist(e) exists iff max cycle ratio > lambda.
+			// Use Bellman-Ford longest-path detection (init d[v]=0 for all v, relax
+			// n times, then test for one more relaxation).
+			if( n > 0 && carried > 0 && !eFrom.empty() )
+			{
+				double hi = 0.0;
+				for( unsigned int e = 0; e < eLat.size(); ++e ) hi += (double)eLat[e];
+				if( hi < 1.0 ) hi = 1.0;
+				double lo = 0.0;
+				const unsigned int E = static_cast<unsigned int>( eFrom.size() );
+				std::vector<double> d( n, 0.0 );
+				for( int iter = 0; iter < 60; ++iter )
+				{
+					const double mid = 0.5 * ( lo + hi );
+					for( unsigned int v = 0; v < n; ++v ) d[v] = 0.0;
+					// Relax n times.
+					for( unsigned int pass = 0; pass < n; ++pass )
+					{
+						bool changed = false;
+						for( unsigned int e = 0; e < E; ++e )
+						{
+							const double w = (double)eLat[e] - mid * (double)eDist[e];
+							const double nd = d[ eFrom[e] ] + w;
+							if( nd > d[ eTo[e] ] + 1e-12 )
+							{
+								d[ eTo[e] ] = nd;
+								changed = true;
+							}
+						}
+						if( !changed ) break;
+					}
+					// One more pass: if anything still relaxes, positive cycle exists.
+					bool positive = false;
+					for( unsigned int e = 0; e < E && !positive; ++e )
+					{
+						const double w = (double)eLat[e] - mid * (double)eDist[e];
+						if( d[ eFrom[e] ] + w > d[ eTo[e] ] + 1e-9 )
+							positive = true;
+					}
+					if( positive ) lo = mid;
+					else           hi = mid;
+				}
+				const double recmiiFract = lo;
+				unsigned int recmiiInt = static_cast<unsigned int>( recmiiFract );
+				if( (double)recmiiInt + 1e-6 < recmiiFract ) ++recmiiInt;
+				if( recmiiInt < 1 ) recmiiInt = 1;
+				std::cerr << "[loop-recmii] loop=" << opportunity.label
+				          << " recmii_int=" << recmiiInt
+				          << " recmii_fract=" << recmiiFract
+				          << "\n";
+			}
+			else
+			{
+				std::cerr << "[loop-recmii] loop=" << opportunity.label
+				          << " recmii_int=1 recmii_fract=0 (no carried edges)\n";
+			}
 		}
 
 		if( std::getenv( "OPENVCL_DUMP_MULTISTAGE_CANDIDATES" ) != NULL )
