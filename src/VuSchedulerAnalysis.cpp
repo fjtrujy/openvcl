@@ -5838,6 +5838,76 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			}
 		}
 
+		if( std::getenv( "OPENVCL_DUMP_LOOP_RESMII" ) != NULL
+		    && opportunity.simpleCountedLoop
+		    && !opportunity.mainTokenIndices.empty() )
+		{
+			// Track 9.G step 3: resource MII (ResMII) per VU execution pipe.
+			// Pipeline model (PS2 VU first-order):
+			//   * 1 UPPER issue / cycle  — VU_PIPE_UPPER (FMAC ops)
+			//   * 1 LOWER issue / cycle  — VU_PIPE_LOWER (LSU/IALU/BRU/RANDU
+			//                              plus FDIV/EFU which dispatch from
+			//                              the lower slot)
+			//   * FDIV unit non-pipelined: each FDIV op occupies it for
+			//                              info->throughput cycles
+			//   * EFU  unit non-pipelined: same model, info->throughput cycles
+			// NOPs and waitq/waitp are excluded from issue counts.
+			//
+			// ResMII = max( nUpper, nLower, sum_FDIV(throughput),
+			//               sum_EFU(throughput) )
+			// MII   = max( RecMII, ResMII ); the per-iter cycle count of any
+			//         valid modulo schedule.
+			const std::vector<unsigned int>& mt = opportunity.mainTokenIndices;
+			unsigned int nUpper = 0, nLower = 0, nNop = 0;
+			unsigned int fdivBusy = 0, efuBusy = 0;
+			unsigned int nFmac = 0, nLsu = 0, nIalu = 0, nBru = 0;
+			unsigned int nFdiv = 0, nEfu = 0, nRandu = 0;
+			for( unsigned int k = 0; k < mt.size(); ++k )
+			{
+				if( mt[k] >= indexedTokens.size() ) continue;
+				const Token& tk = *indexedTokens[mt[k]];
+				if( !tk.operand() ) continue;
+				const VuInstructionInfo* info =
+				    findVuInstructionInfo( normalizeVuMnemonic( tk.operand()->name() ) );
+				if( !info ) continue;
+				if( info->pipe == VU_PIPE_NOP ) { ++nNop; continue; }
+				if( info->pipe == VU_PIPE_UPPER ) ++nUpper;
+				else if( info->pipe == VU_PIPE_LOWER ) ++nLower;
+				switch( info->unit )
+				{
+				case VU_EXEC_FMAC:  ++nFmac;  break;
+				case VU_EXEC_LSU:   ++nLsu;   break;
+				case VU_EXEC_IALU:  ++nIalu;  break;
+				case VU_EXEC_BRU:   ++nBru;   break;
+				case VU_EXEC_RANDU: ++nRandu; break;
+				case VU_EXEC_FDIV:  ++nFdiv; fdivBusy += info->throughput; break;
+				case VU_EXEC_EFU:   ++nEfu;  efuBusy  += info->throughput; break;
+				default: break;
+				}
+			}
+			unsigned int resmii = nUpper;
+			if( nLower    > resmii ) resmii = nLower;
+			if( fdivBusy  > resmii ) resmii = fdivBusy;
+			if( efuBusy   > resmii ) resmii = efuBusy;
+			if( resmii < 1 ) resmii = 1;
+			std::cerr << "[loop-resmii] loop=" << opportunity.label
+			          << " mainSize=" << mt.size()
+			          << " nUpper=" << nUpper
+			          << " nLower=" << nLower
+			          << " fdivBusy=" << fdivBusy
+			          << " efuBusy=" << efuBusy
+			          << " nop=" << nNop
+			          << " fmac=" << nFmac
+			          << " lsu=" << nLsu
+			          << " ialu=" << nIalu
+			          << " bru=" << nBru
+			          << " randu=" << nRandu
+			          << " fdiv=" << nFdiv
+			          << " efu=" << nEfu
+			          << " resmii=" << resmii
+			          << "\n";
+		}
+
 		if( std::getenv( "OPENVCL_DUMP_MULTISTAGE_CANDIDATES" ) != NULL )
 		{
 			std::cerr << "[multistage] loop=" << opportunity.label
