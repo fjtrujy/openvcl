@@ -6954,6 +6954,60 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 						}
 					}
 				}
+				// Track 9.G step 5e: register-reuse / write-generation.
+				// Detects cross-stage hazards on VF registers shared by
+				// concurrently-active iterations. Diagnostic-only.
+				if( std::getenv( "OPENVCL_DUMP_KERNEL_REGISTER_PLAN" ) != NULL )
+				{
+					std::vector< VuKernelEntryRegisters > entryRegs;
+					entryRegs.resize( layout.entries.size() );
+					for( unsigned int e = 0; e < layout.entries.size(); ++e )
+					{
+						const unsigned int ti = layout.entries[e].tokenIndex;
+						if( ti >= indexedTokens.size() ) continue;
+						VuTokenResourceAccess acc;
+						if( !buildVuTokenResourceAccess( *indexedTokens[ti], acc ) ) continue;
+						for( std::list<std::string>::const_iterator it = acc.registerReads.begin();
+						     it != acc.registerReads.end(); ++it )
+						{
+							if( it->size() >= 2 && (*it)[0] == 'V' && (*it)[1] == 'F' )
+								entryRegs[e].reads.push_back( *it );
+						}
+						for( std::list<std::string>::const_iterator it = acc.registerWrites.begin();
+						     it != acc.registerWrites.end(); ++it )
+						{
+							if( it->size() >= 2 && (*it)[0] == 'V' && (*it)[1] == 'F' )
+								entryRegs[e].writes.push_back( *it );
+						}
+					}
+					VuKernelRegisterPlan plan;
+					buildVuKernelRegisterPlan( layout, entryRegs, plan );
+					std::cerr << "[kernel-regplan] loop=" << opportunity.label
+					          << " regs=" << plan.regCount
+					          << " hazards=" << plan.hazards.size()
+					          << " waw=" << plan.wawCount
+					          << " raw=" << plan.rawCount
+					          << " war=" << plan.warCount
+					          << "\n";
+					if( std::getenv( "OPENVCL_DUMP_KERNEL_REGISTER_PLAN_HAZARDS" ) != NULL )
+					{
+						for( unsigned int h = 0; h < plan.hazards.size(); ++h )
+						{
+							const VuKernelRegisterHazard& hz = plan.hazards[h];
+							const char* ka = ( hz.kindA == 1 ) ? "W" : "R";
+							const char* kb = ( hz.kindB == 1 ) ? "W" : "R";
+							std::cerr << "[kernel-regplan-hazard] loop=" << opportunity.label
+							          << " reg=" << hz.reg
+							          << " entryA=" << hz.entryA
+							          << " stageA=" << hz.stageA
+							          << " kindA=" << ka
+							          << " entryB=" << hz.entryB
+							          << " stageB=" << hz.stageB
+							          << " kindB=" << kb
+							          << "\n";
+						}
+					}
+				}
 			}
 			std::cerr << "[loop-schedule] loop=" << opportunity.label
 			          << " II=" << tryII

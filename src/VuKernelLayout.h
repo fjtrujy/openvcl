@@ -21,6 +21,7 @@
 #ifndef OPENVCL_VU_KERNEL_LAYOUT_H
 #define OPENVCL_VU_KERNEL_LAYOUT_H
 
+#include <string>
 #include <vector>
 
 namespace vcl
@@ -137,6 +138,53 @@ struct VuKernelEnvelope
 
 void buildVuKernelEnvelope( const VuKernelLayout& layout,
                             VuKernelEnvelope& envelope );
+
+// Track 9.G step 5e — register-reuse / write-generation analysis.
+//
+// In modulo scheduling, two iterations from adjacent stages are active
+// concurrently in the steady state. If a layout entry at stage sA and
+// another at stage sB (sA != sB) touch the same architectural register
+// and at least one of them is a write, then those iterations alias on
+// that register — the register must be renamed (or the schedule
+// adjusted) before emission. This analyzer flags such hazards.
+
+struct VuKernelEntryRegisters
+{
+    std::vector< std::string > reads;
+    std::vector< std::string > writes;
+};
+
+struct VuKernelRegisterHazard
+{
+    std::string  reg;
+    unsigned int entryA;
+    unsigned int entryB;
+    unsigned int stageA;
+    unsigned int stageB;
+    int          kindA; // 0 = read, 1 = write
+    int          kindB;
+
+    VuKernelRegisterHazard()
+        : entryA( 0 ), entryB( 0 ), stageA( 0 ), stageB( 0 ),
+          kindA( 0 ), kindB( 0 ) {}
+};
+
+struct VuKernelRegisterPlan
+{
+    unsigned int regCount; // distinct registers referenced by layout
+    unsigned int wawCount; // write-after-write cross-stage hazards
+    unsigned int rawCount; // read-after-write cross-stage hazards
+    unsigned int warCount; // write-after-read cross-stage hazards
+    std::vector< VuKernelRegisterHazard > hazards;
+
+    VuKernelRegisterPlan()
+        : regCount( 0 ), wawCount( 0 ), rawCount( 0 ), warCount( 0 ) {}
+};
+
+void buildVuKernelRegisterPlan(
+    const VuKernelLayout& layout,
+    const std::vector< VuKernelEntryRegisters >& entryRegs,
+    VuKernelRegisterPlan& plan );
 
 } // namespace vcl
 

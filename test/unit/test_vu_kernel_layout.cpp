@@ -259,3 +259,74 @@ TEST_CASE("VuKernelEnvelope: per-row tables grow with stageCount")
     // Stage 1 and stage 2 both fight for upper@modSlot 0 in epilogue copy 1.
     CHECK(env.conflicts >= 1u);
 }
+
+TEST_CASE("VuKernelRegisterPlan: same-stage shared register is not a hazard")
+{
+    VuKernelLayout layout;
+    layout.II = 2; layout.stageCount = 1;
+    { VuKernelLayoutEntry e; e.stage = 0; layout.entries.push_back(e); }
+    { VuKernelLayoutEntry e; e.stage = 0; layout.entries.push_back(e); }
+    std::vector<VuKernelEntryRegisters> regs(2);
+    regs[0].writes.push_back("VF10");
+    regs[1].reads.push_back("VF10");
+    VuKernelRegisterPlan plan;
+    buildVuKernelRegisterPlan(layout, regs, plan);
+    CHECK(plan.regCount == 1u);
+    CHECK(plan.hazards.empty());
+    CHECK(plan.wawCount == 0u);
+    CHECK(plan.rawCount == 0u);
+    CHECK(plan.warCount == 0u);
+}
+
+TEST_CASE("VuKernelRegisterPlan: cross-stage WAW and RAW counted")
+{
+    VuKernelLayout layout;
+    layout.II = 2; layout.stageCount = 2;
+    { VuKernelLayoutEntry e; e.stage = 0; layout.entries.push_back(e); } // 0: writes VF20
+    { VuKernelLayoutEntry e; e.stage = 1; layout.entries.push_back(e); } // 1: writes+reads VF20
+    std::vector<VuKernelEntryRegisters> regs(2);
+    regs[0].writes.push_back("VF20");
+    regs[1].writes.push_back("VF20");
+    regs[1].reads.push_back("VF20");
+    VuKernelRegisterPlan plan;
+    buildVuKernelRegisterPlan(layout, regs, plan);
+    // Pairs on VF20: (0W,1W) WAW + (0W,1R) RAW = 2 hazards.
+    CHECK(plan.regCount == 1u);
+    CHECK(plan.hazards.size() == 2u);
+    CHECK(plan.wawCount == 1u);
+    CHECK(plan.rawCount == 1u);
+    CHECK(plan.warCount == 0u);
+}
+
+TEST_CASE("VuKernelRegisterPlan: read-only across stages is not a hazard")
+{
+    VuKernelLayout layout;
+    layout.II = 2; layout.stageCount = 2;
+    { VuKernelLayoutEntry e; e.stage = 0; layout.entries.push_back(e); }
+    { VuKernelLayoutEntry e; e.stage = 1; layout.entries.push_back(e); }
+    std::vector<VuKernelEntryRegisters> regs(2);
+    regs[0].reads.push_back("VF05");
+    regs[1].reads.push_back("VF05");
+    VuKernelRegisterPlan plan;
+    buildVuKernelRegisterPlan(layout, regs, plan);
+    CHECK(plan.regCount == 1u);
+    CHECK(plan.hazards.empty());
+}
+
+TEST_CASE("VuKernelRegisterPlan: WAR counted when reader is in earlier stage")
+{
+    VuKernelLayout layout;
+    layout.II = 2; layout.stageCount = 2;
+    { VuKernelLayoutEntry e; e.stage = 0; layout.entries.push_back(e); }
+    { VuKernelLayoutEntry e; e.stage = 1; layout.entries.push_back(e); }
+    std::vector<VuKernelEntryRegisters> regs(2);
+    regs[0].reads.push_back("VF07");
+    regs[1].writes.push_back("VF07");
+    VuKernelRegisterPlan plan;
+    buildVuKernelRegisterPlan(layout, regs, plan);
+    CHECK(plan.regCount == 1u);
+    CHECK(plan.hazards.size() == 1u);
+    CHECK(plan.warCount == 1u);
+    CHECK(plan.wawCount == 0u);
+    CHECK(plan.rawCount == 0u);
+}

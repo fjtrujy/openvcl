@@ -1,7 +1,14 @@
 #include "VuKernelLayout.h"
 
+#include <map>
+
 namespace vcl
 {
+
+namespace
+{
+    struct RegPlanAcc { unsigned int entry; unsigned int stage; int kind; };
+}
 
 bool vuKernelLayoutEntryLess( const VuKernelLayoutEntry& a,
                               const VuKernelLayoutEntry& b )
@@ -101,6 +108,65 @@ void buildVuKernelEnvelope( const VuKernelLayout& layout,
             else continue;
             if( *lane != VuKernelTemplateSlot::NO_ENTRY ) ++envelope.conflicts;
             *lane = (int)i;
+        }
+    }
+}
+
+void buildVuKernelRegisterPlan(
+    const VuKernelLayout& layout,
+    const std::vector< VuKernelEntryRegisters >& entryRegs,
+    VuKernelRegisterPlan& plan )
+{
+    plan = VuKernelRegisterPlan();
+
+    // Per-register accesses: (entry index, stage, kind).
+    std::map< std::string, std::vector< RegPlanAcc > > byReg;
+
+    const unsigned int n = (unsigned int)layout.entries.size();
+    const unsigned int m = (unsigned int)entryRegs.size();
+    const unsigned int lim = ( n < m ) ? n : m;
+
+    for( unsigned int i = 0; i < lim; ++i )
+    {
+        const VuKernelLayoutEntry& e = layout.entries[i];
+        const VuKernelEntryRegisters& r = entryRegs[i];
+        for( unsigned int k = 0; k < r.reads.size(); ++k )
+        {
+            RegPlanAcc a; a.entry = i; a.stage = e.stage; a.kind = 0;
+            byReg[r.reads[k]].push_back( a );
+        }
+        for( unsigned int k = 0; k < r.writes.size(); ++k )
+        {
+            RegPlanAcc a; a.entry = i; a.stage = e.stage; a.kind = 1;
+            byReg[r.writes[k]].push_back( a );
+        }
+    }
+
+    plan.regCount = (unsigned int)byReg.size();
+
+    typedef std::map< std::string, std::vector< RegPlanAcc > >::const_iterator MapIt;
+    for( MapIt it = byReg.begin(); it != byReg.end(); ++it )
+    {
+        const std::vector< RegPlanAcc >& v = it->second;
+        for( unsigned int a = 0; a < v.size(); ++a )
+        {
+            for( unsigned int b = a + 1; b < v.size(); ++b )
+            {
+                if( v[a].stage == v[b].stage ) continue;
+                if( v[a].kind == 0 && v[b].kind == 0 ) continue;
+                VuKernelRegisterHazard h;
+                h.reg    = it->first;
+                h.entryA = v[a].entry;
+                h.entryB = v[b].entry;
+                h.stageA = v[a].stage;
+                h.stageB = v[b].stage;
+                h.kindA  = v[a].kind;
+                h.kindB  = v[b].kind;
+                plan.hazards.push_back( h );
+                if( v[a].kind == 1 && v[b].kind == 1 ) ++plan.wawCount;
+                else if( v[a].kind == 0 && v[b].kind == 1 ) ++plan.warCount;
+                else if( v[a].kind == 1 && v[b].kind == 0 ) ++plan.rawCount;
+            }
         }
     }
 }
