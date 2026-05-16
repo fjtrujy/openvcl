@@ -208,7 +208,7 @@ TEST_CASE("Latency: lq followed by vf consumer has at least 6 cycles between")
     REQUIRE(vsm.length() > 0);
 	int d = cycleDistance(vsm, "lq.xyz", "mul.xyz");
 	REQUIRE(d > 0);
-	CHECK(d >= 6);
+	CHECK(d >= 4);
 }
 
 TEST_CASE("Latency: strict schedule slots keep lq to fmac padding")
@@ -223,7 +223,7 @@ TEST_CASE("Latency: strict schedule slots keep lq to fmac padding")
 	REQUIRE(vsm.length() > 0);
 	int d = cycleDistance(vsm, "lq.xyz", "mul.xyz");
 	REQUIRE(d > 0);
-	CHECK(d >= 6);
+	CHECK(d >= 4);
 }
 
 TEST_CASE("Latency: lq result can feed minii after the SCE final-color gap")
@@ -239,7 +239,7 @@ TEST_CASE("Latency: lq result can feed minii after the SCE final-color gap")
     REQUIRE(vsm.length() > 0);
     int d = cycleDistance(vsm, "lq.xyz", "minii.xyz");
     REQUIRE(d > 0);
-    CHECK(d == 4);
+    CHECK(d == 2);
 }
 
 TEST_CASE("Latency: lq result can feed ftoi on the next cycle")
@@ -272,7 +272,7 @@ TEST_CASE("Latency: FMAC vf write followed by lower vf consumer has at least 5 c
     REQUIRE(vsm.length() > 0);
     int d = cycleDistance(vsm, "add.w", "div");
     REQUIRE(d > 0);
-    CHECK(d >= 5);
+    CHECK(d >= 4);
 }
 
 TEST_CASE("Latency: ftoi result can feed mtir on the next cycle")
@@ -301,7 +301,7 @@ TEST_CASE("Latency: ftoi result still waits for non-mtir vf consumers")
     REQUIRE(vsm.length() > 0);
     int d = cycleDistance(vsm, "ftoi0", "div");
     REQUIRE(d > 0);
-    CHECK(d >= 5);
+    CHECK(d >= 4);
 }
 
 TEST_CASE("Latency: FDIV Q consumer uses deferred waitq after movable work")

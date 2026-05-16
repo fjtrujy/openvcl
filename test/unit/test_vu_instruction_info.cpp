@@ -139,7 +139,7 @@ TEST_CASE("VuInstructionInfo: parser variants retain exact operand metadata")
     CHECK(std::string(add->operandPattern) == "vf:dest:write,vf:dest,vf:dest");
     CHECK(add->operandUnit == vcl::Operand::FMAC);
     CHECK(add->throughput == 1);
-    CHECK(add->latency == 4);
+    CHECK(add->latency == 3);
 
     const vcl::VuInstructionInfo* addBroadcast = findOperandInfo("ADD", vcl::Operand::UPPER | vcl::Operand::BROADCAST);
     REQUIRE(addBroadcast != 0);

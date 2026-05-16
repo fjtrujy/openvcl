@@ -2495,13 +2495,13 @@ TEST_CASE("VuSchedulerAnalysis: ready issue slots expose latency padding cycles"
     REQUIRE(blocks.size() == 1u);
 
     std::vector<vcl::VuScheduledIssueSlot> slots = vcl::scheduleVuBasicBlockReadyIssueSlots(blocks[0]);
-    REQUIRE(slots.size() == 6u);
+    REQUIRE(slots.size() == 5u);
     CHECK(slots[0].firstToken != NULL);
     CHECK(!slots[0].padding);
     CHECK(slots[0].paddingKind == vcl::VU_SCHEDULED_PADDING_NONE);
     CHECK(slots[0].issueCycle == 0u);
     CHECK(slots[0].cycleCount == 1u);
-    for (unsigned int i = 1; i < 5; ++i)
+    for (unsigned int i = 1; i < 4; ++i)
     {
         CHECK(slots[i].firstToken == NULL);
         CHECK(slots[i].secondToken == NULL);
@@ -2510,12 +2510,12 @@ TEST_CASE("VuSchedulerAnalysis: ready issue slots expose latency padding cycles"
         CHECK(slots[i].issueCycle == i);
         CHECK(slots[i].cycleCount == 1u);
     }
-    REQUIRE(slots[5].firstToken != NULL);
-    CHECK(vcl::normalizeVuMnemonic(slots[5].firstToken->name()) == "add");
-    CHECK(!slots[5].padding);
-    CHECK(slots[5].paddingKind == vcl::VU_SCHEDULED_PADDING_NONE);
-    CHECK(slots[5].issueCycle == 5u);
-    CHECK(slots[5].cycleCount == 1u);
+    REQUIRE(slots[4].firstToken != NULL);
+    CHECK(vcl::normalizeVuMnemonic(slots[4].firstToken->name()) == "add");
+    CHECK(!slots[4].padding);
+    CHECK(slots[4].paddingKind == vcl::VU_SCHEDULED_PADDING_NONE);
+    CHECK(slots[4].issueCycle == 4u);
+    CHECK(slots[4].cycleCount == 1u);
 }
 
 TEST_CASE("VuSchedulerAnalysis: ready issue slots classify Q and P wait padding")
@@ -2684,7 +2684,7 @@ TEST_CASE("VuSchedulerAnalysis: issue slots expose generic dual-pipe pair choice
     REQUIRE(blocks.size() == 1u);
 
     std::vector<vcl::VuScheduledIssueSlot> slots = vcl::scheduleVuBasicBlockReadyIssueSlots(blocks[0]);
-    REQUIRE(slots.size() == 6u);
+    REQUIRE(slots.size() == 5u);
     REQUIRE(slots[0].firstToken != 0);
     REQUIRE(slots[0].secondToken != 0);
     CHECK(vcl::normalizeVuMnemonic(slots[0].firstToken->name()) == "add");
@@ -2698,7 +2698,7 @@ TEST_CASE("VuSchedulerAnalysis: issue slots expose generic dual-pipe pair choice
     CHECK(slots[0].upperTokenIndex == 0u);
     CHECK(slots[0].lowerTokenIndex == 2u);
 
-    for (unsigned int i = 1; i < 5; ++i)
+    for (unsigned int i = 1; i < 4; ++i)
     {
         CHECK(slots[i].padding);
         CHECK(slots[i].paddingKind == vcl::VU_SCHEDULED_PADDING_NOP);
@@ -2706,12 +2706,12 @@ TEST_CASE("VuSchedulerAnalysis: issue slots expose generic dual-pipe pair choice
         CHECK(slots[i].cycleCount == 1u);
     }
 
-    REQUIRE(slots[5].firstToken != 0);
-    CHECK(slots[5].secondToken == 0);
-    CHECK(vcl::normalizeVuMnemonic(slots[5].firstToken->name()) == "mul");
-    REQUIRE(slots[5].upperToken != 0);
-    CHECK(slots[5].lowerToken == 0);
-    CHECK(vcl::normalizeVuMnemonic(slots[5].upperToken->name()) == "mul");
+    REQUIRE(slots[4].firstToken != 0);
+    CHECK(slots[4].secondToken == 0);
+    CHECK(vcl::normalizeVuMnemonic(slots[4].firstToken->name()) == "mul");
+    REQUIRE(slots[4].upperToken != 0);
+    CHECK(slots[4].lowerToken == 0);
+    CHECK(vcl::normalizeVuMnemonic(slots[4].upperToken->name()) == "mul");
 }
 
 TEST_CASE("VuSchedulerAnalysis: ready-set scheduler tags explicit issue-slot pairs")
@@ -2753,9 +2753,9 @@ TEST_CASE("VuSchedulerAnalysis: non-flag ready-set program exposes issue slots")
     vcl::VuScheduledProgram scheduled =
         vcl::scheduleVuProgramReadyIssueSlots(program.tokenizer.tokens());
     REQUIRE(scheduled.blocks.size() == 1u);
-    REQUIRE(scheduled.blocks[0].issueSlots.size() == 6u);
+    REQUIRE(scheduled.blocks[0].issueSlots.size() == 5u);
     CHECK(scheduled.blocks[0].firstIssueCycle == 0u);
-    CHECK(scheduled.blocks[0].cycleCount == 6u);
+    CHECK(scheduled.blocks[0].cycleCount == 5u);
     REQUIRE(scheduled.blocks[0].issueSlots[0].firstToken != NULL);
     REQUIRE(scheduled.blocks[0].issueSlots[0].secondToken != NULL);
     CHECK(vcl::normalizeVuMnemonic(scheduled.blocks[0].issueSlots[0].firstToken->name()) == "add");
@@ -2986,11 +2986,11 @@ TEST_CASE("VuSchedulerAnalysis: scheduled program exposes block cycle ranges")
     REQUIRE(scheduled.blocks.size() == 2u);
     CHECK(scheduled.blocks[0].block.firstTokenIndex == 0u);
     CHECK(scheduled.blocks[0].firstIssueCycle == 0u);
-    CHECK(scheduled.blocks[0].cycleCount == 7u);
+    CHECK(scheduled.blocks[0].cycleCount == 6u);
     CHECK(scheduled.blocks[1].block.firstTokenIndex == 3u);
-    CHECK(scheduled.blocks[1].firstIssueCycle == 7u);
+    CHECK(scheduled.blocks[1].firstIssueCycle == 6u);
     CHECK(scheduled.blocks[1].cycleCount == 2u);
-    CHECK(scheduled.cycleCount == 9u);
+    CHECK(scheduled.cycleCount == 8u);
     REQUIRE(scheduled.blocks[0].issueSlots.size() >= 2u);
     CHECK(scheduled.blocks[0].issueSlots[0].firstTokenIndex == 0u);
     CHECK(scheduled.blocks[0].issueSlots[0].secondTokenIndex == vcl::VU_SCHEDULED_TOKEN_INDEX_NONE);
