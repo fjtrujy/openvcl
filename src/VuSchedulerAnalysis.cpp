@@ -3495,6 +3495,71 @@ namespace
 		    && access.memoryKind == VU_MEMORY_STORE;
 	}
 
+	// Track 9.E step 2 (diagnostic only): estimate the steady-state per-iteration
+	// cycle count of a 2-stage software-pipelined kernel built from a single-Q
+	// eligible opportunity. Builds a replicated kernel where iteration N+1 uses
+	// scratch VF registers in place of the loop-carried Q-output VF registers,
+	// breaking the iter->iter WAR/WAW on those carried regs. The Q register and
+	// FMAC accumulator deps that the hardware serializes are preserved.
+	//
+	// Returns false if rotation allocation fails or the opportunity isn't
+	// shaped like a single-Q SWP candidate. On success outKernelCycles is the
+	// total scheduled cycles of (iter1 ++ iter2_renamed); per-iter cost is
+	// outKernelCycles / 2.
+	bool synthesizeTwoStageKernelCycles( const VuLoopCandidate& loop,
+	                                     const std::vector<const Token*>& indexedTokens,
+	                                     const VuLoopPipelineOpportunity& opportunity,
+	                                     unsigned int& outKernelCycles,
+	                                     std::vector<VuSoftwarePipelineRotation>& outRotations )
+	{
+		outKernelCycles = 0;
+		outRotations.clear();
+		if( !opportunity.eligibleSingleQSoftwarePipeline )
+			return false;
+		if( opportunity.mainTokenIndices.empty() )
+			return false;
+		if( opportunity.carriedQOutputRegisters.empty() )
+			return false;
+
+		std::vector<VuSoftwarePipelineRotation> rotations;
+		for( std::list<std::string>::const_iterator reg =
+		         opportunity.carriedQOutputRegisters.begin();
+		     reg != opportunity.carriedQOutputRegisters.end(); ++reg )
+		{
+			VuSoftwarePipelineRotation rot;
+			rot.registerBase = *reg;
+			rot.hasScratchRegister = false;
+			rotations.push_back( rot );
+		}
+		assignRotationScratchRegisters( loop, rotations );
+		for( std::vector<VuSoftwarePipelineRotation>::const_iterator r = rotations.begin();
+		     r != rotations.end(); ++r )
+		{
+			if( !r->hasScratchRegister )
+				return false;
+		}
+
+		std::list<Token> kernelTokens;
+		for( std::vector<unsigned int>::const_iterator i = opportunity.mainTokenIndices.begin();
+		     i != opportunity.mainTokenIndices.end(); ++i )
+		{
+			if( *i < indexedTokens.size() )
+				appendUnlabeledTokenForScheduleCost( kernelTokens, *indexedTokens[*i] );
+		}
+		for( std::vector<unsigned int>::const_iterator i = opportunity.mainTokenIndices.begin();
+		     i != opportunity.mainTokenIndices.end(); ++i )
+		{
+			if( *i < indexedTokens.size() )
+				kernelTokens.push_back(
+				    adjustedMultiQCyclicPrefixToken( *indexedTokens[*i], rotations ) );
+		}
+
+		outKernelCycles =
+		    scheduleVuProgramReadyIssueSlotsWithFlagLiveness( kernelTokens ).cycleCount;
+		outRotations.swap( rotations );
+		return true;
+	}
+
 	bool loopBodyHasQProducer( const VuLoopCandidate& loop )
 	{
 		for( std::vector<const Token*>::const_iterator i = loop.bodyTokens.begin();
@@ -5380,6 +5445,34 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			          << " tokenStageOffsets=" << opportunity.tokenStageOffsets.size()
 			          << " rotations=" << opportunity.stageRotationRegisters.size()
 			          << "\n";
+
+			// Track 9.E step 2 (cost-only): synthesize a 2-stage kernel candidate
+			// and report per-iter cost vs the 1-stage main body. Planner still
+			// picks the 1-stage plan; this number informs design of step 3+4.
+			if( opportunity.eligibleSingleQSoftwarePipeline )
+			{
+				const unsigned int singleStageMainCycles =
+				    scheduledLoopBodyCycles( opportunity.mainTokenIndices, indexedTokens );
+				unsigned int kernelCycles = 0;
+				std::vector<VuSoftwarePipelineRotation> rotations;
+				const bool ok = synthesizeTwoStageKernelCycles( *loop,
+				                                                indexedTokens,
+				                                                opportunity,
+				                                                kernelCycles,
+				                                                rotations );
+				std::cerr << "[multistage-2stage] loop=" << opportunity.label
+				          << " singleStageMainCycles=" << singleStageMainCycles
+				          << " twoStage=" << ( ok ? "ok" : "fail" )
+				          << " kernelCycles=" << kernelCycles
+				          << " perIter=" << ( ok ? ( kernelCycles / 2.0 ) : 0.0 )
+				          << " rotations=" << rotations.size();
+				for( std::vector<VuSoftwarePipelineRotation>::const_iterator r =
+				         rotations.begin(); r != rotations.end(); ++r )
+				{
+					std::cerr << " " << r->registerBase << "->" << r->scratchRegister;
+				}
+				std::cerr << "\n";
+			}
 		}
 
 		result.push_back( opportunity );
