@@ -6376,6 +6376,91 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			std::vector<int>          pipeOf( n, 0 ); // 0=none 1=U 2=L 3=FDIV 4=EFU
 			std::vector<bool>         placed( n, false );
 			unsigned int placedCount = 0, failedCount = 0, maxStage = 0;
+
+			// Track 9.G step 4e: build the full DDG (intra dist=0, loop-carried
+			// dist=1) so the placer can enforce cross-iteration RAW/WAW/WAR
+			// feasibility. Constraint per edge (a->b, lat L, dist d):
+			//     slot[b] - slot[a] >= L - d*II
+			// When the predecessor is already placed and we trial slot s for b,
+			// reject s if s < slot[a] + L - d*II. Symmetric check when b is
+			// placed and a is being trialled.
+			std::vector< std::vector<std::string> > nodeWritesP( n ), nodeReadsP( n );
+			for( unsigned int k = 0; k < n; ++k )
+			{
+				if( mt[k] >= indexedTokens.size() ) continue;
+				VuTokenResourceAccess acc;
+				if( !buildVuTokenResourceAccess( *indexedTokens[mt[k]], acc ) ) continue;
+				for( std::list<std::string>::const_iterator it = acc.registerWrites.begin();
+				     it != acc.registerWrites.end(); ++it )
+					nodeWritesP[k].push_back( registerBaseKey( *it ) );
+				for( std::list<std::string>::const_iterator it = acc.registerReads.begin();
+				     it != acc.registerReads.end(); ++it )
+					nodeReadsP[k].push_back( registerBaseKey( *it ) );
+				const unsigned int iw = acc.implicitWrites;
+				const unsigned int ir = acc.implicitReads;
+				if( iw & VU_RESOURCE_ACC )  nodeWritesP[k].push_back( "@ACC" );
+				if( iw & VU_RESOURCE_Q )    nodeWritesP[k].push_back( "@Q" );
+				if( iw & VU_RESOURCE_P )    nodeWritesP[k].push_back( "@P" );
+				if( iw & VU_RESOURCE_R )    nodeWritesP[k].push_back( "@R" );
+				if( iw & VU_RESOURCE_I )    nodeWritesP[k].push_back( "@I" );
+				if( iw & VU_RESOURCE_MAC )  nodeWritesP[k].push_back( "@MAC" );
+				if( iw & VU_RESOURCE_CLIP ) nodeWritesP[k].push_back( "@CLIP" );
+				if( ir & VU_RESOURCE_ACC )  nodeReadsP[k].push_back( "@ACC" );
+				if( ir & VU_RESOURCE_Q )    nodeReadsP[k].push_back( "@Q" );
+				if( ir & VU_RESOURCE_P )    nodeReadsP[k].push_back( "@P" );
+				if( ir & VU_RESOURCE_R )    nodeReadsP[k].push_back( "@R" );
+				if( ir & VU_RESOURCE_I )    nodeReadsP[k].push_back( "@I" );
+				if( ir & VU_RESOURCE_MAC )  nodeReadsP[k].push_back( "@MAC" );
+				if( ir & VU_RESOURCE_CLIP ) nodeReadsP[k].push_back( "@CLIP" );
+			}
+			std::vector<unsigned int> dFrom, dTo, dDist, dLat;
+			for( unsigned int i = 0; i < n; ++i )
+			{
+				for( unsigned int j = 0; j < n; ++j )
+				{
+					if( i == j ) continue;
+					const unsigned int dist = ( i < j ) ? 0u : 1u;
+					std::string sharedRaw;
+					for( unsigned int a = 0; a < nodeWritesP[i].size() && sharedRaw.empty(); ++a )
+						for( unsigned int b = 0; b < nodeReadsP[j].size() && sharedRaw.empty(); ++b )
+							if( nodeWritesP[i][a] == nodeReadsP[j][b] )
+								sharedRaw = nodeWritesP[i][a];
+					if( !sharedRaw.empty()
+					    && mt[i] < indexedTokens.size()
+					    && mt[j] < indexedTokens.size() )
+					{
+						VuLatencyTracker tr;
+						tr.reset();
+						tr.recordWrites( *indexedTokens[mt[i]], 0 );
+						const int d = tr.readHazardDelay( *indexedTokens[mt[j]], NULL, 0 );
+						const unsigned int lat = static_cast<unsigned int>( d > 0 ? d : 1 );
+						dFrom.push_back( i ); dTo.push_back( j );
+						dDist.push_back( dist ); dLat.push_back( lat );
+					}
+					std::string sharedWaw;
+					for( unsigned int a = 0; a < nodeWritesP[i].size() && sharedWaw.empty(); ++a )
+						for( unsigned int b = 0; b < nodeWritesP[j].size() && sharedWaw.empty(); ++b )
+							if( nodeWritesP[i][a] == nodeWritesP[j][b] )
+								sharedWaw = nodeWritesP[i][a];
+					if( !sharedWaw.empty() )
+					{
+						dFrom.push_back( i ); dTo.push_back( j );
+						dDist.push_back( dist ); dLat.push_back( 1 );
+					}
+					std::string sharedWar;
+					for( unsigned int a = 0; a < nodeReadsP[i].size() && sharedWar.empty(); ++a )
+						for( unsigned int b = 0; b < nodeWritesP[j].size() && sharedWar.empty(); ++b )
+							if( nodeReadsP[i][a] == nodeWritesP[j][b] )
+								sharedWar = nodeReadsP[i][a];
+					if( !sharedWar.empty() )
+					{
+						dFrom.push_back( i ); dTo.push_back( j );
+						dDist.push_back( dist ); dLat.push_back( 1 );
+					}
+				}
+			}
+			const unsigned int totalEdges = static_cast<unsigned int>( dFrom.size() );
+			unsigned int edgeViolations = 0;
 			for( unsigned int rank = 0; rank < pr.order.size(); ++rank )
 			{
 				const unsigned int i = pr.order[rank];
@@ -6426,6 +6511,29 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 				bool ok = false;
 				for( unsigned int s = lo; s <= hi && !ok; ++s )
 				{
+					// Track 9.G step 4e: edge feasibility against placed nodes.
+					// For each edge touching i where the other end is already
+					// placed, require slot[to] - slot[from] >= lat - dist*II.
+					// Use signed int math (II*dist can exceed lat).
+					bool edgeOk = true;
+					for( unsigned int e = 0; e < totalEdges && edgeOk; ++e )
+					{
+						const int Lat = static_cast<int>( dLat[e] );
+						const int Dii = static_cast<int>( dDist[e] ) * static_cast<int>( mii );
+						if( dTo[e] == i && placed[ dFrom[e] ] )
+						{
+							const int from = static_cast<int>( slotOf[ dFrom[e] ] );
+							if( static_cast<int>( s ) - from < Lat - Dii )
+								edgeOk = false;
+						}
+						else if( dFrom[e] == i && placed[ dTo[e] ] )
+						{
+							const int to = static_cast<int>( slotOf[ dTo[e] ] );
+							if( to - static_cast<int>( s ) < Lat - Dii )
+								edgeOk = false;
+						}
+					}
+					if( !edgeOk ) { ++edgeViolations; continue; }
 					const unsigned int mod = mii > 0 ? ( s % mii ) : 0;
 					bool canPlace = false;
 					switch( pipeKind )
@@ -6459,6 +6567,8 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			          << " placed=" << placedCount
 			          << " failed=" << failedCount
 			          << " maxStage=" << maxStage
+			          << " edges=" << totalEdges
+			          << " edgeViolations=" << edgeViolations
 			          << " upperOcc=" << mrt.upperOccupancy()
 			          << " lowerOcc=" << mrt.lowerOccupancy()
 			          << " fdivOcc=" << mrt.fdivOccupancy()
