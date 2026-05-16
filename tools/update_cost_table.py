@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
 """
-Regenerate the SCEI vs OpenVCL cost table inside GENERIC_COMPILER_ROADMAP.md.
+Regenerate the SCEI vs OpenVCL cost table inside the integration PLAN.md.
+
+The target markdown file is expected to contain the markers
+``<!-- BEGIN_COST_TABLE -->`` and ``<!-- END_COST_TABLE -->``; the rendered
+table is written between them. The canonical location of that file is the
+workspace-level ``ps2_opengl_integration/PLAN.md`` (formerly
+``GENERIC_COMPILER_ROADMAP.md`` inside the openvcl repo).
 
 Usage:
   python3 tools/update_cost_table.py \
       --openvcl-bin /full/path/to/openvcl \
-      --md /full/path/to/GENERIC_COMPILER_ROADMAP.md
+      --md /full/path/to/PLAN.md \
+      --pairs-file /tmp/ps2gl_pairs.txt
 
-If a pairs file is provided with lines `baseline_path candidate_path`, the script
-will render a per-pair comparison table. Otherwise it will list all `.vsm`
-files found in the fixtures directory and show their metrics.
+If a pairs file is provided with lines `baseline_path candidate_path [label]`,
+the script renders a per-pair comparison table. Otherwise it lists all `.vsm`
+files found in the fixtures directory and shows their metrics.
 """
 
 import argparse
@@ -94,7 +101,7 @@ def update_md(md_path, content):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--openvcl-bin', default='openvcl', help='path to openvcl binary')
-    ap.add_argument('--md', default='GENERIC_COMPILER_ROADMAP.md', help='markdown file to update')
+    ap.add_argument('--md', required=True, help='markdown file to update (expects BEGIN_COST_TABLE/END_COST_TABLE markers)')
     ap.add_argument('--fixtures-dir', default=os.path.join('test','fixtures','vsm_cost'), help='fixtures directory')
     ap.add_argument('--pairs-file', help='optional pairs file with: baseline candidate [label] per line')
     ap.add_argument('--dry-run', action='store_true')
