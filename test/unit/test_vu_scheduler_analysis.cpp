@@ -3203,3 +3203,41 @@ TEST_CASE("VuSchedulerAnalysis: wait slots can carry independent upper work")
     REQUIRE(mfpSlot.lowerToken != NULL);
     CHECK(vcl::normalizeVuMnemonic(mfpSlot.lowerToken->name()) == "mfp");
 }
+
+// Track 9.E (multi-stage SWP) step 1: assert all opportunities default to
+// stageCount==1 and the new collections are empty (no behavior change yet).
+TEST_CASE("VuSchedulerAnalysis: multistage schema defaults to stageCount=1")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 3"));
+    REQUIRE(program.parse("lq.xyz vf01, 0(vi01)"));
+    REQUIRE(program.parse("mul.xyz vf03, vf01, vf02"));
+    REQUIRE(program.parse("div q, vf00[w], vf03[w]"));
+    REQUIRE(program.parse("mulq.xyz vf03, vf03, q"));
+    REQUIRE(program.parse("add.xyz vf05, vf03, vf00"));
+    REQUIRE(program.parse("lq.xyz vf06, 2(vi01)"));
+    REQUIRE(program.parse("mulq.xyz vf06, vf06, q"));
+    REQUIRE(program.parse("sq.xyz vf06, 0(vi02)"));
+    REQUIRE(program.parse("iaddiu vi01, vi01, 3"));
+    REQUIRE(program.parse("ibne vi01, vi03, loop_lid"));
+
+    std::vector<vcl::VuLoopPipelineOpportunity> opportunities =
+        vcl::findVuLoopPipelineOpportunities(program.tokenizer.tokens());
+    REQUIRE(opportunities.size() == 1u);
+    CHECK(opportunities[0].stageCount == 1u);
+    CHECK(opportunities[0].kernelTokenIndices.empty());
+    CHECK(opportunities[0].tokenStageOffsets.empty());
+    CHECK(opportunities[0].stageRotationRegisters.empty());
+
+    std::vector<vcl::VuSoftwarePipelineRewritePlan> plans =
+        vcl::buildVuSoftwarePipelineRewritePlans(program.tokenizer.tokens());
+    for (std::vector<vcl::VuSoftwarePipelineRewritePlan>::const_iterator p = plans.begin();
+         p != plans.end(); ++p) {
+        CHECK(p->stageCount == 1u);
+        CHECK(p->kernelTokenIndices.empty());
+        CHECK(p->tokenStageOffsets.empty());
+        CHECK(p->stageRotationRegisters.empty());
+    }
+}

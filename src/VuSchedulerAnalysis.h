@@ -11,6 +11,8 @@
 #include "VuInstructionInfo.h"
 
 #include <list>
+#include <map>
+#include <string>
 #include <vector>
 
 namespace vcl
@@ -276,6 +278,14 @@ struct VuLoopPipelineOpportunity
 	std::list<std::string> inductionRegisters;
 	std::vector<VuLoopInductionUpdate> inductionUpdates;
 	std::list<std::string> loopReadWriteRegisters;
+
+	// Track 9.E (multi-stage SWP) — diagnostic-only schema. stageCount=1 for all
+	// existing planners; >1 will indicate the loop body has been replicated and
+	// software-renamed across multiple in-flight iterations.
+	unsigned int stageCount;
+	std::vector<unsigned int> kernelTokenIndices;
+	std::vector<int> tokenStageOffsets;
+	std::map<std::string, unsigned int> stageRotationRegisters;
 };
 
 struct VuSoftwarePipelineRewritePlan
@@ -311,6 +321,14 @@ struct VuSoftwarePipelineRewritePlan
 	std::vector<unsigned int> mainTokenIndices;
 	std::vector<unsigned int> drainTokenIndices;
 	std::vector<unsigned int> qConsumerTokenIndices;
+
+	// Track 9.E (multi-stage SWP) — diagnostic-only schema. stageCount=1 for all
+	// existing planners; >1 will indicate prolog/main/drain encode replicated
+	// kernel iterations.
+	unsigned int stageCount;
+	std::vector<unsigned int> kernelTokenIndices;
+	std::vector<int> tokenStageOffsets;
+	std::map<std::string, unsigned int> stageRotationRegisters;
 };
 
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens );

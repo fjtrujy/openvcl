@@ -4587,6 +4587,7 @@ VuLoopPipelineOpportunity::VuLoopPipelineOpportunity()
 	memoryStoreCount = 0;
 	hasMemoryPreOrPostIncrement = false;
 	hasXgkick = false;
+	stageCount = 1;
 }
 
 VuSoftwarePipelineRewritePlan::VuSoftwarePipelineRewritePlan()
@@ -4605,6 +4606,7 @@ VuSoftwarePipelineRewritePlan::VuSoftwarePipelineRewritePlan()
 	cyclicPrefixLastTokenInBranchDelaySlot = false;
 	drainsSuffixStores = false;
 	emitsDrain = false;
+	stageCount = 1;
 }
 
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens )
@@ -5370,6 +5372,16 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			}
 		}
 
+		if( std::getenv( "OPENVCL_DUMP_MULTISTAGE_CANDIDATES" ) != NULL )
+		{
+			std::cerr << "[multistage] loop=" << opportunity.label
+			          << " stageCount=" << opportunity.stageCount
+			          << " kernelTokens=" << opportunity.kernelTokenIndices.size()
+			          << " tokenStageOffsets=" << opportunity.tokenStageOffsets.size()
+			          << " rotations=" << opportunity.stageRotationRegisters.size()
+			          << "\n";
+		}
+
 		result.push_back( opportunity );
 	}
 
@@ -5467,6 +5479,20 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		{
 			plans.push_back( plan );
 			plannedLabelIndices[plan.labelTokenIndex] = true;
+		}
+	}
+
+	if( std::getenv( "OPENVCL_DUMP_MULTISTAGE_CANDIDATES" ) != NULL )
+	{
+		for( std::vector<VuSoftwarePipelineRewritePlan>::const_iterator p = plans.begin();
+		     p != plans.end(); ++p )
+		{
+			std::cerr << "[multistage-plan] loop=" << p->label
+			          << " stageCount=" << p->stageCount
+			          << " kernelTokens=" << p->kernelTokenIndices.size()
+			          << " tokenStageOffsets=" << p->tokenStageOffsets.size()
+			          << " rotations=" << p->stageRotationRegisters.size()
+			          << "\n";
 		}
 	}
 
