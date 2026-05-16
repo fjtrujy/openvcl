@@ -3263,3 +3263,23 @@ TEST_CASE("VuSchedulerAnalysis: kernel-rewrite scaffolding defaults are zero/emp
     CHECK(plan.kernelRewriteDrainTokens.empty());
     CHECK(plan.kernelRewriteEntryStages.empty());
 }
+
+// Track 9.G step 6f: register-rewrite scaffolding fields default to zero/empty.
+TEST_CASE("VuSchedulerAnalysis: register-rewrite scaffolding defaults are zero/empty")
+{
+    vcl::VuLoopPipelineOpportunity opp;
+    CHECK(opp.kernelRewriteRegCount == 0u);
+    CHECK(opp.kernelRewriteWawCount == 0u);
+    CHECK(opp.kernelRewriteRawCount == 0u);
+    CHECK(opp.kernelRewriteWarCount == 0u);
+    CHECK(opp.kernelRewriteHazards.empty());
+    CHECK(opp.kernelRewriteRenameHints.empty());
+
+    vcl::VuSoftwarePipelineRewritePlan plan;
+    CHECK(plan.kernelRewriteRegCount == 0u);
+    CHECK(plan.kernelRewriteWawCount == 0u);
+    CHECK(plan.kernelRewriteRawCount == 0u);
+    CHECK(plan.kernelRewriteWarCount == 0u);
+    CHECK(plan.kernelRewriteHazards.empty());
+    CHECK(plan.kernelRewriteRenameHints.empty());
+}

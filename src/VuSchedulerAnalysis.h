@@ -9,6 +9,7 @@
 
 #include "Token.h"
 #include "VuInstructionInfo.h"
+#include "VuKernelLayout.h"
 
 #include <list>
 #include <map>
@@ -301,6 +302,16 @@ struct VuLoopPipelineOpportunity
 	std::vector<unsigned int> kernelRewriteMainTokens;
 	std::vector<unsigned int> kernelRewriteDrainTokens;
 	std::vector<unsigned int> kernelRewriteEntryStages;
+
+	// Track 9.G step 6f — VuKernelRegisterPlan + rename-hint scaffolding
+	// (diagnostic-only). Populated alongside the rewrite-plan scaffolding
+	// when the modulo placer runs. No emission path consumes these yet.
+	unsigned int kernelRewriteRegCount;
+	unsigned int kernelRewriteWawCount;
+	unsigned int kernelRewriteRawCount;
+	unsigned int kernelRewriteWarCount;
+	std::vector<VuKernelRegisterHazard> kernelRewriteHazards;
+	std::vector<VuKernelRenameHint> kernelRewriteRenameHints;
 };
 
 struct VuSoftwarePipelineRewritePlan
@@ -356,6 +367,15 @@ struct VuSoftwarePipelineRewritePlan
 	std::vector<unsigned int> kernelRewriteMainTokens;
 	std::vector<unsigned int> kernelRewriteDrainTokens;
 	std::vector<unsigned int> kernelRewriteEntryStages;
+
+	// Track 9.G step 6f — register-plan + rename-hint scaffolding
+	// (diagnostic-only). Mirrors the opportunity-side fields.
+	unsigned int kernelRewriteRegCount;
+	unsigned int kernelRewriteWawCount;
+	unsigned int kernelRewriteRawCount;
+	unsigned int kernelRewriteWarCount;
+	std::vector<VuKernelRegisterHazard> kernelRewriteHazards;
+	std::vector<VuKernelRenameHint> kernelRewriteRenameHints;
 };
 
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens );

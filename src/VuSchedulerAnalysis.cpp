@@ -5206,6 +5206,10 @@ VuLoopPipelineOpportunity::VuLoopPipelineOpportunity()
 	kernelRewriteII = 0;
 	kernelRewriteStageCount = 0;
 	kernelRewriteConflicts = 0;
+	kernelRewriteRegCount = 0;
+	kernelRewriteWawCount = 0;
+	kernelRewriteRawCount = 0;
+	kernelRewriteWarCount = 0;
 }
 
 VuSoftwarePipelineRewritePlan::VuSoftwarePipelineRewritePlan()
@@ -5228,6 +5232,10 @@ VuSoftwarePipelineRewritePlan::VuSoftwarePipelineRewritePlan()
 	kernelRewriteII = 0;
 	kernelRewriteStageCount = 0;
 	kernelRewriteConflicts = 0;
+	kernelRewriteRegCount = 0;
+	kernelRewriteWawCount = 0;
+	kernelRewriteRawCount = 0;
+	kernelRewriteWarCount = 0;
 }
 
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens )
@@ -7264,6 +7272,39 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 					opportunity.kernelRewriteMainTokens   = krRp.mainTokens;
 					opportunity.kernelRewriteDrainTokens  = krRp.drainTokens;
 					opportunity.kernelRewriteEntryStages  = krRp.entryStages;
+
+					// Track 9.G step 6f: register-plan + rename-hint scaffolding.
+					std::vector< VuKernelEntryRegisters > krEntryRegs;
+					krEntryRegs.resize( krLayout.entries.size() );
+					for( unsigned int e = 0; e < krLayout.entries.size(); ++e )
+					{
+						const unsigned int ti = krLayout.entries[e].tokenIndex;
+						if( ti >= indexedTokens.size() ) continue;
+						VuTokenResourceAccess acc;
+						if( !buildVuTokenResourceAccess( *indexedTokens[ti], acc ) ) continue;
+						for( std::list<std::string>::const_iterator it = acc.registerReads.begin();
+						     it != acc.registerReads.end(); ++it )
+						{
+							if( it->size() >= 2 && (*it)[0] == 'V' && (*it)[1] == 'F' )
+								krEntryRegs[e].reads.push_back( *it );
+						}
+						for( std::list<std::string>::const_iterator it = acc.registerWrites.begin();
+						     it != acc.registerWrites.end(); ++it )
+						{
+							if( it->size() >= 2 && (*it)[0] == 'V' && (*it)[1] == 'F' )
+								krEntryRegs[e].writes.push_back( *it );
+						}
+					}
+					VuKernelRegisterPlan krRegPlan;
+					buildVuKernelRegisterPlan( krLayout, krEntryRegs, krRegPlan );
+					opportunity.kernelRewriteRegCount = krRegPlan.regCount;
+					opportunity.kernelRewriteWawCount = krRegPlan.wawCount;
+					opportunity.kernelRewriteRawCount = krRegPlan.rawCount;
+					opportunity.kernelRewriteWarCount = krRegPlan.warCount;
+					opportunity.kernelRewriteHazards  = krRegPlan.hazards;
+					std::vector< VuKernelRenameHint > krHints;
+					buildVuKernelRenameHints( krRegPlan, krHints );
+					opportunity.kernelRewriteRenameHints = krHints;
 				}
 			}
 			std::cerr << "[loop-schedule] loop=" << opportunity.label
@@ -7814,6 +7855,13 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		plan.kernelRewriteMainTokens   = i->kernelRewriteMainTokens;
 		plan.kernelRewriteDrainTokens  = i->kernelRewriteDrainTokens;
 		plan.kernelRewriteEntryStages  = i->kernelRewriteEntryStages;
+		// Track 9.G step 6f: register-plan + rename-hint scaffolding.
+		plan.kernelRewriteRegCount    = i->kernelRewriteRegCount;
+		plan.kernelRewriteWawCount    = i->kernelRewriteWawCount;
+		plan.kernelRewriteRawCount    = i->kernelRewriteRawCount;
+		plan.kernelRewriteWarCount    = i->kernelRewriteWarCount;
+		plan.kernelRewriteHazards     = i->kernelRewriteHazards;
+		plan.kernelRewriteRenameHints = i->kernelRewriteRenameHints;
 
 		if( i->canEmitMultiQSoftwarePipeline )
 		{
@@ -7914,6 +7962,24 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 			          << " main=" << p->kernelRewriteMainTokens.size()
 			          << " drain=" << p->kernelRewriteDrainTokens.size()
 			          << " entryStages=" << p->kernelRewriteEntryStages.size()
+			          << "\n";
+		}
+	}
+
+	// Track 9.G step 6f: surface the register-plan + rename-hint scaffolding.
+	// Diagnostic-only; no consumer yet.
+	if( std::getenv( "OPENVCL_DUMP_KERNEL_REGPLAN_PROPAGATION" ) != NULL )
+	{
+		for( std::vector<VuSoftwarePipelineRewritePlan>::const_iterator p = plans.begin();
+		     p != plans.end(); ++p )
+		{
+			std::cerr << "[kernel-regplan-propagation] loop=" << p->label
+			          << " regs=" << p->kernelRewriteRegCount
+			          << " hazards=" << p->kernelRewriteHazards.size()
+			          << " waw=" << p->kernelRewriteWawCount
+			          << " raw=" << p->kernelRewriteRawCount
+			          << " war=" << p->kernelRewriteWarCount
+			          << " renameHints=" << p->kernelRewriteRenameHints.size()
 			          << "\n";
 		}
 	}
