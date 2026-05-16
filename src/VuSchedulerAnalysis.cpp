@@ -5203,6 +5203,9 @@ VuLoopPipelineOpportunity::VuLoopPipelineOpportunity()
 	hasMemoryPreOrPostIncrement = false;
 	hasXgkick = false;
 	stageCount = 1;
+	kernelRewriteII = 0;
+	kernelRewriteStageCount = 0;
+	kernelRewriteConflicts = 0;
 }
 
 VuSoftwarePipelineRewritePlan::VuSoftwarePipelineRewritePlan()
@@ -5222,6 +5225,9 @@ VuSoftwarePipelineRewritePlan::VuSoftwarePipelineRewritePlan()
 	drainsSuffixStores = false;
 	emitsDrain = false;
 	stageCount = 1;
+	kernelRewriteII = 0;
+	kernelRewriteStageCount = 0;
+	kernelRewriteConflicts = 0;
 }
 
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens )
@@ -7218,6 +7224,48 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 					}
 				}
 			}
+			// Track 9.G step 6e: VuKernelRewritePlan scaffolding propagation.
+			// Always build the kernel layout + rewrite plan from the modulo
+			// placer state and stash the result on the opportunity. This is
+			// scaffolding only — no consumer reads these fields yet. The
+			// cost is minor (a sort + a handful of pushes per loop body).
+			{
+				VuKernelLayout krLayout;
+				krLayout.II         = tryII;
+				krLayout.miiStart   = miiStart;
+				krLayout.bumps      = bumps;
+				krLayout.feasible   = ( failedCount == 0 );
+				krLayout.stageCount = krLayout.feasible ? ( maxStage + 1 ) : 0;
+				for( unsigned int k = 0; k < n; ++k )
+				{
+					if( !placed[k] ) continue;
+					VuKernelLayoutEntry ent;
+					ent.nodeIndex  = k;
+					ent.tokenIndex = mt[k];
+					ent.slot       = slotOf[k];
+					ent.stage      = stageOf[k];
+					ent.modSlot    = tryII > 0 ? ( slotOf[k] % tryII ) : 0;
+					ent.pipe       = pipeOf[k];
+					ent.duration   = durationOf[k];
+					krLayout.entries.push_back( ent );
+				}
+				std::sort( krLayout.entries.begin(), krLayout.entries.end(),
+				           vuKernelLayoutEntryLess );
+				if( krLayout.feasible && krLayout.II > 0 && !krLayout.entries.empty() )
+				{
+					VuKernelEnvelope krEnv;
+					buildVuKernelEnvelope( krLayout, krEnv );
+					VuKernelRewritePlan krRp;
+					buildVuKernelRewritePlan( krLayout, krEnv, krRp );
+					opportunity.kernelRewriteII         = krRp.II;
+					opportunity.kernelRewriteStageCount = krRp.stageCount;
+					opportunity.kernelRewriteConflicts  = krRp.conflicts;
+					opportunity.kernelRewritePrologTokens = krRp.prologTokens;
+					opportunity.kernelRewriteMainTokens   = krRp.mainTokens;
+					opportunity.kernelRewriteDrainTokens  = krRp.drainTokens;
+					opportunity.kernelRewriteEntryStages  = krRp.entryStages;
+				}
+			}
 			std::cerr << "[loop-schedule] loop=" << opportunity.label
 			          << " II=" << tryII
 			          << " miiStart=" << miiStart
@@ -7758,6 +7806,14 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		plan.labelTokenIndex = i->labelTokenIndex;
 		plan.branchTokenIndex = i->branchTokenIndex;
 		plan.qProducerTokenIndex = i->qProducerTokenIndex;
+		// Track 9.G step 6e: kernel-rewrite scaffolding (diagnostic-only).
+		plan.kernelRewriteII           = i->kernelRewriteII;
+		plan.kernelRewriteStageCount   = i->kernelRewriteStageCount;
+		plan.kernelRewriteConflicts    = i->kernelRewriteConflicts;
+		plan.kernelRewritePrologTokens = i->kernelRewritePrologTokens;
+		plan.kernelRewriteMainTokens   = i->kernelRewriteMainTokens;
+		plan.kernelRewriteDrainTokens  = i->kernelRewriteDrainTokens;
+		plan.kernelRewriteEntryStages  = i->kernelRewriteEntryStages;
 
 		if( i->canEmitMultiQSoftwarePipeline )
 		{
@@ -7839,6 +7895,25 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 			          << " kernelTokens=" << p->kernelTokenIndices.size()
 			          << " tokenStageOffsets=" << p->tokenStageOffsets.size()
 			          << " rotations=" << p->stageRotationRegisters.size()
+			          << "\n";
+		}
+	}
+
+	// Track 9.G step 6e: surface the kernel-rewrite scaffolding propagated
+	// from VuLoopPipelineOpportunity. Diagnostic-only; no consumer yet.
+	if( std::getenv( "OPENVCL_DUMP_KERNEL_REWRITE_PROPAGATION" ) != NULL )
+	{
+		for( std::vector<VuSoftwarePipelineRewritePlan>::const_iterator p = plans.begin();
+		     p != plans.end(); ++p )
+		{
+			std::cerr << "[kernel-rewrite-propagation] loop=" << p->label
+			          << " II=" << p->kernelRewriteII
+			          << " stageCount=" << p->kernelRewriteStageCount
+			          << " conflicts=" << p->kernelRewriteConflicts
+			          << " prolog=" << p->kernelRewritePrologTokens.size()
+			          << " main=" << p->kernelRewriteMainTokens.size()
+			          << " drain=" << p->kernelRewriteDrainTokens.size()
+			          << " entryStages=" << p->kernelRewriteEntryStages.size()
 			          << "\n";
 		}
 	}

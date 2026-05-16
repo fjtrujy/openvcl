@@ -290,6 +290,17 @@ struct VuLoopPipelineOpportunity
 	std::vector<unsigned int> kernelTokenIndices;
 	std::vector<int> tokenStageOffsets;
 	std::map<std::string, unsigned int> stageRotationRegisters;
+
+	// Track 9.G step 6e — VuKernelRewritePlan scaffolding (diagnostic-only).
+	// Populated by findVuLoopPipelineOpportunities from the modulo placer's
+	// VuKernelLayout. No emission path consumes these yet.
+	unsigned int kernelRewriteII;
+	unsigned int kernelRewriteStageCount;
+	unsigned int kernelRewriteConflicts;
+	std::vector<unsigned int> kernelRewritePrologTokens;
+	std::vector<unsigned int> kernelRewriteMainTokens;
+	std::vector<unsigned int> kernelRewriteDrainTokens;
+	std::vector<unsigned int> kernelRewriteEntryStages;
 };
 
 struct VuSoftwarePipelineRewritePlan
@@ -333,6 +344,18 @@ struct VuSoftwarePipelineRewritePlan
 	std::vector<unsigned int> kernelTokenIndices;
 	std::vector<int> tokenStageOffsets;
 	std::map<std::string, unsigned int> stageRotationRegisters;
+
+	// Track 9.G step 6e — VuKernelRewritePlan scaffolding (diagnostic-only).
+	// Mirrors the like-named fields on VuLoopPipelineOpportunity. Populated by
+	// buildVuSoftwarePipelineRewritePlans by copy from the source opportunity.
+	// No emission path consumes these yet.
+	unsigned int kernelRewriteII;
+	unsigned int kernelRewriteStageCount;
+	unsigned int kernelRewriteConflicts;
+	std::vector<unsigned int> kernelRewritePrologTokens;
+	std::vector<unsigned int> kernelRewriteMainTokens;
+	std::vector<unsigned int> kernelRewriteDrainTokens;
+	std::vector<unsigned int> kernelRewriteEntryStages;
 };
 
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens );

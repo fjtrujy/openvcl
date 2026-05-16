@@ -3241,3 +3241,25 @@ TEST_CASE("VuSchedulerAnalysis: multistage schema defaults to stageCount=1")
         CHECK(p->stageRotationRegisters.empty());
     }
 }
+
+// Track 9.G step 6e: VuKernelRewritePlan scaffolding fields default to zero/empty.
+TEST_CASE("VuSchedulerAnalysis: kernel-rewrite scaffolding defaults are zero/empty")
+{
+    vcl::VuLoopPipelineOpportunity opp;
+    CHECK(opp.kernelRewriteII == 0u);
+    CHECK(opp.kernelRewriteStageCount == 0u);
+    CHECK(opp.kernelRewriteConflicts == 0u);
+    CHECK(opp.kernelRewritePrologTokens.empty());
+    CHECK(opp.kernelRewriteMainTokens.empty());
+    CHECK(opp.kernelRewriteDrainTokens.empty());
+    CHECK(opp.kernelRewriteEntryStages.empty());
+
+    vcl::VuSoftwarePipelineRewritePlan plan;
+    CHECK(plan.kernelRewriteII == 0u);
+    CHECK(plan.kernelRewriteStageCount == 0u);
+    CHECK(plan.kernelRewriteConflicts == 0u);
+    CHECK(plan.kernelRewritePrologTokens.empty());
+    CHECK(plan.kernelRewriteMainTokens.empty());
+    CHECK(plan.kernelRewriteDrainTokens.empty());
+    CHECK(plan.kernelRewriteEntryStages.empty());
+}
