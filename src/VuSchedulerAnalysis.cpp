@@ -6369,13 +6369,21 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			const unsigned int mii    = ( recmii > resmii ) ? recmii : resmii;
 			LoopPriorityResult pr;
 			computeLoopPriority( mt, indexedTokens, mii, pr );
-			ModuloReservationTable mrt( mii );
 			const unsigned int n = static_cast<unsigned int>( mt.size() );
 			std::vector<unsigned int> slotOf( n, static_cast<unsigned int>( -1 ) );
 			std::vector<unsigned int> stageOf( n, 0 );
 			std::vector<int>          pipeOf( n, 0 ); // 0=none 1=U 2=L 3=FDIV 4=EFU
 			std::vector<bool>         placed( n, false );
 			unsigned int placedCount = 0, failedCount = 0, maxStage = 0;
+			// Track 9.G step 4f: II-bumping retry. If placement leaves any node
+			// failed at the start II, bump II by one and retry until either
+			// every node is placed or we hit a safety cap.
+			const unsigned int miiStart = mii;
+			const unsigned int iiCap    = miiStart + 32;
+			unsigned int tryII = miiStart;
+			unsigned int bumps = 0;
+			unsigned int upperOccFinal = 0, lowerOccFinal = 0;
+			unsigned int fdivOccFinal  = 0, efuOccFinal   = 0;
 
 			// Track 9.G step 4e: build the full DDG (intra dist=0, loop-carried
 			// dist=1) so the placer can enforce cross-iteration RAW/WAW/WAR
@@ -6461,6 +6469,18 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			}
 			const unsigned int totalEdges = static_cast<unsigned int>( dFrom.size() );
 			unsigned int edgeViolations = 0;
+			while( true )
+			{
+				ModuloReservationTable mrt( tryII );
+				for( unsigned int k = 0; k < n; ++k )
+				{
+					slotOf[k]  = static_cast<unsigned int>( -1 );
+					stageOf[k] = 0;
+					pipeOf[k]  = 0;
+					placed[k]  = false;
+				}
+				placedCount = 0; failedCount = 0; maxStage = 0;
+				edgeViolations = 0;
 			for( unsigned int rank = 0; rank < pr.order.size(); ++rank )
 			{
 				const unsigned int i = pr.order[rank];
@@ -6498,7 +6518,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 				{
 					// No resource modeled (NOP / unknown). Treat as placed at ASAP.
 					slotOf[i]  = pr.asap[i];
-					stageOf[i] = mii > 0 ? ( slotOf[i] / mii ) : 0;
+					stageOf[i] = tryII > 0 ? ( slotOf[i] / tryII ) : 0;
 					placed[i]  = true;
 					++placedCount;
 					if( stageOf[i] > maxStage ) maxStage = stageOf[i];
@@ -6508,6 +6528,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 				unsigned int hi = pr.alap[i];
 				if( hi < lo ) hi = lo;
 				if( hi < pr.scheduleLength ) hi = pr.scheduleLength;
+				if( hi < lo + tryII ) hi = lo + tryII; // ensure full mod ring is exercised
 				bool ok = false;
 				for( unsigned int s = lo; s <= hi && !ok; ++s )
 				{
@@ -6519,7 +6540,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 					for( unsigned int e = 0; e < totalEdges && edgeOk; ++e )
 					{
 						const int Lat = static_cast<int>( dLat[e] );
-						const int Dii = static_cast<int>( dDist[e] ) * static_cast<int>( mii );
+						const int Dii = static_cast<int>( dDist[e] ) * static_cast<int>( tryII );
 						if( dTo[e] == i && placed[ dFrom[e] ] )
 						{
 							const int from = static_cast<int>( slotOf[ dFrom[e] ] );
@@ -6534,7 +6555,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 						}
 					}
 					if( !edgeOk ) { ++edgeViolations; continue; }
-					const unsigned int mod = mii > 0 ? ( s % mii ) : 0;
+					const unsigned int mod = tryII > 0 ? ( s % tryII ) : 0;
 					bool canPlace = false;
 					switch( pipeKind )
 					{
@@ -6554,7 +6575,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 					default: break;
 					}
 					slotOf[i]  = s;
-					stageOf[i] = mii > 0 ? ( s / mii ) : 0;
+					stageOf[i] = tryII > 0 ? ( s / tryII ) : 0;
 					placed[i]  = true;
 					if( stageOf[i] > maxStage ) maxStage = stageOf[i];
 					ok = true;
@@ -6562,17 +6583,27 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 				if( ok ) ++placedCount;
 				else     ++failedCount;
 			}
+				upperOccFinal = mrt.upperOccupancy();
+				lowerOccFinal = mrt.lowerOccupancy();
+				fdivOccFinal  = mrt.fdivOccupancy();
+				efuOccFinal   = mrt.efuOccupancy();
+				if( failedCount == 0 ) break;
+				if( tryII >= iiCap ) break;
+				++tryII; ++bumps;
+			}
 			std::cerr << "[loop-schedule] loop=" << opportunity.label
-			          << " II=" << mii
+			          << " II=" << tryII
+			          << " miiStart=" << miiStart
+			          << " bumps=" << bumps
 			          << " placed=" << placedCount
 			          << " failed=" << failedCount
 			          << " maxStage=" << maxStage
 			          << " edges=" << totalEdges
 			          << " edgeViolations=" << edgeViolations
-			          << " upperOcc=" << mrt.upperOccupancy()
-			          << " lowerOcc=" << mrt.lowerOccupancy()
-			          << " fdivOcc=" << mrt.fdivOccupancy()
-			          << " efuOcc=" << mrt.efuOccupancy()
+			          << " upperOcc=" << upperOccFinal
+			          << " lowerOcc=" << lowerOccFinal
+			          << " fdivOcc=" << fdivOccFinal
+			          << " efuOcc=" << efuOccFinal
 			          << "\n";
 			if( std::getenv( "OPENVCL_DUMP_LOOP_SCHEDULE_NODES" ) != NULL )
 			{
