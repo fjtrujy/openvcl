@@ -3454,6 +3454,34 @@ namespace
 		return scheduleVuProgramReadyIssueSlotsWithFlagLiveness( bodyTokens ).cycleCount;
 	}
 
+	// Diagnostic: schedule prolog ++ main as one segment, return cycles attributed to the
+	// main portion (i.e. cycles spent on tokens after the prolog's last issue slot).
+	// This approximates how the emitter sees the main body when long-latency results from
+	// the prolog (Q, P, FMAC ACC, flag clauses, etc.) are still in flight at main entry.
+	unsigned int scheduledLoopBodyCyclesInContext( const std::vector<unsigned int>& prologTokenIndices,
+	                                               const std::vector<unsigned int>& mainTokenIndices,
+	                                               const std::vector<const Token*>& indexedTokens )
+	{
+		std::list<Token> combinedTokens;
+		for( std::vector<unsigned int>::const_iterator i = prologTokenIndices.begin();
+		     i != prologTokenIndices.end(); ++i )
+		{
+			if( *i < indexedTokens.size() )
+				appendUnlabeledTokenForScheduleCost( combinedTokens, *indexedTokens[*i] );
+		}
+		const unsigned int prologCycles =
+		    scheduleVuProgramReadyIssueSlotsWithFlagLiveness( combinedTokens ).cycleCount;
+		for( std::vector<unsigned int>::const_iterator i = mainTokenIndices.begin();
+		     i != mainTokenIndices.end(); ++i )
+		{
+			if( *i < indexedTokens.size() )
+				appendUnlabeledTokenForScheduleCost( combinedTokens, *indexedTokens[*i] );
+		}
+		const unsigned int totalCycles =
+		    scheduleVuProgramReadyIssueSlotsWithFlagLiveness( combinedTokens ).cycleCount;
+		return totalCycles >= prologCycles ? totalCycles - prologCycles : 0;
+	}
+
 	bool cyclicPrefixMainStartsWithStore( const VuLoopPipelineOpportunity& candidate,
 	                                      const std::vector<const Token*>& indexedTokens )
 	{
@@ -5314,6 +5342,15 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 				    scheduledLoopBodyCycles( opportunity.mainTokenIndices, indexedTokens );
 				std::cerr << "[pipeline-opportunity]   singleQ_main_estimated_cycles="
 				          << singleQMainEstCycles << "\n";
+				if( !opportunity.prologTokenIndices.empty() )
+				{
+					const unsigned int singleQMainInContextCycles =
+					    scheduledLoopBodyCyclesInContext( opportunity.prologTokenIndices,
+					                                      opportunity.mainTokenIndices,
+					                                      indexedTokens );
+					std::cerr << "[pipeline-opportunity]   singleQ_main_in_context_cycles="
+					          << singleQMainInContextCycles << "\n";
+				}
 			}
 			if( !opportunity.multiQMainTokenIndices.empty() )
 			{
@@ -5321,6 +5358,15 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 				    scheduledLoopBodyCycles( opportunity.multiQMainTokenIndices, indexedTokens );
 				std::cerr << "[pipeline-opportunity]   multiQ_main_estimated_cycles="
 				          << multiQMainEstCycles << "\n";
+				if( !opportunity.multiQPrologTokenIndices.empty() )
+				{
+					const unsigned int multiQMainInContextCycles =
+					    scheduledLoopBodyCyclesInContext( opportunity.multiQPrologTokenIndices,
+					                                      opportunity.multiQMainTokenIndices,
+					                                      indexedTokens );
+					std::cerr << "[pipeline-opportunity]   multiQ_main_in_context_cycles="
+					          << multiQMainInContextCycles << "\n";
+				}
 			}
 		}
 
