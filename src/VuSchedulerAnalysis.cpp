@@ -5,6 +5,7 @@
 #include "VuTokenResourceAccess.h"
 
 #include <cstdlib>
+#include <iostream>
 #include <map>
 #include <sstream>
 #include <string>
@@ -3527,6 +3528,15 @@ namespace
 		bool bestStartsWithStore = false;
 		bool found = false;
 
+		const bool dumpRejections =
+		    std::getenv( "OPENVCL_DUMP_CYCLIC_PREFIX_REJECTIONS" ) != NULL;
+		if( dumpRejections )
+		{
+			std::cerr << "[cyclic-prefix-trace] loop=" << loop.label
+			          << " branchOffset=" << branchOffset
+			          << " baselineCycles=" << bestCycles << "\n";
+		}
+
 		for( unsigned int splitOffset = 1; splitOffset < branchOffset; ++splitOffset )
 		{
 			VuLoopPipelineOpportunity candidate = base;
@@ -3537,11 +3547,29 @@ namespace
 			                               candidate );
 			if( candidate.multiQPrologTokenIndices.empty()
 			    || candidate.multiQMainTokenIndices.empty() )
+			{
+				if( dumpRejections )
+					std::cerr << "[cyclic-prefix-trace]   split=" << splitOffset
+					          << " rejected=empty_partition\n";
 				continue;
+			}
 			if( !assignMultiQCyclicPrefixRotations( loop, indexedTokens, candidate ) )
+			{
+				if( dumpRejections )
+					std::cerr << "[cyclic-prefix-trace]   split=" << splitOffset
+					          << " rejected=rotation_assign_failed\n";
 				continue;
+			}
 			if( !multiQPipelineCandidateStructurallySafe( candidate, indexedTokens ) )
+			{
+				if( dumpRejections )
+					std::cerr << "[cyclic-prefix-trace]   split=" << splitOffset
+					          << " rejected=structurally_unsafe"
+					          << " (suffix_clobber_at_branch="
+					          << ( cyclicPrefixReadsSuffixClobbers( candidate, indexedTokens ) ? 1 : 0 )
+					          << ")\n";
 				continue;
+			}
 
 			bool evaluatedInsertion = false;
 			for( std::vector<unsigned int>::const_iterator i = candidate.multiQMainTokenIndices.begin();
@@ -3556,9 +3584,17 @@ namespace
 				insertedCandidate.multiQCyclicPrefixLastTokenInBranchDelaySlot =
 				    cyclicPrefixLastTokenCanMoveToBranchDelaySlot( insertedCandidate, indexedTokens );
 				evaluatedInsertion = true;
+				const bool clobbersHere =
+				    cyclicPrefixReadsSuffixClobbersBeforeInsertion( insertedCandidate, indexedTokens );
 				const unsigned int cycles = multiQPipelineCandidateMainCycles( insertedCandidate, indexedTokens );
 				const bool startsWithStore =
 				    hasLoopExtra && cyclicPrefixMainStartsWithStore( insertedCandidate, indexedTokens );
+				if( dumpRejections )
+					std::cerr << "[cyclic-prefix-trace]   split=" << splitOffset
+					          << " insertBefore=" << *i
+					          << " cycles=" << cycles
+					          << " suffixClobberHere=" << ( clobbersHere ? 1 : 0 )
+					          << "\n";
 				if( cycles < bestCycles
 				    || (startsWithStore && !bestStartsWithStore && cycles == bestCycles) )
 				{
@@ -3576,6 +3612,9 @@ namespace
 				const unsigned int cycles = multiQPipelineCandidateMainCycles( candidate, indexedTokens );
 				const bool startsWithStore =
 				    hasLoopExtra && cyclicPrefixMainStartsWithStore( candidate, indexedTokens );
+				if( dumpRejections )
+					std::cerr << "[cyclic-prefix-trace]   split=" << splitOffset
+					          << " insertBefore=branch cycles=" << cycles << "\n";
 				if( cycles < bestCycles
 				    || (startsWithStore && !bestStartsWithStore && cycles == bestCycles) )
 				{
@@ -3585,6 +3624,13 @@ namespace
 					found = true;
 				}
 			}
+		}
+
+		if( dumpRejections )
+		{
+			std::cerr << "[cyclic-prefix-trace] loop=" << loop.label
+			          << " result=" << ( found ? "ACCEPTED" : "no_improvement" )
+			          << " bestCycles=" << bestCycles << "\n";
 		}
 
 		if( !found )
