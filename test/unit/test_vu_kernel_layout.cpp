@@ -462,3 +462,41 @@ TEST_CASE("VuKernelRewritePlan: two-stage layout exposes entryStages + stageCell
     CHECK(plan.stageCells[3].lower == 3);
     CHECK(plan.conflicts == 0u);
 }
+
+TEST_CASE("VuKernelRenameHints: each hazard yields two hints, deduplicated")
+{
+    // Set up a regplan with two hazards on VF12:
+    //   - (entry 0 W, entry 1 R) — RAW
+    //   - (entry 0 W, entry 2 R) — RAW
+    // entry 0 contributes a W-hint that must dedup across the two hazards.
+    VuKernelRegisterPlan plan;
+    plan.regCount = 1;
+    plan.rawCount = 2;
+    {
+        VuKernelRegisterHazard h;
+        h.reg = "VF12";
+        h.entryA = 0; h.stageA = 0; h.kindA = 1;
+        h.entryB = 1; h.stageB = 1; h.kindB = 0;
+        plan.hazards.push_back(h);
+    }
+    {
+        VuKernelRegisterHazard h;
+        h.reg = "VF12";
+        h.entryA = 0; h.stageA = 0; h.kindA = 1;
+        h.entryB = 2; h.stageB = 1; h.kindB = 0;
+        plan.hazards.push_back(h);
+    }
+    std::vector<VuKernelRenameHint> hints;
+    buildVuKernelRenameHints(plan, hints);
+    // 3 unique: (entry 0, W), (entry 1, R), (entry 2, R).
+    REQUIRE(hints.size() == 3u);
+    unsigned writeCount = 0, readCount = 0;
+    for (unsigned i = 0; i < hints.size(); ++i)
+    {
+        CHECK(hints[i].reg == "VF12");
+        if (hints[i].kind == 1) ++writeCount;
+        else ++readCount;
+    }
+    CHECK(writeCount == 1u);
+    CHECK(readCount == 2u);
+}

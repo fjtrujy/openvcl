@@ -234,6 +234,28 @@ void buildVuKernelRewritePlan( const VuKernelLayout& layout,
                                const VuKernelEnvelope& envelope,
                                VuKernelRewritePlan& plan );
 
+// Track 9.G step 6c — per-entry rename hints derived from the register plan.
+//
+// Each cross-stage hazard recorded in VuKernelRegisterPlan yields one
+// hint per side (deduplicated by (entry, reg, kind)). A hint marks an
+// entry's access on a specific register as needing a rename decision
+// during emission. The actual scratch-register allocation is owned by
+// the emitter; this scaffold only enumerates the access sites.
+
+struct VuKernelRenameHint
+{
+    std::string  reg;    // normalized base register, e.g. "VF12"
+    unsigned int entry;  // index into VuKernelLayout::entries
+    unsigned int stage;  // entry's pipeline stage
+    int          kind;   // 0 = read access, 1 = write access
+
+    VuKernelRenameHint()
+        : entry( 0 ), stage( 0 ), kind( 0 ) {}
+};
+
+void buildVuKernelRenameHints( const VuKernelRegisterPlan& regPlan,
+                               std::vector< VuKernelRenameHint >& hints );
+
 } // namespace vcl
 
 #endif

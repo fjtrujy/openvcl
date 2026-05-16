@@ -252,4 +252,36 @@ void buildVuKernelRewritePlan( const VuKernelLayout& layout,
                               plan.drainTokens );
 }
 
+void buildVuKernelRenameHints( const VuKernelRegisterPlan& regPlan,
+                               std::vector< VuKernelRenameHint >& hints )
+{
+    hints.clear();
+    // Deduplicate by (entry, reg, kind). Use a simple linear-scan
+    // dedup; hazard counts in practice are small (single-digit per loop).
+    for( unsigned int h = 0; h < regPlan.hazards.size(); ++h )
+    {
+        const VuKernelRegisterHazard& hz = regPlan.hazards[ h ];
+        for( unsigned int side = 0; side < 2; ++side )
+        {
+            VuKernelRenameHint hint;
+            hint.reg   = hz.reg;
+            hint.entry = ( side == 0 ) ? hz.entryA : hz.entryB;
+            hint.stage = ( side == 0 ) ? hz.stageA : hz.stageB;
+            hint.kind  = ( side == 0 ) ? hz.kindA  : hz.kindB;
+            bool present = false;
+            for( unsigned int e = 0; e < hints.size(); ++e )
+            {
+                if( hints[ e ].entry == hint.entry
+                 && hints[ e ].kind  == hint.kind
+                 && hints[ e ].reg   == hint.reg )
+                {
+                    present = true;
+                    break;
+                }
+            }
+            if( !present ) hints.push_back( hint );
+        }
+    }
+}
+
 } // namespace vcl

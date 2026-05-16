@@ -6990,6 +6990,28 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 					          << " raw=" << plan.rawCount
 					          << " war=" << plan.warCount
 					          << "\n";
+					// Track 9.G step 6c: rename hints derived from hazards.
+					if( std::getenv( "OPENVCL_DUMP_KERNEL_RENAME_HINTS" ) != NULL )
+					{
+						std::vector< VuKernelRenameHint > hints;
+						buildVuKernelRenameHints( plan, hints );
+						std::cerr << "[kernel-rename-hints] loop=" << opportunity.label
+						          << " count=" << hints.size()
+						          << "\n";
+						if( std::getenv( "OPENVCL_DUMP_KERNEL_RENAME_HINTS_DETAIL" ) != NULL )
+						{
+							for( unsigned int h = 0; h < hints.size(); ++h )
+							{
+								const VuKernelRenameHint& ht = hints[ h ];
+								std::cerr << "[kernel-rename-hint] loop=" << opportunity.label
+								          << " reg=" << ht.reg
+								          << " entry=" << ht.entry
+								          << " stage=" << ht.stage
+								          << " kind=" << ( ht.kind == 1 ? "W" : "R" )
+								          << "\n";
+							}
+						}
+					}
 					if( std::getenv( "OPENVCL_DUMP_KERNEL_REGISTER_PLAN_HAZARDS" ) != NULL )
 					{
 						for( unsigned int h = 0; h < plan.hazards.size(); ++h )
