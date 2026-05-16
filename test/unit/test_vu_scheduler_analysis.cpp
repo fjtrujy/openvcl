@@ -3283,3 +3283,23 @@ TEST_CASE("VuSchedulerAnalysis: register-rewrite scaffolding defaults are zero/e
     CHECK(plan.kernelRewriteHazards.empty());
     CHECK(plan.kernelRewriteRenameHints.empty());
 }
+
+// Track 9.G step 6g: kernel-envelope scaffolding fields default to zero/empty.
+TEST_CASE("VuSchedulerAnalysis: kernel-envelope scaffolding defaults are zero/empty")
+{
+    vcl::VuLoopPipelineOpportunity opp;
+    CHECK(opp.kernelEnvelopeKernelTokens == 0u);
+    CHECK(opp.kernelEnvelopePrologueCycles == 0u);
+    CHECK(opp.kernelEnvelopeEpilogueCycles == 0u);
+    CHECK(opp.kernelEnvelopeConflicts == 0u);
+    CHECK(opp.kernelEnvelopePrologueTokenCounts.empty());
+    CHECK(opp.kernelEnvelopeEpilogueTokenCounts.empty());
+
+    vcl::VuSoftwarePipelineRewritePlan plan;
+    CHECK(plan.kernelEnvelopeKernelTokens == 0u);
+    CHECK(plan.kernelEnvelopePrologueCycles == 0u);
+    CHECK(plan.kernelEnvelopeEpilogueCycles == 0u);
+    CHECK(plan.kernelEnvelopeConflicts == 0u);
+    CHECK(plan.kernelEnvelopePrologueTokenCounts.empty());
+    CHECK(plan.kernelEnvelopeEpilogueTokenCounts.empty());
+}

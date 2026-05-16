@@ -312,6 +312,17 @@ struct VuLoopPipelineOpportunity
 	unsigned int kernelRewriteWarCount;
 	std::vector<VuKernelRegisterHazard> kernelRewriteHazards;
 	std::vector<VuKernelRenameHint> kernelRewriteRenameHints;
+
+	// Track 9.G step 6g — VuKernelEnvelope scaffolding (diagnostic-only).
+	// High-level prologue/epilogue cycle counts and per-stage token totals
+	// derived from the modulo placer's layout. No emission path consumes
+	// these yet.
+	unsigned int kernelEnvelopeKernelTokens;
+	unsigned int kernelEnvelopePrologueCycles;
+	unsigned int kernelEnvelopeEpilogueCycles;
+	unsigned int kernelEnvelopeConflicts;
+	std::vector<unsigned int> kernelEnvelopePrologueTokenCounts;
+	std::vector<unsigned int> kernelEnvelopeEpilogueTokenCounts;
 };
 
 struct VuSoftwarePipelineRewritePlan
@@ -376,6 +387,15 @@ struct VuSoftwarePipelineRewritePlan
 	unsigned int kernelRewriteWarCount;
 	std::vector<VuKernelRegisterHazard> kernelRewriteHazards;
 	std::vector<VuKernelRenameHint> kernelRewriteRenameHints;
+
+	// Track 9.G step 6g — VuKernelEnvelope scaffolding (diagnostic-only).
+	// Mirrors the opportunity-side envelope fields.
+	unsigned int kernelEnvelopeKernelTokens;
+	unsigned int kernelEnvelopePrologueCycles;
+	unsigned int kernelEnvelopeEpilogueCycles;
+	unsigned int kernelEnvelopeConflicts;
+	std::vector<unsigned int> kernelEnvelopePrologueTokenCounts;
+	std::vector<unsigned int> kernelEnvelopeEpilogueTokenCounts;
 };
 
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens );

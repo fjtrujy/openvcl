@@ -5210,6 +5210,10 @@ VuLoopPipelineOpportunity::VuLoopPipelineOpportunity()
 	kernelRewriteWawCount = 0;
 	kernelRewriteRawCount = 0;
 	kernelRewriteWarCount = 0;
+	kernelEnvelopeKernelTokens = 0;
+	kernelEnvelopePrologueCycles = 0;
+	kernelEnvelopeEpilogueCycles = 0;
+	kernelEnvelopeConflicts = 0;
 }
 
 VuSoftwarePipelineRewritePlan::VuSoftwarePipelineRewritePlan()
@@ -5236,6 +5240,10 @@ VuSoftwarePipelineRewritePlan::VuSoftwarePipelineRewritePlan()
 	kernelRewriteWawCount = 0;
 	kernelRewriteRawCount = 0;
 	kernelRewriteWarCount = 0;
+	kernelEnvelopeKernelTokens = 0;
+	kernelEnvelopePrologueCycles = 0;
+	kernelEnvelopeEpilogueCycles = 0;
+	kernelEnvelopeConflicts = 0;
 }
 
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens )
@@ -7305,6 +7313,14 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 					std::vector< VuKernelRenameHint > krHints;
 					buildVuKernelRenameHints( krRegPlan, krHints );
 					opportunity.kernelRewriteRenameHints = krHints;
+
+					// Track 9.G step 6g: envelope scaffolding.
+					opportunity.kernelEnvelopeKernelTokens   = krEnv.kernelTokens;
+					opportunity.kernelEnvelopePrologueCycles = krEnv.prologueCycles;
+					opportunity.kernelEnvelopeEpilogueCycles = krEnv.epilogueCycles;
+					opportunity.kernelEnvelopeConflicts      = krEnv.conflicts;
+					opportunity.kernelEnvelopePrologueTokenCounts = krEnv.prologueTokenCounts;
+					opportunity.kernelEnvelopeEpilogueTokenCounts = krEnv.epilogueTokenCounts;
 				}
 			}
 			std::cerr << "[loop-schedule] loop=" << opportunity.label
@@ -7862,6 +7878,13 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		plan.kernelRewriteWarCount    = i->kernelRewriteWarCount;
 		plan.kernelRewriteHazards     = i->kernelRewriteHazards;
 		plan.kernelRewriteRenameHints = i->kernelRewriteRenameHints;
+		// Track 9.G step 6g: envelope scaffolding.
+		plan.kernelEnvelopeKernelTokens       = i->kernelEnvelopeKernelTokens;
+		plan.kernelEnvelopePrologueCycles     = i->kernelEnvelopePrologueCycles;
+		plan.kernelEnvelopeEpilogueCycles     = i->kernelEnvelopeEpilogueCycles;
+		plan.kernelEnvelopeConflicts          = i->kernelEnvelopeConflicts;
+		plan.kernelEnvelopePrologueTokenCounts = i->kernelEnvelopePrologueTokenCounts;
+		plan.kernelEnvelopeEpilogueTokenCounts = i->kernelEnvelopeEpilogueTokenCounts;
 
 		if( i->canEmitMultiQSoftwarePipeline )
 		{
@@ -7980,6 +8003,24 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 			          << " raw=" << p->kernelRewriteRawCount
 			          << " war=" << p->kernelRewriteWarCount
 			          << " renameHints=" << p->kernelRewriteRenameHints.size()
+			          << "\n";
+		}
+	}
+
+	// Track 9.G step 6g: surface the envelope scaffolding.
+	// Diagnostic-only; no consumer yet.
+	if( std::getenv( "OPENVCL_DUMP_KERNEL_ENVELOPE_PROPAGATION" ) != NULL )
+	{
+		for( std::vector<VuSoftwarePipelineRewritePlan>::const_iterator p = plans.begin();
+		     p != plans.end(); ++p )
+		{
+			std::cerr << "[kernel-envelope-propagation] loop=" << p->label
+			          << " kernelTokens=" << p->kernelEnvelopeKernelTokens
+			          << " prologueCycles=" << p->kernelEnvelopePrologueCycles
+			          << " epilogueCycles=" << p->kernelEnvelopeEpilogueCycles
+			          << " conflicts=" << p->kernelEnvelopeConflicts
+			          << " prologueStages=" << p->kernelEnvelopePrologueTokenCounts.size()
+			          << " epilogueStages=" << p->kernelEnvelopeEpilogueTokenCounts.size()
 			          << "\n";
 		}
 	}
