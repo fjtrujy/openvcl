@@ -6350,6 +6350,147 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			}
 		}
 
+		if( std::getenv( "OPENVCL_DUMP_LOOP_SCHEDULE" ) != NULL
+		    && opportunity.simpleCountedLoop
+		    && !opportunity.mainTokenIndices.empty() )
+		{
+			// Track 9.G step 4d: iterative modulo placement (diagnostic).
+			// Drive the priority order into the Modulo Reservation Table.
+			// For each node, classify its pipe (Upper / Lower / FDIV / EFU)
+			// from VuInstructionInfo and try slots in [asap, alap]; if no
+			// slot fits, extend up to scheduleLength. Record (slot, stage)
+			// per node. Planner/emission still untouched — this validates
+			// that the MRT can absorb a full loop body at the current MII
+			// using only intra-iteration constraints. Loop-carried hazards
+			// are out of scope here (RecMII already bounds II).
+			const std::vector<unsigned int>& mt = opportunity.mainTokenIndices;
+			const unsigned int recmii = computeLoopRecMII( mt, indexedTokens );
+			const unsigned int resmii = computeLoopResMII( mt, indexedTokens );
+			const unsigned int mii    = ( recmii > resmii ) ? recmii : resmii;
+			LoopPriorityResult pr;
+			computeLoopPriority( mt, indexedTokens, mii, pr );
+			ModuloReservationTable mrt( mii );
+			const unsigned int n = static_cast<unsigned int>( mt.size() );
+			std::vector<unsigned int> slotOf( n, static_cast<unsigned int>( -1 ) );
+			std::vector<unsigned int> stageOf( n, 0 );
+			std::vector<int>          pipeOf( n, 0 ); // 0=none 1=U 2=L 3=FDIV 4=EFU
+			std::vector<bool>         placed( n, false );
+			unsigned int placedCount = 0, failedCount = 0, maxStage = 0;
+			for( unsigned int rank = 0; rank < pr.order.size(); ++rank )
+			{
+				const unsigned int i = pr.order[rank];
+				const unsigned int tokIdx = mt[i];
+				if( tokIdx >= indexedTokens.size() ) { ++failedCount; continue; }
+				const Token& tk = *indexedTokens[tokIdx];
+				if( !tk.operand() ) { ++failedCount; continue; }
+				const VuInstructionInfo* info =
+				    findVuInstructionInfo( normalizeVuMnemonic( tk.operand()->name() ) );
+				int pipeKind = 0;
+				unsigned int duration = 1;
+				if( info )
+				{
+					if( info->unit == VU_EXEC_FDIV )
+					{
+						pipeKind = 3;
+						duration = info->throughput > 0 ? info->throughput : 1;
+					}
+					else if( info->unit == VU_EXEC_EFU )
+					{
+						pipeKind = 4;
+						duration = info->throughput > 0 ? info->throughput : 1;
+					}
+					else if( info->pipe == VU_PIPE_UPPER )
+					{
+						pipeKind = 1;
+					}
+					else if( info->pipe == VU_PIPE_LOWER )
+					{
+						pipeKind = 2;
+					}
+				}
+				pipeOf[i] = pipeKind;
+				if( pipeKind == 0 )
+				{
+					// No resource modeled (NOP / unknown). Treat as placed at ASAP.
+					slotOf[i]  = pr.asap[i];
+					stageOf[i] = mii > 0 ? ( slotOf[i] / mii ) : 0;
+					placed[i]  = true;
+					++placedCount;
+					if( stageOf[i] > maxStage ) maxStage = stageOf[i];
+					continue;
+				}
+				const unsigned int lo = pr.asap[i];
+				unsigned int hi = pr.alap[i];
+				if( hi < lo ) hi = lo;
+				if( hi < pr.scheduleLength ) hi = pr.scheduleLength;
+				bool ok = false;
+				for( unsigned int s = lo; s <= hi && !ok; ++s )
+				{
+					const unsigned int mod = mii > 0 ? ( s % mii ) : 0;
+					bool canPlace = false;
+					switch( pipeKind )
+					{
+					case 1: canPlace = mrt.canReserveUpper( mod ); break;
+					case 2: canPlace = mrt.canReserveLower( mod ); break;
+					case 3: canPlace = mrt.canReserveFdiv( mod, duration ); break;
+					case 4: canPlace = mrt.canReserveEfu( mod, duration ); break;
+					default: break;
+					}
+					if( !canPlace ) continue;
+					switch( pipeKind )
+					{
+					case 1: mrt.reserveUpper( mod, tokIdx ); break;
+					case 2: mrt.reserveLower( mod, tokIdx ); break;
+					case 3: mrt.reserveFdiv( mod, duration, tokIdx ); break;
+					case 4: mrt.reserveEfu( mod, duration, tokIdx ); break;
+					default: break;
+					}
+					slotOf[i]  = s;
+					stageOf[i] = mii > 0 ? ( s / mii ) : 0;
+					placed[i]  = true;
+					if( stageOf[i] > maxStage ) maxStage = stageOf[i];
+					ok = true;
+				}
+				if( ok ) ++placedCount;
+				else     ++failedCount;
+			}
+			std::cerr << "[loop-schedule] loop=" << opportunity.label
+			          << " II=" << mii
+			          << " placed=" << placedCount
+			          << " failed=" << failedCount
+			          << " maxStage=" << maxStage
+			          << " upperOcc=" << mrt.upperOccupancy()
+			          << " lowerOcc=" << mrt.lowerOccupancy()
+			          << " fdivOcc=" << mrt.fdivOccupancy()
+			          << " efuOcc=" << mrt.efuOccupancy()
+			          << "\n";
+			if( std::getenv( "OPENVCL_DUMP_LOOP_SCHEDULE_NODES" ) != NULL )
+			{
+				for( unsigned int rank = 0; rank < pr.order.size(); ++rank )
+				{
+					const unsigned int i = pr.order[rank];
+					const char* pname = "none";
+					switch( pipeOf[i] )
+					{
+					case 1: pname = "upper"; break;
+					case 2: pname = "lower"; break;
+					case 3: pname = "fdiv";  break;
+					case 4: pname = "efu";   break;
+					default: break;
+					}
+					std::cerr << "[loop-schedule-node] loop=" << opportunity.label
+					          << " rank=" << rank
+					          << " node=" << i
+					          << " token=" << mt[i]
+					          << " pipe=" << pname
+					          << " slot=" << ( placed[i] ? static_cast<int>( slotOf[i] ) : -1 )
+					          << " stage=" << ( placed[i] ? static_cast<int>( stageOf[i] ) : -1 )
+					          << " status=" << ( placed[i] ? "placed" : "failed" )
+					          << "\n";
+				}
+			}
+		}
+
 		if( std::getenv( "OPENVCL_DUMP_MULTISTAGE_CANDIDATES" ) != NULL )
 		{
 			std::cerr << "[multistage] loop=" << opportunity.label
