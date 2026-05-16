@@ -5282,6 +5282,48 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			                                             *loop,
 			                                             indexedTokens );
 
+		if( std::getenv( "OPENVCL_DUMP_PIPELINE_OPPORTUNITIES" ) != NULL )
+		{
+			std::cerr << "[pipeline-opportunity] loop=" << opportunity.label
+			          << " qProducerCount=" << qProducerCount
+			          << " qProducerLatency=" << opportunity.qProducerLatency
+			          << " gapCycles=" << opportunity.qProducerConsumerGapCycles
+			          << " gapDeficit=" << opportunity.qProducerConsumerGapDeficitCycles
+			          << " loopCarriedQGap=" << opportunity.loopCarriedQGapCycles
+			          << " producerInsertionGap=" << opportunity.qProducerInsertionGapCycles
+			          << " producerInsertionDeficit=" << opportunity.qProducerInsertionGapDeficitCycles
+			          << " sourcePrefix=" << opportunity.sourcePrefixCycles
+			          << " sourceSuffix=" << opportunity.sourceSuffixCycles
+			          << " branchDelaySlots=" << opportunity.branchDelaySlots
+			          << " simpleCounted=" << ( opportunity.simpleCountedLoop ? 1 : 0 )
+			          << " requiresLoopCarried=" << ( opportunity.requiresLoopCarriedRegisters ? 1 : 0 )
+			          << " eligibleSingleQ=" << ( opportunity.eligibleSingleQSoftwarePipeline ? 1 : 0 )
+			          << " hasSwpPlan=" << ( opportunity.hasSoftwarePipelinePlan ? 1 : 0 )
+			          << " canEmitMultiQ=" << ( opportunity.canEmitMultiQSoftwarePipeline ? 1 : 0 )
+			          << " multiQNeedsGuard=" << ( opportunity.multiQCyclicPrefixNeedsGuard ? 1 : 0 )
+			          << " prologSize=" << opportunity.prologTokenIndices.size()
+			          << " mainSize=" << opportunity.mainTokenIndices.size()
+			          << " drainSize=" << opportunity.drainTokenIndices.size()
+			          << " multiQPrologSize=" << opportunity.multiQPrologTokenIndices.size()
+			          << " multiQMainSize=" << opportunity.multiQMainTokenIndices.size()
+			          << " multiQCyclicPrefixSize=" << opportunity.multiQCyclicPrefixTokenIndices.size()
+			          << "\n";
+			if( !opportunity.mainTokenIndices.empty() )
+			{
+				const unsigned int singleQMainEstCycles =
+				    scheduledLoopBodyCycles( opportunity.mainTokenIndices, indexedTokens );
+				std::cerr << "[pipeline-opportunity]   singleQ_main_estimated_cycles="
+				          << singleQMainEstCycles << "\n";
+			}
+			if( !opportunity.multiQMainTokenIndices.empty() )
+			{
+				const unsigned int multiQMainEstCycles =
+				    scheduledLoopBodyCycles( opportunity.multiQMainTokenIndices, indexedTokens );
+				std::cerr << "[pipeline-opportunity]   multiQ_main_estimated_cycles="
+				          << multiQMainEstCycles << "\n";
+			}
+		}
+
 		result.push_back( opportunity );
 	}
 
