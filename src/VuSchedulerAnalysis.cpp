@@ -5989,6 +5989,68 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			}
 		}
 
+		// Track 9.E step 3c follow-up (diagnostic only): the cyclic prefix
+		// (prolog tokens) is emitted at end-of-main in the steady-state
+		// body. Current codegen schedules main and the appended cyclic
+		// prefix as two sequential blocks. SCEI's MAIN_LOOP interleaves
+		// both. This diagnostic compares:
+		//   alone       = schedule(main)                      [step 3b's baseline]
+		//   prologAlone = schedule(prolog)
+		//   serial      = schedule(main) + schedule(prolog)   [serial upper bound]
+		//   inContext   = schedule(prolog; then main)         [scheduledLoopBodyCyclesInContext]
+		//   combined    = schedule(main ++ prolog)            [SCEI-style single pass]
+		// "savings" = serial - combined; that's how much an interleaved
+		// scheduler over (main + cyclic prefix) could buy per iteration.
+		if( std::getenv( "OPENVCL_DUMP_COMBINED_SCHEDULE" ) != NULL )
+		{
+			if( opportunity.eligibleSingleQSoftwarePipeline
+			    && !opportunity.mainTokenIndices.empty() )
+			{
+				const unsigned int aloneCycles =
+				    scheduledLoopBodyCycles( opportunity.mainTokenIndices, indexedTokens );
+				const unsigned int prologAloneCycles =
+				    scheduledLoopBodyCycles( opportunity.prologTokenIndices, indexedTokens );
+				const unsigned int inContextCycles =
+				    scheduledLoopBodyCyclesInContext( opportunity.prologTokenIndices,
+				                                      opportunity.mainTokenIndices,
+				                                      indexedTokens );
+				// Combined: schedule main ++ prolog as ONE bodyTokens list.
+				std::list<Token> combinedTokens;
+				for( std::vector<unsigned int>::const_iterator i =
+				         opportunity.mainTokenIndices.begin();
+				     i != opportunity.mainTokenIndices.end(); ++i )
+				{
+					if( *i < indexedTokens.size() )
+						appendUnlabeledTokenForScheduleCost(
+						    combinedTokens, *indexedTokens[*i] );
+				}
+				for( std::vector<unsigned int>::const_iterator i =
+				         opportunity.prologTokenIndices.begin();
+				     i != opportunity.prologTokenIndices.end(); ++i )
+				{
+					if( *i < indexedTokens.size() )
+						appendUnlabeledTokenForScheduleCost(
+						    combinedTokens, *indexedTokens[*i] );
+				}
+				const unsigned int combinedCycles =
+				    scheduleVuProgramReadyIssueSlotsWithFlagLiveness( combinedTokens ).cycleCount;
+				const unsigned int serialCycles = aloneCycles + prologAloneCycles;
+				const unsigned int savings = serialCycles > combinedCycles
+				                                 ? serialCycles - combinedCycles
+				                                 : 0;
+				std::cerr << "[combined-schedule] loop=" << opportunity.label
+				          << " mainAlone=" << aloneCycles
+				          << " prologAlone=" << prologAloneCycles
+				          << " serial=" << serialCycles
+				          << " inContext=" << inContextCycles
+				          << " combined=" << combinedCycles
+				          << " savingsIfInterleaved=" << savings
+				          << " mainSize=" << opportunity.mainTokenIndices.size()
+				          << " prologSize=" << opportunity.prologTokenIndices.size()
+				          << "\n";
+			}
+		}
+
 		result.push_back( opportunity );
 	}
 
