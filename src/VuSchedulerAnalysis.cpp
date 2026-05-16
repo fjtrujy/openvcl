@@ -3576,6 +3576,188 @@ namespace
 		return true;
 	}
 
+	// Track 9.E step 3b (diagnostic only): estimate the steady-state per-iter
+	// cycle count of a 2-stage software-pipelined kernel that interleaves
+	// stage1 of iter N+1 BEFORE stage2 of iter N at the source level, so the
+	// downstream scheduler can issue the next div/mulax chain while iter N's
+	// mulq->ftoi4 chain is still draining Q. Uses depth-2 rotation banks
+	// from step 3a so two iterations can hold renamed VF carriers simultaneously.
+	//
+	// Source order emitted to the scheduler (3-iter window):
+	//   stage1_A_b0, stage1_B_b1, stage2_A_b0, stage1_C_b0, stage2_B_b1, stage2_C_b0
+	//                                          |                       |
+	//                                      boundary1               boundary2
+	// perIter = boundary2 - boundary1 = steady-state cost of one iteration
+	// once both rotation banks are in flight.
+	//
+	// Returns false if the opportunity is not single-Q SWP shaped, if the q
+	// producer doesn't live inside mainTokenIndices, or if depth-2 rotation
+	// allocation fails. On success outPerIterCycles holds the per-iter estimate
+	// and outRotations holds the depth-2 banks used.
+	bool synthesizeQInterleavedKernelCycles( const VuLoopCandidate& loop,
+	                                         const std::vector<const Token*>& indexedTokens,
+	                                         const VuLoopPipelineOpportunity& opportunity,
+	                                         unsigned int& outPerIterCycles,
+	                                         unsigned int& outStage1Cycles,
+	                                         unsigned int& outStage2Cycles,
+	                                         std::vector<VuSoftwarePipelineRotation>& outRotations,
+	                                         std::string& outFailReason )
+	{
+		outPerIterCycles = 0;
+		outStage1Cycles = 0;
+		outStage2Cycles = 0;
+		outRotations.clear();
+		outFailReason.clear();
+
+		if( !opportunity.eligibleSingleQSoftwarePipeline )
+		{
+			outFailReason = "not_eligible_single_q_swp";
+			return false;
+		}
+		if( opportunity.mainTokenIndices.empty() )
+		{
+			outFailReason = "empty_main";
+			return false;
+		}
+		if( opportunity.carriedQOutputRegisters.empty() )
+		{
+			outFailReason = "no_carried_q_outputs";
+			return false;
+		}
+
+		// Split mainTokenIndices at the LAST q consumer (mulq): stage1 = tokens
+		// up to and including the last q consumer of iter N (the chain that
+		// uses Q from iter N-1's hoisted div); stage2 = tokens after (post-mulq
+		// chain, e.g. ftoi4/sq/induction). At source-level interleave we want
+		// stage1 of iter N+1 (which will be using iter N's pending Q) to be
+		// scheduled alongside stage2 of iter N. The hoisted q producer for
+		// iter N+1 lives outside mainTokenIndices and so isn't part of either
+		// stage here.
+		if( opportunity.qConsumerTokenIndices.empty() )
+		{
+			outFailReason = "no_q_consumers";
+			return false;
+		}
+		const unsigned int qConsumerBoundary = opportunity.qConsumerTokenIndices.back();
+		std::vector<unsigned int> stage1;
+		std::vector<unsigned int> stage2;
+		bool sawBoundary = false;
+		for( std::vector<unsigned int>::const_iterator i = opportunity.mainTokenIndices.begin();
+		     i != opportunity.mainTokenIndices.end(); ++i )
+		{
+			if( !sawBoundary )
+			{
+				stage1.push_back( *i );
+				if( *i == qConsumerBoundary )
+					sawBoundary = true;
+			}
+			else
+			{
+				stage2.push_back( *i );
+			}
+		}
+		if( !sawBoundary || stage1.empty() || stage2.empty() )
+		{
+			outFailReason = !sawBoundary ? "q_consumer_not_in_main"
+			                             : ( stage1.empty() ? "empty_stage1" : "empty_stage2" );
+			return false;
+		}
+
+		// Allocate depth-2 rotation banks.
+		std::vector<VuSoftwarePipelineRotation> banks;
+		for( std::list<std::string>::const_iterator reg =
+		         opportunity.carriedQOutputRegisters.begin();
+		     reg != opportunity.carriedQOutputRegisters.end(); ++reg )
+		{
+			VuSoftwarePipelineRotation rot;
+			rot.registerBase = *reg;
+			rot.hasScratchRegister = false;
+			banks.push_back( rot );
+		}
+		assignRotationScratchRegisters( loop, banks, 2 );
+		for( std::vector<VuSoftwarePipelineRotation>::const_iterator r = banks.begin();
+		     r != banks.end(); ++r )
+		{
+			if( r->rotationBank.size() < 2 )
+			{
+				outFailReason = "depth2_alloc_failed";
+				return false;
+			}
+		}
+
+		// Build per-bank rotation views. bank0 uses rotationBank[0] (same as
+		// hasScratchRegister/scratchRegister); bank1 overrides scratchRegister
+		// with rotationBank[1] so rewriteRotatedRegistersToScratch emits the
+		// alternate scratch VF.
+		std::vector<VuSoftwarePipelineRotation> bank0 = banks;
+		std::vector<VuSoftwarePipelineRotation> bank1 = banks;
+		for( std::size_t k = 0; k < bank0.size(); ++k )
+		{
+			bank0[k].scratchRegister = bank0[k].rotationBank[0];
+			bank0[k].hasScratchRegister = true;
+			bank1[k].scratchRegister = bank1[k].rotationBank[1];
+			bank1[k].hasScratchRegister = true;
+		}
+
+		// Stage helpers: append the given index list as adjusted tokens under
+		// the supplied bank. Source-order interleave is performed by the caller
+		// via the order in which these helpers are invoked.
+		struct Local
+		{
+			static void appendStage( std::list<Token>& dst,
+			                         const std::vector<unsigned int>& indices,
+			                         const std::vector<const Token*>& src,
+			                         const std::vector<VuSoftwarePipelineRotation>& rotations )
+			{
+				for( std::vector<unsigned int>::const_iterator i = indices.begin();
+				     i != indices.end(); ++i )
+				{
+					if( *i < src.size() )
+						dst.push_back(
+						    adjustedMultiQCyclicPrefixToken( *src[*i], rotations ) );
+				}
+			}
+		};
+
+		// Schedule three prefixes of the interleaved sequence and subtract to
+		// extract per-stage and per-iter cycle costs.
+		// Sequence: stage1_A_b0, stage1_B_b1, stage2_A_b0, stage1_C_b0, stage2_B_b1, stage2_C_b0
+		std::list<Token> seq_b1;
+		Local::appendStage( seq_b1, stage1, indexedTokens, bank0 );
+		Local::appendStage( seq_b1, stage1, indexedTokens, bank1 );
+		Local::appendStage( seq_b1, stage2, indexedTokens, bank0 );
+		const unsigned int boundary1 =
+		    scheduleVuProgramReadyIssueSlotsWithFlagLiveness( seq_b1 ).cycleCount;
+
+		std::list<Token> seq_b2;
+		Local::appendStage( seq_b2, stage1, indexedTokens, bank0 );
+		Local::appendStage( seq_b2, stage1, indexedTokens, bank1 );
+		Local::appendStage( seq_b2, stage2, indexedTokens, bank0 );
+		Local::appendStage( seq_b2, stage1, indexedTokens, bank0 );
+		Local::appendStage( seq_b2, stage2, indexedTokens, bank1 );
+		const unsigned int boundary2 =
+		    scheduleVuProgramReadyIssueSlotsWithFlagLiveness( seq_b2 ).cycleCount;
+
+		// Also measure stage1 and stage2 in isolation (no warmup) for reporting.
+		std::list<Token> seq_s1_only;
+		Local::appendStage( seq_s1_only, stage1, indexedTokens, bank0 );
+		outStage1Cycles =
+		    scheduleVuProgramReadyIssueSlotsWithFlagLiveness( seq_s1_only ).cycleCount;
+		std::list<Token> seq_s2_only;
+		Local::appendStage( seq_s2_only, stage2, indexedTokens, bank0 );
+		outStage2Cycles =
+		    scheduleVuProgramReadyIssueSlotsWithFlagLiveness( seq_s2_only ).cycleCount;
+
+		if( boundary2 <= boundary1 )
+		{
+			outFailReason = "boundary_non_positive";
+			return false;
+		}
+		outPerIterCycles = boundary2 - boundary1;
+		outRotations.swap( banks );
+		return true;
+	}
+
 	bool loopBodyHasQProducer( const VuLoopCandidate& loop )
 	{
 		for( std::vector<const Token*>::const_iterator i = loop.bodyTokens.begin();
@@ -5519,6 +5701,63 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 				          << " depth2_full=" << fullDepth2;
 				for( std::vector<VuSoftwarePipelineRotation>::const_iterator r =
 				         bankProbe.begin(); r != bankProbe.end(); ++r )
+				{
+					std::cerr << " " << r->registerBase << "->[";
+					for( std::vector<std::string>::const_iterator b = r->rotationBank.begin();
+					     b != r->rotationBank.end(); ++b )
+					{
+						if( b != r->rotationBank.begin() )
+							std::cerr << ",";
+						std::cerr << *b;
+					}
+					std::cerr << "]";
+				}
+				std::cerr << "\n";
+			}
+		}
+
+		if( std::getenv( "OPENVCL_DUMP_QCHAIN_INTERLEAVE" ) != NULL )
+		{
+			// Track 9.E step 3b (cost-only): interleave stage1 of iter N+1
+			// before stage2 of iter N at the source level so the scheduler can
+			// overlap the next div/mulax chain with the current mulq/ftoi4
+			// chain. Reports per-iter cycle savings vs the 1-stage main body.
+			// Planner unchanged.
+			if( opportunity.eligibleSingleQSoftwarePipeline
+			    && !opportunity.mainTokenIndices.empty() )
+			{
+				const unsigned int singleStageMainCycles =
+				    scheduledLoopBodyCycles( opportunity.mainTokenIndices, indexedTokens );
+				unsigned int perIter = 0;
+				unsigned int s1 = 0;
+				unsigned int s2 = 0;
+				std::vector<VuSoftwarePipelineRotation> rotations;
+				std::string reason;
+				const bool ok = synthesizeQInterleavedKernelCycles( *loop,
+				                                                    indexedTokens,
+				                                                    opportunity,
+				                                                    perIter,
+				                                                    s1,
+				                                                    s2,
+				                                                    rotations,
+				                                                    reason );
+				std::cerr << "[qchain-interleave] loop=" << opportunity.label
+				          << " singleStageMainCycles=" << singleStageMainCycles
+				          << " interleave=" << ( ok ? "ok" : "fail" )
+				          << " reason=" << ( ok ? "-" : reason )
+				          << " carriedQOutputs=" << opportunity.carriedQOutputRegisters.size()
+				          << " qProducerTokenIdx=" << opportunity.qProducerTokenIndex
+				          << " qConsumers=" << opportunity.qConsumerTokenIndices.size()
+				          << " mainSize=" << opportunity.mainTokenIndices.size()
+				          << " stage1Cycles=" << s1
+				          << " stage2Cycles=" << s2
+				          << " steadyPerIter=" << perIter
+				          << " savingsVsSingleStage=" << ( ok && perIter < singleStageMainCycles
+				                                            ? ( singleStageMainCycles - perIter )
+				                                            : 0 )
+				          << " rotations=" << rotations.size();
+				for( std::vector<VuSoftwarePipelineRotation>::const_iterator r =
+				         rotations.begin(); r != rotations.end(); ++r )
 				{
 					std::cerr << " " << r->registerBase << "->[";
 					for( std::vector<std::string>::const_iterator b = r->rotationBank.begin();
