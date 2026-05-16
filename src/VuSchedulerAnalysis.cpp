@@ -1,6 +1,7 @@
 #include "VuSchedulerAnalysis.h"
 
 #include "VuLatencyTracker.h"
+#include "VuModuloReservationTable.h"
 #include "VuSchedulingRules.h"
 #include "VuTokenResourceAccess.h"
 
@@ -6088,6 +6089,35 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			          << " recmii=" << recmii
 			          << " resmii=" << resmii
 			          << " mii=" << mii
+			          << "\n";
+		}
+
+		if( std::getenv( "OPENVCL_DUMP_LOOP_MRT" ) != NULL
+		    && opportunity.simpleCountedLoop
+		    && !opportunity.mainTokenIndices.empty() )
+		{
+			// Track 9.G step 4b: Modulo Reservation Table scaffolding.
+			// Construct an empty MRT sized at the current MII and report its
+			// dimensions. Step 4d will drive reservations from the priority
+			// list; for now this only validates that the resource model
+			// (Upper/Lower issue lanes + FDIV/EFU multi-cycle pipes) wires
+			// through the build and can be sized per loop without affecting
+			// emission.
+			const std::vector<unsigned int>& mt = opportunity.mainTokenIndices;
+			const unsigned int recmii = computeLoopRecMII( mt, indexedTokens );
+			const unsigned int resmii = computeLoopResMII( mt, indexedTokens );
+			const unsigned int mii    = ( recmii > resmii ) ? recmii : resmii;
+			ModuloReservationTable mrt( mii );
+			std::cerr << "[loop-mrt] loop=" << opportunity.label
+			          << " II=" << mrt.initiationInterval()
+			          << " upperCap=" << mrt.initiationInterval()
+			          << " lowerCap=" << mrt.initiationInterval()
+			          << " fdivLanes=1"
+			          << " efuLanes=1"
+			          << " upperOcc=" << mrt.upperOccupancy()
+			          << " lowerOcc=" << mrt.lowerOccupancy()
+			          << " fdivOcc=" << mrt.fdivOccupancy()
+			          << " efuOcc=" << mrt.efuOccupancy()
 			          << "\n";
 		}
 

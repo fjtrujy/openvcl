@@ -42,6 +42,7 @@ set(OPENVCL_LIB_SOURCES
     ${OPENVCL_ROOT}/src/Token.cpp
     ${OPENVCL_ROOT}/src/Tokenizer.cpp
     ${OPENVCL_ROOT}/src/VuLatencyTracker.cpp
+    ${OPENVCL_ROOT}/src/VuModuloReservationTable.cpp
     ${OPENVCL_ROOT}/src/VuSchedulerAnalysis.cpp
     ${OPENVCL_ROOT}/src/VuSchedulingRules.cpp
     ${OPENVCL_ROOT}/src/VuInstructionInfo.cpp
@@ -57,6 +58,7 @@ set(OPENVCL_TEST_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_alias.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_expression.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_tokenizer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_vu_modulo_reservation_table.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_vu_scheduler_analysis.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_vu_scheduling_rules.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_vu_instruction_info.cpp
