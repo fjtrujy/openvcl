@@ -5646,6 +5646,128 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			}
 		}
 
+		if( std::getenv( "OPENVCL_DUMP_LOOP_DDG" ) != NULL
+		    && opportunity.simpleCountedLoop
+		    && !opportunity.mainTokenIndices.empty() )
+		{
+			// Track 9.G step 1: extract a dependence DAG over the simple-counted
+			// loop body. Nodes = opportunity.mainTokenIndices. Edges encode
+			// (kind, dist, latency, resource):
+			//   kind  in {RAW, WAW, WAR}; intra-iter dist=0 (i<j), loop-carried dist=1 (i>j)
+			//   latency for RAW comes from VuLatencyTracker; WAW/WAR use 1 (ordering only)
+			//   resource = base register key (collapsed via registerBaseKey) or
+			//              implicit pipe tag (@Q, @P, @ACC, @MAC, @CLIP, @R, @I).
+			// Diagnostic-only; planner / emission untouched. Output is gated on
+			// OPENVCL_DUMP_LOOP_DDG; per-edge detail additionally needs
+			// OPENVCL_DUMP_LOOP_DDG_EDGES to avoid drowning the log on large bodies.
+			const std::vector<unsigned int>& mt = opportunity.mainTokenIndices;
+			const unsigned int n = static_cast<unsigned int>( mt.size() );
+			std::vector< std::vector<std::string> > nodeWrites( n ), nodeReads( n );
+			for( unsigned int k = 0; k < n; ++k )
+			{
+				if( mt[k] >= indexedTokens.size() ) continue;
+				VuTokenResourceAccess acc;
+				if( !buildVuTokenResourceAccess( *indexedTokens[mt[k]], acc ) ) continue;
+				for( std::list<std::string>::const_iterator it = acc.registerWrites.begin();
+				     it != acc.registerWrites.end(); ++it )
+					nodeWrites[k].push_back( registerBaseKey( *it ) );
+				for( std::list<std::string>::const_iterator it = acc.registerReads.begin();
+				     it != acc.registerReads.end(); ++it )
+					nodeReads[k].push_back( registerBaseKey( *it ) );
+				const unsigned int iw = acc.implicitWrites;
+				const unsigned int ir = acc.implicitReads;
+				if( iw & VU_RESOURCE_ACC )  nodeWrites[k].push_back( "@ACC" );
+				if( iw & VU_RESOURCE_Q )    nodeWrites[k].push_back( "@Q" );
+				if( iw & VU_RESOURCE_P )    nodeWrites[k].push_back( "@P" );
+				if( iw & VU_RESOURCE_R )    nodeWrites[k].push_back( "@R" );
+				if( iw & VU_RESOURCE_I )    nodeWrites[k].push_back( "@I" );
+				if( iw & VU_RESOURCE_MAC )  nodeWrites[k].push_back( "@MAC" );
+				if( iw & VU_RESOURCE_CLIP ) nodeWrites[k].push_back( "@CLIP" );
+				if( ir & VU_RESOURCE_ACC )  nodeReads[k].push_back( "@ACC" );
+				if( ir & VU_RESOURCE_Q )    nodeReads[k].push_back( "@Q" );
+				if( ir & VU_RESOURCE_P )    nodeReads[k].push_back( "@P" );
+				if( ir & VU_RESOURCE_R )    nodeReads[k].push_back( "@R" );
+				if( ir & VU_RESOURCE_I )    nodeReads[k].push_back( "@I" );
+				if( ir & VU_RESOURCE_MAC )  nodeReads[k].push_back( "@MAC" );
+				if( ir & VU_RESOURCE_CLIP ) nodeReads[k].push_back( "@CLIP" );
+			}
+			const bool dumpEdges = ( std::getenv( "OPENVCL_DUMP_LOOP_DDG_EDGES" ) != NULL );
+			unsigned int edges = 0, intra = 0, carried = 0;
+			unsigned int maxIntraLat = 0, maxCarriedLat = 0;
+			for( unsigned int i = 0; i < n; ++i )
+			{
+				for( unsigned int j = 0; j < n; ++j )
+				{
+					if( i == j ) continue;
+					const unsigned int dist = ( i < j ) ? 0u : 1u;
+					std::string sharedRaw;
+					for( unsigned int a = 0; a < nodeWrites[i].size() && sharedRaw.empty(); ++a )
+						for( unsigned int b = 0; b < nodeReads[j].size() && sharedRaw.empty(); ++b )
+							if( nodeWrites[i][a] == nodeReads[j][b] )
+								sharedRaw = nodeWrites[i][a];
+					if( !sharedRaw.empty()
+					    && mt[i] < indexedTokens.size()
+					    && mt[j] < indexedTokens.size() )
+					{
+						VuLatencyTracker tr;
+						tr.reset();
+						tr.recordWrites( *indexedTokens[mt[i]], 0 );
+						const int d = tr.readHazardDelay( *indexedTokens[mt[j]], NULL, 0 );
+						const unsigned int lat = static_cast<unsigned int>( d > 0 ? d : 1 );
+						if( dumpEdges )
+							std::cerr << "[loop-ddg-edge] loop=" << opportunity.label
+							          << " i=" << mt[i] << " j=" << mt[j]
+							          << " dist=" << dist
+							          << " kind=RAW lat=" << lat
+							          << " res=" << sharedRaw << "\n";
+						++edges;
+						if( dist == 0 ) { ++intra;   if( lat > maxIntraLat   ) maxIntraLat   = lat; }
+						else            { ++carried; if( lat > maxCarriedLat ) maxCarriedLat = lat; }
+					}
+					std::string sharedWaw;
+					for( unsigned int a = 0; a < nodeWrites[i].size() && sharedWaw.empty(); ++a )
+						for( unsigned int b = 0; b < nodeWrites[j].size() && sharedWaw.empty(); ++b )
+							if( nodeWrites[i][a] == nodeWrites[j][b] )
+								sharedWaw = nodeWrites[i][a];
+					if( !sharedWaw.empty() )
+					{
+						if( dumpEdges )
+							std::cerr << "[loop-ddg-edge] loop=" << opportunity.label
+							          << " i=" << mt[i] << " j=" << mt[j]
+							          << " dist=" << dist
+							          << " kind=WAW lat=1"
+							          << " res=" << sharedWaw << "\n";
+						++edges;
+						if( dist == 0 ) ++intra; else ++carried;
+					}
+					std::string sharedWar;
+					for( unsigned int a = 0; a < nodeReads[i].size() && sharedWar.empty(); ++a )
+						for( unsigned int b = 0; b < nodeWrites[j].size() && sharedWar.empty(); ++b )
+							if( nodeReads[i][a] == nodeWrites[j][b] )
+								sharedWar = nodeReads[i][a];
+					if( !sharedWar.empty() )
+					{
+						if( dumpEdges )
+							std::cerr << "[loop-ddg-edge] loop=" << opportunity.label
+							          << " i=" << mt[i] << " j=" << mt[j]
+							          << " dist=" << dist
+							          << " kind=WAR lat=1"
+							          << " res=" << sharedWar << "\n";
+						++edges;
+						if( dist == 0 ) ++intra; else ++carried;
+					}
+				}
+			}
+			std::cerr << "[loop-ddg] loop=" << opportunity.label
+			          << " mainSize=" << n
+			          << " edges=" << edges
+			          << " intra=" << intra
+			          << " carried=" << carried
+			          << " maxIntraLat=" << maxIntraLat
+			          << " maxCarriedLat=" << maxCarriedLat
+			          << "\n";
+		}
+
 		if( std::getenv( "OPENVCL_DUMP_MULTISTAGE_CANDIDATES" ) != NULL )
 		{
 			std::cerr << "[multistage] loop=" << opportunity.label
