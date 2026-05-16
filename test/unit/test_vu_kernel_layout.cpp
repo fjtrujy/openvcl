@@ -330,3 +330,103 @@ TEST_CASE("VuKernelRegisterPlan: WAR counted when reader is in earlier stage")
     CHECK(plan.wawCount == 0u);
     CHECK(plan.rawCount == 0u);
 }
+
+// ---------------------------------------------------------------------------
+// Track 9.G step 6a — rewrite-plan synthesis tests.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+    VuKernelLayoutEntry makeRewriteEntry(unsigned tokenIdx, unsigned stage,
+                                          unsigned modSlot, int pipe)
+    {
+        VuKernelLayoutEntry e;
+        e.tokenIndex = tokenIdx;
+        e.stage      = stage;
+        e.modSlot    = modSlot;
+        e.slot       = stage * 2u + modSlot;
+        e.pipe       = pipe;
+        e.duration   = 1;
+        return e;
+    }
+}
+
+TEST_CASE("VuKernelRewritePlan: empty layout yields empty plan")
+{
+    VuKernelLayout layout;
+    VuKernelEnvelope env;
+    buildVuKernelEnvelope(layout, env);
+    VuKernelRewritePlan plan;
+    buildVuKernelRewritePlan(layout, env, plan);
+    CHECK(plan.II == 0u);
+    CHECK(plan.stageCount == 0u);
+    CHECK(plan.prologTokens.empty());
+    CHECK(plan.mainTokens.empty());
+    CHECK(plan.drainTokens.empty());
+}
+
+TEST_CASE("VuKernelRewritePlan: single-stage layout produces main only")
+{
+    // II=2, stageCount=1. Two cycles, one upper + one lower per cycle.
+    VuKernelLayout layout;
+    layout.II = 2; layout.stageCount = 1; layout.feasible = true;
+    layout.entries.push_back(makeRewriteEntry(100, 0, 0, 1)); // U
+    layout.entries.push_back(makeRewriteEntry(101, 0, 0, 2)); // L
+    layout.entries.push_back(makeRewriteEntry(102, 0, 1, 1)); // U
+    layout.entries.push_back(makeRewriteEntry(103, 0, 1, 2)); // L
+    VuKernelEnvelope env;
+    buildVuKernelEnvelope(layout, env);
+    VuKernelRewritePlan plan;
+    buildVuKernelRewritePlan(layout, env, plan);
+    CHECK(plan.II == 2u);
+    CHECK(plan.stageCount == 1u);
+    CHECK(plan.prologTokens.empty());
+    CHECK(plan.drainTokens.empty());
+    REQUIRE(plan.mainTokens.size() == 8u); // II * 4
+    // cycle 0: upper=100, lower=101, fdiv=-, efu=-
+    CHECK(plan.mainTokens[0] == 100u);
+    CHECK(plan.mainTokens[1] == 101u);
+    CHECK(plan.mainTokens[2] == VuKernelRewritePlan::NO_TOKEN);
+    CHECK(plan.mainTokens[3] == VuKernelRewritePlan::NO_TOKEN);
+    // cycle 1
+    CHECK(plan.mainTokens[4] == 102u);
+    CHECK(plan.mainTokens[5] == 103u);
+}
+
+TEST_CASE("VuKernelRewritePlan: two-stage layout produces prolog, main, drain")
+{
+    // II=2, stageCount=2.
+    // Stage 0: token 10 @modSlot 0 (upper), token 11 @modSlot 1 (upper)
+    // Stage 1: token 20 @modSlot 0 (lower), token 21 @modSlot 1 (lower)
+    VuKernelLayout layout;
+    layout.II = 2; layout.stageCount = 2; layout.feasible = true;
+    layout.entries.push_back(makeRewriteEntry(10, 0, 0, 1));
+    layout.entries.push_back(makeRewriteEntry(11, 0, 1, 1));
+    layout.entries.push_back(makeRewriteEntry(20, 1, 0, 2));
+    layout.entries.push_back(makeRewriteEntry(21, 1, 1, 2));
+    VuKernelEnvelope env;
+    buildVuKernelEnvelope(layout, env);
+    VuKernelRewritePlan plan;
+    buildVuKernelRewritePlan(layout, env, plan);
+    CHECK(plan.II == 2u);
+    CHECK(plan.stageCount == 2u);
+    // Each section: (stageCount-1)=1 copy * II=2 cycles * 4 lanes = 8 for prolog/drain; 8 for main.
+    REQUIRE(plan.prologTokens.size() == 8u);
+    REQUIRE(plan.mainTokens.size() == 8u);
+    REQUIRE(plan.drainTokens.size() == 8u);
+    // Prolog copy 0: only stage 0 entries are live.
+    CHECK(plan.prologTokens[0] == 10u);                                  // cycle 0 upper
+    CHECK(plan.prologTokens[1] == VuKernelRewritePlan::NO_TOKEN);        // cycle 0 lower
+    CHECK(plan.prologTokens[4] == 11u);                                  // cycle 1 upper
+    CHECK(plan.prologTokens[5] == VuKernelRewritePlan::NO_TOKEN);        // cycle 1 lower
+    // Main: both stages overlapped — upper has stage-0 token, lower has stage-1 token.
+    CHECK(plan.mainTokens[0] == 10u);
+    CHECK(plan.mainTokens[1] == 20u);
+    CHECK(plan.mainTokens[4] == 11u);
+    CHECK(plan.mainTokens[5] == 21u);
+    // Drain copy 1: only stage 1 entries are live.
+    CHECK(plan.drainTokens[0] == VuKernelRewritePlan::NO_TOKEN);
+    CHECK(plan.drainTokens[1] == 20u);
+    CHECK(plan.drainTokens[4] == VuKernelRewritePlan::NO_TOKEN);
+    CHECK(plan.drainTokens[5] == 21u);
+}

@@ -186,6 +186,42 @@ void buildVuKernelRegisterPlan(
     const std::vector< VuKernelEntryRegisters >& entryRegs,
     VuKernelRegisterPlan& plan );
 
+// Track 9.G step 6a — rewrite-plan synthesis (diagnostic).
+//
+// Reformulates the kernel template + pipeline envelope as flat,
+// per-cycle, per-lane token-index sequences in emission order. Each
+// cycle contributes four lane slots in fixed order
+// (upper, lower, fdiv, efu); empty lanes carry the sentinel NO_TOKEN.
+//
+// Layout:
+//   prologTokens.size() == (stageCount - 1) * II * 4
+//   mainTokens.size()   == II * 4
+//   drainTokens.size()  == (stageCount - 1) * II * 4
+//
+// For prolog copy p (0 <= p < stageCount-1), the lane group for modSlot
+// c starts at offset (p*II + c) * 4. For drain copy q (1 <= q <= stageCount-1),
+// the lane group starts at ((q-1)*II + c) * 4. Diagnostic-only: emission
+// still flows through buildVuSoftwarePipelineRewritePlans.
+
+struct VuKernelRewritePlan
+{
+    static const unsigned int NO_TOKEN = static_cast< unsigned int >( -1 );
+
+    unsigned int II;
+    unsigned int stageCount;
+    unsigned int conflicts;
+    std::vector< unsigned int > prologTokens;
+    std::vector< unsigned int > mainTokens;
+    std::vector< unsigned int > drainTokens;
+
+    VuKernelRewritePlan()
+        : II( 0 ), stageCount( 0 ), conflicts( 0 ) {}
+};
+
+void buildVuKernelRewritePlan( const VuKernelLayout& layout,
+                               const VuKernelEnvelope& envelope,
+                               VuKernelRewritePlan& plan );
+
 } // namespace vcl
 
 #endif

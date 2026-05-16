@@ -171,4 +171,59 @@ void buildVuKernelRegisterPlan(
     }
 }
 
+namespace
+{
+    unsigned int rewriteLaneToken( const VuKernelLayout& layout, int slotEntry )
+    {
+        if( slotEntry == VuKernelTemplateSlot::NO_ENTRY )
+            return VuKernelRewritePlan::NO_TOKEN;
+        return layout.entries[ static_cast< unsigned int >( slotEntry ) ].tokenIndex;
+    }
+
+    void rewritePushCycle( const VuKernelLayout& layout,
+                           const VuKernelTemplateSlot& slot,
+                           std::vector< unsigned int >& dst )
+    {
+        dst.push_back( rewriteLaneToken( layout, slot.upper ) );
+        dst.push_back( rewriteLaneToken( layout, slot.lower ) );
+        dst.push_back( rewriteLaneToken( layout, slot.fdiv  ) );
+        dst.push_back( rewriteLaneToken( layout, slot.efu   ) );
+    }
+}
+
+void buildVuKernelRewritePlan( const VuKernelLayout& layout,
+                               const VuKernelEnvelope& envelope,
+                               VuKernelRewritePlan& plan )
+{
+    plan.II         = envelope.II;
+    plan.stageCount = envelope.stageCount;
+    plan.conflicts  = envelope.conflicts;
+    plan.prologTokens.clear();
+    plan.mainTokens.clear();
+    plan.drainTokens.clear();
+
+    if( envelope.stageCount == 0 || envelope.II == 0 ) return;
+
+    VuKernelTemplate tmpl;
+    buildVuKernelTemplate( layout, tmpl );
+    plan.mainTokens.reserve( envelope.II * 4 );
+    for( unsigned int c = 0; c < envelope.II; ++c )
+        rewritePushCycle( layout, tmpl.slots[ c ], plan.mainTokens );
+
+    if( envelope.stageCount <= 1 ) return;
+
+    const unsigned int copies = envelope.stageCount - 1;
+    plan.prologTokens.reserve( copies * envelope.II * 4 );
+    for( unsigned int p = 0; p < copies; ++p )
+        for( unsigned int c = 0; c < envelope.II; ++c )
+            rewritePushCycle( layout, envelope.prologueRows[ p * envelope.II + c ],
+                              plan.prologTokens );
+
+    plan.drainTokens.reserve( copies * envelope.II * 4 );
+    for( unsigned int q = 1; q <= copies; ++q )
+        for( unsigned int c = 0; c < envelope.II; ++c )
+            rewritePushCycle( layout, envelope.epilogueRows[ ( q - 1 ) * envelope.II + c ],
+                              plan.drainTokens );
+}
+
 } // namespace vcl

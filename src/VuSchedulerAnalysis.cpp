@@ -7082,6 +7082,51 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 						}
 					}
 				}
+				// Track 9.G step 6a: rewrite-plan synthesis (diagnostic).
+				// Reformulates the kernel template + envelope as flat,
+				// per-cycle, per-lane token-index sequences suitable for
+				// a future stage-aware emitter. Diagnostic-only.
+				if( std::getenv( "OPENVCL_DUMP_KERNEL_REWRITE_PLAN" ) != NULL )
+				{
+					VuKernelEnvelope rpEnv;
+					buildVuKernelEnvelope( layout, rpEnv );
+					VuKernelRewritePlan rp;
+					buildVuKernelRewritePlan( layout, rpEnv, rp );
+					std::cerr << "[kernel-rewrite-plan] loop=" << opportunity.label
+					          << " II=" << rp.II
+					          << " stageCount=" << rp.stageCount
+					          << " prolog=" << rp.prologTokens.size()
+					          << " main=" << rp.mainTokens.size()
+					          << " drain=" << rp.drainTokens.size()
+					          << " conflicts=" << rp.conflicts
+					          << "\n";
+					if( std::getenv( "OPENVCL_DUMP_KERNEL_REWRITE_PLAN_DETAIL" ) != NULL )
+					{
+						static const char* kSectionNames[3] = { "PRO", "MAIN", "DRAIN" };
+						static const char* kLaneNames[4] = { "upper", "lower", "fdiv", "efu" };
+						const std::vector< unsigned int >* secs[3] = {
+							&rp.prologTokens, &rp.mainTokens, &rp.drainTokens };
+						for( unsigned int s = 0; s < 3; ++s )
+						{
+							const std::vector< unsigned int >& v = *secs[s];
+							for( unsigned int i = 0; i < v.size(); ++i )
+							{
+								const unsigned int cycle = i / 4;
+								const unsigned int lane  = i % 4;
+								std::cerr << "[kernel-rewrite-plan-cell] loop=" << opportunity.label
+								          << " section=" << kSectionNames[s]
+								          << " cycle=" << cycle
+								          << " lane=" << kLaneNames[lane]
+								          << " tokenIndex=";
+								if( v[i] == VuKernelRewritePlan::NO_TOKEN )
+									std::cerr << "-";
+								else
+									std::cerr << v[i];
+								std::cerr << "\n";
+							}
+						}
+					}
+				}
 			}
 			std::cerr << "[loop-schedule] loop=" << opportunity.label
 			          << " II=" << tryII
