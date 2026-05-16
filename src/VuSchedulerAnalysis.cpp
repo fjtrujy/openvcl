@@ -6905,6 +6905,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 					          << " epilogueCycles=" << env.epilogueCycles
 					          << " prologueCopies=" << env.prologueTokenCounts.size()
 					          << " epilogueCopies=" << env.epilogueTokenCounts.size()
+					          << " conflicts=" << env.conflicts
 					          << "\n";
 					if( std::getenv( "OPENVCL_DUMP_KERNEL_ENVELOPE_COPIES" ) != NULL )
 					{
@@ -6918,6 +6919,39 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 							          << " copy=" << ( q + 1 )
 							          << " tokens=" << env.epilogueTokenCounts[q]
 							          << "\n";
+					}
+					if( std::getenv( "OPENVCL_DUMP_KERNEL_ENVELOPE_ROWS" ) != NULL )
+					{
+						for( unsigned int p = 0; p < env.prologueTokenCounts.size(); ++p )
+						{
+							for( unsigned int c = 0; c < env.II; ++c )
+							{
+								const VuKernelTemplateSlot& r = env.prologueRows[p * env.II + c];
+								std::cerr << "[kernel-envelope-prologue-row] loop=" << opportunity.label
+								          << " copy=" << p
+								          << " modSlot=" << c
+								          << " upper=" << r.upper
+								          << " lower=" << r.lower
+								          << " fdiv="  << r.fdiv
+								          << " efu="   << r.efu
+								          << "\n";
+							}
+						}
+						for( unsigned int q = 0; q < env.epilogueTokenCounts.size(); ++q )
+						{
+							for( unsigned int c = 0; c < env.II; ++c )
+							{
+								const VuKernelTemplateSlot& r = env.epilogueRows[q * env.II + c];
+								std::cerr << "[kernel-envelope-epilogue-row] loop=" << opportunity.label
+								          << " copy=" << ( q + 1 )
+								          << " modSlot=" << c
+								          << " upper=" << r.upper
+								          << " lower=" << r.lower
+								          << " fdiv="  << r.fdiv
+								          << " efu="   << r.efu
+								          << "\n";
+							}
+						}
 					}
 				}
 			}

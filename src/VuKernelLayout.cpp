@@ -47,28 +47,61 @@ void buildVuKernelEnvelope( const VuKernelLayout& layout,
     envelope.kernelTokens   = (unsigned int)layout.entries.size();
     envelope.prologueCycles = 0;
     envelope.epilogueCycles = 0;
+    envelope.conflicts      = 0;
     envelope.prologueTokenCounts.clear();
     envelope.epilogueTokenCounts.clear();
-    if( layout.stageCount < 2 ) return;
+    envelope.prologueRows.clear();
+    envelope.epilogueRows.clear();
+    if( layout.stageCount < 2 || layout.II == 0 ) return;
 
     const unsigned int copies = layout.stageCount - 1;
     envelope.prologueCycles = copies * layout.II;
     envelope.epilogueCycles = copies * layout.II;
     envelope.prologueTokenCounts.resize( copies, 0 );
     envelope.epilogueTokenCounts.resize( copies, 0 );
+    envelope.prologueRows.resize( copies * layout.II );
+    envelope.epilogueRows.resize( copies * layout.II );
 
     for( unsigned int i = 0; i < layout.entries.size(); ++i )
     {
-        const unsigned int st = layout.entries[i].stage;
-        // Prologue copy p activates stages [0, p]; entry contributes to
-        // copies p in [st, copies-1].
+        const VuKernelLayoutEntry& e = layout.entries[i];
+        const unsigned int st  = e.stage;
+        const unsigned int ms  = e.modSlot;
+        const int          pp  = e.pipe;
+        if( ms >= layout.II ) continue;
+
+        // Prologue copies p in [st, copies-1]; stages [0,p] active.
         for( unsigned int p = st; p < copies; ++p )
+        {
             ++envelope.prologueTokenCounts[p];
-        // Epilogue copy q (1..S-1) activates stages [q, S-1]; entry
-        // contributes to copies q in [1, st]. Store at index q-1.
+            if( pp == 0 ) continue;
+            VuKernelTemplateSlot& row = envelope.prologueRows[p * layout.II + ms];
+            int* lane = NULL;
+            if     ( pp == 1 ) lane = &row.upper;
+            else if( pp == 2 ) lane = &row.lower;
+            else if( pp == 3 ) lane = &row.fdiv;
+            else if( pp == 4 ) lane = &row.efu;
+            else continue;
+            if( *lane != VuKernelTemplateSlot::NO_ENTRY ) ++envelope.conflicts;
+            *lane = (int)i;
+        }
+
+        // Epilogue copies q in [1, min(st,copies)]; stages [q,S-1] active.
         const unsigned int qhi = ( st < copies ) ? st : copies;
         for( unsigned int q = 1; q <= qhi; ++q )
+        {
             ++envelope.epilogueTokenCounts[q - 1];
+            if( pp == 0 ) continue;
+            VuKernelTemplateSlot& row = envelope.epilogueRows[(q - 1) * layout.II + ms];
+            int* lane = NULL;
+            if     ( pp == 1 ) lane = &row.upper;
+            else if( pp == 2 ) lane = &row.lower;
+            else if( pp == 3 ) lane = &row.fdiv;
+            else if( pp == 4 ) lane = &row.efu;
+            else continue;
+            if( *lane != VuKernelTemplateSlot::NO_ENTRY ) ++envelope.conflicts;
+            *lane = (int)i;
+        }
     }
 }
 

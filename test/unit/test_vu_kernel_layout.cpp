@@ -212,3 +212,50 @@ TEST_CASE("VuKernelEnvelope: 3-stage layout has 2 prologue + 2 epilogue copies")
     // Epilogue copy 2 issues stages [2,2]: 1 token.
     CHECK(env.epilogueTokenCounts[1] == 1u);
 }
+
+TEST_CASE("VuKernelEnvelope: per-row slot tables populated for 2-stage layout")
+{
+    VuKernelLayout layout;
+    layout.II = 2;
+    layout.stageCount = 2;
+    // stage 0: upper@modSlot 0, lower@modSlot 1
+    { VuKernelLayoutEntry e; e.stage = 0; e.modSlot = 0; e.pipe = 1; layout.entries.push_back(e); }
+    { VuKernelLayoutEntry e; e.stage = 0; e.modSlot = 1; e.pipe = 2; layout.entries.push_back(e); }
+    // stage 1: upper@modSlot 1
+    { VuKernelLayoutEntry e; e.stage = 1; e.modSlot = 1; e.pipe = 1; layout.entries.push_back(e); }
+
+    VuKernelEnvelope env;
+    buildVuKernelEnvelope(layout, env);
+    CHECK(env.conflicts == 0u);
+    CHECK(env.prologueRows.size() == 2u);
+    CHECK(env.epilogueRows.size() == 2u);
+    // Prologue copy 0 = stage 0 only.
+    CHECK(env.prologueRows[0].upper == 0);                              // entry 0
+    CHECK(env.prologueRows[0].lower == VuKernelTemplateSlot::NO_ENTRY);
+    CHECK(env.prologueRows[1].upper == VuKernelTemplateSlot::NO_ENTRY); // entry 2 is stage 1, not active in prologue copy 0
+    CHECK(env.prologueRows[1].lower == 1);                              // entry 1
+    // Epilogue copy 1 = stage 1 only.
+    CHECK(env.epilogueRows[0].upper == VuKernelTemplateSlot::NO_ENTRY);
+    CHECK(env.epilogueRows[1].upper == 2);                              // entry 2
+    CHECK(env.epilogueRows[1].lower == VuKernelTemplateSlot::NO_ENTRY); // entry 1 is stage 0, drained already
+}
+
+TEST_CASE("VuKernelEnvelope: per-row tables grow with stageCount")
+{
+    VuKernelLayout layout;
+    layout.II = 1;
+    layout.stageCount = 3;
+    // Same modSlot/pipe across all stages is a degenerate case used here
+    // purely to exercise sizing and conflict detection.
+    for (unsigned int s = 0; s < 3; ++s) {
+        VuKernelLayoutEntry e; e.stage = s; e.modSlot = 0; e.pipe = 1;
+        layout.entries.push_back(e);
+    }
+    VuKernelEnvelope env;
+    buildVuKernelEnvelope(layout, env);
+    CHECK(env.prologueRows.size() == 2u); // (stageCount-1) * II = 2*1
+    CHECK(env.epilogueRows.size() == 2u);
+    // Stage 0 and stage 1 both fight for upper@modSlot 0 in prologue copy 1.
+    // Stage 1 and stage 2 both fight for upper@modSlot 0 in epilogue copy 1.
+    CHECK(env.conflicts >= 1u);
+}

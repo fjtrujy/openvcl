@@ -121,12 +121,18 @@ struct VuKernelEnvelope
     unsigned int kernelTokens;
     unsigned int prologueCycles;
     unsigned int epilogueCycles;
+    unsigned int conflicts;
     std::vector< unsigned int > prologueTokenCounts; // size = stageCount-1
     std::vector< unsigned int > epilogueTokenCounts; // size = stageCount-1
+    // Per-row VLIW slot tables. Each vector is sized (stageCount-1)*II.
+    // Row index for prologue copy p (0..stageCount-2), modSlot c is p*II+c.
+    // Row index for epilogue copy q (1..stageCount-1), modSlot c is (q-1)*II+c.
+    std::vector< VuKernelTemplateSlot > prologueRows;
+    std::vector< VuKernelTemplateSlot > epilogueRows;
 
     VuKernelEnvelope()
         : II( 0 ), stageCount( 0 ), kernelTokens( 0 ),
-          prologueCycles( 0 ), epilogueCycles( 0 ) {}
+          prologueCycles( 0 ), epilogueCycles( 0 ), conflicts( 0 ) {}
 };
 
 void buildVuKernelEnvelope( const VuKernelLayout& layout,
