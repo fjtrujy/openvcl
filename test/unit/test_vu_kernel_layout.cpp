@@ -142,3 +142,73 @@ TEST_CASE("VuKernelTemplate: pipe=0 (none) entries are ignored")
     CHECK(t.slots[0].upper == VuKernelTemplateSlot::NO_ENTRY);
     CHECK(t.slots[0].lower == VuKernelTemplateSlot::NO_ENTRY);
 }
+
+TEST_CASE("VuKernelEnvelope: single-stage layout has no prologue/epilogue")
+{
+    VuKernelLayout layout;
+    layout.II = 4;
+    layout.stageCount = 1;
+    VuKernelLayoutEntry e; e.modSlot = 0; e.stage = 0; e.pipe = 1;
+    layout.entries.push_back(e);
+    VuKernelEnvelope env;
+    buildVuKernelEnvelope(layout, env);
+    CHECK(env.stageCount == 1u);
+    CHECK(env.kernelTokens == 1u);
+    CHECK(env.prologueCycles == 0u);
+    CHECK(env.epilogueCycles == 0u);
+    CHECK(env.prologueTokenCounts.empty());
+    CHECK(env.epilogueTokenCounts.empty());
+}
+
+TEST_CASE("VuKernelEnvelope: 2-stage layout has 1 prologue + 1 epilogue copy")
+{
+    // 3 entries at stage 0, 2 entries at stage 1.
+    VuKernelLayout layout;
+    layout.II = 4;
+    layout.stageCount = 2;
+    for (unsigned int i = 0; i < 3; ++i) {
+        VuKernelLayoutEntry e; e.stage = 0; e.modSlot = i; e.pipe = 1;
+        layout.entries.push_back(e);
+    }
+    for (unsigned int i = 0; i < 2; ++i) {
+        VuKernelLayoutEntry e; e.stage = 1; e.modSlot = i; e.pipe = 2;
+        layout.entries.push_back(e);
+    }
+    VuKernelEnvelope env;
+    buildVuKernelEnvelope(layout, env);
+    CHECK(env.II == 4u);
+    CHECK(env.stageCount == 2u);
+    CHECK(env.kernelTokens == 5u);
+    CHECK(env.prologueCycles == 4u);
+    CHECK(env.epilogueCycles == 4u);
+    CHECK(env.prologueTokenCounts.size() == 1u);
+    CHECK(env.epilogueTokenCounts.size() == 1u);
+    // Prologue copy 0 (only) issues stage-0 entries: 3.
+    CHECK(env.prologueTokenCounts[0] == 3u);
+    // Epilogue copy 1 (only) issues stage-1 entries: 2.
+    CHECK(env.epilogueTokenCounts[0] == 2u);
+}
+
+TEST_CASE("VuKernelEnvelope: 3-stage layout has 2 prologue + 2 epilogue copies")
+{
+    VuKernelLayout layout;
+    layout.II = 2;
+    layout.stageCount = 3;
+    // 1 entry per stage.
+    for (unsigned int s = 0; s < 3; ++s) {
+        VuKernelLayoutEntry e; e.stage = s; e.modSlot = 0; e.pipe = 1;
+        layout.entries.push_back(e);
+    }
+    VuKernelEnvelope env;
+    buildVuKernelEnvelope(layout, env);
+    CHECK(env.prologueTokenCounts.size() == 2u);
+    CHECK(env.epilogueTokenCounts.size() == 2u);
+    // Prologue copy 0 issues stages [0,0]: 1 token.
+    CHECK(env.prologueTokenCounts[0] == 1u);
+    // Prologue copy 1 issues stages [0,1]: 2 tokens.
+    CHECK(env.prologueTokenCounts[1] == 2u);
+    // Epilogue copy 1 issues stages [1,2]: 2 tokens.
+    CHECK(env.epilogueTokenCounts[0] == 2u);
+    // Epilogue copy 2 issues stages [2,2]: 1 token.
+    CHECK(env.epilogueTokenCounts[1] == 1u);
+}

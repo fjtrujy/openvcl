@@ -39,4 +39,37 @@ void buildVuKernelTemplate( const VuKernelLayout& layout,
     }
 }
 
+void buildVuKernelEnvelope( const VuKernelLayout& layout,
+                            VuKernelEnvelope& envelope )
+{
+    envelope.II             = layout.II;
+    envelope.stageCount     = layout.stageCount;
+    envelope.kernelTokens   = (unsigned int)layout.entries.size();
+    envelope.prologueCycles = 0;
+    envelope.epilogueCycles = 0;
+    envelope.prologueTokenCounts.clear();
+    envelope.epilogueTokenCounts.clear();
+    if( layout.stageCount < 2 ) return;
+
+    const unsigned int copies = layout.stageCount - 1;
+    envelope.prologueCycles = copies * layout.II;
+    envelope.epilogueCycles = copies * layout.II;
+    envelope.prologueTokenCounts.resize( copies, 0 );
+    envelope.epilogueTokenCounts.resize( copies, 0 );
+
+    for( unsigned int i = 0; i < layout.entries.size(); ++i )
+    {
+        const unsigned int st = layout.entries[i].stage;
+        // Prologue copy p activates stages [0, p]; entry contributes to
+        // copies p in [st, copies-1].
+        for( unsigned int p = st; p < copies; ++p )
+            ++envelope.prologueTokenCounts[p];
+        // Epilogue copy q (1..S-1) activates stages [q, S-1]; entry
+        // contributes to copies q in [1, st]. Store at index q-1.
+        const unsigned int qhi = ( st < copies ) ? st : copies;
+        for( unsigned int q = 1; q <= qhi; ++q )
+            ++envelope.epilogueTokenCounts[q - 1];
+    }
+}
+
 } // namespace vcl

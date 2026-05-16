@@ -99,6 +99,39 @@ struct VuKernelTemplate
 void buildVuKernelTemplate( const VuKernelLayout& layout,
                             VuKernelTemplate& template_ );
 
+// Track 9.G step 5c — pipeline envelope (prologue + kernel + epilogue).
+//
+// For a kernel with `stageCount = S` stages and initiation interval II:
+//   - prologue has (S - 1) copies, each II cycles long. Copy p
+//     (0-indexed, 0 <= p < S-1) issues the entries whose layout
+//     stage is in [0, p] (i.e. stages already pipelined-in).
+//   - kernel: II cycles; all S stages active in parallel.
+//   - epilogue has (S - 1) copies, each II cycles long. Copy q
+//     (1-indexed, 1 <= q <= S-1) issues the entries whose layout
+//     stage is in [q, S-1] (i.e. stages still draining).
+//
+// VuKernelEnvelope captures only the token counts per copy; the
+// kernel template (step 5b) already holds the per-modSlot slot
+// assignment. Diagnostic-only — emission untouched.
+
+struct VuKernelEnvelope
+{
+    unsigned int II;
+    unsigned int stageCount;
+    unsigned int kernelTokens;
+    unsigned int prologueCycles;
+    unsigned int epilogueCycles;
+    std::vector< unsigned int > prologueTokenCounts; // size = stageCount-1
+    std::vector< unsigned int > epilogueTokenCounts; // size = stageCount-1
+
+    VuKernelEnvelope()
+        : II( 0 ), stageCount( 0 ), kernelTokens( 0 ),
+          prologueCycles( 0 ), epilogueCycles( 0 ) {}
+};
+
+void buildVuKernelEnvelope( const VuKernelLayout& layout,
+                            VuKernelEnvelope& envelope );
+
 } // namespace vcl
 
 #endif

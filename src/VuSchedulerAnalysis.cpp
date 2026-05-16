@@ -6889,6 +6889,37 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 						}
 					}
 				}
+				// Track 9.G step 5c: pipeline envelope (prologue + epilogue).
+				// Diagnostic-only: report how many tokens each prologue /
+				// epilogue copy would issue if the modulo schedule were
+				// emitted.
+				if( std::getenv( "OPENVCL_DUMP_KERNEL_ENVELOPE" ) != NULL )
+				{
+					VuKernelEnvelope env;
+					buildVuKernelEnvelope( layout, env );
+					std::cerr << "[kernel-envelope] loop=" << opportunity.label
+					          << " II=" << env.II
+					          << " stageCount=" << env.stageCount
+					          << " kernelTokens=" << env.kernelTokens
+					          << " prologueCycles=" << env.prologueCycles
+					          << " epilogueCycles=" << env.epilogueCycles
+					          << " prologueCopies=" << env.prologueTokenCounts.size()
+					          << " epilogueCopies=" << env.epilogueTokenCounts.size()
+					          << "\n";
+					if( std::getenv( "OPENVCL_DUMP_KERNEL_ENVELOPE_COPIES" ) != NULL )
+					{
+						for( unsigned int p = 0; p < env.prologueTokenCounts.size(); ++p )
+							std::cerr << "[kernel-envelope-prologue] loop=" << opportunity.label
+							          << " copy=" << p
+							          << " tokens=" << env.prologueTokenCounts[p]
+							          << "\n";
+						for( unsigned int q = 0; q < env.epilogueTokenCounts.size(); ++q )
+							std::cerr << "[kernel-envelope-epilogue] loop=" << opportunity.label
+							          << " copy=" << ( q + 1 )
+							          << " tokens=" << env.epilogueTokenCounts[q]
+							          << "\n";
+					}
+				}
 			}
 			std::cerr << "[loop-schedule] loop=" << opportunity.label
 			          << " II=" << tryII
