@@ -5681,6 +5681,69 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 					std::cerr << " " << r->registerBase << "->" << r->scratchRegister;
 				}
 				std::cerr << "\n";
+
+				// Track 9.E step 3c follow-up (diagnostic only): the existing
+				// 2-stage synthesis above is main1 ++ main2_renamed. The cyclic
+				// prefix (prolog: mul_pt_mat_44 + div q) is missing from the
+				// kernel, so iter2's mulq has no fresh div upstream and the
+				// scheduler has nothing new to overlap. Extend the kernel to:
+				//   main_iter1 ++ prolog_iter2_renamed ++ main_iter2_renamed
+				// This is the smallest shape that gives the scheduler a window
+				// to overlap iter N+1's mul_pt_mat_44 + div under iter N's
+				// mulq + ftoi4 tail. perIter = kernelCycles / 2.
+				if( ok && !opportunity.prologTokenIndices.empty() )
+				{
+					std::list<Token> extKernelTokens;
+					// iter1 main (no rename)
+					for( std::vector<unsigned int>::const_iterator i =
+					         opportunity.mainTokenIndices.begin();
+					     i != opportunity.mainTokenIndices.end(); ++i )
+					{
+						if( *i < indexedTokens.size() )
+							appendUnlabeledTokenForScheduleCost(
+							    extKernelTokens, *indexedTokens[*i] );
+					}
+					// iter2 prolog (renamed via rotation map)
+					for( std::vector<unsigned int>::const_iterator i =
+					         opportunity.prologTokenIndices.begin();
+					     i != opportunity.prologTokenIndices.end(); ++i )
+					{
+						if( *i < indexedTokens.size() )
+							extKernelTokens.push_back(
+							    adjustedMultiQCyclicPrefixToken(
+							        *indexedTokens[*i], rotations ) );
+					}
+					// iter2 main (renamed via rotation map)
+					for( std::vector<unsigned int>::const_iterator i =
+					         opportunity.mainTokenIndices.begin();
+					     i != opportunity.mainTokenIndices.end(); ++i )
+					{
+						if( *i < indexedTokens.size() )
+							extKernelTokens.push_back(
+							    adjustedMultiQCyclicPrefixToken(
+							        *indexedTokens[*i], rotations ) );
+					}
+					const unsigned int extKernelCycles =
+					    scheduleVuProgramReadyIssueSlotsWithFlagLiveness(
+					        extKernelTokens ).cycleCount;
+					const unsigned int prologAlone =
+					    scheduledLoopBodyCycles( opportunity.prologTokenIndices,
+					                             indexedTokens );
+					// Naive serial: main + prolog + main = singleStage*2 + prolog
+					const unsigned int serial =
+					    singleStageMainCycles * 2 + prologAlone;
+					const unsigned int savings =
+					    serial > extKernelCycles ? serial - extKernelCycles : 0;
+					std::cerr << "[multistage-2stage-cpfx] loop="
+					          << opportunity.label
+					          << " singleStageMain=" << singleStageMainCycles
+					          << " prologAlone=" << prologAlone
+					          << " extKernel=" << extKernelCycles
+					          << " perIter=" << ( extKernelCycles / 2.0 )
+					          << " serial=" << serial
+					          << " savingsVsSerial=" << savings
+					          << "\n";
+				}
 			}
 		}
 
