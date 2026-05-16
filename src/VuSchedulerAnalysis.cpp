@@ -1305,6 +1305,166 @@ namespace
 		return key.substr( 0, field );
 	}
 
+	// Track 9.G step 4a: shared MII helpers. Compute the recurrence-bound MII
+	// (RecMII) and resource-bound MII (ResMII) for a simple-counted loop body.
+	// Used by the OPENVCL_DUMP_LOOP_MII diagnostic and intended for reuse by
+	// subsequent step-4 sub-tracks (priority list, modulo reservation table,
+	// iterative scheduler). Diagnostic / analysis only.
+	unsigned int computeLoopRecMII( const std::vector<unsigned int>& mt,
+	                                const std::vector<const Token*>& indexedTokens )
+	{
+		const unsigned int n = static_cast<unsigned int>( mt.size() );
+		if( n == 0 ) return 1;
+		std::vector< std::vector<std::string> > nodeWrites( n ), nodeReads( n );
+		for( unsigned int k = 0; k < n; ++k )
+		{
+			if( mt[k] >= indexedTokens.size() ) continue;
+			VuTokenResourceAccess acc;
+			if( !buildVuTokenResourceAccess( *indexedTokens[mt[k]], acc ) ) continue;
+			for( std::list<std::string>::const_iterator it = acc.registerWrites.begin();
+			     it != acc.registerWrites.end(); ++it )
+				nodeWrites[k].push_back( registerBaseKey( *it ) );
+			for( std::list<std::string>::const_iterator it = acc.registerReads.begin();
+			     it != acc.registerReads.end(); ++it )
+				nodeReads[k].push_back( registerBaseKey( *it ) );
+			const unsigned int iw = acc.implicitWrites;
+			const unsigned int ir = acc.implicitReads;
+			if( iw & VU_RESOURCE_ACC )  nodeWrites[k].push_back( "@ACC" );
+			if( iw & VU_RESOURCE_Q )    nodeWrites[k].push_back( "@Q" );
+			if( iw & VU_RESOURCE_P )    nodeWrites[k].push_back( "@P" );
+			if( iw & VU_RESOURCE_R )    nodeWrites[k].push_back( "@R" );
+			if( iw & VU_RESOURCE_I )    nodeWrites[k].push_back( "@I" );
+			if( iw & VU_RESOURCE_MAC )  nodeWrites[k].push_back( "@MAC" );
+			if( iw & VU_RESOURCE_CLIP ) nodeWrites[k].push_back( "@CLIP" );
+			if( ir & VU_RESOURCE_ACC )  nodeReads[k].push_back( "@ACC" );
+			if( ir & VU_RESOURCE_Q )    nodeReads[k].push_back( "@Q" );
+			if( ir & VU_RESOURCE_P )    nodeReads[k].push_back( "@P" );
+			if( ir & VU_RESOURCE_R )    nodeReads[k].push_back( "@R" );
+			if( ir & VU_RESOURCE_I )    nodeReads[k].push_back( "@I" );
+			if( ir & VU_RESOURCE_MAC )  nodeReads[k].push_back( "@MAC" );
+			if( ir & VU_RESOURCE_CLIP ) nodeReads[k].push_back( "@CLIP" );
+		}
+		std::vector<unsigned int> eFrom, eTo, eDist;
+		std::vector<int> eLat;
+		unsigned int carried = 0;
+		for( unsigned int i = 0; i < n; ++i )
+		{
+			for( unsigned int j = 0; j < n; ++j )
+			{
+				if( i == j ) continue;
+				const unsigned int dist = ( i < j ) ? 0u : 1u;
+				std::string sharedRaw;
+				for( unsigned int a = 0; a < nodeWrites[i].size() && sharedRaw.empty(); ++a )
+					for( unsigned int b = 0; b < nodeReads[j].size() && sharedRaw.empty(); ++b )
+						if( nodeWrites[i][a] == nodeReads[j][b] )
+							sharedRaw = nodeWrites[i][a];
+				if( !sharedRaw.empty()
+				    && mt[i] < indexedTokens.size()
+				    && mt[j] < indexedTokens.size() )
+				{
+					VuLatencyTracker tr;
+					tr.reset();
+					tr.recordWrites( *indexedTokens[mt[i]], 0 );
+					const int d = tr.readHazardDelay( *indexedTokens[mt[j]], NULL, 0 );
+					const unsigned int lat = static_cast<unsigned int>( d > 0 ? d : 1 );
+					eFrom.push_back( i ); eTo.push_back( j ); eDist.push_back( dist );
+					eLat.push_back( static_cast<int>( lat ) );
+					if( dist == 1 ) ++carried;
+				}
+				std::string sharedWaw;
+				for( unsigned int a = 0; a < nodeWrites[i].size() && sharedWaw.empty(); ++a )
+					for( unsigned int b = 0; b < nodeWrites[j].size() && sharedWaw.empty(); ++b )
+						if( nodeWrites[i][a] == nodeWrites[j][b] )
+							sharedWaw = nodeWrites[i][a];
+				if( !sharedWaw.empty() )
+				{
+					eFrom.push_back( i ); eTo.push_back( j ); eDist.push_back( dist );
+					eLat.push_back( 1 );
+					if( dist == 1 ) ++carried;
+				}
+				std::string sharedWar;
+				for( unsigned int a = 0; a < nodeReads[i].size() && sharedWar.empty(); ++a )
+					for( unsigned int b = 0; b < nodeWrites[j].size() && sharedWar.empty(); ++b )
+						if( nodeReads[i][a] == nodeWrites[j][b] )
+							sharedWar = nodeReads[i][a];
+				if( !sharedWar.empty() )
+				{
+					eFrom.push_back( i ); eTo.push_back( j ); eDist.push_back( dist );
+					eLat.push_back( 1 );
+					if( dist == 1 ) ++carried;
+				}
+			}
+		}
+		if( carried == 0 || eFrom.empty() ) return 1;
+		const unsigned int E = static_cast<unsigned int>( eFrom.size() );
+		double hi = 0.0;
+		for( unsigned int e = 0; e < eLat.size(); ++e ) hi += (double)eLat[e];
+		if( hi < 1.0 ) hi = 1.0;
+		double lo = 0.0;
+		std::vector<double> d( n, 0.0 );
+		for( int iter = 0; iter < 60; ++iter )
+		{
+			const double mid = 0.5 * ( lo + hi );
+			for( unsigned int v = 0; v < n; ++v ) d[v] = 0.0;
+			for( unsigned int pass = 0; pass < n; ++pass )
+			{
+				bool changed = false;
+				for( unsigned int e = 0; e < E; ++e )
+				{
+					const double w = (double)eLat[e] - mid * (double)eDist[e];
+					const double nd = d[ eFrom[e] ] + w;
+					if( nd > d[ eTo[e] ] + 1e-12 )
+					{
+						d[ eTo[e] ] = nd;
+						changed = true;
+					}
+				}
+				if( !changed ) break;
+			}
+			bool positive = false;
+			for( unsigned int e = 0; e < E && !positive; ++e )
+			{
+				const double w = (double)eLat[e] - mid * (double)eDist[e];
+				if( d[ eFrom[e] ] + w > d[ eTo[e] ] + 1e-9 )
+					positive = true;
+			}
+			if( positive ) lo = mid;
+			else           hi = mid;
+		}
+		const double recmiiFract = lo;
+		unsigned int recmiiInt = static_cast<unsigned int>( recmiiFract );
+		if( (double)recmiiInt + 1e-6 < recmiiFract ) ++recmiiInt;
+		if( recmiiInt < 1 ) recmiiInt = 1;
+		return recmiiInt;
+	}
+
+	unsigned int computeLoopResMII( const std::vector<unsigned int>& mt,
+	                                const std::vector<const Token*>& indexedTokens )
+	{
+		unsigned int nUpper = 0, nLower = 0;
+		unsigned int fdivBusy = 0, efuBusy = 0;
+		for( unsigned int k = 0; k < mt.size(); ++k )
+		{
+			if( mt[k] >= indexedTokens.size() ) continue;
+			const Token& tk = *indexedTokens[mt[k]];
+			if( !tk.operand() ) continue;
+			const VuInstructionInfo* info =
+			    findVuInstructionInfo( normalizeVuMnemonic( tk.operand()->name() ) );
+			if( !info ) continue;
+			if( info->pipe == VU_PIPE_NOP ) continue;
+			if( info->pipe == VU_PIPE_UPPER ) ++nUpper;
+			else if( info->pipe == VU_PIPE_LOWER ) ++nLower;
+			if( info->unit == VU_EXEC_FDIV ) fdivBusy += info->throughput;
+			else if( info->unit == VU_EXEC_EFU ) efuBusy += info->throughput;
+		}
+		unsigned int resmii = nUpper;
+		if( nLower    > resmii ) resmii = nLower;
+		if( fdivBusy  > resmii ) resmii = fdivBusy;
+		if( efuBusy   > resmii ) resmii = efuBusy;
+		if( resmii < 1 ) resmii = 1;
+		return resmii;
+	}
+
 	std::string registerFieldKey( const std::string& key )
 	{
 		std::string::size_type field = key.find( '.' );
@@ -5905,6 +6065,29 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			          << " fdiv=" << nFdiv
 			          << " efu=" << nEfu
 			          << " resmii=" << resmii
+			          << "\n";
+		}
+
+		if( std::getenv( "OPENVCL_DUMP_LOOP_MII" ) != NULL
+		    && opportunity.simpleCountedLoop
+		    && !opportunity.mainTokenIndices.empty() )
+		{
+			// Track 9.G step 4a: combined Minimum Initiation Interval.
+			// MII = max(RecMII, ResMII) is the lower bound on any valid modulo
+			// schedule's II. RecMII (recurrence-bound) is computed via the same
+			// Bellman-Ford max-cycle-ratio algorithm used by OPENVCL_DUMP_LOOP_DDG;
+			// ResMII (resource-bound) is the per-pipe count used by
+			// OPENVCL_DUMP_LOOP_RESMII. Step 4b+ will consume this MII as the
+			// starting II for iterative modulo scheduling.
+			const std::vector<unsigned int>& mt = opportunity.mainTokenIndices;
+			const unsigned int recmii = computeLoopRecMII( mt, indexedTokens );
+			const unsigned int resmii = computeLoopResMII( mt, indexedTokens );
+			const unsigned int mii    = ( recmii > resmii ) ? recmii : resmii;
+			std::cerr << "[loop-mii] loop=" << opportunity.label
+			          << " mainSize=" << mt.size()
+			          << " recmii=" << recmii
+			          << " resmii=" << resmii
+			          << " mii=" << mii
 			          << "\n";
 		}
 
