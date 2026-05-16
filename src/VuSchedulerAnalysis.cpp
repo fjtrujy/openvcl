@@ -5784,6 +5784,211 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			}
 		}
 
+		// Track 9.E step 3c (diagnostic only): identify Chain A (Q-consumer
+		// dataflow, forward closure from mulq writes) and Chain B
+		// (Q-producer dataflow, backward closure from div q reads) within
+		// mainTokenIndices. Reports sizes, overlap and neutral tokens so we
+		// can verify the SCEI-style overlap hypothesis on all eligible
+		// shaders before designing a chain-aware planner.
+		if( std::getenv( "OPENVCL_DUMP_QCHAIN_CHAINS" ) != NULL )
+		{
+			if( opportunity.eligibleSingleQSoftwarePipeline
+			    && !opportunity.mainTokenIndices.empty()
+			    && opportunity.qProducerTokenIndex < indexedTokens.size() )
+			{
+				// Build "in main" set for fast membership.
+				std::list<unsigned int> mainSet;
+				for( std::vector<unsigned int>::const_iterator m =
+				         opportunity.mainTokenIndices.begin();
+				     m != opportunity.mainTokenIndices.end(); ++m )
+					mainSet.push_back( *m );
+
+				// Chain B: backward closure from div q reads.
+				std::list<std::string> chainBKeys;
+				collectVuRegisterReadKeys(
+				    *indexedTokens[opportunity.qProducerTokenIndex], chainBKeys );
+				if( std::getenv( "OPENVCL_DUMP_QCHAIN_CHAINS_KEYS" ) != NULL )
+				{
+					std::cerr << "  qProducerReads=[";
+					bool fk = true;
+					for( std::list<std::string>::const_iterator k = chainBKeys.begin();
+					     k != chainBKeys.end(); ++k )
+					{
+						if( !fk ) std::cerr << ",";
+						std::cerr << *k;
+						fk = false;
+					}
+					std::cerr << "]\n";
+					for( std::vector<unsigned int>::const_iterator m =
+					         opportunity.mainTokenIndices.begin();
+					     m != opportunity.mainTokenIndices.end(); ++m )
+					{
+						std::list<std::string> w;
+						collectVuRegisterWriteKeys( *indexedTokens[*m], w );
+						std::cerr << "  main[" << *m << "]writes=[";
+						bool first2 = true;
+						for( std::list<std::string>::const_iterator k = w.begin();
+						     k != w.end(); ++k )
+						{
+							if( !first2 ) std::cerr << ",";
+							std::cerr << *k;
+							first2 = false;
+						}
+						std::cerr << "]\n";
+					}
+				}
+				std::list<unsigned int> chainB;
+				bool changed = true;
+				while( changed )
+				{
+					changed = false;
+					for( std::vector<unsigned int>::const_reverse_iterator m =
+					         opportunity.mainTokenIndices.rbegin();
+					     m != opportunity.mainTokenIndices.rend(); ++m )
+					{
+						bool already = false;
+						for( std::list<unsigned int>::const_iterator c = chainB.begin();
+						     c != chainB.end(); ++c )
+						{
+							if( *c == *m ) { already = true; break; }
+						}
+						if( already )
+							continue;
+						std::list<std::string> writes;
+						collectVuRegisterWriteKeys( *indexedTokens[*m], writes );
+						if( !intersects( writes, chainBKeys ) )
+							continue;
+						chainB.push_back( *m );
+						std::list<std::string> reads;
+						collectVuRegisterReadKeys( *indexedTokens[*m], reads );
+						for( std::list<std::string>::const_iterator r = reads.begin();
+						     r != reads.end(); ++r )
+						{
+							if( !containsKey( chainBKeys, *r ) )
+							{
+								chainBKeys.push_back( *r );
+								changed = true;
+							}
+						}
+					}
+				}
+
+				// Chain A: forward closure from mulq consumer writes.
+				std::list<std::string> chainAKeys;
+				for( std::vector<unsigned int>::const_iterator q =
+				         opportunity.qConsumerTokenIndices.begin();
+				     q != opportunity.qConsumerTokenIndices.end(); ++q )
+				{
+					if( *q >= indexedTokens.size() )
+						continue;
+					std::list<std::string> writes;
+					collectVuRegisterWriteKeys( *indexedTokens[*q], writes );
+					for( std::list<std::string>::const_iterator w = writes.begin();
+					     w != writes.end(); ++w )
+						addUniqueString( chainAKeys, *w );
+				}
+				std::list<unsigned int> chainA;
+				for( std::vector<unsigned int>::const_iterator q =
+				         opportunity.qConsumerTokenIndices.begin();
+				     q != opportunity.qConsumerTokenIndices.end(); ++q )
+					chainA.push_back( *q );
+				changed = true;
+				while( changed )
+				{
+					changed = false;
+					for( std::vector<unsigned int>::const_iterator m =
+					         opportunity.mainTokenIndices.begin();
+					     m != opportunity.mainTokenIndices.end(); ++m )
+					{
+						bool already = false;
+						for( std::list<unsigned int>::const_iterator c = chainA.begin();
+						     c != chainA.end(); ++c )
+						{
+							if( *c == *m ) { already = true; break; }
+						}
+						if( already )
+							continue;
+						std::list<std::string> reads;
+						collectVuRegisterReadKeys( *indexedTokens[*m], reads );
+						if( !intersects( reads, chainAKeys ) )
+							continue;
+						chainA.push_back( *m );
+						std::list<std::string> writes;
+						collectVuRegisterWriteKeys( *indexedTokens[*m], writes );
+						for( std::list<std::string>::const_iterator w = writes.begin();
+						     w != writes.end(); ++w )
+						{
+							if( !containsKey( chainAKeys, *w ) )
+							{
+								chainAKeys.push_back( *w );
+								changed = true;
+							}
+						}
+					}
+				}
+
+				// Overlap and neutral.
+				unsigned int overlap = 0;
+				for( std::list<unsigned int>::const_iterator a = chainA.begin();
+				     a != chainA.end(); ++a )
+				{
+					for( std::list<unsigned int>::const_iterator b = chainB.begin();
+					     b != chainB.end(); ++b )
+					{
+						if( *a == *b ) { ++overlap; break; }
+					}
+				}
+				unsigned int neutral = 0;
+				for( std::vector<unsigned int>::const_iterator m =
+				         opportunity.mainTokenIndices.begin();
+				     m != opportunity.mainTokenIndices.end(); ++m )
+				{
+					bool inA = false;
+					for( std::list<unsigned int>::const_iterator a = chainA.begin();
+					     a != chainA.end(); ++a )
+					{
+						if( *a == *m ) { inA = true; break; }
+					}
+					bool inB = false;
+					for( std::list<unsigned int>::const_iterator b = chainB.begin();
+					     b != chainB.end(); ++b )
+					{
+						if( *b == *m ) { inB = true; break; }
+					}
+					if( !inA && !inB )
+						++neutral;
+				}
+
+				std::cerr << "[qchain-chains] loop=" << opportunity.label
+				          << " mainSize=" << opportunity.mainTokenIndices.size()
+				          << " chainA=" << chainA.size()
+				          << " chainB=" << chainB.size()
+				          << " overlap=" << overlap
+				          << " neutral=" << neutral
+				          << " qProducerIdx=" << opportunity.qProducerTokenIndex
+				          << " qConsumers=" << opportunity.qConsumerTokenIndices.size();
+				std::cerr << " chainA_idx=[";
+				bool first = true;
+				for( std::list<unsigned int>::const_iterator a = chainA.begin();
+				     a != chainA.end(); ++a )
+				{
+					if( !first ) std::cerr << ",";
+					std::cerr << *a;
+					first = false;
+				}
+				std::cerr << "] chainB_idx=[";
+				first = true;
+				for( std::list<unsigned int>::const_iterator b = chainB.begin();
+				     b != chainB.end(); ++b )
+				{
+					if( !first ) std::cerr << ",";
+					std::cerr << *b;
+					first = false;
+				}
+				std::cerr << "]\n";
+			}
+		}
+
 		result.push_back( opportunity );
 	}
 
