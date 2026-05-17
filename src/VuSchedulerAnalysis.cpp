@@ -9229,11 +9229,16 @@ std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& token
 
 		// 9.G-1h-4a-2: record the MAIN steady-state range. The body
 		// lives in [mainLabel, epi0Label) of the rewritten stream.
-		// Consumer arrives in 4a-3; this is plumbing only.
+		// 9.G-1h-4a-3a: also stash the placer grid (II * 4 cells) and II
+		// for the bypass consumer. The grid indices are into THIS pass's
+		// input `tokens` list.
+		// Consumer arrives in 4a-3b; this is plumbing only.
 		{
 			VuKernelBlockRange r;
 			r.mainLabel = mainLabel;
 			r.endLabel  = epi0Label;
+			r.II        = plan.kernelRewriteII;
+			r.placerGridMainTokens = plan.kernelRewriteMainTokens;
 			outRanges.push_back( r );
 		}
 

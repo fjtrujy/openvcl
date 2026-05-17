@@ -506,10 +506,20 @@ std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& token
 //     follows the closing branch of the MAIN body.
 // Populated by the 3-argument overload of applyVuGenericKernelRewritePlans
 // below; consumed by the 4a-3 scheduler-bypass pass.
+//
+// 9.G-1h-4a-3a: also carry the placer grid (II * 4 cells, lane order:
+// upper, lower, fdiv, efu) and the II. Each grid entry is an index
+// into the INPUT token list passed to applyVuGenericKernelRewritePlans,
+// or VuKernelRewritePlan::NO_TOKEN for an empty (NOP) cell. The
+// indices are only valid during the same rewriting pass; consumers
+// (4a-3b) are responsible for resolving them to live tokens before
+// any subsequent token-list mutation.
 struct VuKernelBlockRange
 {
 	std::string mainLabel;
 	std::string endLabel;
+	unsigned int II;
+	std::vector<unsigned int> placerGridMainTokens;
 };
 
 // 9.G-1h-4a-2: same behaviour as the 2-argument overload, but also
