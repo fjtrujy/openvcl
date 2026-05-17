@@ -3523,8 +3523,13 @@ TEST_CASE("VuSchedulerAnalysis 8b-2c-1: vuOpIsSplittableForKernelRename allowlis
     REQUIRE(program.parse("mini.xyzw vf13, vf13, vf14"));
 
     REQUIRE(program.parse("opmula.xyz acc, vf13, vf14"));
+    // 8b-2d-2: move/ftoi*/itof*/abs/mfir are now per-field-safe and
+    // appear on the splittable allowlist; mr32 (lane rotation) is not.
     REQUIRE(program.parse("move.xyzw vf13, vf14"));
     REQUIRE(program.parse("ftoi4.xyzw vf13, vf14"));
+    REQUIRE(program.parse("itof12.xyz vf13, vf14"));
+    REQUIRE(program.parse("abs.xyzw vf13, vf14"));
+    REQUIRE(program.parse("mfir.w vf13, vi01"));
     REQUIRE(program.parse("mr32.xyzw vf13, vf14"));
 
     const std::list<vcl::Token>& tokens = program.tokenizer.tokens();
@@ -3536,6 +3541,9 @@ TEST_CASE("VuSchedulerAnalysis 8b-2c-1: vuOpIsSplittableForKernelRename allowlis
     const vcl::Token* opmula = findFirstOpToken(tokens, "opmula");
     const vcl::Token* move = findFirstOpToken(tokens, "move");
     const vcl::Token* ftoi4 = findFirstOpToken(tokens, "ftoi4");
+    const vcl::Token* itof12 = findFirstOpToken(tokens, "itof12");
+    const vcl::Token* absOp = findFirstOpToken(tokens, "abs");
+    const vcl::Token* mfir = findFirstOpToken(tokens, "mfir");
     const vcl::Token* mr32 = findFirstOpToken(tokens, "mr32");
     REQUIRE(add != NULL);
     REQUIRE(sub != NULL);
@@ -3545,6 +3553,9 @@ TEST_CASE("VuSchedulerAnalysis 8b-2c-1: vuOpIsSplittableForKernelRename allowlis
     REQUIRE(opmula != NULL);
     REQUIRE(move != NULL);
     REQUIRE(ftoi4 != NULL);
+    REQUIRE(itof12 != NULL);
+    REQUIRE(absOp != NULL);
+    REQUIRE(mfir != NULL);
     REQUIRE(mr32 != NULL);
 
     CHECK(vcl::vuOpIsSplittableForKernelRename(*add));
@@ -3552,19 +3563,22 @@ TEST_CASE("VuSchedulerAnalysis 8b-2c-1: vuOpIsSplittableForKernelRename allowlis
     CHECK(vcl::vuOpIsSplittableForKernelRename(*muli));
     CHECK(vcl::vuOpIsSplittableForKernelRename(*maddw));
     CHECK(vcl::vuOpIsSplittableForKernelRename(*mini));
+    CHECK(vcl::vuOpIsSplittableForKernelRename(*move));
+    CHECK(vcl::vuOpIsSplittableForKernelRename(*ftoi4));
+    CHECK(vcl::vuOpIsSplittableForKernelRename(*itof12));
+    CHECK(vcl::vuOpIsSplittableForKernelRename(*absOp));
+    CHECK(vcl::vuOpIsSplittableForKernelRename(*mfir));
 
     CHECK(!vcl::vuOpIsSplittableForKernelRename(*opmula));
-    CHECK(!vcl::vuOpIsSplittableForKernelRename(*move));
-    CHECK(!vcl::vuOpIsSplittableForKernelRename(*ftoi4));
     CHECK(!vcl::vuOpIsSplittableForKernelRename(*mr32));
 }
 
 TEST_CASE("VuSchedulerAnalysis 8b-2c-1: splitMultiFieldOpByFieldDecisions passes through unsplittable ops")
 {
     ParsedProgram program;
-    REQUIRE(program.parse("move.xyzw vf13, vf14"));
-    const vcl::Token* move = findFirstOpToken(program.tokenizer.tokens(), "move");
-    REQUIRE(move != NULL);
+    REQUIRE(program.parse("mr32.xyzw vf13, vf14"));
+    const vcl::Token* mr32 = findFirstOpToken(program.tokenizer.tokens(), "mr32");
+    REQUIRE(mr32 != NULL);
 
     std::vector<vcl::VuKernelRenameDecision> decisions;
     vcl::VuKernelRenameDecision d;
@@ -3572,9 +3586,9 @@ TEST_CASE("VuSchedulerAnalysis 8b-2c-1: splitMultiFieldOpByFieldDecisions passes
     decisions.push_back(d);
 
     std::list<vcl::Token> out;
-    vcl::splitMultiFieldOpByFieldDecisions(*move, decisions, out);
+    vcl::splitMultiFieldOpByFieldDecisions(*mr32, decisions, out);
     CHECK(out.size() == 1u);
-    CHECK(stripOpSuffix(out.front().name()) == "move");
+    CHECK(stripOpSuffix(out.front().name()) == "mr32");
     CHECK(destRegNumber(out.front()) == 13);
 }
 

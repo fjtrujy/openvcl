@@ -4718,12 +4718,18 @@ namespace
 	// field depends only on the corresponding input field (no cross-
 	// field arithmetic), the destination is a single VFn with a field
 	// mask matching the op's field set, and rewriting the destination
-	// register/field-mask preserves observable semantics. Conservative
-	// allowlist: add/sub/mul/madd/msub/max/mini and their broadcast
-	// variants (suffix i/q/w/x/y/z). Excludes opmula/opmsub/opmadd/
-	// opmsubAcc (cross-field outer-product), clip*, abs*, ftoi*/itof*
-	// (kept simple for the first cut), all FDIV/EFU/memory/integer/
-	// flag/branch ops, and move/mr32.
+	// register/field-mask preserves observable semantics.
+	//
+	// Two allowlists:
+	//   - splittableBases: FMAC ops that take an optional broadcast
+	//     suffix (""/i/q/w/x/y/z).
+	//   - splittableSingleForms: per-field-safe ops that have NO
+	//     broadcast suffix; matched as exact bare mnemonics.
+	//
+	// Excludes opmula/opmsub/opmadd/opmsubAcc (cross-field outer-
+	// product), clip*, all FDIV/EFU/memory/integer/flag/branch ops
+	// other than the per-field-safe singletons listed below, and mr32
+	// (lane rotation).
 	bool vuOpIsSplittableForKernelRenameByName( const std::string& opNameRaw )
 	{
 		// Strip the field-mask suffix (".xyzw") and optional flag suffix
@@ -4742,8 +4748,7 @@ namespace
 				opName[i] = static_cast<char>( opName[i] - 'A' + 'a' );
 		}
 
-		// Strip the optional broadcast/scalar suffix and check the base
-		// against the splittable set.
+		// FMAC broadcast-style bases: base + optional broadcast suffix.
 		static const char* const splittableBases[] = {
 			"add", "sub", "mul", "madd", "msub", "max", "mini", NULL
 		};
@@ -4759,6 +4764,28 @@ namespace
 				if( opName == candidate )
 					return true;
 			}
+		}
+
+		// Track 9.G step 8b-2d-2: per-field-safe single-form ops with
+		// no broadcast variant. Each lane of the destination depends
+		// only on the corresponding lane of the source (or, for mfir,
+		// is independent of any other lane), so cloning per
+		// destination field is semantics-preserving.
+		//   ftoi*/itof* : float<->int conversion, lane-wise.
+		//   abs         : absolute value, lane-wise.
+		//   move        : register copy, lane-wise.
+		//   mfir        : move from integer reg into a single VF lane;
+		//                 destination is always one lane, so the
+		//                 single-clone case is the identity.
+		static const char* const splittableSingleForms[] = {
+			"ftoi0", "ftoi4", "ftoi12", "ftoi15",
+			"itof0", "itof4", "itof12", "itof15",
+			"abs", "move", "mfir", NULL
+		};
+		for( unsigned int s = 0; splittableSingleForms[s] != NULL; ++s )
+		{
+			if( opName == splittableSingleForms[s] )
+				return true;
 		}
 		return false;
 	}
