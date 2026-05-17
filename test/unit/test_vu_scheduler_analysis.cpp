@@ -3303,3 +3303,13 @@ TEST_CASE("VuSchedulerAnalysis: kernel-envelope scaffolding defaults are zero/em
     CHECK(plan.kernelEnvelopePrologueTokenCounts.empty());
     CHECK(plan.kernelEnvelopeEpilogueTokenCounts.empty());
 }
+
+// Track 9.G step 6h: stageCells scaffolding default is empty.
+TEST_CASE("VuSchedulerAnalysis: stageCells scaffolding defaults to empty")
+{
+    vcl::VuLoopPipelineOpportunity opp;
+    CHECK(opp.kernelRewriteStageCells.empty());
+
+    vcl::VuSoftwarePipelineRewritePlan plan;
+    CHECK(plan.kernelRewriteStageCells.empty());
+}

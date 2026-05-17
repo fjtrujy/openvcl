@@ -7321,6 +7321,9 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 					opportunity.kernelEnvelopeConflicts      = krEnv.conflicts;
 					opportunity.kernelEnvelopePrologueTokenCounts = krEnv.prologueTokenCounts;
 					opportunity.kernelEnvelopeEpilogueTokenCounts = krEnv.epilogueTokenCounts;
+
+					// Track 9.G step 6h: stageCells VLIW grid.
+					opportunity.kernelRewriteStageCells = krRp.stageCells;
 				}
 			}
 			std::cerr << "[loop-schedule] loop=" << opportunity.label
@@ -7885,6 +7888,8 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		plan.kernelEnvelopeConflicts          = i->kernelEnvelopeConflicts;
 		plan.kernelEnvelopePrologueTokenCounts = i->kernelEnvelopePrologueTokenCounts;
 		plan.kernelEnvelopeEpilogueTokenCounts = i->kernelEnvelopeEpilogueTokenCounts;
+		// Track 9.G step 6h: stageCells VLIW grid.
+		plan.kernelRewriteStageCells           = i->kernelRewriteStageCells;
 
 		if( i->canEmitMultiQSoftwarePipeline )
 		{
@@ -8021,6 +8026,33 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 			          << " conflicts=" << p->kernelEnvelopeConflicts
 			          << " prologueStages=" << p->kernelEnvelopePrologueTokenCounts.size()
 			          << " epilogueStages=" << p->kernelEnvelopeEpilogueTokenCounts.size()
+			          << "\n";
+		}
+	}
+
+	// Track 9.G step 6h: surface the stageCells VLIW grid scaffolding.
+	// Diagnostic-only; no consumer yet. Reports grid size and a count of
+	// non-empty lane slots across all cells.
+	if( std::getenv( "OPENVCL_DUMP_KERNEL_STAGECELLS_PROPAGATION" ) != NULL )
+	{
+		for( std::vector<VuSoftwarePipelineRewritePlan>::const_iterator p = plans.begin();
+		     p != plans.end(); ++p )
+		{
+			unsigned int upperCount = 0, lowerCount = 0, fdivCount = 0, efuCount = 0;
+			for( std::vector<VuKernelTemplateSlot>::const_iterator c = p->kernelRewriteStageCells.begin();
+			     c != p->kernelRewriteStageCells.end(); ++c )
+			{
+				if( c->upper != VuKernelTemplateSlot::NO_ENTRY ) ++upperCount;
+				if( c->lower != VuKernelTemplateSlot::NO_ENTRY ) ++lowerCount;
+				if( c->fdiv  != VuKernelTemplateSlot::NO_ENTRY ) ++fdivCount;
+				if( c->efu   != VuKernelTemplateSlot::NO_ENTRY ) ++efuCount;
+			}
+			std::cerr << "[kernel-stagecells-propagation] loop=" << p->label
+			          << " cells=" << p->kernelRewriteStageCells.size()
+			          << " upper=" << upperCount
+			          << " lower=" << lowerCount
+			          << " fdiv=" << fdivCount
+			          << " efu=" << efuCount
 			          << "\n";
 		}
 	}

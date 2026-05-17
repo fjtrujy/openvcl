@@ -323,6 +323,12 @@ struct VuLoopPipelineOpportunity
 	unsigned int kernelEnvelopeConflicts;
 	std::vector<unsigned int> kernelEnvelopePrologueTokenCounts;
 	std::vector<unsigned int> kernelEnvelopeEpilogueTokenCounts;
+
+	// Track 9.G step 6h — stageCells VLIW grid (diagnostic-only).
+	// Mirrors VuKernelRewritePlan::stageCells: a stageCount * II grid of
+	// (upper, lower, fdiv, efu) layout-entry indices indexed as
+	// (stage * II + modSlot). No emission path consumes this yet.
+	std::vector<VuKernelTemplateSlot> kernelRewriteStageCells;
 };
 
 struct VuSoftwarePipelineRewritePlan
@@ -396,6 +402,10 @@ struct VuSoftwarePipelineRewritePlan
 	unsigned int kernelEnvelopeConflicts;
 	std::vector<unsigned int> kernelEnvelopePrologueTokenCounts;
 	std::vector<unsigned int> kernelEnvelopeEpilogueTokenCounts;
+
+	// Track 9.G step 6h — stageCells VLIW grid (diagnostic-only).
+	// Mirrors the opportunity-side stageCells field.
+	std::vector<VuKernelTemplateSlot> kernelRewriteStageCells;
 };
 
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens );
