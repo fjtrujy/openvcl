@@ -9153,9 +9153,24 @@ std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& token
 	return applyVuGenericKernelRewritePlans( tokens, plans );
 }
 
+// 9.G-1h-4a-2: 3-argument overload populates outRanges. Implemented
+// as a thin wrapper that captures ranges from the shared impl below.
+std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& tokens,
+                                                   const std::vector<VuSoftwarePipelineRewritePlan>& plans,
+                                                   std::vector<VuKernelBlockRange>& outRanges );
+
 std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& tokens,
                                                    const std::vector<VuSoftwarePipelineRewritePlan>& plans )
 {
+	std::vector<VuKernelBlockRange> discard;
+	return applyVuGenericKernelRewritePlans( tokens, plans, discard );
+}
+
+std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& tokens,
+                                                   const std::vector<VuSoftwarePipelineRewritePlan>& plans,
+                                                   std::vector<VuKernelBlockRange>& outRanges )
+{
+	outRanges.clear();
 	std::vector<const Token*> indexedTokens;
 	for( std::list<Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i )
 		indexedTokens.push_back( &*i );
@@ -9211,6 +9226,16 @@ std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& token
 		const std::string mainLabel = plan.label + "__MAIN_LOOP";
 		const std::string epi0Label = plan.label + "__EPI0";
 		const std::string epi1Label = plan.label + "__EPI1";
+
+		// 9.G-1h-4a-2: record the MAIN steady-state range. The body
+		// lives in [mainLabel, epi0Label) of the rewritten stream.
+		// Consumer arrives in 4a-3; this is plumbing only.
+		{
+			VuKernelBlockRange r;
+			r.mainLabel = mainLabel;
+			r.endLabel  = epi0Label;
+			outRanges.push_back( r );
+		}
 
 		const Token& branchSrc = *indexedTokens[plan.branchTokenIndex];
 

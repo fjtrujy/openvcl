@@ -17,11 +17,13 @@
 
 #include <list>
 #include <string>
+#include <vector>
 #include <istream>
 #include <sstream>
 #include "Token.h"
 #include "Dependency.h"
 #include "VuLatencyTracker.h"
+#include "VuSchedulerAnalysis.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Class
@@ -199,6 +201,11 @@ private:
 
 	int m_currentCycle;
 	VuLatencyTracker m_latencyTracker;
+
+	// 9.G-1h-4a-2: out-of-band MAIN-body ranges produced by the
+	// generic kernel rewrite. Populated when OPENVCL_USE_GENERIC_KERNEL_REWRITE
+	// is set and at least one plan is rewritten. Consumed in 4a-3.
+	std::vector<VuKernelBlockRange> m_kernelBlockRanges;
 };
 
 #include "CodeGenerator.inl"

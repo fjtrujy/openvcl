@@ -496,6 +496,29 @@ std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& token
 // inject hand-crafted eligible plans against synthetic token streams.
 std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& tokens,
                                                    const std::vector<VuSoftwarePipelineRewritePlan>& plans );
+
+// 9.G-1h-4a-2: out-of-band descriptor for the MAIN steady-state body
+// of one rewritten loop. The body lives in the half-open token range
+// [mainLabel, endLabel) of the rewritten stream:
+//   - mainLabel: the "<plan.label>__MAIN_LOOP" label token marking the
+//     first body cycle.
+//   - endLabel:  the "<plan.label>__EPI0" label token, which directly
+//     follows the closing branch of the MAIN body.
+// Populated by the 3-argument overload of applyVuGenericKernelRewritePlans
+// below; consumed by the 4a-3 scheduler-bypass pass.
+struct VuKernelBlockRange
+{
+	std::string mainLabel;
+	std::string endLabel;
+};
+
+// 9.G-1h-4a-2: same behaviour as the 2-argument overload, but also
+// fills outRanges with one entry per actually-rewritten plan. The
+// vector is cleared first. MD5-invariant on the token output relative
+// to the 2-argument overload.
+std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& tokens,
+                                                   const std::vector<VuSoftwarePipelineRewritePlan>& plans,
+                                                   std::vector<VuKernelBlockRange>& outRanges );
 std::list<Token> scheduleVuTokensPreservingOrder( const std::list<Token>& tokens );
 std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens,
                                            unsigned int ignoredImplicitWawResources = 0 );
