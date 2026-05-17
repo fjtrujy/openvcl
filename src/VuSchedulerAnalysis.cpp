@@ -1308,6 +1308,13 @@ namespace
 		return key.substr( 0, field );
 	}
 
+	// Forward declaration: the rename-aware RecMII below consults this
+	// predicate, which is defined later in the same anonymous namespace
+	// (see vuOpIsSplittableForKernelRenameByName around the kernel-rename
+	// splitter section). The forward decl keeps both helpers in the same
+	// translation unit without reshuffling the existing layout.
+	bool vuOpIsSplittableForKernelRenameByName( const std::string& opNameRaw );
+
 	// Track 9.G step 4a: shared MII helpers. Compute the recurrence-bound MII
 	// (RecMII) and resource-bound MII (ResMII) for a simple-counted loop body.
 	// Used by the OPENVCL_DUMP_LOOP_MII diagnostic and intended for reuse by
@@ -1398,6 +1405,220 @@ namespace
 				}
 			}
 		}
+		if( carried == 0 || eFrom.empty() ) return 1;
+		const unsigned int E = static_cast<unsigned int>( eFrom.size() );
+		double hi = 0.0;
+		for( unsigned int e = 0; e < eLat.size(); ++e ) hi += (double)eLat[e];
+		if( hi < 1.0 ) hi = 1.0;
+		double lo = 0.0;
+		std::vector<double> d( n, 0.0 );
+		for( int iter = 0; iter < 60; ++iter )
+		{
+			const double mid = 0.5 * ( lo + hi );
+			for( unsigned int v = 0; v < n; ++v ) d[v] = 0.0;
+			for( unsigned int pass = 0; pass < n; ++pass )
+			{
+				bool changed = false;
+				for( unsigned int e = 0; e < E; ++e )
+				{
+					const double w = (double)eLat[e] - mid * (double)eDist[e];
+					const double nd = d[ eFrom[e] ] + w;
+					if( nd > d[ eTo[e] ] + 1e-12 )
+					{
+						d[ eTo[e] ] = nd;
+						changed = true;
+					}
+				}
+				if( !changed ) break;
+			}
+			bool positive = false;
+			for( unsigned int e = 0; e < E && !positive; ++e )
+			{
+				const double w = (double)eLat[e] - mid * (double)eDist[e];
+				if( d[ eFrom[e] ] + w > d[ eTo[e] ] + 1e-9 )
+					positive = true;
+			}
+			if( positive ) lo = mid;
+			else           hi = mid;
+		}
+		const double recmiiFract = lo;
+		unsigned int recmiiInt = static_cast<unsigned int>( recmiiFract );
+		if( (double)recmiiInt + 1e-6 < recmiiFract ) ++recmiiInt;
+		if( recmiiInt < 1 ) recmiiInt = 1;
+		return recmiiInt;
+	}
+
+	// Track 9.G step 1c-1 (diagnostic): rename-aware RecMII.
+	//
+	// The baseline `computeLoopRecMII` above counts every loop-carried RAW
+	// edge against the recurrence bound. On xform_loop_lid this yields
+	// RecMII=36 even though ResMII=20, because the VF13.{x,y,z,w} chain
+	// (split FMACs writing VF13 and a later ftoi4 reading the same base)
+	// shows up as four self-recurrences with distance 1.
+	//
+	// Track 9.G step 8b-1 / 8b-2x already plans renames that break exactly
+	// these chains: it routes successive iterations' writes of VF13 to
+	// scratch registers VF30/29/28/31 and reads them back via per-field
+	// MOVEs in the next iteration. With those renames in place the
+	// dist=1 edge is severed, so the corresponding recurrence vanishes.
+	//
+	// This helper recomputes RecMII under the assumption that any
+	// loop-carried RAW edge whose shared base is a VF register AND whose
+	// producer is in the kernel-rename splittable allowlist will be
+	// broken by the rename machinery. WAW / WAR edges and edges keyed on
+	// implicit resources (@ACC, @Q, etc.) are never dropped. The returned
+	// value is purely diagnostic in 1c-1 — the live MII computation in
+	// steps 4a/4b/4c/4d still uses the baseline `computeLoopRecMII`.
+	//
+	// A subsequent sub-step (1c-2) will wire this value into the MII used
+	// by the placer when OPENVCL_USE_GENERIC_KERNEL_REWRITE is set,
+	// preserving env-OFF MD5s while opening the door to multi-stage
+	// schedules env-ON.
+	unsigned int computeLoopRecMIIRenamed( const std::vector<unsigned int>& mt,
+	                                       const std::vector<const Token*>& indexedTokens,
+	                                       unsigned int* droppedCarriedEdgesOut )
+	{
+		if( droppedCarriedEdgesOut != NULL ) *droppedCarriedEdgesOut = 0;
+		const unsigned int n = static_cast<unsigned int>( mt.size() );
+		if( n == 0 ) return 1;
+		std::vector< std::vector<std::string> > nodeWrites( n ), nodeReads( n );
+		// rotatedBases = set of VF register bases (e.g., "VF13") that have
+		// at least one splittable producer in the loop. Per the kernel-
+		// rename model (8b-1 / 8b-2x), the writer at each iteration is
+		// redirected to a scratch register, so successive iterations'
+		// values of the base live in DIFFERENT physical registers. Hence
+		// all loop-carried (dist=1) RAW / WAW / WAR edges keyed on a
+		// rotated VF base disappear: the next iteration reads / writes a
+		// different physical register from the previous iteration's.
+		std::vector<std::string> rotatedBases;
+		for( unsigned int k = 0; k < n; ++k )
+		{
+			if( mt[k] >= indexedTokens.size() ) continue;
+			VuTokenResourceAccess acc;
+			if( !buildVuTokenResourceAccess( *indexedTokens[mt[k]], acc ) ) continue;
+			for( std::list<std::string>::const_iterator it = acc.registerWrites.begin();
+			     it != acc.registerWrites.end(); ++it )
+				nodeWrites[k].push_back( registerBaseKey( *it ) );
+			for( std::list<std::string>::const_iterator it = acc.registerReads.begin();
+			     it != acc.registerReads.end(); ++it )
+				nodeReads[k].push_back( registerBaseKey( *it ) );
+			const unsigned int iw = acc.implicitWrites;
+			const unsigned int ir = acc.implicitReads;
+			if( iw & VU_RESOURCE_ACC )  nodeWrites[k].push_back( "@ACC" );
+			if( iw & VU_RESOURCE_Q )    nodeWrites[k].push_back( "@Q" );
+			if( iw & VU_RESOURCE_P )    nodeWrites[k].push_back( "@P" );
+			if( iw & VU_RESOURCE_R )    nodeWrites[k].push_back( "@R" );
+			if( iw & VU_RESOURCE_I )    nodeWrites[k].push_back( "@I" );
+			if( iw & VU_RESOURCE_MAC )  nodeWrites[k].push_back( "@MAC" );
+			if( iw & VU_RESOURCE_CLIP ) nodeWrites[k].push_back( "@CLIP" );
+			if( ir & VU_RESOURCE_ACC )  nodeReads[k].push_back( "@ACC" );
+			if( ir & VU_RESOURCE_Q )    nodeReads[k].push_back( "@Q" );
+			if( ir & VU_RESOURCE_P )    nodeReads[k].push_back( "@P" );
+			if( ir & VU_RESOURCE_R )    nodeReads[k].push_back( "@R" );
+			if( ir & VU_RESOURCE_I )    nodeReads[k].push_back( "@I" );
+			if( ir & VU_RESOURCE_MAC )  nodeReads[k].push_back( "@MAC" );
+			if( ir & VU_RESOURCE_CLIP ) nodeReads[k].push_back( "@CLIP" );
+			if( indexedTokens[mt[k]]->operand() != NULL
+			    && vuOpIsSplittableForKernelRenameByName(
+			           indexedTokens[mt[k]]->operand()->name() ) )
+			{
+				for( unsigned int w = 0; w < nodeWrites[k].size(); ++w )
+				{
+					const std::string& b = nodeWrites[k][w];
+					if( b.empty() || b[0] == '@' ) continue;
+					const char c0 = b[0];
+					if( c0 != 'v' && c0 != 'V' ) continue;
+					bool already = false;
+					for( unsigned int r = 0; r < rotatedBases.size() && !already; ++r )
+						if( rotatedBases[r] == b ) already = true;
+					if( !already ) rotatedBases.push_back( b );
+				}
+			}
+		}
+		// isRotated(b) helper inlined: small set, linear scan acceptable.
+		unsigned int droppedCarried = 0;
+		std::vector<unsigned int> eFrom, eTo, eDist;
+		std::vector<int> eLat;
+		unsigned int carried = 0;
+		for( unsigned int i = 0; i < n; ++i )
+		{
+			for( unsigned int j = 0; j < n; ++j )
+			{
+				if( i == j ) continue;
+				const unsigned int dist = ( i < j ) ? 0u : 1u;
+				std::string sharedRaw;
+				for( unsigned int a = 0; a < nodeWrites[i].size() && sharedRaw.empty(); ++a )
+					for( unsigned int b = 0; b < nodeReads[j].size() && sharedRaw.empty(); ++b )
+						if( nodeWrites[i][a] == nodeReads[j][b] )
+							sharedRaw = nodeWrites[i][a];
+				if( !sharedRaw.empty()
+				    && mt[i] < indexedTokens.size()
+				    && mt[j] < indexedTokens.size() )
+				{
+					bool drop = false;
+					if( dist == 1 )
+					{
+						for( unsigned int r = 0; r < rotatedBases.size() && !drop; ++r )
+							if( rotatedBases[r] == sharedRaw ) drop = true;
+					}
+					if( drop ) { ++droppedCarried; }
+					else
+					{
+						VuLatencyTracker tr;
+						tr.reset();
+						tr.recordWrites( *indexedTokens[mt[i]], 0 );
+						const int d = tr.readHazardDelay( *indexedTokens[mt[j]], NULL, 0 );
+						const unsigned int lat = static_cast<unsigned int>( d > 0 ? d : 1 );
+						eFrom.push_back( i ); eTo.push_back( j ); eDist.push_back( dist );
+						eLat.push_back( static_cast<int>( lat ) );
+						if( dist == 1 ) ++carried;
+					}
+				}
+				std::string sharedWaw;
+				for( unsigned int a = 0; a < nodeWrites[i].size() && sharedWaw.empty(); ++a )
+					for( unsigned int b = 0; b < nodeWrites[j].size() && sharedWaw.empty(); ++b )
+						if( nodeWrites[i][a] == nodeWrites[j][b] )
+							sharedWaw = nodeWrites[i][a];
+				if( !sharedWaw.empty() )
+				{
+					bool drop = false;
+					if( dist == 1 )
+					{
+						for( unsigned int r = 0; r < rotatedBases.size() && !drop; ++r )
+							if( rotatedBases[r] == sharedWaw ) drop = true;
+					}
+					if( drop ) { ++droppedCarried; }
+					else
+					{
+						eFrom.push_back( i ); eTo.push_back( j ); eDist.push_back( dist );
+						eLat.push_back( 1 );
+						if( dist == 1 ) ++carried;
+					}
+				}
+				std::string sharedWar;
+				for( unsigned int a = 0; a < nodeReads[i].size() && sharedWar.empty(); ++a )
+					for( unsigned int b = 0; b < nodeWrites[j].size() && sharedWar.empty(); ++b )
+						if( nodeReads[i][a] == nodeWrites[j][b] )
+							sharedWar = nodeReads[i][a];
+				if( !sharedWar.empty() )
+				{
+					bool drop = false;
+					if( dist == 1 )
+					{
+						for( unsigned int r = 0; r < rotatedBases.size() && !drop; ++r )
+							if( rotatedBases[r] == sharedWar ) drop = true;
+					}
+					if( drop ) { ++droppedCarried; }
+					else
+					{
+						eFrom.push_back( i ); eTo.push_back( j ); eDist.push_back( dist );
+						eLat.push_back( 1 );
+						if( dist == 1 ) ++carried;
+					}
+				}
+			}
+		}
+		if( droppedCarriedEdgesOut != NULL ) *droppedCarriedEdgesOut = droppedCarried;
 		if( carried == 0 || eFrom.empty() ) return 1;
 		const unsigned int E = static_cast<unsigned int>( eFrom.size() );
 		double hi = 0.0;
@@ -6623,6 +6844,40 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			          << " recmii=" << recmii
 			          << " resmii=" << resmii
 			          << " mii=" << mii
+			          << "\n";
+		}
+
+		if( std::getenv( "OPENVCL_DUMP_LOOP_RENAME_RECMII" ) != NULL
+		    && opportunity.simpleCountedLoop
+		    && !opportunity.mainTokenIndices.empty() )
+		{
+			// Track 9.G step 1c-1 (diagnostic): rename-aware RecMII.
+			// Prints baseline RecMII alongside the rename-aware variant
+			// that drops loop-carried RAW edges whose producer is a
+			// kernel-rename splittable FMAC writing a VF base. The
+			// rename machinery (steps 8b-1 / 8b-2x) already redirects
+			// those carried values to scratch registers, so the
+			// corresponding recurrences are not actually iter-to-iter.
+			// Step 1c-1 only reports; step 1c-2 will consume this value
+			// when OPENVCL_USE_GENERIC_KERNEL_REWRITE is set.
+			const std::vector<unsigned int>& mt = opportunity.mainTokenIndices;
+			const unsigned int recmiiBase = computeLoopRecMII( mt, indexedTokens );
+			const unsigned int resmii     = computeLoopResMII( mt, indexedTokens );
+			unsigned int droppedCarried   = 0;
+			const unsigned int recmiiRenamed =
+			    computeLoopRecMIIRenamed( mt, indexedTokens, &droppedCarried );
+			const unsigned int miiBase =
+			    ( recmiiBase    > resmii ) ? recmiiBase    : resmii;
+			const unsigned int miiRenamed =
+			    ( recmiiRenamed > resmii ) ? recmiiRenamed : resmii;
+			std::cerr << "[loop-recmii-renamed] loop=" << opportunity.label
+			          << " mainSize=" << mt.size()
+			          << " recmii_base=" << recmiiBase
+			          << " recmii_renamed=" << recmiiRenamed
+			          << " resmii=" << resmii
+			          << " mii_base=" << miiBase
+			          << " mii_renamed=" << miiRenamed
+			          << " droppedCarriedEdges=" << droppedCarried
 			          << "\n";
 		}
 
