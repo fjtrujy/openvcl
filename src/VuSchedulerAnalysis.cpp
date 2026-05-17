@@ -7100,6 +7100,13 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			}
 			const unsigned int totalEdges = static_cast<unsigned int>( dFrom.size() );
 			unsigned int edgeViolations = 0;
+			// Track 9.G step 1d-1: per-node placement failure reason
+			// counters (edge-bound vs MRT-bound) used by the
+			// OPENVCL_DUMP_LOOP_BUMP_REASONS diagnostic. Reset each
+			// placer attempt; only consulted when failedCount > 0
+			// before the II bump.
+			std::vector< unsigned int > edgeFailsN( n, 0u );
+			std::vector< unsigned int > mrtFailsN ( n, 0u );
 			while( true )
 			{
 				ModuloReservationTable mrt( tryII );
@@ -7110,6 +7117,8 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 					pipeOf[k]  = 0;
 					durationOf[k] = 1;
 					placed[k]  = false;
+					edgeFailsN[k] = 0u;
+					mrtFailsN[k]  = 0u;
 				}
 				placedCount = 0; failedCount = 0; maxStage = 0;
 				edgeViolations = 0;
@@ -7188,7 +7197,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 								edgeOk = false;
 						}
 					}
-					if( !edgeOk ) { ++edgeViolations; continue; }
+					if( !edgeOk ) { ++edgeViolations; ++edgeFailsN[i]; continue; }
 					const unsigned int mod = tryII > 0 ? ( s % tryII ) : 0;
 					bool canPlace = false;
 					switch( pipeKind )
@@ -7199,7 +7208,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 					case 4: canPlace = mrt.canReserveEfu( mod, duration ); break;
 					default: break;
 					}
-					if( !canPlace ) continue;
+					if( !canPlace ) { ++mrtFailsN[i]; continue; }
 					switch( pipeKind )
 					{
 					case 1: mrt.reserveUpper( mod, tokIdx ); break;
@@ -7412,6 +7421,60 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 				efuOccFinal   = mrt.efuOccupancy();
 				if( failedCount == 0 ) break;
 				if( tryII >= iiCap ) break;
+				// Track 9.G step 1d-1: per-bump diagnostic. Emit one
+				// line per attempt that is about to bump, summarizing
+				// which failed nodes were edge-bound vs MRT-bound. Used
+				// to determine whether a low MII can ever be realized:
+				// edge-bound failures point at unbreakable recurrences;
+				// MRT-bound failures point at pipe-resource conflicts.
+				if( std::getenv( "OPENVCL_DUMP_LOOP_BUMP_REASONS" ) != NULL )
+				{
+					unsigned int edgeBound = 0, mrtBound = 0, mixedBound = 0;
+					for( unsigned int k = 0; k < n; ++k )
+					{
+						if( placed[k] ) continue;
+						if( pipeOf[k] == 0 ) continue;
+						if( edgeFailsN[k] > 0u && mrtFailsN[k] == 0u ) ++edgeBound;
+						else if( edgeFailsN[k] == 0u && mrtFailsN[k] > 0u ) ++mrtBound;
+						else if( edgeFailsN[k] > 0u && mrtFailsN[k] > 0u ) ++mixedBound;
+					}
+					std::cerr << "[loop-bump] loop=" << opportunity.label
+					          << " bumpFrom=" << tryII
+					          << " failed=" << failedCount
+					          << " edgeBound=" << edgeBound
+					          << " mrtBound=" << mrtBound
+					          << " mixedBound=" << mixedBound
+					          << " edgeViolations=" << edgeViolations
+					          << " evictions=" << evictions
+					          << "\n";
+					for( unsigned int k = 0; k < n; ++k )
+					{
+						if( placed[k] ) continue;
+						if( pipeOf[k] == 0 ) continue;
+						const unsigned int tokIdx = mt[k];
+						const char* opName = "?";
+						if( tokIdx < indexedTokens.size()
+						 && indexedTokens[tokIdx]->operand() )
+							opName = indexedTokens[tokIdx]->operand()->name().c_str();
+						const char* pname = "none";
+						switch( pipeOf[k] )
+						{
+						case 1: pname = "upper"; break;
+						case 2: pname = "lower"; break;
+						case 3: pname = "fdiv";  break;
+						case 4: pname = "efu";   break;
+						default: break;
+						}
+						std::cerr << "[loop-bump-node] loop=" << opportunity.label
+						          << " bumpFrom=" << tryII
+						          << " node=" << k
+						          << " op=" << opName
+						          << " pipe=" << pname
+						          << " edgeFails=" << edgeFailsN[k]
+						          << " mrtFails=" << mrtFailsN[k]
+						          << "\n";
+					}
+				}
 				++tryII; ++bumps;
 			}
 			// Track 9.G step 5a: structured kernel layout handoff. Populate a
@@ -7964,10 +8027,13 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			}
 			if( std::getenv( "OPENVCL_DUMP_LOOP_SCHEDULE" ) != NULL )
 			{
+				const bool overlapForced = ( n > tryII );
 				std::cerr << "[loop-schedule] loop=" << opportunity.label
 				          << " II=" << tryII
 				          << " miiStart=" << miiStart
 				          << " bumps=" << bumps
+				          << " bodyNodes=" << n
+				          << " overlapForced=" << ( overlapForced ? 1 : 0 )
 				          << " placed=" << placedCount
 				          << " failed=" << failedCount
 				          << " maxStage=" << maxStage
