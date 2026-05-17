@@ -7320,6 +7320,24 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 					buildVuKernelRenameHints( krRegPlan, krHints );
 					opportunity.kernelRewriteRenameHints = krHints;
 
+					// Track 9.G step 8b-1: per-register rename decisions.
+					// Allocate a scratch VF per unique hint reg using the
+					// loop body's actual VF base set as the reserved pool.
+					{
+						std::vector< std::string > krUsedBases;
+						for( unsigned int e = 0; e < krEntryRegs.size(); ++e )
+						{
+							const VuKernelEntryRegisters& er = krEntryRegs[ e ];
+							for( unsigned int k = 0; k < er.reads.size(); ++k )
+								krUsedBases.push_back( er.reads[ k ] );
+							for( unsigned int k = 0; k < er.writes.size(); ++k )
+								krUsedBases.push_back( er.writes[ k ] );
+						}
+						std::vector< VuKernelRenameDecision > krDecisions;
+						buildVuKernelRenameDecisions( krHints, krUsedBases, krDecisions );
+						opportunity.kernelRewriteRenameDecisions = krDecisions;
+					}
+
 					// Track 9.G step 6g: envelope scaffolding.
 					opportunity.kernelEnvelopeKernelTokens   = krEnv.kernelTokens;
 					opportunity.kernelEnvelopePrologueCycles = krEnv.prologueCycles;
@@ -7890,6 +7908,8 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		plan.kernelRewriteWarCount    = i->kernelRewriteWarCount;
 		plan.kernelRewriteHazards     = i->kernelRewriteHazards;
 		plan.kernelRewriteRenameHints = i->kernelRewriteRenameHints;
+		// Track 9.G step 8b-1: rename decisions.
+		plan.kernelRewriteRenameDecisions = i->kernelRewriteRenameDecisions;
 		// Track 9.G step 6g: envelope scaffolding.
 		plan.kernelEnvelopeKernelTokens       = i->kernelEnvelopeKernelTokens;
 		plan.kernelEnvelopePrologueCycles     = i->kernelEnvelopePrologueCycles;
@@ -8000,6 +8020,37 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 			          << " drain=" << p->kernelRewriteDrainTokens.size()
 			          << " entryStages=" << p->kernelRewriteEntryStages.size()
 			          << "\n";
+		}
+	}
+
+	// Track 9.G step 8b-1: surface the rename-decision scaffolding.
+	// Diagnostic-only; no consumer yet (the 7b emitter still rejects
+	// any plan whose renameHints are non-empty).
+	if( std::getenv( "OPENVCL_DUMP_KERNEL_RENAME_DECISIONS" ) != NULL )
+	{
+		for( std::vector<VuSoftwarePipelineRewritePlan>::const_iterator p = plans.begin();
+		     p != plans.end(); ++p )
+		{
+			unsigned int assignedCount = 0;
+			for( unsigned int d = 0; d < p->kernelRewriteRenameDecisions.size(); ++d )
+				if( p->kernelRewriteRenameDecisions[ d ].assigned )
+					++assignedCount;
+			std::cerr << "[kernel-rename-decisions] loop=" << p->label
+			          << " count=" << p->kernelRewriteRenameDecisions.size()
+			          << " assigned=" << assignedCount
+			          << "\n";
+			if( std::getenv( "OPENVCL_DUMP_KERNEL_RENAME_DECISIONS_DETAIL" ) != NULL )
+			{
+				for( unsigned int d = 0; d < p->kernelRewriteRenameDecisions.size(); ++d )
+				{
+					const VuKernelRenameDecision& dec = p->kernelRewriteRenameDecisions[ d ];
+					std::cerr << "[kernel-rename-decision] loop=" << p->label
+					          << " reg=" << dec.reg
+					          << " scratch=" << ( dec.assigned ? dec.scratch : std::string( "<none>" ) )
+					          << " assigned=" << ( dec.assigned ? 1 : 0 )
+					          << "\n";
+				}
+			}
 		}
 	}
 

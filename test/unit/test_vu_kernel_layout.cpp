@@ -6,6 +6,7 @@
 #include "../../src/VuKernelLayout.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <set>
 
 using namespace vcl;
@@ -500,6 +501,96 @@ TEST_CASE("VuKernelRenameHints: each hazard yields two hints, deduplicated")
     }
     CHECK(writeCount == 1u);
     CHECK(readCount == 2u);
+}
+
+// Track 9.G step 8b-1: rename-decision allocator.
+TEST_CASE("VuKernelRenameDecisions: one decision per unique hint reg")
+{
+    std::vector<VuKernelRenameHint> hints;
+    {
+        VuKernelRenameHint h; h.reg = "VF12"; h.entry = 0; h.stage = 0; h.kind = 1;
+        hints.push_back(h);
+    }
+    {
+        VuKernelRenameHint h; h.reg = "VF12"; h.entry = 1; h.stage = 1; h.kind = 0;
+        hints.push_back(h);
+    }
+    {
+        VuKernelRenameHint h; h.reg = "VF20"; h.entry = 2; h.stage = 0; h.kind = 1;
+        hints.push_back(h);
+    }
+    std::vector<std::string> usedBases;
+    usedBases.push_back("VF12");
+    usedBases.push_back("VF20");
+    std::vector<VuKernelRenameDecision> decisions;
+    buildVuKernelRenameDecisions(hints, usedBases, decisions);
+    REQUIRE(decisions.size() == 2u);
+    CHECK(decisions[0].reg == "VF12");
+    CHECK(decisions[0].assigned);
+    CHECK(decisions[1].reg == "VF20");
+    CHECK(decisions[1].assigned);
+    CHECK(decisions[0].scratch != decisions[1].scratch);
+}
+
+TEST_CASE("VuKernelRenameDecisions: scratches avoid used bases and each other")
+{
+    std::vector<VuKernelRenameHint> hints;
+    {
+        VuKernelRenameHint h; h.reg = "VF02"; h.entry = 0; h.stage = 0; h.kind = 1;
+        hints.push_back(h);
+    }
+    {
+        VuKernelRenameHint h; h.reg = "VF03"; h.entry = 1; h.stage = 0; h.kind = 1;
+        hints.push_back(h);
+    }
+    // Reserve top of VF range (31, 30) and the renamed bases.
+    std::vector<std::string> usedBases;
+    usedBases.push_back("VF02");
+    usedBases.push_back("VF03");
+    usedBases.push_back("VF31");
+    usedBases.push_back("VF30");
+    usedBases.push_back("VF29.xyz");  // field-suffixed key must still reserve VF29
+    std::vector<VuKernelRenameDecision> decisions;
+    buildVuKernelRenameDecisions(hints, usedBases, decisions);
+    REQUIRE(decisions.size() == 2u);
+    CHECK(decisions[0].assigned);
+    CHECK(decisions[1].assigned);
+    // Both scratches must not collide with any reserved base.
+    const char* reserved[] = { "VF02", "VF03", "VF29", "VF30", "VF31" };
+    for (unsigned r = 0; r < sizeof(reserved)/sizeof(reserved[0]); ++r)
+    {
+        CHECK(decisions[0].scratch != reserved[r]);
+        CHECK(decisions[1].scratch != reserved[r]);
+    }
+    CHECK(decisions[0].scratch != decisions[1].scratch);
+}
+
+TEST_CASE("VuKernelRenameDecisions: budget exhaustion marks tail decisions unassigned")
+{
+    // Build hints for 31 unique regs (VF02..VF32-equivalent) so the allocator
+    // runs out of VF31..VF02 free slots. We use synthetic reg names that are
+    // not in usedBases so collision only comes from the scratch pool itself.
+    std::vector<VuKernelRenameHint> hints;
+    for (unsigned int i = 0; i < 31u; ++i)
+    {
+        VuKernelRenameHint h;
+        char buf[16];
+        // Synthetic non-VF names so they cannot collide with the scratch scan.
+        std::sprintf(buf, "X%02u", i);
+        h.reg = buf; h.entry = i; h.stage = 0; h.kind = 1;
+        hints.push_back(h);
+    }
+    std::vector<std::string> usedBases;  // empty
+    std::vector<VuKernelRenameDecision> decisions;
+    buildVuKernelRenameDecisions(hints, usedBases, decisions);
+    REQUIRE(decisions.size() == 31u);
+    // VF02..VF31 = 30 candidates; first 30 assigned, 31st must be unassigned.
+    unsigned assignedCount = 0;
+    for (unsigned d = 0; d < decisions.size(); ++d)
+        if (decisions[d].assigned) ++assignedCount;
+    CHECK(assignedCount == 30u);
+    CHECK(!decisions.back().assigned);
+    CHECK(decisions.back().scratch == "");
 }
 
 // Track 9.G step 6d: layout-coverage self-validation.

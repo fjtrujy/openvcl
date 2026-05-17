@@ -313,6 +313,13 @@ struct VuLoopPipelineOpportunity
 	std::vector<VuKernelRegisterHazard> kernelRewriteHazards;
 	std::vector<VuKernelRenameHint> kernelRewriteRenameHints;
 
+	// Track 9.G step 8b-1 — per-register rename decisions (scaffolding).
+	// Populated alongside kernelRewriteRenameHints. Each unique hint reg
+	// gets one decision; assigned=false means the free-VF budget was
+	// exhausted and this loop cannot be renamed under the current
+	// policy. Diagnostic-only; no emission path consumes this yet.
+	std::vector<VuKernelRenameDecision> kernelRewriteRenameDecisions;
+
 	// Track 9.G step 6g — VuKernelEnvelope scaffolding (diagnostic-only).
 	// High-level prologue/epilogue cycle counts and per-stage token totals
 	// derived from the modulo placer's layout. No emission path consumes
@@ -393,6 +400,10 @@ struct VuSoftwarePipelineRewritePlan
 	unsigned int kernelRewriteWarCount;
 	std::vector<VuKernelRegisterHazard> kernelRewriteHazards;
 	std::vector<VuKernelRenameHint> kernelRewriteRenameHints;
+
+	// Track 9.G step 8b-1 — rename decisions (scaffolding).
+	// Mirrors the opportunity-side field.
+	std::vector<VuKernelRenameDecision> kernelRewriteRenameDecisions;
 
 	// Track 9.G step 6g — VuKernelEnvelope scaffolding (diagnostic-only).
 	// Mirrors the opportunity-side envelope fields.

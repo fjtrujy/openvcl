@@ -284,4 +284,75 @@ void buildVuKernelRenameHints( const VuKernelRegisterPlan& regPlan,
     }
 }
 
+namespace
+{
+    std::string vfBaseNameForScratch( unsigned int index )
+    {
+        std::string s = "VF";
+        if( index < 10 ) s += '0';
+        char buf[8];
+        unsigned int n = index, len = 0;
+        char tmp[8];
+        if( n == 0 ) { tmp[ len++ ] = '0'; }
+        else { while( n ) { tmp[ len++ ] = (char)( '0' + ( n % 10 ) ); n /= 10; } }
+        for( unsigned int j = 0; j < len; ++j ) buf[ j ] = tmp[ len - 1 - j ];
+        buf[ len ] = '\0';
+        s += buf;
+        return s;
+    }
+
+    std::string baseOfRegKey( const std::string& key )
+    {
+        // Strip ".x" / ".xyz" / etc. suffix, leave "VFnn".
+        const std::string::size_type dot = key.find( '.' );
+        if( dot == std::string::npos ) return key;
+        return key.substr( 0, dot );
+    }
+}
+
+void buildVuKernelRenameDecisions( const std::vector< VuKernelRenameHint >& hints,
+                                   const std::vector< std::string >& usedBases,
+                                   std::vector< VuKernelRenameDecision >& decisions )
+{
+    decisions.clear();
+
+    // Unique regs from hints, in first-seen order.
+    std::vector< std::string > uniqueRegs;
+    for( unsigned int h = 0; h < hints.size(); ++h )
+    {
+        const std::string& r = hints[ h ].reg;
+        bool present = false;
+        for( unsigned int u = 0; u < uniqueRegs.size(); ++u )
+            if( uniqueRegs[ u ] == r ) { present = true; break; }
+        if( !present ) uniqueRegs.push_back( r );
+    }
+
+    // Reserved set: every base the loop body touches plus every scratch
+    // already chosen by an earlier decision in this call.
+    std::vector< std::string > reserved;
+    for( unsigned int i = 0; i < usedBases.size(); ++i )
+        reserved.push_back( baseOfRegKey( usedBases[ i ] ) );
+
+    for( unsigned int u = 0; u < uniqueRegs.size(); ++u )
+    {
+        VuKernelRenameDecision d;
+        d.reg = uniqueRegs[ u ];
+        d.assigned = false;
+        // Scan VF31..VF02; VF00 and VF01 are reserved by VU convention.
+        for( unsigned int reverse = 32; reverse > 2; --reverse )
+        {
+            const std::string cand = vfBaseNameForScratch( reverse - 1 );
+            bool collides = false;
+            for( unsigned int r = 0; r < reserved.size(); ++r )
+                if( reserved[ r ] == cand ) { collides = true; break; }
+            if( collides ) continue;
+            d.scratch  = cand;
+            d.assigned = true;
+            reserved.push_back( cand );
+            break;
+        }
+        decisions.push_back( d );
+    }
+}
+
 } // namespace vcl
