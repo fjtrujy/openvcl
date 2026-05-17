@@ -136,7 +136,9 @@ public:
 		PROCESSED		= 0x00000020,	// has been processed by the register allocator
 		BRANCH_DELAY_FILLER	= 0x00000040,	// moved into the previous branch delay slot
 		SCHEDULED_PAIR_FIRST	= 0x00000080,	// first token in a ready-scheduler issue pair
-		SCHEDULED_PAIR_SECOND	= 0x00000100	// second token in a ready-scheduler issue pair
+		SCHEDULED_PAIR_SECOND	= 0x00000100,	// second token in a ready-scheduler issue pair
+		KERNEL_BLOCK_BEGIN	= 0x00000200,	// kernel-rewrite: marks start of a pre-scheduled MAIN block
+		KERNEL_BLOCK_END		= 0x00000400	// kernel-rewrite: marks end of a pre-scheduled MAIN block
 	};
 
 	enum Modifier
