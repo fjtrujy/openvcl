@@ -4711,6 +4711,242 @@ namespace
 		return token;
 	}
 
+	// Track 9.G step 8b-2c-1: per-field op-splitter for kernel rename.
+	//
+	// vuOpIsSplittableForKernelRename: returns true when an FMAC op is
+	// safe to split into single-field clones. "Safe" means each output
+	// field depends only on the corresponding input field (no cross-
+	// field arithmetic), the destination is a single VFn with a field
+	// mask matching the op's field set, and rewriting the destination
+	// register/field-mask preserves observable semantics. Conservative
+	// allowlist: add/sub/mul/madd/msub/max/mini and their broadcast
+	// variants (suffix i/q/w/x/y/z). Excludes opmula/opmsub/opmadd/
+	// opmsubAcc (cross-field outer-product), clip*, abs*, ftoi*/itof*
+	// (kept simple for the first cut), all FDIV/EFU/memory/integer/
+	// flag/branch ops, and move/mr32.
+	bool vuOpIsSplittableForKernelRenameByName( const std::string& opNameRaw )
+	{
+		// Strip the field-mask suffix (".xyzw") and optional flag suffix
+		// ("[..]"), then lowercase, to obtain the bare mnemonic. The
+		// allowlist is matched against the bare mnemonic.
+		std::string opName = opNameRaw;
+		std::string::size_type bracket = opName.find( '[' );
+		if( bracket != std::string::npos )
+			opName = opName.substr( 0, bracket );
+		std::string::size_type dot = opName.find( '.' );
+		if( dot != std::string::npos )
+			opName = opName.substr( 0, dot );
+		for( std::string::size_type i = 0; i < opName.size(); ++i )
+		{
+			if( opName[i] >= 'A' && opName[i] <= 'Z' )
+				opName[i] = static_cast<char>( opName[i] - 'A' + 'a' );
+		}
+
+		// Strip the optional broadcast/scalar suffix and check the base
+		// against the splittable set.
+		static const char* const splittableBases[] = {
+			"add", "sub", "mul", "madd", "msub", "max", "mini", NULL
+		};
+		static const char* const splittableSuffixes[] = {
+			"", "i", "q", "w", "x", "y", "z", NULL
+		};
+		for( unsigned int b = 0; splittableBases[b] != NULL; ++b )
+		{
+			const std::string base = splittableBases[b];
+			for( unsigned int s = 0; splittableSuffixes[s] != NULL; ++s )
+			{
+				std::string candidate = base + splittableSuffixes[s];
+				if( opName == candidate )
+					return true;
+			}
+		}
+		return false;
+	}
+
+	// Extract the field mask encoded in a decision.reg string of the
+	// form "VF13.w" or "VF13.xyz". Returns 0 if there is no dot.
+	unsigned int decisionRegFieldMask( const std::string& reg )
+	{
+		std::string::size_type dot = reg.find( '.' );
+		if( dot == std::string::npos )
+			return 0;
+		std::list<std::string> oneField;
+		oneField.push_back( reg.substr( dot + 1 ) );
+		return fieldMaskForFieldList( oneField );
+	}
+
+	std::string decisionRegBase( const std::string& reg )
+	{
+		return registerBaseKey( reg );
+	}
+
+	// Find the destination FLOAT_REGISTER argument of a token, or NULL
+	// if there isn't exactly one.
+	Token::Argument* tokenDestinationFloatArgument( Token& token )
+	{
+		Token::Argument* dest = NULL;
+		for( std::list<Token::Argument>::iterator i = token.arguments().begin();
+		     i != token.arguments().end(); ++i )
+		{
+			if( i->type() != Token::Argument::FLOAT_REGISTER )
+				continue;
+			if( ( i->flags() & Token::Argument::DEST ) == 0 )
+				continue;
+			if( ( i->flags() & Token::Argument::WRITE ) == 0 )
+				continue;
+			if( dest != NULL )
+				return NULL; // more than one dest — unsupported
+			dest = &*i;
+		}
+		return dest;
+	}
+
+	bool destinationBaseMatchesAnyDecision( const Token& token,
+	                                        const std::vector<VuKernelRenameDecision>& decisions,
+	                                        std::string& destBaseOut )
+	{
+		for( std::list<Token::Argument>::const_iterator i = token.arguments().begin();
+		     i != token.arguments().end(); ++i )
+		{
+			if( i->type() != Token::Argument::FLOAT_REGISTER )
+				continue;
+			if( ( i->flags() & Token::Argument::DEST ) == 0 )
+				continue;
+			if( ( i->flags() & Token::Argument::WRITE ) == 0 )
+				continue;
+			std::string key;
+			if( !vuRegisterKey( *i, key ) )
+				continue;
+			std::string base = registerBaseKey( key );
+			for( unsigned int d = 0; d < decisions.size(); ++d )
+			{
+				if( !decisions[d].assigned )
+					continue;
+				if( decisionRegBase( decisions[d].reg ) == base )
+				{
+					destBaseOut = base;
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	// Split a multi-field FMAC op into single-field clones, one per
+	// destination field that is targeted by a decision matching the
+	// op's destination base. Fields not covered by any decision are
+	// emitted as one residual clone with the destination unchanged.
+	//
+	// Pre-conditions (caller's responsibility):
+	//   - vuOpIsSplittableForKernelRename( token.name() ) is true,
+	//   - the token has exactly one destination FLOAT_REGISTER arg.
+	//
+	// If the op is unsplittable OR no decision matches the destination
+	// base, the token is passed through unchanged (single clone in
+	// `out`). This makes the helper safe to call unconditionally.
+	void splitMultiFieldOpByFieldDecisionsImpl( const Token& token,
+	                                            const std::vector<VuKernelRenameDecision>& decisions,
+	                                            std::list<Token>& out )
+	{
+		if( !vuOpIsSplittableForKernelRenameByName( token.name() ) )
+		{
+			out.push_back( token );
+			return;
+		}
+
+		std::string destBase;
+		if( !destinationBaseMatchesAnyDecision( token, decisions, destBase ) )
+		{
+			out.push_back( token );
+			return;
+		}
+
+		// Gather (mask, scratch) for every decision whose base matches.
+		std::vector<unsigned int> decisionMasks;
+		std::vector<std::string>  decisionScratches;
+		unsigned int coveredMask = 0;
+		for( unsigned int d = 0; d < decisions.size(); ++d )
+		{
+			if( !decisions[d].assigned )
+				continue;
+			if( decisionRegBase( decisions[d].reg ) != destBase )
+				continue;
+			unsigned int m = decisionRegFieldMask( decisions[d].reg );
+			if( m == 0 ) m = Token::X | Token::Y | Token::Z | Token::W;
+			decisionMasks.push_back( m );
+			decisionScratches.push_back( decisions[d].scratch );
+			coveredMask |= m;
+		}
+
+		// Determine the destination's effective field-mask. Some parser
+		// paths leave token.fields() as zero and store the mask on the
+		// destination argument; others set token.fields(). Use the
+		// union, and fall back to all four fields when neither is set.
+		unsigned int tokenMask = token.fields();
+		{
+			for( std::list<Token::Argument>::const_iterator i = token.arguments().begin();
+			     i != token.arguments().end(); ++i )
+			{
+				if( i->type() != Token::Argument::FLOAT_REGISTER ) continue;
+				if( ( i->flags() & Token::Argument::DEST ) == 0 ) continue;
+				if( ( i->flags() & Token::Argument::WRITE ) == 0 ) continue;
+				tokenMask |= i->fields();
+			}
+		}
+		if( tokenMask == 0 )
+			tokenMask = Token::X | Token::Y | Token::Z | Token::W;
+		const unsigned int touchedMask = tokenMask & coveredMask;
+		const unsigned int residualMask = tokenMask & ~coveredMask;
+
+		if( touchedMask == 0 )
+		{
+			// Decisions exist for the base but don't intersect this op's
+			// field set; pass the op through unchanged.
+			out.push_back( token );
+			return;
+		}
+
+		// Emit one single-field clone per touched field, retargeted to
+		// the scratch register of the decision that owns that field.
+		const unsigned int fieldBits[ 4 ] = { Token::X, Token::Y, Token::Z, Token::W };
+		for( unsigned int fi = 0; fi < 4; ++fi )
+		{
+			const unsigned int bit = fieldBits[ fi ];
+			if( ( touchedMask & bit ) == 0 )
+				continue;
+			std::string scratch;
+			for( unsigned int d = 0; d < decisionMasks.size(); ++d )
+			{
+				if( decisionMasks[d] & bit )
+				{
+					scratch = decisionScratches[d];
+					break;
+				}
+			}
+			if( scratch.empty() )
+				continue; // should not happen; coveredMask is the union
+			Token clone( token );
+			clone.setFields( bit );
+			Token::Argument* dst = tokenDestinationFloatArgument( clone );
+			if( dst != NULL )
+			{
+				setFloatRegisterArgumentBase( *dst, scratch );
+				dst->setFields( bit );
+			}
+			out.push_back( clone );
+		}
+
+		if( residualMask != 0 )
+		{
+			Token clone( token );
+			clone.setFields( residualMask );
+			Token::Argument* dst = tokenDestinationFloatArgument( clone );
+			if( dst != NULL )
+				dst->setFields( residualMask );
+			out.push_back( clone );
+		}
+	}
+
 	const VuSoftwarePipelinePrefetch* findPrefetchForTokenIndex( const std::vector<VuSoftwarePipelinePrefetch>& prefetches,
 	                                                             unsigned int tokenIndex )
 	{
@@ -8666,6 +8902,21 @@ std::list<Token> scheduleVuTokensReadySetWithFlagLiveness( const std::list<Token
 	const VuScheduledProgram program =
 		scheduleVuProgramReadyIssueSlotsWithFlagLivenessInternal( tokens, false );
 	return flattenVuScheduledProgramTokens( program );
+}
+
+// Track 9.G step 8b-2c-1: thin wrappers around the anon-namespace
+// splitter helpers so unit tests can exercise them without depending
+// on the planner.
+bool vuOpIsSplittableForKernelRename( const Token& token )
+{
+	return vuOpIsSplittableForKernelRenameByName( token.name() );
+}
+
+void splitMultiFieldOpByFieldDecisions( const Token& token,
+                                        const std::vector<VuKernelRenameDecision>& decisions,
+                                        std::list<Token>& out )
+{
+	splitMultiFieldOpByFieldDecisionsImpl( token, decisions, out );
 }
 
 }

@@ -501,6 +501,29 @@ std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens,
                                            unsigned int ignoredImplicitWawResources = 0 );
 std::list<Token> scheduleVuTokensReadySetWithFlagLiveness( const std::list<Token>& tokens );
 
+// Track 9.G step 8b-2c-1 — per-field op-splitter for kernel rename.
+//
+// vuOpIsSplittableForKernelRename returns true when `token`'s
+// instruction is on the conservative FMAC allowlist (add/sub/mul/madd/
+// msub/max/mini and their broadcast variants). Such an op writes a
+// single FLOAT_REGISTER destination whose field mask matches the op's
+// field set, and each output field depends only on the matching input
+// field — making it safe to split into single-field clones for the
+// purpose of honouring per-field rename decisions.
+//
+// splitMultiFieldOpByFieldDecisions clones `token` into one
+// destination-retargeted single-field op per decision whose `reg` base
+// matches the token's destination and whose field is present in the
+// token's `fields()` mask. Fields not covered by any decision are
+// emitted as a single residual clone with the destination unchanged.
+// When `token` is unsplittable, or no decision matches its
+// destination, the token is appended verbatim (single clone). The
+// helper never mutates `token`.
+bool vuOpIsSplittableForKernelRename( const Token& token );
+void splitMultiFieldOpByFieldDecisions( const Token& token,
+                                        const std::vector<VuKernelRenameDecision>& decisions,
+                                        std::list<Token>& out );
+
 }
 
 #endif

@@ -3459,3 +3459,254 @@ TEST_CASE("VuSchedulerAnalysis: stageCells scaffolding defaults to empty")
     vcl::VuSoftwarePipelineRewritePlan plan;
     CHECK(plan.kernelRewriteStageCells.empty());
 }
+
+// ---------------------------------------------------------------------------
+// Track 9.G step 8b-2c-1: per-field op-splitter for kernel rename.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+    std::string stripOpSuffix(const std::string& name)
+    {
+        std::string s = name;
+        std::string::size_type bracket = s.find('[');
+        if (bracket != std::string::npos) s = s.substr(0, bracket);
+        std::string::size_type dot = s.find('.');
+        if (dot != std::string::npos) s = s.substr(0, dot);
+        return s;
+    }
+    const vcl::Token* findFirstOpToken(const std::list<vcl::Token>& tokens,
+                                       const std::string& opName)
+    {
+        for (std::list<vcl::Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i)
+        {
+            if (stripOpSuffix(i->name()) == opName)
+                return &*i;
+        }
+        return NULL;
+    }
+
+    int destRegNumber(const vcl::Token& token)
+    {
+        for (std::list<vcl::Token::Argument>::const_iterator a = token.arguments().begin();
+             a != token.arguments().end(); ++a)
+        {
+            if (a->type() != vcl::Token::Argument::FLOAT_REGISTER) continue;
+            if ((a->flags() & vcl::Token::Argument::DEST) == 0) continue;
+            if ((a->flags() & vcl::Token::Argument::WRITE) == 0) continue;
+            return a->regNumber();
+        }
+        return -1;
+    }
+
+    unsigned int destFields(const vcl::Token& token)
+    {
+        for (std::list<vcl::Token::Argument>::const_iterator a = token.arguments().begin();
+             a != token.arguments().end(); ++a)
+        {
+            if (a->type() != vcl::Token::Argument::FLOAT_REGISTER) continue;
+            if ((a->flags() & vcl::Token::Argument::DEST) == 0) continue;
+            if ((a->flags() & vcl::Token::Argument::WRITE) == 0) continue;
+            return a->fields();
+        }
+        return 0;
+    }
+}
+
+TEST_CASE("VuSchedulerAnalysis 8b-2c-1: vuOpIsSplittableForKernelRename allowlist")
+{
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xyzw vf13, vf13, vf14"));
+    REQUIRE(program.parse("sub.xy vf13, vf13, vf14"));
+    REQUIRE(program.parse("muli.xyz vf13, vf13, i"));
+    REQUIRE(program.parse("maddw.xyzw vf13, vf13, vf14"));
+    REQUIRE(program.parse("mini.xyzw vf13, vf13, vf14"));
+
+    REQUIRE(program.parse("opmula.xyz acc, vf13, vf14"));
+    REQUIRE(program.parse("move.xyzw vf13, vf14"));
+    REQUIRE(program.parse("ftoi4.xyzw vf13, vf14"));
+    REQUIRE(program.parse("mr32.xyzw vf13, vf14"));
+
+    const std::list<vcl::Token>& tokens = program.tokenizer.tokens();
+    const vcl::Token* add = findFirstOpToken(tokens, "add");
+    const vcl::Token* sub = findFirstOpToken(tokens, "sub");
+    const vcl::Token* muli = findFirstOpToken(tokens, "muli");
+    const vcl::Token* maddw = findFirstOpToken(tokens, "maddw");
+    const vcl::Token* mini = findFirstOpToken(tokens, "mini");
+    const vcl::Token* opmula = findFirstOpToken(tokens, "opmula");
+    const vcl::Token* move = findFirstOpToken(tokens, "move");
+    const vcl::Token* ftoi4 = findFirstOpToken(tokens, "ftoi4");
+    const vcl::Token* mr32 = findFirstOpToken(tokens, "mr32");
+    REQUIRE(add != NULL);
+    REQUIRE(sub != NULL);
+    REQUIRE(muli != NULL);
+    REQUIRE(maddw != NULL);
+    REQUIRE(mini != NULL);
+    REQUIRE(opmula != NULL);
+    REQUIRE(move != NULL);
+    REQUIRE(ftoi4 != NULL);
+    REQUIRE(mr32 != NULL);
+
+    CHECK(vcl::vuOpIsSplittableForKernelRename(*add));
+    CHECK(vcl::vuOpIsSplittableForKernelRename(*sub));
+    CHECK(vcl::vuOpIsSplittableForKernelRename(*muli));
+    CHECK(vcl::vuOpIsSplittableForKernelRename(*maddw));
+    CHECK(vcl::vuOpIsSplittableForKernelRename(*mini));
+
+    CHECK(!vcl::vuOpIsSplittableForKernelRename(*opmula));
+    CHECK(!vcl::vuOpIsSplittableForKernelRename(*move));
+    CHECK(!vcl::vuOpIsSplittableForKernelRename(*ftoi4));
+    CHECK(!vcl::vuOpIsSplittableForKernelRename(*mr32));
+}
+
+TEST_CASE("VuSchedulerAnalysis 8b-2c-1: splitMultiFieldOpByFieldDecisions passes through unsplittable ops")
+{
+    ParsedProgram program;
+    REQUIRE(program.parse("move.xyzw vf13, vf14"));
+    const vcl::Token* move = findFirstOpToken(program.tokenizer.tokens(), "move");
+    REQUIRE(move != NULL);
+
+    std::vector<vcl::VuKernelRenameDecision> decisions;
+    vcl::VuKernelRenameDecision d;
+    d.reg = "VF13.w"; d.scratch = "VF31"; d.assigned = true;
+    decisions.push_back(d);
+
+    std::list<vcl::Token> out;
+    vcl::splitMultiFieldOpByFieldDecisions(*move, decisions, out);
+    CHECK(out.size() == 1u);
+    CHECK(stripOpSuffix(out.front().name()) == "move");
+    CHECK(destRegNumber(out.front()) == 13);
+}
+
+TEST_CASE("VuSchedulerAnalysis 8b-2c-1: splitMultiFieldOpByFieldDecisions passes through when no decision matches dest base")
+{
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xyzw vf20, vf20, vf14"));
+    const vcl::Token* add = findFirstOpToken(program.tokenizer.tokens(), "add");
+    REQUIRE(add != NULL);
+
+    std::vector<vcl::VuKernelRenameDecision> decisions;
+    vcl::VuKernelRenameDecision d;
+    d.reg = "VF13.w"; d.scratch = "VF31"; d.assigned = true;
+    decisions.push_back(d);
+
+    std::list<vcl::Token> out;
+    vcl::splitMultiFieldOpByFieldDecisions(*add, decisions, out);
+    CHECK(out.size() == 1u);
+    CHECK(destRegNumber(out.front()) == 20);
+    CHECK(destFields(out.front()) == (vcl::Token::X | vcl::Token::Y | vcl::Token::Z | vcl::Token::W));
+}
+
+TEST_CASE("VuSchedulerAnalysis 8b-2c-1: splitMultiFieldOpByFieldDecisions full-mask split across four per-field decisions")
+{
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xyzw vf13, vf13, vf14"));
+    const vcl::Token* add = findFirstOpToken(program.tokenizer.tokens(), "add");
+    REQUIRE(add != NULL);
+
+    std::vector<vcl::VuKernelRenameDecision> decisions;
+    const char* fields[4] = { "x", "y", "z", "w" };
+    const char* scratches[4] = { "VF30", "VF29", "VF28", "VF31" };
+    for (unsigned int i = 0; i < 4; ++i)
+    {
+        vcl::VuKernelRenameDecision d;
+        d.reg = std::string("VF13.") + fields[i];
+        d.scratch = scratches[i];
+        d.assigned = true;
+        decisions.push_back(d);
+    }
+
+    std::list<vcl::Token> out;
+    vcl::splitMultiFieldOpByFieldDecisions(*add, decisions, out);
+    CHECK(out.size() == 4u);
+
+    const unsigned int bits[4] = { vcl::Token::X, vcl::Token::Y, vcl::Token::Z, vcl::Token::W };
+    const int expectedRegs[4] = { 30, 29, 28, 31 };
+    unsigned int idx = 0;
+    for (std::list<vcl::Token>::const_iterator i = out.begin(); i != out.end(); ++i, ++idx)
+    {
+        CHECK(stripOpSuffix(i->name()) == "add");
+        CHECK(destFields(*i) == bits[idx]);
+        CHECK(destRegNumber(*i) == expectedRegs[idx]);
+    }
+}
+
+TEST_CASE("VuSchedulerAnalysis 8b-2c-1: splitMultiFieldOpByFieldDecisions partial overlap emits split clones plus residual")
+{
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xyzw vf13, vf13, vf14"));
+    const vcl::Token* add = findFirstOpToken(program.tokenizer.tokens(), "add");
+    REQUIRE(add != NULL);
+
+    std::vector<vcl::VuKernelRenameDecision> decisions;
+    {
+        vcl::VuKernelRenameDecision d;
+        d.reg = "VF13.w"; d.scratch = "VF31"; d.assigned = true;
+        decisions.push_back(d);
+    }
+    {
+        vcl::VuKernelRenameDecision d;
+        d.reg = "VF13.x"; d.scratch = "VF30"; d.assigned = true;
+        decisions.push_back(d);
+    }
+
+    std::list<vcl::Token> out;
+    vcl::splitMultiFieldOpByFieldDecisions(*add, decisions, out);
+    // Two single-field renames (.x -> vf30, .w -> vf31) + one residual (.yz on vf13).
+    CHECK(out.size() == 3u);
+
+    std::list<vcl::Token>::const_iterator it = out.begin();
+    CHECK(it->fields() == vcl::Token::X);
+    CHECK(destRegNumber(*it) == 30);
+    ++it;
+    CHECK(it->fields() == vcl::Token::W);
+    CHECK(destRegNumber(*it) == 31);
+    ++it;
+    CHECK(it->fields() == (vcl::Token::Y | vcl::Token::Z));
+    CHECK(destFields(*it) == (vcl::Token::Y | vcl::Token::Z));
+    CHECK(destRegNumber(*it) == 13);
+}
+
+TEST_CASE("VuSchedulerAnalysis 8b-2c-1: splitMultiFieldOpByFieldDecisions ignores unassigned decisions")
+{
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xyzw vf13, vf13, vf14"));
+    const vcl::Token* add = findFirstOpToken(program.tokenizer.tokens(), "add");
+    REQUIRE(add != NULL);
+
+    std::vector<vcl::VuKernelRenameDecision> decisions;
+    vcl::VuKernelRenameDecision d;
+    d.reg = "VF13.w"; d.scratch = ""; d.assigned = false;
+    decisions.push_back(d);
+
+    std::list<vcl::Token> out;
+    vcl::splitMultiFieldOpByFieldDecisions(*add, decisions, out);
+    CHECK(out.size() == 1u);
+    CHECK(destRegNumber(out.front()) == 13);
+    CHECK(destFields(out.front()) == (vcl::Token::X | vcl::Token::Y | vcl::Token::Z | vcl::Token::W));
+}
+
+TEST_CASE("VuSchedulerAnalysis 8b-2c-1: splitMultiFieldOpByFieldDecisions decision without dot defaults to all fields")
+{
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xyzw vf13, vf13, vf14"));
+    const vcl::Token* add = findFirstOpToken(program.tokenizer.tokens(), "add");
+    REQUIRE(add != NULL);
+
+    std::vector<vcl::VuKernelRenameDecision> decisions;
+    vcl::VuKernelRenameDecision d;
+    d.reg = "VF13"; d.scratch = "VF31"; d.assigned = true;
+    decisions.push_back(d);
+
+    std::list<vcl::Token> out;
+    vcl::splitMultiFieldOpByFieldDecisions(*add, decisions, out);
+    // Single decision covers all four fields -> four single-field clones, all to vf31.
+    CHECK(out.size() == 4u);
+    const unsigned int bits[4] = { vcl::Token::X, vcl::Token::Y, vcl::Token::Z, vcl::Token::W };
+    unsigned int idx = 0;
+    for (std::list<vcl::Token>::const_iterator i = out.begin(); i != out.end(); ++i, ++idx)
+    {
+        CHECK(i->fields() == bits[idx]);
+        CHECK(destRegNumber(*i) == 31);
+    }
+}
