@@ -4960,6 +4960,24 @@ namespace
 				setFloatRegisterArgumentBase( *dst, scratch );
 				dst->setFields( bit );
 			}
+			// Track 9.G step 8b-2e: clear multi-bit field annotations on
+			// non-destination FLOAT_REGISTER sources. The parser may
+			// stamp the opcode-level mask (e.g. .xyz) onto source args
+			// too; the printer would then render the source as
+			// `VFnxyz` (no dot), which dvp-as rejects. Genuine
+			// broadcast sources carry exactly one bit and are kept.
+			for( std::list<Token::Argument>::iterator a = clone.arguments().begin();
+			     a != clone.arguments().end(); ++a )
+			{
+				if( a->type() != Token::Argument::FLOAT_REGISTER )
+					continue;
+				if( ( a->flags() & Token::Argument::DEST ) && ( a->flags() & Token::Argument::WRITE ) )
+					continue;
+				const unsigned int af = a->fields();
+				const bool singleBit = ( af != 0 ) && ( ( af & ( af - 1 ) ) == 0 );
+				if( !singleBit )
+					a->setFields( 0 );
+			}
 			out.push_back( clone );
 		}
 
@@ -4970,6 +4988,19 @@ namespace
 			Token::Argument* dst = tokenDestinationFloatArgument( clone );
 			if( dst != NULL )
 				dst->setFields( residualMask );
+			// Same source-arg sanitization as the per-field clones.
+			for( std::list<Token::Argument>::iterator a = clone.arguments().begin();
+			     a != clone.arguments().end(); ++a )
+			{
+				if( a->type() != Token::Argument::FLOAT_REGISTER )
+					continue;
+				if( ( a->flags() & Token::Argument::DEST ) && ( a->flags() & Token::Argument::WRITE ) )
+					continue;
+				const unsigned int af = a->fields();
+				const bool singleBit = ( af != 0 ) && ( ( af & ( af - 1 ) ) == 0 );
+				if( !singleBit )
+					a->setFields( 0 );
+			}
 			out.push_back( clone );
 		}
 	}

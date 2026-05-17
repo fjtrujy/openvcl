@@ -3725,6 +3725,46 @@ TEST_CASE("VuSchedulerAnalysis 8b-2c-1: splitMultiFieldOpByFieldDecisions decisi
     }
 }
 
+TEST_CASE("VuSchedulerAnalysis 8b-2e: splitMultiFieldOpByFieldDecisions clears multi-bit source-arg field annotations")
+{
+    // Repro for the dvp-as syntax bug surfaced once 8b-2d-2/8b-2d-3 made
+    // more loops eligible: the parser stamps the opcode-level mask
+    // (e.g. .xyz) onto FLOAT_REGISTER source args too. The per-field
+    // splitter must clear those multi-bit annotations on the clones so
+    // the printer renders `VF07` instead of `VF07xyz` (no dot).
+    ParsedProgram program;
+    REQUIRE(program.parse("ftoi4.xyz vf08, vf07"));
+    const vcl::Token* op = findFirstOpToken(program.tokenizer.tokens(), "ftoi4");
+    REQUIRE(op != NULL);
+
+    std::vector<vcl::VuKernelRenameDecision> decisions;
+    vcl::VuKernelRenameDecision d;
+    d.reg = "VF08"; d.scratch = "VF31"; d.assigned = true;
+    decisions.push_back(d);
+
+    std::list<vcl::Token> out;
+    vcl::splitMultiFieldOpByFieldDecisions(*op, decisions, out);
+    // Three single-field clones for x, y, z.
+    REQUIRE(out.size() == 3u);
+
+    for (std::list<vcl::Token>::const_iterator i = out.begin(); i != out.end(); ++i)
+    {
+        for (std::list<vcl::Token::Argument>::const_iterator a = i->arguments().begin();
+             a != i->arguments().end(); ++a)
+        {
+            if (a->type() != vcl::Token::Argument::FLOAT_REGISTER) continue;
+            const bool isDestWrite =
+                ((a->flags() & vcl::Token::Argument::DEST) != 0) &&
+                ((a->flags() & vcl::Token::Argument::WRITE) != 0);
+            if (isDestWrite) continue;
+            const unsigned int af = a->fields();
+            const bool singleBit = (af != 0) && ((af & (af - 1)) == 0);
+            // Source args must carry zero or a single-bit broadcast.
+            CHECK((af == 0 || singleBit));
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Track 9.G step 8b-2c-2: eligibility gate for per-field kernel-rename
 // emission. Pure-analysis predicate (no emission yet); MD5-invariant.
