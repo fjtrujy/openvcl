@@ -4947,6 +4947,44 @@ namespace
 		}
 	}
 
+	// Track 9.G step 8b-2c-3: per-field MOVE for kernel rename.
+	// Emits `move.<field> <decision.reg base>, <decision.scratch>` where
+	// <field> is derived from the decision's reg suffix (e.g. "VF13.w"
+	// -> W); if no suffix, defaults to XYZW. The donor token supplies
+	// source-position metadata only; its arguments are discarded.
+	Token makeKernelRenameMoveToken( const Token& donor, const VuKernelRenameDecision& decision )
+	{
+		const unsigned int fieldMask = decisionRegFieldMask( decision.reg ) != 0
+		                                   ? decisionRegFieldMask( decision.reg )
+		                                   : (Token::X | Token::Y | Token::Z | Token::W);
+		const std::string  dstBase   = decisionRegBase( decision.reg );
+
+		Token token( donor );
+		token.setLabel( "" );
+		token.setName( "move" );
+		token.setOperand( syntheticMoveOperand() );
+		token.setFlags( Token::PROCESSED );
+		token.setBroadcast( 0 );
+		token.setFields( fieldMask );
+		token.arguments().clear();
+
+		Token::Argument dst( dstBase );
+		dst.setType( Token::Argument::FLOAT_REGISTER );
+		setFloatRegisterArgumentBase( dst, dstBase );
+		dst.setFlags( Token::Argument::WRITE | Token::Argument::DEST );
+		dst.setFields( fieldMask );
+		token.arguments().push_back( dst );
+
+		Token::Argument src( decision.scratch );
+		src.setType( Token::Argument::FLOAT_REGISTER );
+		setFloatRegisterArgumentBase( src, decision.scratch );
+		src.setFlags( 0 );
+		src.setFields( 0 );
+		token.arguments().push_back( src );
+
+		return token;
+	}
+
 	const VuSoftwarePipelinePrefetch* findPrefetchForTokenIndex( const std::vector<VuSoftwarePipelinePrefetch>& prefetches,
 	                                                             unsigned int tokenIndex )
 	{
@@ -8507,7 +8545,15 @@ std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& token
 	std::map<unsigned int, VuSoftwarePipelineRewritePlan> eligibleByLabelIndex;
 	for( std::vector<VuSoftwarePipelineRewritePlan>::const_iterator p = plans.begin(); p != plans.end(); ++p )
 	{
-		if( !isVuPlanEligibleForGenericKernelRewrite( *p ) )
+		const bool baseEligible = isVuPlanEligibleForGenericKernelRewrite( *p );
+		const bool renameEligible = isVuPlanEligibleForKernelRenameEmission( *p, indexedTokens );
+		// 8b-2c-3 relaxation: also accept plans whose ONLY base-eligibility
+		// failure is non-empty renameHints, provided the rename-emission
+		// gate (decisions+moveSlots assigned, all touching ops splittable)
+		// holds. All other base predicates (II>0, stageCount>=2,
+		// conflicts==0, mainTokens non-empty) are revalidated inside
+		// isVuPlanEligibleForKernelRenameEmission.
+		if( !baseEligible && !renameEligible )
 			continue;
 		if( p->labelTokenIndex >= indexedTokens.size() )
 			continue;
@@ -8576,12 +8622,48 @@ std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& token
 		mainLabelTok.setLabel( mainLabel );
 		output.push_back( mainLabelTok );
 
+		// 8b-2c-3: if the plan is rename-emission-eligible, split each
+		// main token whose destination matches a decision base into
+		// per-field clones retargeted to the per-field scratch, and
+		// then append a MOVE per decision at the end of the main body
+		// (before the branch). The downstream scheduler honours the
+		// (modSlot, lane) constraints captured in
+		// kernelRewriteRenameMoveSlots when placing those MOVEs.
+		const bool renameEligible =
+		    isVuPlanEligibleForKernelRenameEmission( plan, indexedTokens );
+
 		// Main body (strip labels).
 		for( std::vector<unsigned int>::const_iterator m = plan.kernelRewriteMainTokens.begin();
 		     m != plan.kernelRewriteMainTokens.end(); ++m )
 		{
-			if( *m < indexedTokens.size() )
-				output.push_back( tokenWithoutLabel( *indexedTokens[*m] ) );
+			if( *m >= indexedTokens.size() )
+				continue;
+			const Token& src = *indexedTokens[*m];
+			if( renameEligible )
+			{
+				std::list<Token> split;
+				splitMultiFieldOpByFieldDecisions( src, plan.kernelRewriteRenameDecisions, split );
+				for( std::list<Token>::const_iterator s = split.begin(); s != split.end(); ++s )
+					output.push_back( tokenWithoutLabel( *s ) );
+			}
+			else
+			{
+				output.push_back( tokenWithoutLabel( src ) );
+			}
+		}
+
+		// 8b-2c-3: inject per-decision MOVE tokens at the tail of the
+		// main body, using the original loop label token as donor for
+		// source-position metadata.
+		if( renameEligible )
+		{
+			for( std::vector<VuKernelRenameDecision>::const_iterator d = plan.kernelRewriteRenameDecisions.begin();
+			     d != plan.kernelRewriteRenameDecisions.end(); ++d )
+			{
+				if( !d->assigned )
+					continue;
+				output.push_back( makeKernelRenameMoveToken( *i, *d ) );
+			}
 		}
 
 		// Main branch: copy of the original branch, retargeted to MAIN_LOOP.
