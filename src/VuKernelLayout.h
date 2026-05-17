@@ -289,6 +289,43 @@ void buildVuKernelRenameDecisions( const std::vector< VuKernelRenameHint >& hint
                                    const std::vector< std::string >& usedBases,
                                    std::vector< VuKernelRenameDecision >& decisions );
 
+// Track 9.G step 8b-2a — per-decision MOVE-slot scheduling (scaffolding).
+//
+// For each assigned rename decision (reg -> scratch), pick a modSlot
+// c in [0, II) and a lane (upper or lower) at which to insert the
+// move `reg <- scratch` inside the MAIN_LOOP body. Constraints:
+//
+//   1. c must not equal any modSlot at which the consumer reads `reg`
+//      (otherwise the move would clobber the read with this iteration's
+//      producer value before the consumer for *this* iteration runs).
+//   2. The chosen lane must be empty in the kernel template at slot c
+//      (no upper/lower collision with an existing body op).
+//
+// Lane preference is upper first, then lower. Search order over slots
+// is c = 0..II-1 to keep the choice deterministic.
+//
+// If a decision has assigned == false, or no legal (slot, lane) exists,
+// the corresponding output entry has assigned = false and the caller
+// should mark the plan ineligible for generic kernel rewrite.
+
+struct VuKernelRenameMoveSlot
+{
+    unsigned int decisionIndex; // index into the decisions[] vector
+    unsigned int modSlot;       // chosen slot in [0, II); 0 if !assigned
+    int          lane;          // 1 = upper, 2 = lower; -1 if !assigned
+    bool         assigned;
+
+    VuKernelRenameMoveSlot()
+        : decisionIndex( 0 ), modSlot( 0 ), lane( -1 ), assigned( false ) {}
+};
+
+void buildVuKernelRenameMoveSlots(
+    const std::vector< VuKernelRenameDecision >& decisions,
+    const VuKernelLayout& layout,
+    const std::vector< VuKernelEntryRegisters >& entryRegs,
+    const VuKernelTemplate& tmpl,
+    std::vector< VuKernelRenameMoveSlot >& slots );
+
 } // namespace vcl
 
 #endif

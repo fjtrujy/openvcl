@@ -593,6 +593,144 @@ TEST_CASE("VuKernelRenameDecisions: budget exhaustion marks tail decisions unass
     CHECK(decisions.back().scratch == "");
 }
 
+// ---- Track 9.G step 8b-2a: buildVuKernelRenameMoveSlots ----
+
+namespace {
+VuKernelEntryRegisters makeMoveEntryReads(const char* reg)
+{
+    VuKernelEntryRegisters er;
+    er.reads.push_back(reg);
+    return er;
+}
+VuKernelLayoutEntry makeMoveLayoutEntry(unsigned nodeIndex, unsigned modSlot)
+{
+    VuKernelLayoutEntry e;
+    e.nodeIndex  = nodeIndex;
+    e.tokenIndex = nodeIndex;
+    e.slot       = modSlot;
+    e.stage      = 0;
+    e.modSlot    = modSlot;
+    e.pipe       = 1;
+    e.duration   = 1;
+    return e;
+}
+} // namespace
+
+TEST_CASE("buildVuKernelRenameMoveSlots: empty decisions yields no slots")
+{
+    std::vector<VuKernelRenameDecision> decisions;
+    VuKernelLayout layout; layout.II = 4; layout.stageCount = 2;
+    std::vector<VuKernelEntryRegisters> entryRegs;
+    VuKernelTemplate tmpl; tmpl.II = 4; tmpl.slots.resize(4);
+    std::vector<VuKernelRenameMoveSlot> slots;
+    buildVuKernelRenameMoveSlots(decisions, layout, entryRegs, tmpl, slots);
+    CHECK(slots.empty());
+}
+
+TEST_CASE("buildVuKernelRenameMoveSlots: prefers upper lane and avoids consumer modSlot")
+{
+    VuKernelRenameDecision d;
+    d.reg = "VF20"; d.scratch = "VF31"; d.assigned = true;
+    std::vector<VuKernelRenameDecision> decisions; decisions.push_back(d);
+
+    VuKernelLayout layout;
+    layout.II = 4; layout.stageCount = 1; layout.feasible = true;
+    // One consumer entry reading VF20 at modSlot 2.
+    layout.entries.push_back(makeMoveLayoutEntry(0, 2));
+    std::vector<VuKernelEntryRegisters> entryRegs;
+    entryRegs.push_back(makeMoveEntryReads("VF20.xyzw"));
+
+    VuKernelTemplate tmpl; tmpl.II = 4; tmpl.slots.resize(4);
+    // All slots empty; should pick slot 0, upper lane.
+    std::vector<VuKernelRenameMoveSlot> slots;
+    buildVuKernelRenameMoveSlots(decisions, layout, entryRegs, tmpl, slots);
+    REQUIRE(slots.size() == 1u);
+    CHECK(slots[0].assigned);
+    CHECK(slots[0].lane == 1);
+    CHECK(slots[0].modSlot != 2u);
+}
+
+TEST_CASE("buildVuKernelRenameMoveSlots: falls back to lower when upper is full")
+{
+    VuKernelRenameDecision d;
+    d.reg = "VF20"; d.scratch = "VF31"; d.assigned = true;
+    std::vector<VuKernelRenameDecision> decisions; decisions.push_back(d);
+
+    VuKernelLayout layout;
+    layout.II = 2; layout.stageCount = 1; layout.feasible = true;
+    std::vector<VuKernelEntryRegisters> entryRegs;
+
+    VuKernelTemplate tmpl; tmpl.II = 2; tmpl.slots.resize(2);
+    // Both upper lanes occupied; both lower lanes free.
+    tmpl.slots[0].upper = 100;
+    tmpl.slots[1].upper = 101;
+    std::vector<VuKernelRenameMoveSlot> slots;
+    buildVuKernelRenameMoveSlots(decisions, layout, entryRegs, tmpl, slots);
+    REQUIRE(slots.size() == 1u);
+    CHECK(slots[0].assigned);
+    CHECK(slots[0].lane == 2);
+}
+
+TEST_CASE("buildVuKernelRenameMoveSlots: unassigned when all slots forbidden or occupied")
+{
+    VuKernelRenameDecision d;
+    d.reg = "VF20"; d.scratch = "VF31"; d.assigned = true;
+    std::vector<VuKernelRenameDecision> decisions; decisions.push_back(d);
+
+    VuKernelLayout layout;
+    layout.II = 2; layout.stageCount = 1; layout.feasible = true;
+    // Consumer reads VF20 at both modSlots → both forbidden.
+    layout.entries.push_back(makeMoveLayoutEntry(0, 0));
+    layout.entries.push_back(makeMoveLayoutEntry(1, 1));
+    std::vector<VuKernelEntryRegisters> entryRegs;
+    entryRegs.push_back(makeMoveEntryReads("VF20.xyzw"));
+    entryRegs.push_back(makeMoveEntryReads("VF20.xyzw"));
+
+    VuKernelTemplate tmpl; tmpl.II = 2; tmpl.slots.resize(2);
+    std::vector<VuKernelRenameMoveSlot> slots;
+    buildVuKernelRenameMoveSlots(decisions, layout, entryRegs, tmpl, slots);
+    REQUIRE(slots.size() == 1u);
+    CHECK(!slots[0].assigned);
+    CHECK(slots[0].lane == -1);
+}
+
+TEST_CASE("buildVuKernelRenameMoveSlots: propagates !assigned decisions")
+{
+    VuKernelRenameDecision d; d.reg = "VF20"; d.assigned = false;
+    std::vector<VuKernelRenameDecision> decisions; decisions.push_back(d);
+
+    VuKernelLayout layout; layout.II = 4; layout.stageCount = 1;
+    std::vector<VuKernelEntryRegisters> entryRegs;
+    VuKernelTemplate tmpl; tmpl.II = 4; tmpl.slots.resize(4);
+    std::vector<VuKernelRenameMoveSlot> slots;
+    buildVuKernelRenameMoveSlots(decisions, layout, entryRegs, tmpl, slots);
+    REQUIRE(slots.size() == 1u);
+    CHECK(!slots[0].assigned);
+}
+
+TEST_CASE("buildVuKernelRenameMoveSlots: multiple decisions claim distinct cells")
+{
+    std::vector<VuKernelRenameDecision> decisions;
+    for (unsigned i = 0; i < 3; ++i) {
+        VuKernelRenameDecision d;
+        char buf[8]; std::sprintf(buf, "VF%u", 20u + i);
+        d.reg = buf; d.scratch = "VF31"; d.assigned = true;
+        decisions.push_back(d);
+    }
+    VuKernelLayout layout; layout.II = 4; layout.stageCount = 1; layout.feasible = true;
+    std::vector<VuKernelEntryRegisters> entryRegs;
+    VuKernelTemplate tmpl; tmpl.II = 4; tmpl.slots.resize(4);
+    // All cells free; expect three distinct (modSlot, lane=upper) cells.
+    std::vector<VuKernelRenameMoveSlot> slots;
+    buildVuKernelRenameMoveSlots(decisions, layout, entryRegs, tmpl, slots);
+    REQUIRE(slots.size() == 3u);
+    CHECK(slots[0].assigned); CHECK(slots[1].assigned); CHECK(slots[2].assigned);
+    CHECK(slots[0].lane == 1); CHECK(slots[1].lane == 1); CHECK(slots[2].lane == 1);
+    CHECK(slots[0].modSlot != slots[1].modSlot);
+    CHECK(slots[0].modSlot != slots[2].modSlot);
+    CHECK(slots[1].modSlot != slots[2].modSlot);
+}
+
 // Track 9.G step 6d: layout-coverage self-validation.
 // The synthesized MAIN section of VuKernelRewritePlan must reproduce the
 // full multiset of layout token indices (no drops, no duplicates).

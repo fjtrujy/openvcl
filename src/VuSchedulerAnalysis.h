@@ -320,6 +320,12 @@ struct VuLoopPipelineOpportunity
 	// policy. Diagnostic-only; no emission path consumes this yet.
 	std::vector<VuKernelRenameDecision> kernelRewriteRenameDecisions;
 
+	// Track 9.G step 8b-2a — per-decision MOVE slot (scaffolding).
+	// For each decision, the modSlot + lane at which the MAIN_LOOP
+	// body must insert `reg <- scratch`. assigned=false means no legal
+	// slot/lane was found and the plan must not be made eligible.
+	std::vector<VuKernelRenameMoveSlot> kernelRewriteRenameMoveSlots;
+
 	// Track 9.G step 6g — VuKernelEnvelope scaffolding (diagnostic-only).
 	// High-level prologue/epilogue cycle counts and per-stage token totals
 	// derived from the modulo placer's layout. No emission path consumes
@@ -404,6 +410,10 @@ struct VuSoftwarePipelineRewritePlan
 	// Track 9.G step 8b-1 — rename decisions (scaffolding).
 	// Mirrors the opportunity-side field.
 	std::vector<VuKernelRenameDecision> kernelRewriteRenameDecisions;
+
+	// Track 9.G step 8b-2a — per-decision MOVE slot (scaffolding).
+	// Mirrors the opportunity-side field.
+	std::vector<VuKernelRenameMoveSlot> kernelRewriteRenameMoveSlots;
 
 	// Track 9.G step 6g — VuKernelEnvelope scaffolding (diagnostic-only).
 	// Mirrors the opportunity-side envelope fields.

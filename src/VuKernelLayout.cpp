@@ -355,4 +355,95 @@ void buildVuKernelRenameDecisions( const std::vector< VuKernelRenameHint >& hint
     }
 }
 
+void buildVuKernelRenameMoveSlots(
+    const std::vector< VuKernelRenameDecision >& decisions,
+    const VuKernelLayout& layout,
+    const std::vector< VuKernelEntryRegisters >& entryRegs,
+    const VuKernelTemplate& tmpl,
+    std::vector< VuKernelRenameMoveSlot >& slots )
+{
+    slots.clear();
+    const unsigned int II = tmpl.II;
+
+    // Track which (modSlot, lane) cells earlier decisions in this call
+    // have already claimed, so two MOVEs never collide.
+    std::vector< unsigned char > claimedUpper( II, 0 );
+    std::vector< unsigned char > claimedLower( II, 0 );
+
+    for( unsigned int d = 0; d < decisions.size(); ++d )
+    {
+        VuKernelRenameMoveSlot s;
+        s.decisionIndex = d;
+
+        if( !decisions[ d ].assigned || II == 0u )
+        {
+            slots.push_back( s );
+            continue;
+        }
+
+        // Collect the modSlots at which any entry *reads* this decision's
+        // reg. The MOVE cannot be at any of these slots.
+        std::vector< unsigned int > forbidden;
+        for( unsigned int e = 0; e < layout.entries.size(); ++e )
+        {
+            if( e >= entryRegs.size() ) continue;
+            const VuKernelEntryRegisters& er = entryRegs[ e ];
+            bool reads = false;
+            for( unsigned int k = 0; k < er.reads.size(); ++k )
+            {
+                if( baseOfRegKey( er.reads[ k ] ) == decisions[ d ].reg )
+                { reads = true; break; }
+            }
+            if( !reads ) continue;
+            const unsigned int ms = layout.entries[ e ].modSlot;
+            bool present = false;
+            for( unsigned int j = 0; j < forbidden.size(); ++j )
+                if( forbidden[ j ] == ms ) { present = true; break; }
+            if( !present ) forbidden.push_back( ms );
+        }
+
+        // Walk slots c = 0..II-1. Prefer upper, else lower.
+        for( unsigned int c = 0; c < II && !s.assigned; ++c )
+        {
+            bool isForbidden = false;
+            for( unsigned int j = 0; j < forbidden.size(); ++j )
+                if( forbidden[ j ] == c ) { isForbidden = true; break; }
+            if( isForbidden ) continue;
+            if( c >= tmpl.slots.size() ) continue;
+            if( claimedUpper[ c ] ) continue;
+            const VuKernelTemplateSlot& cell = tmpl.slots[ c ];
+            if( cell.upper == VuKernelTemplateSlot::NO_ENTRY )
+            {
+                s.modSlot       = c;
+                s.lane          = 1;
+                s.assigned      = true;
+                claimedUpper[ c ] = 1;
+                break;
+            }
+        }
+        if( !s.assigned )
+        {
+            for( unsigned int c = 0; c < II && !s.assigned; ++c )
+            {
+                bool isForbidden = false;
+                for( unsigned int j = 0; j < forbidden.size(); ++j )
+                    if( forbidden[ j ] == c ) { isForbidden = true; break; }
+                if( isForbidden ) continue;
+                if( c >= tmpl.slots.size() ) continue;
+                if( claimedLower[ c ] ) continue;
+                const VuKernelTemplateSlot& cell = tmpl.slots[ c ];
+                if( cell.lower == VuKernelTemplateSlot::NO_ENTRY )
+                {
+                    s.modSlot       = c;
+                    s.lane          = 2;
+                    s.assigned      = true;
+                    claimedLower[ c ] = 1;
+                    break;
+                }
+            }
+        }
+        slots.push_back( s );
+    }
+}
+
 } // namespace vcl

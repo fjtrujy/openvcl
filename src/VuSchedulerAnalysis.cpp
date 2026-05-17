@@ -7336,6 +7336,19 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 						std::vector< VuKernelRenameDecision > krDecisions;
 						buildVuKernelRenameDecisions( krHints, krUsedBases, krDecisions );
 						opportunity.kernelRewriteRenameDecisions = krDecisions;
+
+						// Track 9.G step 8b-2a: per-decision MOVE slot.
+						// Picks (modSlot, lane) for the `reg <- scratch`
+						// move inside MAIN_LOOP. Diagnostic-only; the
+						// eligibility predicate still rejects plans with
+						// non-empty renameHints.
+						VuKernelTemplate krMoveTmpl;
+						buildVuKernelTemplate( krLayout, krMoveTmpl );
+						std::vector< VuKernelRenameMoveSlot > krMoveSlots;
+						buildVuKernelRenameMoveSlots( krDecisions, krLayout,
+						                              krEntryRegs, krMoveTmpl,
+						                              krMoveSlots );
+						opportunity.kernelRewriteRenameMoveSlots = krMoveSlots;
 					}
 
 					// Track 9.G step 6g: envelope scaffolding.
@@ -7910,6 +7923,8 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		plan.kernelRewriteRenameHints = i->kernelRewriteRenameHints;
 		// Track 9.G step 8b-1: rename decisions.
 		plan.kernelRewriteRenameDecisions = i->kernelRewriteRenameDecisions;
+		// Track 9.G step 8b-2a: rename MOVE slots.
+		plan.kernelRewriteRenameMoveSlots = i->kernelRewriteRenameMoveSlots;
 		// Track 9.G step 6g: envelope scaffolding.
 		plan.kernelEnvelopeKernelTokens       = i->kernelEnvelopeKernelTokens;
 		plan.kernelEnvelopePrologueCycles     = i->kernelEnvelopePrologueCycles;
@@ -8048,6 +8063,41 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 					          << " reg=" << dec.reg
 					          << " scratch=" << ( dec.assigned ? dec.scratch : std::string( "<none>" ) )
 					          << " assigned=" << ( dec.assigned ? 1 : 0 )
+					          << "\n";
+				}
+			}
+		}
+	}
+
+	// Track 9.G step 8b-2a: surface the rename MOVE-slot scaffolding.
+	// Diagnostic-only; the 7b emitter does not yet consume MOVE slots.
+	if( std::getenv( "OPENVCL_DUMP_KERNEL_RENAME_MOVE_SLOTS" ) != NULL )
+	{
+		for( std::vector<VuSoftwarePipelineRewritePlan>::const_iterator p = plans.begin();
+		     p != plans.end(); ++p )
+		{
+			unsigned int assignedCount = 0;
+			for( unsigned int s = 0; s < p->kernelRewriteRenameMoveSlots.size(); ++s )
+				if( p->kernelRewriteRenameMoveSlots[ s ].assigned )
+					++assignedCount;
+			std::cerr << "[kernel-rename-move-slots] loop=" << p->label
+			          << " count=" << p->kernelRewriteRenameMoveSlots.size()
+			          << " assigned=" << assignedCount
+			          << "\n";
+			if( std::getenv( "OPENVCL_DUMP_KERNEL_RENAME_MOVE_SLOTS_DETAIL" ) != NULL )
+			{
+				for( unsigned int s = 0; s < p->kernelRewriteRenameMoveSlots.size(); ++s )
+				{
+					const VuKernelRenameMoveSlot& mv = p->kernelRewriteRenameMoveSlots[ s ];
+					const char* laneName = "?";
+					if( mv.lane == 1 ) laneName = "upper";
+					else if( mv.lane == 2 ) laneName = "lower";
+					else laneName = "none";
+					std::cerr << "[kernel-rename-move-slot] loop=" << p->label
+					          << " decision=" << mv.decisionIndex
+					          << " modSlot=" << mv.modSlot
+					          << " lane=" << laneName
+					          << " assigned=" << ( mv.assigned ? 1 : 0 )
 					          << "\n";
 				}
 			}
