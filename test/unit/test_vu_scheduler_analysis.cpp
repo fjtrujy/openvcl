@@ -3242,6 +3242,55 @@ TEST_CASE("VuSchedulerAnalysis: multistage schema defaults to stageCount=1")
     }
 }
 
+// Track 9.G step 7a: generic-kernel-rewrite emission eligibility helper.
+TEST_CASE("VuSchedulerAnalysis: default rewrite plan is not eligible for generic kernel rewrite")
+{
+    vcl::VuSoftwarePipelineRewritePlan plan;
+    CHECK(!vcl::isVuPlanEligibleForGenericKernelRewrite(plan));
+}
+
+TEST_CASE("VuSchedulerAnalysis: rewrite plan with II>=1, stageCount>=2, no conflicts, no hints, non-empty MAIN is eligible")
+{
+    vcl::VuSoftwarePipelineRewritePlan plan;
+    plan.kernelRewriteII = 4u;
+    plan.kernelRewriteStageCount = 2u;
+    plan.kernelRewriteConflicts = 0u;
+    plan.kernelRewriteMainTokens.push_back(0u);
+    CHECK(vcl::isVuPlanEligibleForGenericKernelRewrite(plan));
+}
+
+TEST_CASE("VuSchedulerAnalysis: any conflict disqualifies the plan from generic kernel rewrite")
+{
+    vcl::VuSoftwarePipelineRewritePlan plan;
+    plan.kernelRewriteII = 4u;
+    plan.kernelRewriteStageCount = 2u;
+    plan.kernelRewriteConflicts = 1u;
+    plan.kernelRewriteMainTokens.push_back(0u);
+    CHECK(!vcl::isVuPlanEligibleForGenericKernelRewrite(plan));
+}
+
+TEST_CASE("VuSchedulerAnalysis: any rename hint disqualifies the plan from generic kernel rewrite")
+{
+    vcl::VuSoftwarePipelineRewritePlan plan;
+    plan.kernelRewriteII = 4u;
+    plan.kernelRewriteStageCount = 2u;
+    plan.kernelRewriteConflicts = 0u;
+    plan.kernelRewriteMainTokens.push_back(0u);
+    vcl::VuKernelRenameHint hint;
+    hint.reg = "VF12"; hint.entry = 0; hint.stage = 0; hint.kind = 1;
+    plan.kernelRewriteRenameHints.push_back(hint);
+    CHECK(!vcl::isVuPlanEligibleForGenericKernelRewrite(plan));
+}
+
+TEST_CASE("VuSchedulerAnalysis: single-stage layout is not eligible for generic kernel rewrite")
+{
+    vcl::VuSoftwarePipelineRewritePlan plan;
+    plan.kernelRewriteII = 4u;
+    plan.kernelRewriteStageCount = 1u;
+    plan.kernelRewriteMainTokens.push_back(0u);
+    CHECK(!vcl::isVuPlanEligibleForGenericKernelRewrite(plan));
+}
+
 // Track 9.G step 6e: VuKernelRewritePlan scaffolding fields default to zero/empty.
 TEST_CASE("VuSchedulerAnalysis: kernel-rewrite scaffolding defaults are zero/empty")
 {

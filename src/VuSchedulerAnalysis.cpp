@@ -8057,7 +8057,45 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		}
 	}
 
+	// Track 9.G step 7a: gated-emission eligibility diagnostic.
+	// Reports per-plan whether the modulo-placer scaffolding is complete
+	// enough for a generic kernel-rewrite emitter to consume directly
+	// (no rename support required). No emission path consumes this yet;
+	// the helper isVuPlanEligibleForGenericKernelRewrite is the single
+	// source of truth.
+	if( std::getenv( "OPENVCL_DUMP_GENERIC_EMISSION_ELIGIBILITY" ) != NULL )
+	{
+		for( std::vector<VuSoftwarePipelineRewritePlan>::const_iterator p = plans.begin();
+		     p != plans.end(); ++p )
+		{
+			const bool eligible = isVuPlanEligibleForGenericKernelRewrite( *p );
+			std::cerr << "[generic-emission-eligibility] loop=" << p->label
+			          << " eligible=" << ( eligible ? 1 : 0 )
+			          << " II=" << p->kernelRewriteII
+			          << " stageCount=" << p->kernelRewriteStageCount
+			          << " conflicts=" << p->kernelRewriteConflicts
+			          << " renameHints=" << p->kernelRewriteRenameHints.size()
+			          << " mainTokens=" << p->kernelRewriteMainTokens.size()
+			          << "\n";
+		}
+	}
+
 	return plans;
+}
+
+bool isVuPlanEligibleForGenericKernelRewrite( const VuSoftwarePipelineRewritePlan& plan )
+{
+	if( plan.kernelRewriteII == 0u )
+		return false;
+	if( plan.kernelRewriteStageCount < 2u )
+		return false;
+	if( plan.kernelRewriteConflicts != 0u )
+		return false;
+	if( !plan.kernelRewriteRenameHints.empty() )
+		return false;
+	if( plan.kernelRewriteMainTokens.empty() )
+		return false;
+	return true;
 }
 
 std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens )

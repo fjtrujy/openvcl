@@ -433,6 +433,18 @@ bool advanceVuStoreBaseUpdates( std::list<Token>& tokens );
 bool vuScheduledProgramHasNoCycleRegression( const VuScheduledProgram& original,
                                              const VuScheduledProgram& candidate );
 std::list<Token> applyVuSoftwarePipelinePlansWithSafeStoreBaseAdvance( const std::list<Token>& tokens );
+
+// Track 9.G step 7a — eligibility for the generic kernel-rewrite emitter.
+// Returns true when the modulo-placer scaffolding (steps 6a-6h) on a
+// VuSoftwarePipelineRewritePlan is complete enough that a multi-stage
+// emitter could consume it without further rename support:
+//   - kernelRewriteII > 0
+//   - kernelRewriteStageCount >= 2
+//   - kernelRewriteConflicts == 0
+//   - kernelRewriteRenameHints empty (no cross-stage register reuse to resolve)
+//   - kernelRewriteMainTokens non-empty (the MAIN_LOOP body exists)
+// Diagnostic-only; no consumer yet.
+bool isVuPlanEligibleForGenericKernelRewrite( const VuSoftwarePipelineRewritePlan& plan );
 std::list<Token> scheduleVuTokensPreservingOrder( const std::list<Token>& tokens );
 std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens,
                                            unsigned int ignoredImplicitWawResources = 0 );
