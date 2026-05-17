@@ -8487,6 +8487,23 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 			          << " blockers=" << blockers
 			          << " mainTokens=" << p->kernelRewriteMainTokens.size()
 			          << "\n";
+			// Track 9.G step 8b-2d-1: when blockers>0 (i.e. scaffolding
+			// is complete but unsplittable ops touch a decision base)
+			// also dump the decision targets and blocker op names so
+			// the splittable allowlist can be widened surgically.
+			if( blockers > 0u )
+			{
+				std::cerr << "[kernel-rename-emission-eligibility]   decisions=";
+				for( unsigned int d = 0; d < p->kernelRewriteRenameDecisions.size(); ++d )
+					std::cerr << ( d ? "," : "" )
+					          << p->kernelRewriteRenameDecisions[d].reg;
+				std::cerr << "\n";
+				const std::vector<std::string> blockerOps =
+					describeKernelRenameEmissionBlockers( *p, indexedTokens );
+				for( unsigned int b = 0; b < blockerOps.size(); ++b )
+					std::cerr << "[kernel-rename-emission-eligibility]   blocker op="
+					          << blockerOps[b] << "\n";
+			}
 		}
 	}
 
@@ -9120,6 +9137,29 @@ unsigned int countKernelRenameEmissionBlockers( const VuSoftwarePipelineRewriteP
 			++blockers;
 	}
 	return blockers;
+}
+
+std::vector<std::string> describeKernelRenameEmissionBlockers(
+	const VuSoftwarePipelineRewritePlan& plan,
+	const std::vector<const Token*>& indexedTokens )
+{
+	std::vector<std::string> ops;
+	if( !kernelRenameEmissionScaffoldingComplete( plan ) )
+		return ops;
+	const std::vector<std::string> bases = collectDecisionBases( plan );
+	for( unsigned int m = 0; m < plan.kernelRewriteMainTokens.size(); ++m )
+	{
+		const unsigned int idx = plan.kernelRewriteMainTokens[m];
+		if( idx >= indexedTokens.size() )
+			continue;
+		const Token& tk = *indexedTokens[idx];
+		if( !tokenTouchesAnyDecisionBase( tk, bases ) )
+			continue;
+		if( vuOpIsSplittableForKernelRename( tk ) )
+			continue;
+		ops.push_back( tk.name() );
+	}
+	return ops;
 }
 
 bool isVuPlanEligibleForKernelRenameEmission( const VuSoftwarePipelineRewritePlan& plan,

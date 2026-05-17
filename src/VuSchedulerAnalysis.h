@@ -547,6 +547,14 @@ bool isVuPlanEligibleForKernelRenameEmission( const VuSoftwarePipelineRewritePla
 unsigned int countKernelRenameEmissionBlockers( const VuSoftwarePipelineRewritePlan& plan,
                                                 const std::vector<const Token*>& indexedTokens );
 
+// describeKernelRenameEmissionBlockers returns the op names of the
+// mainTokens that block kernel-rename emission (those that touch a
+// decision base but are not on the splittable allowlist). Useful for
+// the diagnostic env var when surgically widening the allowlist.
+std::vector<std::string> describeKernelRenameEmissionBlockers(
+	const VuSoftwarePipelineRewritePlan& plan,
+	const std::vector<const Token*>& indexedTokens );
+
 }
 
 #endif
