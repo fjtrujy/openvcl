@@ -548,12 +548,30 @@ unsigned int countKernelRenameEmissionBlockers( const VuSoftwarePipelineRewriteP
                                                 const std::vector<const Token*>& indexedTokens );
 
 // describeKernelRenameEmissionBlockers returns the op names of the
-// mainTokens that block kernel-rename emission (those that touch a
-// decision base but are not on the splittable allowlist). Useful for
-// the diagnostic env var when surgically widening the allowlist.
+// mainTokens that hard-block kernel-rename emission (unsplittable AND
+// write a decision base). Useful for the diagnostic env var when
+// surgically widening the allowlist.
 std::vector<std::string> describeKernelRenameEmissionBlockers(
 	const VuSoftwarePipelineRewritePlan& plan,
 	const std::vector<const Token*>& indexedTokens );
+
+// Track 9.G step 8b-2d-3: "soft blockers" are unsplittable mainTokens
+// that touch a decision base but only READ it (no write to the
+// renamed reg). They are not hard blockers: the emitter handles them
+// by materializing the renamed reg from its scratches immediately
+// before the op, then emitting the op unchanged.
+unsigned int countKernelRenameEmissionSoftBlockers( const VuSoftwarePipelineRewritePlan& plan,
+                                                    const std::vector<const Token*>& indexedTokens );
+std::vector<std::string> describeKernelRenameEmissionSoftBlockers(
+	const VuSoftwarePipelineRewritePlan& plan,
+	const std::vector<const Token*>& indexedTokens );
+
+// tokenIsKernelRenameMaterializeCandidate returns true iff `token`
+// is a soft blocker against `plan`: it touches a decision base, is
+// not splittable, and does not write any decision base. The emitter
+// must prepend per-decision materialize MOVEs before such a token.
+bool tokenIsKernelRenameMaterializeCandidate( const Token& token,
+                                              const VuSoftwarePipelineRewritePlan& plan );
 
 }
 

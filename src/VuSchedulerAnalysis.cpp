@@ -8504,6 +8504,7 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		{
 			const bool eligible = isVuPlanEligibleForKernelRenameEmission( *p, indexedTokens );
 			const unsigned int blockers = countKernelRenameEmissionBlockers( *p, indexedTokens );
+			const unsigned int softBlockers = countKernelRenameEmissionSoftBlockers( *p, indexedTokens );
 			std::cerr << "[kernel-rename-emission-eligibility] loop=" << p->label
 			          << " eligible=" << ( eligible ? 1 : 0 )
 			          << " II=" << p->kernelRewriteII
@@ -8511,25 +8512,37 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 			          << " conflicts=" << p->kernelRewriteConflicts
 			          << " decisions=" << p->kernelRewriteRenameDecisions.size()
 			          << " moveSlots=" << p->kernelRewriteRenameMoveSlots.size()
-			          << " blockers=" << blockers
+			          << " hardBlockers=" << blockers
+			          << " softBlockers=" << softBlockers
 			          << " mainTokens=" << p->kernelRewriteMainTokens.size()
 			          << "\n";
 			// Track 9.G step 8b-2d-1: when blockers>0 (i.e. scaffolding
 			// is complete but unsplittable ops touch a decision base)
 			// also dump the decision targets and blocker op names so
 			// the splittable allowlist can be widened surgically.
-			if( blockers > 0u )
+			if( blockers > 0u || softBlockers > 0u )
 			{
 				std::cerr << "[kernel-rename-emission-eligibility]   decisions=";
 				for( unsigned int d = 0; d < p->kernelRewriteRenameDecisions.size(); ++d )
 					std::cerr << ( d ? "," : "" )
 					          << p->kernelRewriteRenameDecisions[d].reg;
 				std::cerr << "\n";
-				const std::vector<std::string> blockerOps =
-					describeKernelRenameEmissionBlockers( *p, indexedTokens );
-				for( unsigned int b = 0; b < blockerOps.size(); ++b )
-					std::cerr << "[kernel-rename-emission-eligibility]   blocker op="
-					          << blockerOps[b] << "\n";
+				if( blockers > 0u )
+				{
+					const std::vector<std::string> blockerOps =
+						describeKernelRenameEmissionBlockers( *p, indexedTokens );
+					for( unsigned int b = 0; b < blockerOps.size(); ++b )
+						std::cerr << "[kernel-rename-emission-eligibility]   hard blocker op="
+						          << blockerOps[b] << "\n";
+				}
+				if( softBlockers > 0u )
+				{
+					const std::vector<std::string> softOps =
+						describeKernelRenameEmissionSoftBlockers( *p, indexedTokens );
+					for( unsigned int b = 0; b < softOps.size(); ++b )
+						std::cerr << "[kernel-rename-emission-eligibility]   soft blocker op="
+						          << softOps[b] << "\n";
+				}
 			}
 		}
 	}
@@ -8685,6 +8698,24 @@ std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& token
 			const Token& src = *indexedTokens[*m];
 			if( renameEligible )
 			{
+				// 8b-2d-3: if `src` is a soft blocker — unsplittable,
+				// touches a decision base, read-only of that base —
+				// materialize the renamed reg from its scratches
+				// immediately before emitting `src` unchanged. This
+				// keeps stores like `sq VF13, ofs(vi)` correct after
+				// the body has computed VF13's lanes into scratches.
+				if( tokenIsKernelRenameMaterializeCandidate( src, plan ) )
+				{
+					for( std::vector<VuKernelRenameDecision>::const_iterator d = plan.kernelRewriteRenameDecisions.begin();
+					     d != plan.kernelRewriteRenameDecisions.end(); ++d )
+					{
+						if( !d->assigned )
+							continue;
+						output.push_back( makeKernelRenameMoveToken( *i, *d ) );
+					}
+					output.push_back( tokenWithoutLabel( src ) );
+					continue;
+				}
 				std::list<Token> split;
 				splitMultiFieldOpByFieldDecisions( src, plan.kernelRewriteRenameDecisions, split );
 				for( std::list<Token>::const_iterator s = split.begin(); s != split.end(); ++s )
@@ -9111,6 +9142,32 @@ namespace
 		return false;
 	}
 
+	// Track 9.G step 8b-2d-3: returns true iff `token` writes any
+	// FLOAT_REGISTER whose base is on `decisionBases`. Used to
+	// distinguish "soft blockers" (unsplittable but read-only on the
+	// renamed reg, recoverable by materialize-before-read) from "hard
+	// blockers" (unsplittable AND write the renamed reg).
+	bool tokenWritesAnyDecisionBase( const Token& token,
+	                                 const std::vector<std::string>& decisionBases )
+	{
+		for( std::list<Token::Argument>::const_iterator a = token.arguments().begin();
+		     a != token.arguments().end(); ++a )
+		{
+			if( a->type() != Token::Argument::FLOAT_REGISTER )
+				continue;
+			if( !( a->flags() & Token::Argument::WRITE ) )
+				continue;
+			std::string key;
+			if( !vuRegisterKey( *a, key ) )
+				continue;
+			const std::string base = registerBaseKey( key );
+			for( unsigned int b = 0; b < decisionBases.size(); ++b )
+				if( decisionBases[b] == base )
+					return true;
+		}
+		return false;
+	}
+
 	bool kernelRenameEmissionScaffoldingComplete( const VuSoftwarePipelineRewritePlan& plan )
 	{
 		if( plan.kernelRewriteII == 0u )                   return false;
@@ -9160,10 +9217,44 @@ unsigned int countKernelRenameEmissionBlockers( const VuSoftwarePipelineRewriteP
 		const Token& tk = *indexedTokens[idx];
 		if( !tokenTouchesAnyDecisionBase( tk, bases ) )
 			continue;
-		if( !vuOpIsSplittableForKernelRename( tk ) )
-			++blockers;
+		if( vuOpIsSplittableForKernelRename( tk ) )
+			continue;
+		// Track 9.G step 8b-2d-3: read-only unsplittable touches are
+		// "soft blockers" — recoverable by materialize-before-read.
+		// Only writes remain "hard blockers".
+		if( !tokenWritesAnyDecisionBase( tk, bases ) )
+			continue;
+		++blockers;
 	}
 	return blockers;
+}
+
+// Track 9.G step 8b-2d-3: returns the number of "soft blocker"
+// mainTokens — unsplittable ops that touch a decision base but only
+// read it. The emitter materializes the renamed reg from its scratches
+// immediately before each such op, then emits the op unchanged.
+unsigned int countKernelRenameEmissionSoftBlockers( const VuSoftwarePipelineRewritePlan& plan,
+                                                    const std::vector<const Token*>& indexedTokens )
+{
+	if( !kernelRenameEmissionScaffoldingComplete( plan ) )
+		return 0u;
+	const std::vector<std::string> bases = collectDecisionBases( plan );
+	unsigned int soft = 0;
+	for( unsigned int m = 0; m < plan.kernelRewriteMainTokens.size(); ++m )
+	{
+		const unsigned int idx = plan.kernelRewriteMainTokens[m];
+		if( idx >= indexedTokens.size() )
+			continue;
+		const Token& tk = *indexedTokens[idx];
+		if( !tokenTouchesAnyDecisionBase( tk, bases ) )
+			continue;
+		if( vuOpIsSplittableForKernelRename( tk ) )
+			continue;
+		if( tokenWritesAnyDecisionBase( tk, bases ) )
+			continue;
+		++soft;
+	}
+	return soft;
 }
 
 std::vector<std::string> describeKernelRenameEmissionBlockers(
@@ -9184,9 +9275,59 @@ std::vector<std::string> describeKernelRenameEmissionBlockers(
 			continue;
 		if( vuOpIsSplittableForKernelRename( tk ) )
 			continue;
+		// Hard blockers only (writes); soft blockers are surfaced via
+		// describeKernelRenameEmissionSoftBlockers.
+		if( !tokenWritesAnyDecisionBase( tk, bases ) )
+			continue;
 		ops.push_back( tk.name() );
 	}
 	return ops;
+}
+
+std::vector<std::string> describeKernelRenameEmissionSoftBlockers(
+	const VuSoftwarePipelineRewritePlan& plan,
+	const std::vector<const Token*>& indexedTokens )
+{
+	std::vector<std::string> ops;
+	if( !kernelRenameEmissionScaffoldingComplete( plan ) )
+		return ops;
+	const std::vector<std::string> bases = collectDecisionBases( plan );
+	for( unsigned int m = 0; m < plan.kernelRewriteMainTokens.size(); ++m )
+	{
+		const unsigned int idx = plan.kernelRewriteMainTokens[m];
+		if( idx >= indexedTokens.size() )
+			continue;
+		const Token& tk = *indexedTokens[idx];
+		if( !tokenTouchesAnyDecisionBase( tk, bases ) )
+			continue;
+		if( vuOpIsSplittableForKernelRename( tk ) )
+			continue;
+		if( tokenWritesAnyDecisionBase( tk, bases ) )
+			continue;
+		ops.push_back( tk.name() );
+	}
+	return ops;
+}
+
+// Track 9.G step 8b-2d-3: emitter-side predicate. Returns true iff
+// `token` is a "soft blocker" against `plan`'s decisions — i.e. it
+// touches a decision base, is not on the splittable allowlist, and
+// does not write any decision base. The emitter must prepend per-
+// decision materialize MOVEs (scratch->original base) before emitting
+// such a token unchanged.
+bool tokenIsKernelRenameMaterializeCandidate( const Token& token,
+                                              const VuSoftwarePipelineRewritePlan& plan )
+{
+	if( !kernelRenameEmissionScaffoldingComplete( plan ) )
+		return false;
+	const std::vector<std::string> bases = collectDecisionBases( plan );
+	if( !tokenTouchesAnyDecisionBase( token, bases ) )
+		return false;
+	if( vuOpIsSplittableForKernelRename( token ) )
+		return false;
+	if( tokenWritesAnyDecisionBase( token, bases ) )
+		return false;
+	return true;
 }
 
 bool isVuPlanEligibleForKernelRenameEmission( const VuSoftwarePipelineRewritePlan& plan,

@@ -3786,12 +3786,14 @@ TEST_CASE("VuSchedulerAnalysis 8b-2c-2: plan with assigned decision+slot and spl
     CHECK(vcl::countKernelRenameEmissionBlockers(plan, idx) == 0u);
 }
 
-TEST_CASE("VuSchedulerAnalysis 8b-2c-2: unsplittable op touching decision base blocks eligibility")
+TEST_CASE("VuSchedulerAnalysis 8b-2c-2: unsplittable op writing decision base hard-blocks eligibility")
 {
     ParsedProgram program;
     REQUIRE(program.parse("add.xyzw vf13, vf13, vf14"));
-    // opmula writes ACC implicitly — on the unsplittable list per 8b-2c-1.
-    REQUIRE(program.parse("opmula.xyz ACC, vf13, vf14"));
+    // mr32 writes the whole quad atomically (cross-field rotate) — on the
+    // unsplittable list per 8b-2c-1; here it writes VF13 so it is a hard
+    // blocker under 8b-2d-3 semantics (writes a decision base).
+    REQUIRE(program.parse("mr32.xyzw vf13, vf20"));
     const std::vector<const vcl::Token*> idx = buildIndexedTokens(program.tokenizer.tokens());
 
     vcl::VuSoftwarePipelineRewritePlan plan =
@@ -3893,4 +3895,58 @@ TEST_CASE("VuSchedulerAnalysis 8b-2c-2: kernelRewriteRenameHints non-empty does 
     hint.reg = "VF13"; hint.entry = 0; hint.stage = 0; hint.kind = 1;
     plan.kernelRewriteRenameHints.push_back(hint);
     CHECK(vcl::isVuPlanEligibleForKernelRenameEmission(plan, idx));
+}
+
+// Track 9.G step 8b-2d-3: hard vs soft blocker classification.
+TEST_CASE("VuSchedulerAnalysis 8b-2d-3: read-only unsplittable touch is soft, NOT hard")
+{
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xyzw vf13, vf13, vf14"));
+    // sq writes memory, reads VF13 — unsplittable but read-only on the
+    // decision base. Under 8b-2d-3 this is a SOFT blocker, handled by
+    // materialize-before-read.
+    REQUIRE(program.parse("sq vf13, 0(vi05)"));
+    const std::vector<const vcl::Token*> idx = buildIndexedTokens(program.tokenizer.tokens());
+
+    vcl::VuSoftwarePipelineRewritePlan plan =
+        makeScaffoldedPlan(static_cast<unsigned int>(idx.size()), "VF13", "VF31");
+    CHECK(vcl::isVuPlanEligibleForKernelRenameEmission(plan, idx));
+    CHECK(vcl::countKernelRenameEmissionBlockers(plan, idx) == 0u);
+    CHECK(vcl::countKernelRenameEmissionSoftBlockers(plan, idx) == 1u);
+    const std::vector<std::string> soft =
+        vcl::describeKernelRenameEmissionSoftBlockers(plan, idx);
+    REQUIRE(soft.size() == 1u);
+    CHECK(soft[0] == "sq");
+}
+
+TEST_CASE("VuSchedulerAnalysis 8b-2d-3: writing unsplittable touch is hard, NOT soft")
+{
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xyzw vf13, vf13, vf14"));
+    REQUIRE(program.parse("mr32.xyzw vf13, vf20"));
+    const std::vector<const vcl::Token*> idx = buildIndexedTokens(program.tokenizer.tokens());
+
+    vcl::VuSoftwarePipelineRewritePlan plan =
+        makeScaffoldedPlan(static_cast<unsigned int>(idx.size()), "VF13", "VF31");
+    CHECK(!vcl::isVuPlanEligibleForKernelRenameEmission(plan, idx));
+    CHECK(vcl::countKernelRenameEmissionBlockers(plan, idx) == 1u);
+    CHECK(vcl::countKernelRenameEmissionSoftBlockers(plan, idx) == 0u);
+}
+
+TEST_CASE("VuSchedulerAnalysis 8b-2d-3: tokenIsKernelRenameMaterializeCandidate identifies soft-blocker tokens")
+{
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xyzw vf13, vf13, vf14"));        // splittable -> not a candidate
+    REQUIRE(program.parse("sq vf13, 0(vi05)"));                 // soft blocker -> candidate
+    REQUIRE(program.parse("mr32.xyzw vf13, vf20"));             // hard blocker -> not a candidate
+    REQUIRE(program.parse("sq vf09, 0(vi05)"));                 // doesn't touch decision base -> not a candidate
+    const std::vector<const vcl::Token*> idx = buildIndexedTokens(program.tokenizer.tokens());
+
+    vcl::VuSoftwarePipelineRewritePlan plan =
+        makeScaffoldedPlan(static_cast<unsigned int>(idx.size()), "VF13", "VF31");
+    REQUIRE(idx.size() == 4u);
+    CHECK(!vcl::tokenIsKernelRenameMaterializeCandidate(*idx[0], plan));
+    CHECK( vcl::tokenIsKernelRenameMaterializeCandidate(*idx[1], plan));
+    CHECK(!vcl::tokenIsKernelRenameMaterializeCandidate(*idx[2], plan));
+    CHECK(!vcl::tokenIsKernelRenameMaterializeCandidate(*idx[3], plan));
 }
