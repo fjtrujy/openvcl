@@ -8136,6 +8136,90 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 							}
 						}
 					}
+
+					// Track 9.G-1h step 3: per-cycle latency validation
+					// of the placer grid. Builds the kernel template
+					// (modSlot -> upper/lower/fdiv/efu entry indices),
+					// simulates 2 x II cycles through VuLatencyTracker
+					// (iteration 0 = warm-up, iteration 1 = steady
+					// state), and counts any non-zero readHazardDelay
+					// returned during the steady-state iteration. Any
+					// violation means the placer's modulo schedule is
+					// not honoured by hardware latency rules. Surface
+					// under OPENVCL_DUMP_KERNEL_GRID_LATENCY; per-cell
+					// detail under OPENVCL_DUMP_KERNEL_GRID_LATENCY_DETAIL.
+					// MD5-invariant.
+					if( std::getenv( "OPENVCL_DUMP_KERNEL_GRID_LATENCY" ) != NULL )
+					{
+						VuKernelTemplate krGrid;
+						buildVuKernelTemplate( krLayout, krGrid );
+						const unsigned int II2 = krLayout.II;
+						unsigned int       violations = 0;
+						unsigned int       maxStall   = 0;
+						const bool         detail     = ( std::getenv( "OPENVCL_DUMP_KERNEL_GRID_LATENCY_DETAIL" ) != NULL );
+						VuLatencyTracker   tracker;
+						for( unsigned int iter = 0; iter < 2; ++iter )
+						{
+							for( unsigned int ms = 0; ms < II2; ++ms )
+							{
+								const int cycle = (int)( iter * II2 + ms );
+								const VuKernelTemplateSlot& sl = krGrid.slots[ ms ];
+								const Token* upperTok = NULL;
+								const Token* lowerTok = NULL;
+								if( sl.upper != VuKernelTemplateSlot::NO_ENTRY )
+								{
+									const unsigned int ti = krLayout.entries[ sl.upper ].tokenIndex;
+									if( ti < indexedTokens.size() ) upperTok = indexedTokens[ ti ];
+								}
+								if( sl.lower != VuKernelTemplateSlot::NO_ENTRY )
+								{
+									const unsigned int ti = krLayout.entries[ sl.lower ].tokenIndex;
+									if( ti < indexedTokens.size() ) lowerTok = indexedTokens[ ti ];
+								}
+								if( upperTok )
+								{
+									const int d = tracker.readHazardDelay( *upperTok, lowerTok, cycle );
+									if( iter == 1 && d > 0 )
+									{
+										++violations;
+										if( (unsigned int)d > maxStall ) maxStall = (unsigned int)d;
+										if( detail )
+											std::cerr << "[kernel-grid-latency-violation] loop=" << opportunity.label
+											          << " cycle=" << cycle
+											          << " modSlot=" << ms
+											          << " lane=upper"
+											          << " op=" << ( upperTok->operand() ? upperTok->operand()->name().c_str() : "?" )
+											          << " stall=" << d
+											          << "\n";
+									}
+								}
+								if( lowerTok )
+								{
+									const int d = tracker.readHazardDelay( *lowerTok, upperTok, cycle );
+									if( iter == 1 && d > 0 )
+									{
+										++violations;
+										if( (unsigned int)d > maxStall ) maxStall = (unsigned int)d;
+										if( detail )
+											std::cerr << "[kernel-grid-latency-violation] loop=" << opportunity.label
+											          << " cycle=" << cycle
+											          << " modSlot=" << ms
+											          << " lane=lower"
+											          << " op=" << ( lowerTok->operand() ? lowerTok->operand()->name().c_str() : "?" )
+											          << " stall=" << d
+											          << "\n";
+									}
+								}
+								if( upperTok ) tracker.recordWrites( *upperTok, cycle );
+								if( lowerTok ) tracker.recordWrites( *lowerTok, cycle );
+							}
+						}
+						std::cerr << "[kernel-grid-latency] loop=" << opportunity.label
+						          << " II=" << II2
+						          << " violations=" << violations
+						          << " maxStall=" << maxStall
+						          << "\n";
+					}
 				}
 			}
 			if( std::getenv( "OPENVCL_DUMP_LOOP_SCHEDULE" ) != NULL )
