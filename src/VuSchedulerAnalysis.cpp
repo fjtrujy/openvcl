@@ -6981,7 +6981,19 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			// using only intra-iteration constraints. Loop-carried hazards
 			// are out of scope here (RecMII already bounds II).
 			const std::vector<unsigned int>& mt = opportunity.mainTokenIndices;
-			const unsigned int recmii = computeLoopRecMII( mt, indexedTokens );
+			// Track 9.G step 1c-2: under OPENVCL_USE_GENERIC_KERNEL_REWRITE,
+			// substitute the rename-aware RecMII (step 1c-1) for the
+			// baseline value. This lowers the lower bound on II for loops
+			// whose carried recurrences flow through VF bases the kernel
+			// rename machinery rotates per iteration. The placer's own
+			// dist=1 cross-iteration edges (built below) may still bump
+			// II back up; that bump is observable via OPENVCL_DUMP_LOOP_SCHEDULE
+			// and is the diagnostic for the follow-on placer-relaxation step.
+			const bool useRenamedRecMII =
+			    ( std::getenv( "OPENVCL_USE_GENERIC_KERNEL_REWRITE" ) != NULL );
+			const unsigned int recmii = useRenamedRecMII
+			    ? computeLoopRecMIIRenamed( mt, indexedTokens, NULL )
+			    : computeLoopRecMII( mt, indexedTokens );
 			const unsigned int resmii = computeLoopResMII( mt, indexedTokens );
 			const unsigned int mii    = ( recmii > resmii ) ? recmii : resmii;
 			LoopPriorityResult pr;
