@@ -6374,8 +6374,14 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			}
 		}
 
-		if( std::getenv( "OPENVCL_DUMP_LOOP_SCHEDULE" ) != NULL
-		    && opportunity.simpleCountedLoop
+		// Track 9.G step 8a: the modulo placer + 6a-6h kernel-rewrite
+		// scaffolding always runs when the loop is a simple counted loop
+		// with a non-empty body. The OPENVCL_DUMP_LOOP_SCHEDULE env var
+		// (and the nested OPENVCL_DUMP_KERNEL_* gates) now only control
+		// the std::cerr writes; the computation itself is unconditional
+		// so OPENVCL_USE_GENERIC_KERNEL_REWRITE can see real scaffolding
+		// on production builds.
+		if( opportunity.simpleCountedLoop
 		    && !opportunity.mainTokenIndices.empty() )
 		{
 			// Track 9.G step 4d: iterative modulo placement (diagnostic).
@@ -7326,22 +7332,25 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 					opportunity.kernelRewriteStageCells = krRp.stageCells;
 				}
 			}
-			std::cerr << "[loop-schedule] loop=" << opportunity.label
-			          << " II=" << tryII
-			          << " miiStart=" << miiStart
-			          << " bumps=" << bumps
-			          << " placed=" << placedCount
-			          << " failed=" << failedCount
-			          << " maxStage=" << maxStage
-			          << " edges=" << totalEdges
-			          << " edgeViolations=" << edgeViolations
-			          << " evictions=" << evictions
-			          << " recoveries=" << recoveries
-			          << " upperOcc=" << upperOccFinal
-			          << " lowerOcc=" << lowerOccFinal
-			          << " fdivOcc=" << fdivOccFinal
-			          << " efuOcc=" << efuOccFinal
-			          << "\n";
+			if( std::getenv( "OPENVCL_DUMP_LOOP_SCHEDULE" ) != NULL )
+			{
+				std::cerr << "[loop-schedule] loop=" << opportunity.label
+				          << " II=" << tryII
+				          << " miiStart=" << miiStart
+				          << " bumps=" << bumps
+				          << " placed=" << placedCount
+				          << " failed=" << failedCount
+				          << " maxStage=" << maxStage
+				          << " edges=" << totalEdges
+				          << " edgeViolations=" << edgeViolations
+				          << " evictions=" << evictions
+				          << " recoveries=" << recoveries
+				          << " upperOcc=" << upperOccFinal
+				          << " lowerOcc=" << lowerOccFinal
+				          << " fdivOcc=" << fdivOccFinal
+				          << " efuOcc=" << efuOccFinal
+				          << "\n";
+			}
 			if( std::getenv( "OPENVCL_DUMP_LOOP_SCHEDULE_NODES" ) != NULL )
 			{
 				for( unsigned int rank = 0; rank < pr.order.size(); ++rank )
