@@ -445,6 +445,36 @@ std::list<Token> applyVuSoftwarePipelinePlansWithSafeStoreBaseAdvance( const std
 //   - kernelRewriteMainTokens non-empty (the MAIN_LOOP body exists)
 // Diagnostic-only; no consumer yet.
 bool isVuPlanEligibleForGenericKernelRewrite( const VuSoftwarePipelineRewritePlan& plan );
+
+// Track 9.G step 7b: SCE-style multi-stage emitter.
+// For each VuSoftwarePipelineRewritePlan that passes
+// isVuPlanEligibleForGenericKernelRewrite, splice the loop body into
+// the SCE-convention 4-label form:
+//
+//   <label>__PRO1:
+//       <kernelRewritePrologTokens>
+//       <branch>          ; retargeted to <label>__EPI1
+//   <label>__MAIN_LOOP:
+//       <kernelRewriteMainTokens>
+//       <branch>          ; retargeted to <label>__MAIN_LOOP
+//   <label>__EPI0:
+//       <kernelRewriteDrainTokens>
+//   <label>__EPI1:        ; tail entry for the skip-main path
+//
+// Plans that are NOT eligible are passed through unchanged (they remain
+// the responsibility of applyVuSoftwarePipelinePlans).
+//
+// This function does NOT consult any environment variable; the
+// OPENVCL_USE_GENERIC_KERNEL_REWRITE gate is enforced at the call site
+// in CodeGenerator.cpp.
+std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& tokens );
+
+// Test seam: same behaviour as the single-argument overload but uses
+// the explicitly provided plan vector instead of calling
+// buildVuSoftwarePipelineRewritePlans internally. Lets unit tests
+// inject hand-crafted eligible plans against synthetic token streams.
+std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& tokens,
+                                                   const std::vector<VuSoftwarePipelineRewritePlan>& plans );
 std::list<Token> scheduleVuTokensPreservingOrder( const std::list<Token>& tokens );
 std::list<Token> scheduleVuTokensReadySet( const std::list<Token>& tokens,
                                            unsigned int ignoredImplicitWawResources = 0 );

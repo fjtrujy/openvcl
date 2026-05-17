@@ -22,6 +22,7 @@
 #include "VuSchedulingRules.h"
 #include "VuInstructionInfo.h"
 #include "VuTokenResourceAccess.h"
+#include <cstdlib>
 
 #include <iostream>
 #include <iomanip>
@@ -997,6 +998,17 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 			buildVuSoftwarePipelineRewritePlans(workTokens);
 		if( !pipelinePlans.empty() )
 		{
+			// Track 9.G step 7b: optional SCE-style multi-stage emitter,
+			// gated by OPENVCL_USE_GENERIC_KERNEL_REWRITE. Only plans
+			// passing isVuPlanEligibleForGenericKernelRewrite are
+			// rewritten by the new emitter; ineligible plans remain
+			// the responsibility of applyVuSoftwarePipelinePlans below.
+			if( std::getenv("OPENVCL_USE_GENERIC_KERNEL_REWRITE") != NULL )
+			{
+				std::list<Token> genericRewritten =
+					applyVuGenericKernelRewritePlans(workTokens);
+				workTokens.swap(genericRewritten);
+			}
 			std::list<Token> pipelinedTokens =
 				applyVuSoftwarePipelinePlansWithSafeStoreBaseAdvance(workTokens);
 			workTokens.swap(pipelinedTokens);

@@ -3291,6 +3291,103 @@ TEST_CASE("VuSchedulerAnalysis: single-stage layout is not eligible for generic 
     CHECK(!vcl::isVuPlanEligibleForGenericKernelRewrite(plan));
 }
 
+// Track 9.G step 7b: SCE-style multi-stage emitter — synthetic-plan coverage.
+TEST_CASE("VuSchedulerAnalysis: generic kernel rewrite emits PRO1/MAIN_LOOP/EPI0/EPI1 labels for an eligible synthetic plan")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("setup_lid:"));
+    REQUIRE(program.parse("iaddiu vi01, vi00, 0"));
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("--LoopCS 1, 3"));
+    REQUIRE(program.parse("lq.xyz vf01, 0(vi02)"));
+    REQUIRE(program.parse("iaddiu vi02, vi02, 3"));
+    REQUIRE(program.parse("ibne vi02, vi03, loop_lid"));
+    REQUIRE(program.parse("done_lid:"));
+
+    // Construct a synthetic plan with the layout the helper considers eligible:
+    // II=2, stageCount=2, no conflicts, no rename hints, non-empty MAIN.
+    vcl::VuSoftwarePipelineRewritePlan plan;
+    plan.label = "loop_lid";
+    plan.labelTokenIndex = 2u;   // "loop_lid:" pure-label token
+    plan.branchTokenIndex = 6u;  // "ibne vi02, vi03, loop_lid"
+    plan.kernelRewriteII = 2u;
+    plan.kernelRewriteStageCount = 2u;
+    plan.kernelRewriteConflicts = 0u;
+    plan.kernelRewritePrologTokens.push_back(4u);   // lq
+    plan.kernelRewriteMainTokens.push_back(4u);     // lq
+    plan.kernelRewriteMainTokens.push_back(5u);     // iaddiu
+    plan.kernelRewriteDrainTokens.push_back(5u);    // iaddiu
+    REQUIRE(vcl::isVuPlanEligibleForGenericKernelRewrite(plan));
+
+    std::vector<vcl::VuSoftwarePipelineRewritePlan> plans;
+    plans.push_back(plan);
+
+    std::list<vcl::Token> output =
+        vcl::applyVuGenericKernelRewritePlans(program.tokenizer.tokens(), plans);
+
+    std::vector<std::string> labelsInOrder;
+    std::vector<std::string> branchTargets;
+    for (std::list<vcl::Token>::const_iterator t = output.begin(); t != output.end(); ++t) {
+        if (t->label().length() != 0u)
+            labelsInOrder.push_back(t->label());
+        for (std::list<vcl::Token::Argument>::const_iterator a = t->arguments().begin();
+             a != t->arguments().end(); ++a) {
+            if ((a->flags() & vcl::Token::Argument::BRANCH)
+                && a->type() == vcl::Token::Argument::IMMEDIATE) {
+                branchTargets.push_back(a->immediate());
+            }
+        }
+    }
+
+    // Labels must appear in SCE order: setup_lid, loop_lid__PRO1, loop_lid__MAIN_LOOP,
+    // loop_lid__EPI0, loop_lid__EPI1, done_lid.
+    REQUIRE(labelsInOrder.size() >= 6u);
+    CHECK(labelsInOrder[0] == "setup_lid");
+    CHECK(labelsInOrder[1] == "loop_lid__PRO1");
+    CHECK(labelsInOrder[2] == "loop_lid__MAIN_LOOP");
+    CHECK(labelsInOrder[3] == "loop_lid__EPI0");
+    CHECK(labelsInOrder[4] == "loop_lid__EPI1");
+    CHECK(labelsInOrder[5] == "done_lid");
+
+    // Two emitted branches: prolog branch -> __EPI1, main branch -> __MAIN_LOOP.
+    REQUIRE(branchTargets.size() == 2u);
+    CHECK(branchTargets[0] == "loop_lid__EPI1");
+    CHECK(branchTargets[1] == "loop_lid__MAIN_LOOP");
+}
+
+TEST_CASE("VuSchedulerAnalysis: generic kernel rewrite leaves tokens unchanged when no plan is eligible")
+{
+    vcl::Error::ResetErrorCount();
+    ParsedProgram program;
+    REQUIRE(program.parse("setup_lid:"));
+    REQUIRE(program.parse("loop_lid:"));
+    REQUIRE(program.parse("lq.xyz vf01, 0(vi02)"));
+    REQUIRE(program.parse("iaddiu vi02, vi02, 3"));
+    REQUIRE(program.parse("ibne vi02, vi03, loop_lid"));
+
+    // Ineligible plan (renameHints non-empty disqualifies it).
+    vcl::VuSoftwarePipelineRewritePlan plan;
+    plan.label = "loop_lid";
+    plan.labelTokenIndex = 1u;
+    plan.branchTokenIndex = 4u;
+    plan.kernelRewriteII = 2u;
+    plan.kernelRewriteStageCount = 2u;
+    plan.kernelRewriteMainTokens.push_back(2u);
+    vcl::VuKernelRenameHint hint;
+    hint.reg = "VF01"; hint.entry = 0; hint.stage = 0; hint.kind = 1;
+    plan.kernelRewriteRenameHints.push_back(hint);
+    REQUIRE(!vcl::isVuPlanEligibleForGenericKernelRewrite(plan));
+
+    std::vector<vcl::VuSoftwarePipelineRewritePlan> plans;
+    plans.push_back(plan);
+
+    std::list<vcl::Token> output =
+        vcl::applyVuGenericKernelRewritePlans(program.tokenizer.tokens(), plans);
+
+    CHECK(output.size() == program.tokenizer.tokens().size());
+}
+
 // Track 9.G step 6e: VuKernelRewritePlan scaffolding fields default to zero/empty.
 TEST_CASE("VuSchedulerAnalysis: kernel-rewrite scaffolding defaults are zero/empty")
 {

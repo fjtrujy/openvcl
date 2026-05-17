@@ -8098,6 +8098,155 @@ bool isVuPlanEligibleForGenericKernelRewrite( const VuSoftwarePipelineRewritePla
 	return true;
 }
 
+namespace
+{
+	// Track 9.G step 7b: retarget the BRANCH IMMEDIATE argument of a
+	// branch-style token (b/ibne/ibeq/...) to a new label string.
+	// Returns true if a BRANCH IMMEDIATE argument was found and updated.
+	bool retargetBranchTokenTarget( Token& token, const std::string& newTarget )
+	{
+		std::list<Token::Argument>& args = token.arguments();
+		for( std::list<Token::Argument>::iterator a = args.begin(); a != args.end(); ++a )
+		{
+			if( ( a->flags() & Token::Argument::BRANCH )
+			    && a->type() == Token::Argument::IMMEDIATE )
+			{
+				a->setImmediate( newTarget );
+				return true;
+			}
+		}
+		return false;
+	}
+}
+
+std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& tokens )
+{
+	const std::vector<VuSoftwarePipelineRewritePlan> plans = buildVuSoftwarePipelineRewritePlans( tokens );
+	return applyVuGenericKernelRewritePlans( tokens, plans );
+}
+
+std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& tokens,
+                                                   const std::vector<VuSoftwarePipelineRewritePlan>& plans )
+{
+	std::vector<const Token*> indexedTokens;
+	for( std::list<Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i )
+		indexedTokens.push_back( &*i );
+
+	std::map<unsigned int, VuSoftwarePipelineRewritePlan> eligibleByLabelIndex;
+	for( std::vector<VuSoftwarePipelineRewritePlan>::const_iterator p = plans.begin(); p != plans.end(); ++p )
+	{
+		if( !isVuPlanEligibleForGenericKernelRewrite( *p ) )
+			continue;
+		if( p->labelTokenIndex >= indexedTokens.size() )
+			continue;
+		if( p->branchTokenIndex >= indexedTokens.size() )
+			continue;
+		eligibleByLabelIndex[p->labelTokenIndex] = *p;
+	}
+
+	if( eligibleByLabelIndex.empty() )
+		return tokens;
+
+	std::list<Token> output;
+	unsigned int index = 0;
+	std::list<Token>::const_iterator i = tokens.begin();
+	while( i != tokens.end() )
+	{
+		std::map<unsigned int, VuSoftwarePipelineRewritePlan>::const_iterator hit =
+		    eligibleByLabelIndex.find( index );
+		if( hit == eligibleByLabelIndex.end() )
+		{
+			output.push_back( *i );
+			++i;
+			++index;
+			continue;
+		}
+
+		const VuSoftwarePipelineRewritePlan& plan = hit->second;
+		if( !tokenCanCarrySoftwarePipelineLabel( *i ) )
+		{
+			output.push_back( *i );
+			++i;
+			++index;
+			continue;
+		}
+
+		const std::string proLabel  = plan.label + "__PRO1";
+		const std::string mainLabel = plan.label + "__MAIN_LOOP";
+		const std::string epi0Label = plan.label + "__EPI0";
+		const std::string epi1Label = plan.label + "__EPI1";
+
+		const Token& branchSrc = *indexedTokens[plan.branchTokenIndex];
+
+		// PRO1 label carrier (reuses the original loop label token).
+		Token proLabelTok( *i );
+		proLabelTok.setLabel( proLabel );
+		output.push_back( proLabelTok );
+
+		// Prolog body (strip labels).
+		for( std::vector<unsigned int>::const_iterator p = plan.kernelRewritePrologTokens.begin();
+		     p != plan.kernelRewritePrologTokens.end(); ++p )
+		{
+			if( *p < indexedTokens.size() )
+				output.push_back( tokenWithoutLabel( *indexedTokens[*p] ) );
+		}
+
+		// Prolog branch: copy of the original branch, retargeted to EPI1
+		// (skip-main path when the loop induction shows we have only one
+		// iteration left after the prolog).
+		Token proBranch( branchSrc );
+		proBranch.setLabel( "" );
+		retargetBranchTokenTarget( proBranch, epi1Label );
+		output.push_back( proBranch );
+
+		// MAIN_LOOP label.
+		Token mainLabelTok( *i );
+		mainLabelTok.setLabel( mainLabel );
+		output.push_back( mainLabelTok );
+
+		// Main body (strip labels).
+		for( std::vector<unsigned int>::const_iterator m = plan.kernelRewriteMainTokens.begin();
+		     m != plan.kernelRewriteMainTokens.end(); ++m )
+		{
+			if( *m < indexedTokens.size() )
+				output.push_back( tokenWithoutLabel( *indexedTokens[*m] ) );
+		}
+
+		// Main branch: copy of the original branch, retargeted to MAIN_LOOP.
+		Token mainBranch( branchSrc );
+		mainBranch.setLabel( "" );
+		retargetBranchTokenTarget( mainBranch, mainLabel );
+		output.push_back( mainBranch );
+
+		// EPI0 label + drain body.
+		Token epi0LabelTok( *i );
+		epi0LabelTok.setLabel( epi0Label );
+		output.push_back( epi0LabelTok );
+
+		for( std::vector<unsigned int>::const_iterator d = plan.kernelRewriteDrainTokens.begin();
+		     d != plan.kernelRewriteDrainTokens.end(); ++d )
+		{
+			if( *d < indexedTokens.size() )
+				output.push_back( tokenWithoutLabel( *indexedTokens[*d] ) );
+		}
+
+		// EPI1 label (skip-main path tail; empty body for now).
+		Token epi1LabelTok( *i );
+		epi1LabelTok.setLabel( epi1Label );
+		output.push_back( epi1LabelTok );
+
+		// Advance the input iterator past the original loop body
+		// (label through branch, inclusive).
+		while( index <= plan.branchTokenIndex && i != tokens.end() )
+		{
+			++i;
+			++index;
+		}
+	}
+
+	return output;
+}
+
 std::list<Token> applyVuSoftwarePipelinePlans( const std::list<Token>& tokens )
 {
 	std::vector<const Token*> indexedTokens;
