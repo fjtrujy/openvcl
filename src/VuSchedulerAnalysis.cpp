@@ -8050,6 +8050,92 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 
 					// Track 9.G step 6h: stageCells VLIW grid.
 					opportunity.kernelRewriteStageCells = krRp.stageCells;
+
+					// Track 9.G-1h step 2: emission-order vs placer-grid diff.
+					// Walks krRp.mainTokens (the order the rewrite emitter will
+					// hand to the downstream pipe-pair scheduler) and reports
+					// each token's (modSlot, lane) from the placer layout.
+					// Diagnostic-only; surfaces how far the emitted order
+					// drifts from the placer's chosen schedule. Counts
+					// adjacent inversions vs (modSlot, upper-before-lower)
+					// canonical order as `outOfOrder`. MD5-invariant.
+					if( std::getenv( "OPENVCL_DUMP_KERNEL_REWRITE_ORDER" ) != NULL )
+					{
+						// Build tokenIndex -> (modSlot, pipe) map from layout.
+						std::map< unsigned int, std::pair< unsigned int, unsigned int > > tokToSlot;
+						for( unsigned int e = 0; e < krLayout.entries.size(); ++e )
+						{
+							const VuKernelLayoutEntry& en = krLayout.entries[ e ];
+							tokToSlot[ en.tokenIndex ] = std::make_pair( en.modSlot, en.pipe );
+						}
+						unsigned int outOfOrder = 0;
+						unsigned int unmapped   = 0;
+						bool         havePrev   = false;
+						unsigned int prevSlot   = 0;
+						unsigned int prevLane   = 0;
+						for( unsigned int m = 0; m < krRp.mainTokens.size(); ++m )
+						{
+							const unsigned int ti = krRp.mainTokens[ m ];
+							std::map< unsigned int, std::pair< unsigned int, unsigned int > >::const_iterator it = tokToSlot.find( ti );
+							if( it == tokToSlot.end() ) { ++unmapped; continue; }
+							const unsigned int sl = it->second.first;
+							const unsigned int la = it->second.second;
+							if( havePrev )
+							{
+								// Canonical sort key is (modSlot, pipe). Upper=1,
+								// Lower=2 keeps upper before lower at same slot.
+								if( sl < prevSlot || ( sl == prevSlot && la < prevLane ) )
+									++outOfOrder;
+							}
+							havePrev = true;
+							prevSlot = sl;
+							prevLane = la;
+						}
+						std::cerr << "[kernel-rewrite-order] loop=" << opportunity.label
+						          << " II=" << krRp.II
+						          << " mainTokens=" << krRp.mainTokens.size()
+						          << " unmapped=" << unmapped
+						          << " outOfOrder=" << outOfOrder
+						          << "\n";
+						if( std::getenv( "OPENVCL_DUMP_KERNEL_REWRITE_ORDER_TOKENS" ) != NULL )
+						{
+							for( unsigned int m = 0; m < krRp.mainTokens.size(); ++m )
+							{
+								const unsigned int ti = krRp.mainTokens[ m ];
+								std::map< unsigned int, std::pair< unsigned int, unsigned int > >::const_iterator it = tokToSlot.find( ti );
+								const char* op = "?";
+								if( ti < indexedTokens.size() && indexedTokens[ ti ]->operand() )
+									op = indexedTokens[ ti ]->operand()->name().c_str();
+								if( it == tokToSlot.end() )
+								{
+									std::cerr << "[kernel-rewrite-order-tok] loop=" << opportunity.label
+									          << " emitOrder=" << m
+									          << " token=" << ti
+									          << " op=" << op
+									          << " modSlot=- lane=- (unmapped)\n";
+								}
+								else
+								{
+									const char* pname = "none";
+									switch( it->second.second )
+									{
+									case 1: pname = "upper"; break;
+									case 2: pname = "lower"; break;
+									case 3: pname = "fdiv";  break;
+									case 4: pname = "efu";   break;
+									default: break;
+									}
+									std::cerr << "[kernel-rewrite-order-tok] loop=" << opportunity.label
+									          << " emitOrder=" << m
+									          << " token=" << ti
+									          << " op=" << op
+									          << " modSlot=" << it->second.first
+									          << " lane=" << pname
+									          << "\n";
+								}
+							}
+						}
+					}
 				}
 			}
 			if( std::getenv( "OPENVCL_DUMP_LOOP_SCHEDULE" ) != NULL )
