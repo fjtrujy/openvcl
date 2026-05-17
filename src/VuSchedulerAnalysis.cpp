@@ -7473,6 +7473,33 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 						          << " edgeFails=" << edgeFailsN[k]
 						          << " mrtFails=" << mrtFailsN[k]
 						          << "\n";
+						// Track 9.G step 1d-2: also dump every DDG edge
+						// incident on this failed node so the carrier
+						// recurrence is visible. Helps decide which
+						// rotatable-predicate extension (integer ptr,
+						// store-port, etc.) is needed to break it.
+						for( unsigned int e = 0; e < totalEdges; ++e )
+						{
+							if( dFrom[e] != k && dTo[e] != k ) continue;
+							const unsigned int other = ( dFrom[e] == k ) ? dTo[e] : dFrom[e];
+							const char* otherOp = "?";
+							if( other < n )
+							{
+								const unsigned int oTok = mt[other];
+								if( oTok < indexedTokens.size()
+								 && indexedTokens[oTok]->operand() )
+									otherOp = indexedTokens[oTok]->operand()->name().c_str();
+							}
+							std::cerr << "[loop-bump-edge] loop=" << opportunity.label
+							          << " bumpFrom=" << tryII
+							          << " node=" << k
+							          << " dir=" << ( dFrom[e] == k ? "out" : "in" )
+							          << " other=" << other
+							          << " otherOp=" << otherOp
+							          << " lat=" << dLat[e]
+							          << " dist=" << dDist[e]
+							          << "\n";
+						}
 					}
 				}
 				++tryII; ++bumps;
