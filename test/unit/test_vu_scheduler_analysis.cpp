@@ -3710,3 +3710,173 @@ TEST_CASE("VuSchedulerAnalysis 8b-2c-1: splitMultiFieldOpByFieldDecisions decisi
         CHECK(destRegNumber(*i) == 31);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Track 9.G step 8b-2c-2: eligibility gate for per-field kernel-rename
+// emission. Pure-analysis predicate (no emission yet); MD5-invariant.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+    // Build an indexedTokens vector from a parsed program's token list,
+    // preserving source order. Returns the vector by value; callers must
+    // keep the ParsedProgram alive for the pointer lifetime.
+    std::vector<const vcl::Token*> buildIndexedTokens(const std::list<vcl::Token>& tokens)
+    {
+        std::vector<const vcl::Token*> out;
+        for (std::list<vcl::Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i)
+            out.push_back(&*i);
+        return out;
+    }
+
+    // Construct an 8b-2b-style scaffolded plan with one decision +
+    // one move-slot, both assigned. mainTokens covers indices [0, n).
+    vcl::VuSoftwarePipelineRewritePlan makeScaffoldedPlan(unsigned int mainTokenCount,
+                                                          const std::string& renamedBase,
+                                                          const std::string& scratch)
+    {
+        vcl::VuSoftwarePipelineRewritePlan plan;
+        plan.kernelRewriteII = 4u;
+        plan.kernelRewriteStageCount = 2u;
+        plan.kernelRewriteConflicts = 0u;
+        for (unsigned int m = 0; m < mainTokenCount; ++m)
+            plan.kernelRewriteMainTokens.push_back(m);
+        vcl::VuKernelRenameDecision d;
+        d.reg = renamedBase; d.scratch = scratch; d.assigned = true;
+        plan.kernelRewriteRenameDecisions.push_back(d);
+        vcl::VuKernelRenameMoveSlot s;
+        s.decisionIndex = 0u; s.modSlot = 0u; s.lane = 1; s.assigned = true;
+        plan.kernelRewriteRenameMoveSlots.push_back(s);
+        return plan;
+    }
+}
+
+TEST_CASE("VuSchedulerAnalysis 8b-2c-2: default plan is not eligible for kernel-rename emission")
+{
+    vcl::VuSoftwarePipelineRewritePlan plan;
+    std::vector<const vcl::Token*> empty;
+    CHECK(!vcl::isVuPlanEligibleForKernelRenameEmission(plan, empty));
+    CHECK(vcl::countKernelRenameEmissionBlockers(plan, empty) == 0u);
+}
+
+TEST_CASE("VuSchedulerAnalysis 8b-2c-2: plan with assigned decision+slot and splittable body is eligible")
+{
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xyzw vf13, vf13, vf14"));
+    REQUIRE(program.parse("sub.xy vf13, vf13, vf14"));
+    const std::vector<const vcl::Token*> idx = buildIndexedTokens(program.tokenizer.tokens());
+
+    vcl::VuSoftwarePipelineRewritePlan plan =
+        makeScaffoldedPlan(static_cast<unsigned int>(idx.size()), "VF13", "VF31");
+    CHECK(vcl::isVuPlanEligibleForKernelRenameEmission(plan, idx));
+    CHECK(vcl::countKernelRenameEmissionBlockers(plan, idx) == 0u);
+}
+
+TEST_CASE("VuSchedulerAnalysis 8b-2c-2: unsplittable op touching decision base blocks eligibility")
+{
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xyzw vf13, vf13, vf14"));
+    // opmula writes ACC implicitly — on the unsplittable list per 8b-2c-1.
+    REQUIRE(program.parse("opmula.xyz ACC, vf13, vf14"));
+    const std::vector<const vcl::Token*> idx = buildIndexedTokens(program.tokenizer.tokens());
+
+    vcl::VuSoftwarePipelineRewritePlan plan =
+        makeScaffoldedPlan(static_cast<unsigned int>(idx.size()), "VF13", "VF31");
+    CHECK(!vcl::isVuPlanEligibleForKernelRenameEmission(plan, idx));
+    CHECK(vcl::countKernelRenameEmissionBlockers(plan, idx) == 1u);
+}
+
+TEST_CASE("VuSchedulerAnalysis 8b-2c-2: unsplittable op not touching any decision base is fine")
+{
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xyzw vf13, vf13, vf14"));
+    // opmula on unrelated registers — must not block eligibility.
+    REQUIRE(program.parse("opmula.xyz ACC, vf20, vf21"));
+    const std::vector<const vcl::Token*> idx = buildIndexedTokens(program.tokenizer.tokens());
+
+    vcl::VuSoftwarePipelineRewritePlan plan =
+        makeScaffoldedPlan(static_cast<unsigned int>(idx.size()), "VF13", "VF31");
+    CHECK(vcl::isVuPlanEligibleForKernelRenameEmission(plan, idx));
+    CHECK(vcl::countKernelRenameEmissionBlockers(plan, idx) == 0u);
+}
+
+TEST_CASE("VuSchedulerAnalysis 8b-2c-2: unassigned decision disqualifies the plan")
+{
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xyzw vf13, vf13, vf14"));
+    const std::vector<const vcl::Token*> idx = buildIndexedTokens(program.tokenizer.tokens());
+
+    vcl::VuSoftwarePipelineRewritePlan plan =
+        makeScaffoldedPlan(static_cast<unsigned int>(idx.size()), "VF13", "VF31");
+    plan.kernelRewriteRenameDecisions[0].assigned = false;
+    CHECK(!vcl::isVuPlanEligibleForKernelRenameEmission(plan, idx));
+    // Scaffolding incomplete -> blocker count returns 0 (predicate already rejected).
+    CHECK(vcl::countKernelRenameEmissionBlockers(plan, idx) == 0u);
+}
+
+TEST_CASE("VuSchedulerAnalysis 8b-2c-2: unassigned move-slot disqualifies the plan")
+{
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xyzw vf13, vf13, vf14"));
+    const std::vector<const vcl::Token*> idx = buildIndexedTokens(program.tokenizer.tokens());
+
+    vcl::VuSoftwarePipelineRewritePlan plan =
+        makeScaffoldedPlan(static_cast<unsigned int>(idx.size()), "VF13", "VF31");
+    plan.kernelRewriteRenameMoveSlots[0].assigned = false;
+    CHECK(!vcl::isVuPlanEligibleForKernelRenameEmission(plan, idx));
+    CHECK(vcl::countKernelRenameEmissionBlockers(plan, idx) == 0u);
+}
+
+TEST_CASE("VuSchedulerAnalysis 8b-2c-2: mismatched decisions/moveSlots sizes disqualify the plan")
+{
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xyzw vf13, vf13, vf14"));
+    const std::vector<const vcl::Token*> idx = buildIndexedTokens(program.tokenizer.tokens());
+
+    vcl::VuSoftwarePipelineRewritePlan plan =
+        makeScaffoldedPlan(static_cast<unsigned int>(idx.size()), "VF13", "VF31");
+    // Add a second decision without a matching move-slot.
+    vcl::VuKernelRenameDecision d2;
+    d2.reg = "VF14.w"; d2.scratch = "VF30"; d2.assigned = true;
+    plan.kernelRewriteRenameDecisions.push_back(d2);
+    CHECK(!vcl::isVuPlanEligibleForKernelRenameEmission(plan, idx));
+}
+
+TEST_CASE("VuSchedulerAnalysis 8b-2c-2: empty decisions vector disqualifies the plan even with valid base scaffolding")
+{
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xyzw vf13, vf13, vf14"));
+    const std::vector<const vcl::Token*> idx = buildIndexedTokens(program.tokenizer.tokens());
+
+    vcl::VuSoftwarePipelineRewritePlan plan;
+    plan.kernelRewriteII = 4u;
+    plan.kernelRewriteStageCount = 2u;
+    plan.kernelRewriteMainTokens.push_back(0u);
+    // No decisions / no move-slots: kernel-rename emission is meaningless.
+    CHECK(!vcl::isVuPlanEligibleForKernelRenameEmission(plan, idx));
+}
+
+TEST_CASE("VuSchedulerAnalysis 8b-2c-2: per-field decision (VF13.w) matches base VF13 for splittable check")
+{
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xyzw vf13, vf13, vf14"));
+    const std::vector<const vcl::Token*> idx = buildIndexedTokens(program.tokenizer.tokens());
+
+    vcl::VuSoftwarePipelineRewritePlan plan =
+        makeScaffoldedPlan(static_cast<unsigned int>(idx.size()), "VF13.w", "VF31");
+    CHECK(vcl::isVuPlanEligibleForKernelRenameEmission(plan, idx));
+}
+
+TEST_CASE("VuSchedulerAnalysis 8b-2c-2: kernelRewriteRenameHints non-empty does NOT disqualify (rename is the point)")
+{
+    ParsedProgram program;
+    REQUIRE(program.parse("add.xyzw vf13, vf13, vf14"));
+    const std::vector<const vcl::Token*> idx = buildIndexedTokens(program.tokenizer.tokens());
+
+    vcl::VuSoftwarePipelineRewritePlan plan =
+        makeScaffoldedPlan(static_cast<unsigned int>(idx.size()), "VF13", "VF31");
+    vcl::VuKernelRenameHint hint;
+    hint.reg = "VF13"; hint.entry = 0; hint.stage = 0; hint.kind = 1;
+    plan.kernelRewriteRenameHints.push_back(hint);
+    CHECK(vcl::isVuPlanEligibleForKernelRenameEmission(plan, idx));
+}

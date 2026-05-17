@@ -524,6 +524,29 @@ void splitMultiFieldOpByFieldDecisions( const Token& token,
                                         const std::vector<VuKernelRenameDecision>& decisions,
                                         std::list<Token>& out );
 
+// Track 9.G step 8b-2c-2 — eligibility gate for the per-field
+// kernel-rename emission path. Returns true iff:
+//   - the plan satisfies the 8b-2b base scaffolding (II>0,
+//     stageCount>=2, conflicts==0, mainTokens non-empty);
+//   - kernelRewriteRenameDecisions and kernelRewriteRenameMoveSlots
+//     are non-empty, equal in length, and every entry is assigned;
+//   - every mainTokens op that reads or writes any decision base is
+//     on the splittable allowlist (vuOpIsSplittableForKernelRename).
+// kernelRewriteRenameHints is intentionally NOT required to be empty
+// here: rename resolution is the whole point of this path.
+//
+// countKernelRenameEmissionBlockers returns the number of mainTokens
+// ops that touch a decision base but are NOT splittable — i.e. the
+// reasons isVuPlanEligibleForKernelRenameEmission returned false.
+// Returns 0 when the scaffolding itself is incomplete (the predicate
+// already rejected such plans).
+//
+// Diagnostic-only at this step; no emission path consumes them yet.
+bool isVuPlanEligibleForKernelRenameEmission( const VuSoftwarePipelineRewritePlan& plan,
+                                              const std::vector<const Token*>& indexedTokens );
+unsigned int countKernelRenameEmissionBlockers( const VuSoftwarePipelineRewritePlan& plan,
+                                                const std::vector<const Token*>& indexedTokens );
+
 }
 
 #endif

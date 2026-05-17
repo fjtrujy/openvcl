@@ -8426,6 +8426,32 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		}
 	}
 
+	// Track 9.G step 8b-2c-2: per-field kernel-rename emission
+	// eligibility diagnostic. Reports per-plan whether the rename
+	// decisions + move-slots are complete and every mainTokens op
+	// touching a decision base is on the splittable allowlist. The
+	// blocker count surfaces the number of unsplittable touches when
+	// scaffolding is otherwise complete.
+	if( std::getenv( "OPENVCL_DUMP_KERNEL_RENAME_EMISSION_ELIGIBILITY" ) != NULL )
+	{
+		for( std::vector<VuSoftwarePipelineRewritePlan>::const_iterator p = plans.begin();
+		     p != plans.end(); ++p )
+		{
+			const bool eligible = isVuPlanEligibleForKernelRenameEmission( *p, indexedTokens );
+			const unsigned int blockers = countKernelRenameEmissionBlockers( *p, indexedTokens );
+			std::cerr << "[kernel-rename-emission-eligibility] loop=" << p->label
+			          << " eligible=" << ( eligible ? 1 : 0 )
+			          << " II=" << p->kernelRewriteII
+			          << " stageCount=" << p->kernelRewriteStageCount
+			          << " conflicts=" << p->kernelRewriteConflicts
+			          << " decisions=" << p->kernelRewriteRenameDecisions.size()
+			          << " moveSlots=" << p->kernelRewriteRenameMoveSlots.size()
+			          << " blockers=" << blockers
+			          << " mainTokens=" << p->kernelRewriteMainTokens.size()
+			          << "\n";
+		}
+	}
+
 	return plans;
 }
 
@@ -8917,6 +8943,109 @@ void splitMultiFieldOpByFieldDecisions( const Token& token,
                                         std::list<Token>& out )
 {
 	splitMultiFieldOpByFieldDecisionsImpl( token, decisions, out );
+}
+
+// Track 9.G step 8b-2c-2: eligibility gate for the per-field
+// kernel-rename emission path. Returns true iff the modulo-placer
+// scaffolding is complete enough for the upcoming generic emitter
+// (8b-2c-3) to consume per-decision rename + MOVE-slot info without
+// further rename support. Specifically:
+//
+//   - 8b-2b base eligibility (II>0, stageCount>=2, conflicts==0,
+//     mainTokens non-empty) — kernelRewriteRenameHints non-emptiness
+//     is permitted here because the renames will be resolved via the
+//     per-field decisions + move-slots picked in 8b-2a;
+//   - decisions and moveSlots non-empty and the same length;
+//   - every decision is assigned and every move-slot is assigned;
+//   - every mainTokens op that reads or writes any decision base is on
+//     the splittable allowlist (so the 8b-2c-1 splitter can clone it
+//     per field without changing observable semantics).
+//
+// Diagnostic-only at this step; no consumer yet. The companion
+// helper countKernelRenameEmissionBlockers reports how many mainTokens
+// ops would block emission, for the diagnostic env var.
+namespace
+{
+	bool tokenTouchesAnyDecisionBase( const Token& token,
+	                                  const std::vector<std::string>& decisionBases )
+	{
+		for( std::list<Token::Argument>::const_iterator a = token.arguments().begin();
+		     a != token.arguments().end(); ++a )
+		{
+			if( a->type() != Token::Argument::FLOAT_REGISTER )
+				continue;
+			std::string key;
+			if( !vuRegisterKey( *a, key ) )
+				continue;
+			const std::string base = registerBaseKey( key );
+			for( unsigned int b = 0; b < decisionBases.size(); ++b )
+				if( decisionBases[b] == base )
+					return true;
+		}
+		return false;
+	}
+
+	bool kernelRenameEmissionScaffoldingComplete( const VuSoftwarePipelineRewritePlan& plan )
+	{
+		if( plan.kernelRewriteII == 0u )                   return false;
+		if( plan.kernelRewriteStageCount < 2u )            return false;
+		if( plan.kernelRewriteConflicts != 0u )            return false;
+		if( plan.kernelRewriteMainTokens.empty() )         return false;
+		const std::vector<VuKernelRenameDecision>& decisions = plan.kernelRewriteRenameDecisions;
+		const std::vector<VuKernelRenameMoveSlot>&  slots    = plan.kernelRewriteRenameMoveSlots;
+		if( decisions.empty() )                            return false;
+		if( decisions.size() != slots.size() )             return false;
+		for( unsigned int d = 0; d < decisions.size(); ++d )
+			if( !decisions[d].assigned ) return false;
+		for( unsigned int s = 0; s < slots.size(); ++s )
+			if( !slots[s].assigned ) return false;
+		return true;
+	}
+
+	std::vector<std::string> collectDecisionBases( const VuSoftwarePipelineRewritePlan& plan )
+	{
+		std::vector<std::string> bases;
+		const std::vector<VuKernelRenameDecision>& decisions = plan.kernelRewriteRenameDecisions;
+		for( unsigned int d = 0; d < decisions.size(); ++d )
+		{
+			const std::string base = registerBaseKey( decisions[d].reg );
+			bool found = false;
+			for( unsigned int b = 0; b < bases.size(); ++b )
+				if( bases[b] == base ) { found = true; break; }
+			if( !found )
+				bases.push_back( base );
+		}
+		return bases;
+	}
+}
+
+unsigned int countKernelRenameEmissionBlockers( const VuSoftwarePipelineRewritePlan& plan,
+                                                const std::vector<const Token*>& indexedTokens )
+{
+	if( !kernelRenameEmissionScaffoldingComplete( plan ) )
+		return 0u; // not meaningful when scaffolding is incomplete
+	const std::vector<std::string> bases = collectDecisionBases( plan );
+	unsigned int blockers = 0;
+	for( unsigned int m = 0; m < plan.kernelRewriteMainTokens.size(); ++m )
+	{
+		const unsigned int idx = plan.kernelRewriteMainTokens[m];
+		if( idx >= indexedTokens.size() )
+			continue;
+		const Token& tk = *indexedTokens[idx];
+		if( !tokenTouchesAnyDecisionBase( tk, bases ) )
+			continue;
+		if( !vuOpIsSplittableForKernelRename( tk ) )
+			++blockers;
+	}
+	return blockers;
+}
+
+bool isVuPlanEligibleForKernelRenameEmission( const VuSoftwarePipelineRewritePlan& plan,
+                                              const std::vector<const Token*>& indexedTokens )
+{
+	if( !kernelRenameEmissionScaffoldingComplete( plan ) )
+		return false;
+	return countKernelRenameEmissionBlockers( plan, indexedTokens ) == 0u;
 }
 
 }
