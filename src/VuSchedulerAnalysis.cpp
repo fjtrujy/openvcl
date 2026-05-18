@@ -9227,12 +9227,21 @@ std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& token
 		const std::string epi0Label = plan.label + "__EPI0";
 		const std::string epi1Label = plan.label + "__EPI1";
 
+		// 9.G-1h-4a-3b (G-1): the rename-emission path splits multi-
+		// field ops and injects per-decision MOVE tokens into the MAIN
+		// body, so the surviving body-token count no longer matches
+		// the placer grid's non-NOP cell count. The bake-in consumer
+		// relies on a positional grid->token mapping, so we only
+		// publish the descriptor for non-rename-eligible plans here.
+		const bool renameEligible =
+		    isVuPlanEligibleForKernelRenameEmission( plan, indexedTokens );
+
 		// 9.G-1h-4a-2: record the MAIN steady-state range. The body
 		// lives in [mainLabel, epi0Label) of the rewritten stream.
 		// 9.G-1h-4a-3a: also stash the placer grid (II * 4 cells) and II
 		// for the bypass consumer. The grid indices are into THIS pass's
 		// input `tokens` list.
-		// Consumer arrives in 4a-3b; this is plumbing only.
+		if( !renameEligible )
 		{
 			VuKernelBlockRange r;
 			r.mainLabel = mainLabel;
@@ -9277,8 +9286,7 @@ std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& token
 		// (before the branch). The downstream scheduler honours the
 		// (modSlot, lane) constraints captured in
 		// kernelRewriteRenameMoveSlots when placing those MOVEs.
-		const bool renameEligible =
-		    isVuPlanEligibleForKernelRenameEmission( plan, indexedTokens );
+		// (renameEligible computed above for the descriptor gate.)
 
 		// Main body (strip labels).
 		for( std::vector<unsigned int>::const_iterator m = plan.kernelRewriteMainTokens.begin();

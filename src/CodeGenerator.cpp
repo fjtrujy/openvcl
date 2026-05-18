@@ -22,7 +22,9 @@
 #include "VuSchedulingRules.h"
 #include "VuInstructionInfo.h"
 #include "VuTokenResourceAccess.h"
+#include "VuKernelLayout.h"
 #include <cstdlib>
+#include <set>
 
 #include <iostream>
 #include <iomanip>
@@ -1756,6 +1758,114 @@ const Token* branchDelayFillerInScheduledSlot( const VuScheduledIssueSlot& slot 
 	return NULL;
 }
 
+// 9.G-1h-4a-3b (G-1): bake-in record for one rewritten MAIN body.
+// Built from a VuKernelBlockRange descriptor against the live post-
+// rewrite token list passed into emitStrictScheduledProgram. The
+// consumer side resolves the MAIN_LOOP / EPI0 labels by name, walks
+// the body positionally, and pairs the placer grid's non-NOP cells
+// (4 lanes per cycle: upper, lower, fdiv, efu) onto surviving body
+// tokens 1:1. Rename-eligible plans are NOT published into the
+// descriptor (see VuSchedulerAnalysis.cpp gate), so each non-NOP
+// grid cell maps to exactly one body token here.
+struct VuKernelBakeIn
+{
+	const Token* mainLabelTok;                                        // marks the MAIN_LOOP label slot
+	const Token* branchTok;                                           // the closing back-edge branch
+	unsigned int II;
+	std::vector< std::pair<const Token*, const Token*> > cycles;      // (upper, effective-lower) per cycle
+	std::set<const Token*> bodySkip;                                  // tokens to skip when the scheduler revisits them
+	bool active;
+
+	VuKernelBakeIn() : mainLabelTok(NULL), branchTok(NULL), II(0), active(false) {}
+};
+
+void buildKernelBakeIns( const std::list<Token>& tokens,
+                         const std::vector<VuKernelBlockRange>& ranges,
+                         std::vector<VuKernelBakeIn>& outBakeIns )
+{
+	outBakeIns.clear();
+	outBakeIns.reserve( ranges.size() );
+
+	for( size_t r = 0; r < ranges.size(); ++r )
+	{
+		const VuKernelBlockRange& range = ranges[r];
+		VuKernelBakeIn b;
+		b.II = range.II;
+
+		const Token* mainLabelTok = NULL;
+		const Token* endLabelTok  = NULL;
+		for( std::list<Token>::const_iterator it = tokens.begin(); it != tokens.end(); ++it )
+		{
+			if( !mainLabelTok && it->label() == range.mainLabel ) mainLabelTok = &*it;
+			else if( !endLabelTok && it->label() == range.endLabel ) { endLabelTok = &*it; break; }
+		}
+		if( mainLabelTok == NULL || endLabelTok == NULL || range.II == 0 )
+		{
+			outBakeIns.push_back(b);
+			continue;
+		}
+		b.mainLabelTok = mainLabelTok;
+
+		// Collect body tokens between (mainLabelTok, endLabelTok). The
+		// last token in that range is the back-edge branch (mainBranch
+		// in the rewrite emitter); everything before it is body.
+		std::vector<const Token*> body;
+		bool inRange = false;
+		const Token* lastInRange = NULL;
+		for( std::list<Token>::const_iterator it = tokens.begin(); it != tokens.end(); ++it )
+		{
+			const Token* p = &*it;
+			if( p == endLabelTok ) break;
+			if( inRange )
+			{
+				if( lastInRange ) body.push_back( lastInRange );
+				lastInRange = p;
+			}
+			if( p == mainLabelTok ) inRange = true;
+		}
+		if( lastInRange == NULL )
+		{
+			outBakeIns.push_back(b);
+			continue;
+		}
+		b.branchTok = lastInRange;
+
+		// Map grid cells onto body tokens in placer push order.
+		unsigned int bodyIdx = 0;
+		bool ok = true;
+		b.cycles.resize( range.II );
+		for( unsigned int c = 0; c < range.II && ok; ++c )
+		{
+			const Token* lane[4] = { NULL, NULL, NULL, NULL };
+			for( unsigned int l = 0; l < 4; ++l )
+			{
+				const unsigned int gridIdx = c * 4 + l;
+				if( gridIdx >= range.placerGridMainTokens.size() ) continue;
+				if( range.placerGridMainTokens[gridIdx] == VuKernelRewritePlan::NO_TOKEN ) continue;
+				if( bodyIdx >= body.size() ) { ok = false; break; }
+				lane[l] = body[bodyIdx++];
+			}
+			if( !ok ) break;
+			const Token* upper = lane[0];
+			const Token* lower = lane[1];
+			if( !lower ) lower = lane[2];
+			if( !lower ) lower = lane[3];
+			b.cycles[c] = std::make_pair( upper, lower );
+		}
+		if( !ok || bodyIdx != body.size() )
+		{
+			outBakeIns.push_back(b);
+			continue;
+		}
+
+		for( size_t k = 0; k < body.size(); ++k )
+			b.bodySkip.insert( body[k] );
+		b.bodySkip.insert( b.branchTok );
+		b.active = true;
+		outBakeIns.push_back(b);
+	}
+}
+
 }
 
 bool CodeGenerator::prepareStrictScheduledToken( const Token& token,
@@ -1850,10 +1960,142 @@ bool CodeGenerator::emitStrictScheduledProgram( const std::list<Token>& tokens, 
 		}
 	}
 
+	// 9.G-1h-4a-3b (G-1): build bake-in tables for non-rename-eligible
+	// rewritten MAIN bodies. The rewrite pass published a descriptor per
+	// such body in m_kernelBlockRanges; here we resolve labels to live
+	// tokens and align the placer grid against surviving body tokens.
+	std::vector<VuKernelBakeIn> bakeIns;
+	buildKernelBakeIns( tokens, m_kernelBlockRanges, bakeIns );
+
 	for( unsigned int i = 0; i < slots.size(); ++i )
 	{
 		const VuScheduledIssueSlot& slot = *slots[i];
 		m_ignoredImplicitWawResources = slot.ignoredImplicitWawResources;
+
+		// 9.G-1h-4a-3b (G-1): detect arrival at a baked-in MAIN_LOOP label
+		// and emit the entire body + back-edge branch in placer order,
+		// then skip the scheduler's emission of those tokens.
+		{
+			const VuKernelBakeIn* bake = NULL;
+			for( size_t r = 0; r < bakeIns.size(); ++r )
+			{
+				if( !bakeIns[r].active ) continue;
+				if( slot.firstToken == bakeIns[r].mainLabelTok ||
+				    slot.secondToken == bakeIns[r].mainLabelTok )
+				{
+					bake = &bakeIns[r];
+					break;
+				}
+			}
+			if( bake )
+			{
+				// 9.G-1h-4a-3b (G-1) cost gate: only fire bake-in when
+				// the placer grid is at least as tight as what the
+				// scheduler is about to emit for the same range. Each
+				// VuScheduledIssueSlot is one issue cycle (padding NOP
+				// slots included), so the scheduler's slot count over
+				// [i .. lastBodySlot] is the candidate cycle budget.
+				unsigned int lastBodySlot = i;
+				for( unsigned int j = i + 1; j < slots.size(); ++j )
+				{
+					const VuScheduledIssueSlot& cand = *slots[j];
+					const bool ftHit = cand.firstToken  && bake->bodySkip.count(cand.firstToken);
+					const bool stHit = cand.secondToken && bake->bodySkip.count(cand.secondToken);
+					if( ftHit || stHit )
+						lastBodySlot = j;
+				}
+				const unsigned int schedulerCycles = lastBodySlot - i + 1;
+				const unsigned int branchDelay =
+					bake->branchTok ? vuTokenBranchDelaySlots(*bake->branchTok) : 0;
+				const unsigned int lastCycle = bake->II - 1;
+				const bool substituteBranch =
+					( bake->II > 0 ) && ( bake->cycles[lastCycle].second == NULL );
+				const unsigned int bakeCycles =
+					bake->II + branchDelay + ( substituteBranch ? 0u : 1u );
+				if( bakeCycles > schedulerCycles )
+				{
+					// Bake-in would regress; let the scheduler handle
+					// this body normally. (Tracking 9.G-1h-5: placer
+					// relaxation should close this gap before bake-in
+					// is allowed to fire by default.)
+					bake = NULL;
+				}
+			}
+			if( bake )
+			{
+				// Emit the MAIN_LOOP label.
+				m_codeLines.push_back( bake->mainLabelTok->label() + ":" );
+
+				// Smart-tail substitution: if the last cycle has an empty
+				// lower lane, place the back-edge branch there to save a
+				// cycle (matches SCEI's last-cycle pairing).
+				const unsigned int lastCycle = bake->II - 1;
+				const bool substituteBranch =
+					( bake->II > 0 ) && ( bake->cycles[lastCycle].second == NULL );
+
+				for( unsigned int c = 0; c < bake->II; ++c )
+				{
+					const Token* up = bake->cycles[c].first;
+					const Token* lo = bake->cycles[c].second;
+					const bool isLast = ( c == lastCycle );
+					if( isLast && substituteBranch )
+					{
+						// up may be NULL (rare). emitPairedTokens handles
+						// the branch's delay slots internally.
+						if( up )
+							emitPairedTokens( *up, *bake->branchTok );
+						else
+							emitSingleToken( *bake->branchTok );
+						continue;
+					}
+
+					if( !up && !lo )
+					{
+						addNopLine();
+						m_currentCycle++;
+					}
+					else if( up && lo )
+					{
+						emitPairedTokens( *up, *lo );
+					}
+					else if( up )
+					{
+						const int issueCycle = m_currentCycle;
+						m_codeLines.push_back( formatRawPairedInstructionLine( generateInstruction(*up), vuInstr(VU_OP_NOP) ) );
+						recordRegisterWrites( *up, issueCycle );
+						m_currentCycle++;
+					}
+					else
+					{
+						const int issueCycle = m_currentCycle;
+						m_codeLines.push_back( formatRawPairedInstructionLine( vuInstr(VU_OP_NOP), generateInstruction(*lo) ) );
+						recordRegisterWrites( *lo, issueCycle );
+						m_currentCycle++;
+					}
+				}
+
+				if( !substituteBranch )
+					emitSingleToken( *bake->branchTok );
+
+				// Advance past every slot up to (and including) the last
+				// slot whose firstToken or secondToken is one of the body
+				// or back-edge tokens we just emitted. Padding NOP slots
+				// interleaved in that range are skipped too — their NOPs
+				// were already accounted for by empty grid cells in the
+				// bake-in cycle loop above.
+				unsigned int lastBodySlot = i;
+				for( unsigned int j = i + 1; j < slots.size(); ++j )
+				{
+					const VuScheduledIssueSlot& cand = *slots[j];
+					const bool ftHit = cand.firstToken  && bake->bodySkip.count(cand.firstToken);
+					const bool stHit = cand.secondToken && bake->bodySkip.count(cand.secondToken);
+					if( ftHit || stHit )
+						lastBodySlot = j;
+				}
+				i = lastBodySlot;
+				continue;
+			}
+		}
 
 		if( slot.padding )
 		{
