@@ -7817,6 +7817,20 @@ namespace
 		std::vector<unsigned int>       shadowMainTokenIndices;
 		shadowMainTokenIndices.reserve( nodes.size() );
 
+		// Track 9.G-1h step 4b-4: per-source-cell cache of synthesized
+		// split-clone token indices. The first SPLIT_CLONE node for a
+		// cell triggers splitMultiFieldOpByFieldDecisions(); the resulting
+		// per-field clones (each with its own DEST scratch + narrowed
+		// field mask, exactly as the rename emitter will produce) are
+		// appended to shadowOwned / shadowIndexed and their shadow
+		// indices recorded here. Subsequent SPLIT_CLONE nodes for the
+		// same cell read the cached index by cloneOrdinal. Before this
+		// step the helper reused n.sourceTokenIndex for every clone,
+		// which caused the shadow DDG to see N identical FMACs (same
+		// dest, same fields) producing false WAW / lane conflicts and
+		// inflating shadowII far above origII.
+		std::map<unsigned int, std::vector<unsigned int> > splitCloneIndexCache;
+
 		unsigned int passCount   = 0;
 		unsigned int splitCount  = 0;
 		unsigned int matMoveCount = 0;
@@ -7833,10 +7847,38 @@ namespace
 						shadowMainTokenIndices.push_back( n.sourceTokenIndex );
 					break;
 				case VuKernelExpandedNode::ROLE_SPLIT_CLONE:
+				{
 					++splitCount;
-					if( n.sourceTokenIndex < indexedTokens.size() )
-						shadowMainTokenIndices.push_back( n.sourceTokenIndex );
+					if( n.sourceTokenIndex >= indexedTokens.size() )
+						break;
+					std::map<unsigned int, std::vector<unsigned int> >::iterator
+					    cacheIt = splitCloneIndexCache.find( n.sourceCellIndex );
+					if( cacheIt == splitCloneIndexCache.end() )
+					{
+						std::list<Token> split;
+						splitMultiFieldOpByFieldDecisions(
+						    *indexedTokens[ n.sourceTokenIndex ],
+						    opportunity.kernelRewriteRenameDecisions,
+						    split );
+						std::vector<unsigned int> cloneShadowIndices;
+						cloneShadowIndices.reserve( split.size() );
+						for( std::list<Token>::const_iterator s = split.begin();
+						     s != split.end(); ++s )
+						{
+							shadowOwned.push_back( *s );
+							const unsigned int newIdx = static_cast<unsigned int>(
+							    shadowIndexed.size() );
+							shadowIndexed.push_back( &shadowOwned.back() );
+							cloneShadowIndices.push_back( newIdx );
+						}
+						cacheIt = splitCloneIndexCache.insert(
+						    std::make_pair( n.sourceCellIndex, cloneShadowIndices ) ).first;
+					}
+					if( n.cloneOrdinal < cacheIt->second.size() )
+						shadowMainTokenIndices.push_back(
+						    cacheIt->second[ n.cloneOrdinal ] );
 					break;
+				}
 				case VuKernelExpandedNode::ROLE_MATERIALIZE_MOVE:
 				case VuKernelExpandedNode::ROLE_TAIL_MOVE:
 				{
