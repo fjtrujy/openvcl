@@ -9750,7 +9750,16 @@ std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& token
 		// 9.G-1h-4a-3a: also stash the placer grid (II * 4 cells) and II
 		// for the bypass consumer. The grid indices are into THIS pass's
 		// input `tokens` list.
-		if( !renameEligible )
+		// 9.G-1h-4b-5: drop the !renameEligible suppression. We now
+		// always publish the placer descriptor. Rename-eligible plans
+		// still go through MOVE injection / multi-field split in the
+		// emitted MAIN body below, so a bake-in consumer that wants to
+		// stay grid-aligned must independently account for the
+		// renameEligible flag (publishing the descriptor does not
+		// commit the consumer to using it). This unlocks the
+		// bake-in path's visibility into rename-eligible loops; the
+		// previous !renameEligible gate predated 8b-2c-3's MOVE-tail
+		// injection and is no longer the right safety boundary.
 		{
 			VuKernelBlockRange r;
 			r.mainLabel = mainLabel;
