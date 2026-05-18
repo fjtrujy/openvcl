@@ -7755,20 +7755,23 @@ namespace
 	// shadow, leaving this helper as the single source of the
 	// [expanded-ddg-refit] line.
 	//
-	// Gated on OPENVCL_USE_EXPANDED_DDG_PLACER (same env var as 4b-3a
-	// / 4b-3b-1) so the default code path remains byte-identical. The
-	// shadow opportunity is a value copy with its kernelRewrite* /
-	// kernelEnvelope* fields cleared and then re-populated by
-	// runVuKernelPlacerAndScaffolding; the caller's opportunity is
-	// untouched. tokens (3rd arg) is forwarded as-is because the helper
-	// does not consume the bare std::list (audited at extraction time).
+	// Track 9.G-1h step 4b-6 (cleanup): the shadow-placer work and the
+	// `opportunity.kernelRewriteRefit*` field population always run so
+	// downstream consumers can read the refit verdict without setting
+	// any env var. Only the `[expanded-ddg-refit]` stderr line below
+	// remains gated on OPENVCL_USE_EXPANDED_DDG_PLACER (same env var as
+	// 4b-3a / 4b-3b-1) for diagnostic toggling. The shadow opportunity
+	// is a value copy with its kernelRewrite* / kernelEnvelope* fields
+	// cleared and then re-populated by runVuKernelPlacerAndScaffolding;
+	// the caller's opportunity is untouched apart from the four
+	// kernelRewriteRefit* scalar fields. tokens (3rd arg) is forwarded
+	// as-is because the helper does not consume the bare std::list
+	// (audited at extraction time).
 	static void runExpandedDDGRefitDiagnostic(
 	    VuLoopPipelineOpportunity& opportunity,
 	    const std::vector<const Token*>& indexedTokens,
 	    const std::list<Token>& tokens )
 	{
-		if( std::getenv( "OPENVCL_USE_EXPANDED_DDG_PLACER" ) == NULL )
-			return;
 		if( !opportunity.simpleCountedLoop )
 			return;
 		if( opportunity.mainTokenIndices.empty() )
@@ -7888,19 +7891,22 @@ namespace
 		opportunity.kernelRewriteRefitMainTokenCount =
 		    static_cast<unsigned int>( shadowMainTokenIndices.size() );
 
-		std::cerr << "[expanded-ddg-refit] loop=" << opportunity.label
-		          << " nodes=" << nodes.size()
-		          << " pass=" << passCount
-		          << " split=" << splitCount
-		          << " matMOVE=" << matMoveCount
-		          << " tailMOVE=" << tailMoveCount
-		          << " origII=" << opportunity.kernelRewriteII
-		          << " shadowII=" << shadow.kernelRewriteII
-		          << " origStages=" << opportunity.kernelRewriteStageCount
-		          << " shadowStages=" << shadow.kernelRewriteStageCount
-		          << " origMain=" << opportunity.mainTokenIndices.size()
-		          << " shadowMain=" << shadowMainTokenIndices.size()
-		          << "\n";
+		if( std::getenv( "OPENVCL_USE_EXPANDED_DDG_PLACER" ) != NULL )
+		{
+			std::cerr << "[expanded-ddg-refit] loop=" << opportunity.label
+			          << " nodes=" << nodes.size()
+			          << " pass=" << passCount
+			          << " split=" << splitCount
+			          << " matMOVE=" << matMoveCount
+			          << " tailMOVE=" << tailMoveCount
+			          << " origII=" << opportunity.kernelRewriteII
+			          << " shadowII=" << shadow.kernelRewriteII
+			          << " origStages=" << opportunity.kernelRewriteStageCount
+			          << " shadowStages=" << shadow.kernelRewriteStageCount
+			          << " origMain=" << opportunity.mainTokenIndices.size()
+			          << " shadowMain=" << shadowMainTokenIndices.size()
+			          << "\n";
+		}
 	}
 }
 

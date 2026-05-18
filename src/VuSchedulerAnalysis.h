@@ -344,17 +344,17 @@ struct VuLoopPipelineOpportunity
 	std::vector<VuKernelTemplateSlot> kernelRewriteStageCells;
 
 	// Track 9.G-1h step 4b-3b-4 — shadow-opportunity refit metrics.
-	// Populated by runExpandedDDGRefitDiagnostic (gated on
-	// OPENVCL_USE_EXPANDED_DDG_PLACER=1) after the modulo placer has
-	// run on the original opportunity. Values are the placer outputs
+	// Populated by runExpandedDDGRefitDiagnostic after the modulo placer
+	// has run on the original opportunity (always; 4b-6 dropped the env
+	// gate around the work — only the stderr line stays gated on
+	// OPENVCL_USE_EXPANDED_DDG_PLACER=1). Values are the placer outputs
 	// for the SHADOW opportunity whose mainTokenIndices reflect the
 	// expanded-DDG sequence (split clones + materialize MOVEs + tail
-	// MOVEs, see VuKernelExpandedNode). All zero when the diagnostic is
-	// disabled or the refit path was not eligible. Refit VLIW cells are
-	// not exposed here because their layout-entry indices reference a
-	// shadow VuKernelLayout that lives only inside the helper; only the
-	// scalar verdicts are public. 4b-3b-5 wires CodeGenerator to read
-	// these when non-zero.
+	// MOVEs, see VuKernelExpandedNode). All zero when the refit path
+	// was not eligible. Refit VLIW cells are not exposed here because
+	// their layout-entry indices reference a shadow VuKernelLayout that
+	// lives only inside the helper; only the scalar verdicts are
+	// public. 4b-3b-5 wires CodeGenerator to read these when non-zero.
 	unsigned int kernelRewriteRefitII;
 	unsigned int kernelRewriteRefitStageCount;
 	unsigned int kernelRewriteRefitConflicts;
@@ -449,9 +449,11 @@ struct VuSoftwarePipelineRewritePlan
 	// mirrored from VuLoopPipelineOpportunity by
 	// buildVuSoftwarePipelineRewritePlans so emission-side consumers
 	// (CodeGenerator) can see the placer's shadow verdict without
-	// reaching back into analysis state. All zero unless
-	// OPENVCL_USE_EXPANDED_DDG_PLACER=1. Dormant: no emission path
-	// branches on these yet; the CodeGenerator only logs them.
+	// reaching back into analysis state. After 4b-6 these are populated
+	// unconditionally (whenever the refit path was eligible); the
+	// OPENVCL_USE_EXPANDED_DDG_PLACER env var now only toggles the
+	// `[refit-codegen]` stderr line in CodeGenerator. Dormant: no
+	// emission path branches on these yet.
 	unsigned int kernelRewriteRefitII;
 	unsigned int kernelRewriteRefitStageCount;
 	unsigned int kernelRewriteRefitConflicts;
