@@ -9108,6 +9108,80 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		}
 	}
 
+	// Track 9.G-1h-4b-1: per-plan rename-emission expansion factor.
+	// For each rename-eligible plan, count how many emitted tokens the
+	// MAIN body would produce after splitMultiFieldOpByFieldDecisions
+	// + materialize-MOVE injections + tail MOVE block. Compare against
+	// the placer grid capacity (II * 4). When `expandedMainTokens` is
+	// less than or equal to `II * 4`, sub-step 4b-3's expanded-DDG
+	// placer should be able to fit. When greater, the placer needs to
+	// either increase II or learn to pack multiple sub-ops per lane.
+	if( std::getenv( "OPENVCL_DUMP_KERNEL_RENAME_EMISSION_EXPANSION" ) != NULL )
+	{
+		for( std::vector<VuSoftwarePipelineRewritePlan>::const_iterator p = plans.begin();
+		     p != plans.end(); ++p )
+		{
+			if( !isVuPlanEligibleForKernelRenameEmission( *p, indexedTokens ) )
+				continue;
+			unsigned int splitGroups        = 0;
+			unsigned int expandedFromSplits = 0;
+			unsigned int materializeMOVEs   = 0;
+			unsigned int passthrough        = 0;
+			unsigned int nopSentinels       = 0;
+			unsigned int assignedDecisions  = 0;
+			for( unsigned int d = 0; d < p->kernelRewriteRenameDecisions.size(); ++d )
+				if( p->kernelRewriteRenameDecisions[d].assigned )
+					++assignedDecisions;
+			for( unsigned int m = 0; m < p->kernelRewriteMainTokens.size(); ++m )
+			{
+				const unsigned int idx = p->kernelRewriteMainTokens[m];
+				if( idx == VuKernelRewritePlan::NO_TOKEN )
+				{
+					++nopSentinels;
+					continue;
+				}
+				if( idx >= indexedTokens.size() )
+					continue;
+				const Token& src = *indexedTokens[idx];
+				if( tokenIsKernelRenameMaterializeCandidate( src, *p ) )
+				{
+					materializeMOVEs += assignedDecisions;
+					++passthrough; // the unsplit op itself
+					continue;
+				}
+				std::list<Token> split;
+				splitMultiFieldOpByFieldDecisions( src, p->kernelRewriteRenameDecisions, split );
+				const unsigned int sz = static_cast<unsigned int>( split.size() );
+				if( sz > 1u )
+				{
+					++splitGroups;
+					expandedFromSplits += sz;
+				}
+				else
+				{
+					++passthrough;
+				}
+			}
+			const unsigned int tailMOVEs = assignedDecisions;
+			const unsigned int expandedMainTokens =
+				expandedFromSplits + materializeMOVEs + tailMOVEs + passthrough;
+			const unsigned int gridCapacity = p->kernelRewriteII * 4u;
+			std::cerr << "[kernel-rename-emission-expansion] loop=" << p->label
+			          << " II=" << p->kernelRewriteII
+			          << " gridCapacity=" << gridCapacity
+			          << " mainTokens=" << p->kernelRewriteMainTokens.size()
+			          << " nopSentinels=" << nopSentinels
+			          << " splitGroups=" << splitGroups
+			          << " expandedFromSplits=" << expandedFromSplits
+			          << " materializeMOVEs=" << materializeMOVEs
+			          << " tailMOVEs=" << tailMOVEs
+			          << " passthrough=" << passthrough
+			          << " expandedMainTokens=" << expandedMainTokens
+			          << " fits=" << ( expandedMainTokens <= gridCapacity ? 1 : 0 )
+			          << "\n";
+		}
+	}
+
 	return plans;
 }
 
