@@ -6294,800 +6294,19 @@ namespace
 		default: return "?";
 		}
 	}
-}
 
-std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const std::list<Token>& tokens )
-{
-	std::vector<VuLoopPipelineOpportunity> result;
-	std::vector<const Token*> indexedTokens;
-	for( std::list<Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i )
-		indexedTokens.push_back( &*i );
-
-	std::vector<VuLoopCandidate> loops = findVuLoopCandidates( tokens );
-
-	for( std::vector<VuLoopCandidate>::const_iterator loop = loops.begin(); loop != loops.end(); ++loop )
+	// Track 9.G-1h step 4b-3b-2: extracted modulo-placer + kernel-rewrite
+	// scaffolding body. Pulled verbatim out of findVuLoopPipelineOpportunities
+	// (originally under "Track 9.G step 4d" / "Track 9.G step 8a") so the
+	// same logic can be reused by the upcoming refit placer (4b-3b-3) over
+	// expanded-DDG nodes. Body is byte-identical: only outer-scope
+	// dependencies are passed in as parameters (opportunity, indexedTokens,
+	// tokens).
+	static void runVuKernelPlacerAndScaffolding(
+	    VuLoopPipelineOpportunity& opportunity,
+	    const std::vector<const Token*>& indexedTokens,
+	    const std::list<Token>& tokens )
 	{
-		unsigned int qProducerCount = 0;
-		unsigned int qProducerOffset = 0;
-		std::vector<unsigned int> qProducerOffsets;
-		for( unsigned int i = 0; i < loop->bodyTokens.size(); ++i )
-		{
-			if( vuTokenWritesQ( *loop->bodyTokens[i] ) )
-			{
-				++qProducerCount;
-				qProducerOffset = i;
-				qProducerOffsets.push_back( i );
-			}
-		}
-
-		if( qProducerCount == 0 )
-			continue;
-
-		std::vector<unsigned int> lastQConsumerOffsets;
-		for( unsigned int i = qProducerOffset + 1; i < loop->bodyTokens.size(); ++i )
-		{
-			if( vuTokenReadsQ( *loop->bodyTokens[i] ) )
-				lastQConsumerOffsets.push_back( i );
-		}
-
-		const unsigned int branchDelaySlots = loop->branchToken ? vuTokenBranchDelaySlots( *loop->branchToken ) : 0;
-		const unsigned int branchOffset = loop->bodyTokens.empty()
-		                                ? 0
-		                                : static_cast<unsigned int>( loop->bodyTokens.size() - 1 );
-
-		VuLoopPipelineOpportunity opportunity;
-		opportunity.label = loop->label;
-		opportunity.labelTokenIndex = loop->labelTokenIndex;
-		opportunity.branchTokenIndex = loop->branchTokenIndex;
-		opportunity.qProducerTokenIndex = loop->firstBodyTokenIndex + qProducerOffset;
-		for( std::vector<unsigned int>::const_iterator producer = qProducerOffsets.begin();
-		     producer != qProducerOffsets.end(); ++producer )
-			opportunity.qProducerTokenIndices.push_back( loop->firstBodyTokenIndex + *producer );
-		std::vector<unsigned int> allQConsumerOffsets;
-		for( unsigned int producerIndex = 0; producerIndex < qProducerOffsets.size(); ++producerIndex )
-		{
-			const unsigned int producerOffset = qProducerOffsets[producerIndex];
-			const unsigned int nextProducerOffset =
-			    producerIndex + 1 < qProducerOffsets.size()
-			    ? qProducerOffsets[producerIndex + 1]
-			    : static_cast<unsigned int>( loop->bodyTokens.size() );
-			VuLoopQStage stage;
-			stage.qProducerTokenIndex = loop->firstBodyTokenIndex + producerOffset;
-			stage.qProducerLatency = loop->bodyTokens[producerOffset]->operand()
-			                       ? loop->bodyTokens[producerOffset]->operand()->latency()
-			                       : 0;
-			for( unsigned int consumerOffset = producerOffset + 1;
-			     consumerOffset < nextProducerOffset && consumerOffset < loop->bodyTokens.size();
-			     ++consumerOffset )
-			{
-				if( vuTokenReadsQ( *loop->bodyTokens[consumerOffset] ) )
-				{
-					stage.qConsumerTokenIndices.push_back( loop->firstBodyTokenIndex + consumerOffset );
-					allQConsumerOffsets.push_back( consumerOffset );
-				}
-			}
-			if( !stage.qConsumerTokenIndices.empty() )
-			{
-				const unsigned int firstConsumerOffset =
-				    stage.qConsumerTokenIndices.front() - loop->firstBodyTokenIndex;
-				const unsigned int lastConsumerOffset =
-				    stage.qConsumerTokenIndices.back() - loop->firstBodyTokenIndex;
-				stage.qProducerConsumerGapCycles =
-				    countEmittableTokens( *loop, producerOffset + 1, firstConsumerOffset );
-				stage.qProducerConsumerGapDeficitCycles =
-				    stage.qProducerLatency > stage.qProducerConsumerGapCycles
-				    ? stage.qProducerLatency - stage.qProducerConsumerGapCycles
-				    : 0;
-				stage.loopCarriedQGapCycles =
-				    countEmittableTokens( *loop, firstConsumerOffset + 1, branchOffset )
-				    + branchDelaySlots
-				    + countEmittableTokens( *loop, 0, producerOffset );
-				stage.qProducerInsertionGapCycles =
-				    countEmittableTokens( *loop, lastConsumerOffset + 1, branchOffset )
-				    + branchDelaySlots
-				    + countEmittableTokens( *loop, 0, producerOffset );
-				stage.qProducerInsertionGapDeficitCycles =
-				    stage.qProducerLatency > stage.qProducerInsertionGapCycles
-				    ? stage.qProducerLatency - stage.qProducerInsertionGapCycles
-				    : 0;
-				stage.qSchedulingStrategy =
-				    classifyLoopQSchedulingStrategy( stage.qProducerConsumerGapDeficitCycles,
-				                                     stage.loopCarriedQGapCycles,
-				                                     stage.qProducerLatency );
-			}
-			opportunity.qStages.push_back( stage );
-		}
-		if( allQConsumerOffsets.empty() )
-			continue;
-		const std::vector<unsigned int>& primaryQConsumerOffsets =
-			lastQConsumerOffsets.empty() ? allQConsumerOffsets : lastQConsumerOffsets;
-		opportunity.firstQConsumerTokenIndex = loop->firstBodyTokenIndex + allQConsumerOffsets.front();
-		opportunity.lastQConsumerTokenIndex = loop->firstBodyTokenIndex + allQConsumerOffsets.back();
-		opportunity.qProducerLatency = loop->bodyTokens[qProducerOffset]->operand()
-		                             ? loop->bodyTokens[qProducerOffset]->operand()->latency()
-		                             : 0;
-		opportunity.qProducerConsumerGapCycles = countEmittableTokens( *loop,
-		                                                                qProducerOffset + 1,
-		                                                                primaryQConsumerOffsets.front() );
-		opportunity.sourcePrefixCycles = countEmittableTokens( *loop, 0, qProducerOffset );
-		opportunity.sourceSuffixCycles = countEmittableTokens( *loop,
-		                                                       primaryQConsumerOffsets.front() + 1,
-		                                                       static_cast<unsigned int>( loop->bodyTokens.size() - 1 ) );
-		opportunity.branchDelaySlots = branchDelaySlots;
-		opportunity.loopCsClid = loop->loopCsClid;
-		opportunity.loopCsMlid = loop->loopCsMlid;
-		opportunity.qProducerConsumerGapDeficitCycles =
-			opportunity.qProducerLatency > opportunity.qProducerConsumerGapCycles
-			? opportunity.qProducerLatency - opportunity.qProducerConsumerGapCycles
-			: 0;
-		opportunity.loopCarriedQGapCycles =
-			opportunity.sourceSuffixCycles + opportunity.branchDelaySlots + opportunity.sourcePrefixCycles;
-		opportunity.qProducerInsertionGapCycles =
-			countEmittableTokens( *loop,
-			                      primaryQConsumerOffsets.back() + 1,
-			                      static_cast<unsigned int>( loop->bodyTokens.size() - 1 ) )
-		    + opportunity.branchDelaySlots
-		    + opportunity.sourcePrefixCycles;
-		opportunity.qProducerInsertionGapDeficitCycles =
-			opportunity.qProducerLatency > opportunity.qProducerInsertionGapCycles
-			? opportunity.qProducerLatency - opportunity.qProducerInsertionGapCycles
-			: 0;
-		opportunity.qSchedulingStrategy = classifyLoopQSchedulingStrategy( opportunity );
-		opportunity.simpleCountedLoop = loop->simpleCountedLoop;
-		opportunity.hasSingleQProducer = qProducerCount == 1;
-		opportunity.requiresPrologEpilog = loop->simpleCountedLoop && qProducerCount == 1;
-		opportunity.memoryLoadCount = loop->memoryLoadCount;
-		opportunity.memoryStoreCount = loop->memoryStoreCount;
-		opportunity.hasMemoryPreOrPostIncrement = loop->hasMemoryPreOrPostIncrement;
-		opportunity.hasXgkick = loop->hasXgkick;
-		opportunity.inductionRegisters = loop->inductionRegisters;
-		opportunity.inductionUpdates = loop->inductionUpdates;
-		opportunity.loopReadWriteRegisters = loop->loopReadWriteRegisters;
-
-		for( std::vector<unsigned int>::const_iterator q = allQConsumerOffsets.begin(); q != allQConsumerOffsets.end(); ++q )
-		{
-			opportunity.qConsumerTokenIndices.push_back( loop->firstBodyTokenIndex + *q );
-		}
-
-		for( std::vector<VuLoopQStage>::const_iterator stage = opportunity.qStages.begin();
-		     stage != opportunity.qStages.end(); ++stage )
-		{
-			for( std::vector<unsigned int>::const_iterator q = stage->qConsumerTokenIndices.begin();
-			     q != stage->qConsumerTokenIndices.end(); ++q )
-			{
-				if( *q >= loop->firstBodyTokenIndex )
-				{
-					const unsigned int qOffset = *q - loop->firstBodyTokenIndex;
-					collectLoopCarriedQInputs( *loop, qOffset, opportunity.carriedQInputRegisters );
-					collectLoopCarriedQOutputs( *loop, qOffset, opportunity.carriedQOutputRegisters );
-				}
-			}
-		}
-
-		opportunity.requiresLoopCarriedRegisters = !opportunity.carriedQInputRegisters.empty()
-		                                        || !opportunity.carriedQOutputRegisters.empty();
-		opportunity.eligibleSingleQSoftwarePipeline = opportunity.simpleCountedLoop
-		                                           && opportunity.hasSingleQProducer
-		                                           && opportunity.branchDelaySlots > 0
-		                                           && (opportunity.sourcePrefixCycles + opportunity.sourceSuffixCycles) >= opportunity.qProducerLatency;
-
-		if( opportunity.eligibleSingleQSoftwarePipeline )
-		{
-			const unsigned int firstConsumerOffset = primaryQConsumerOffsets.front();
-			const unsigned int branchOffset = loop->branchTokenIndex - loop->firstBodyTokenIndex;
-			opportunity.hasSoftwarePipelinePlan = true;
-			appendPipelineInstructionIndices( *loop, 0, firstConsumerOffset, opportunity.prologTokenIndices );
-			appendPipelineInstructionIndices( *loop, firstConsumerOffset, branchOffset + 1, opportunity.mainTokenIndices );
-			appendPipelineInstructionIndices( *loop, firstConsumerOffset, branchOffset, opportunity.drainTokenIndices );
-			collectSoftwarePipelineSuffixStoreDescriptors( opportunity.drainTokenIndices,
-			                                               indexedTokens,
-			                                               opportunity );
-		}
-
-		if( qProducerCount > 1
-		    && !opportunity.qStages.empty()
-		    && !opportunity.qStages.front().qConsumerTokenIndices.empty() )
-		{
-			const unsigned int branchOffset = loop->branchTokenIndex - loop->firstBodyTokenIndex;
-			const VuLoopQStage& firstStage = opportunity.qStages.front();
-			const unsigned int firstProducerOffset =
-			    firstStage.qProducerTokenIndex - loop->firstBodyTokenIndex;
-			const unsigned int firstConsumerOffset =
-			    firstStage.qConsumerTokenIndices.front() - loop->firstBodyTokenIndex;
-			bool foundSafeCyclicPrefix = false;
-			unsigned int bestMainCycles = ~0u;
-			VuLoopPipelineOpportunity bestOpportunity = opportunity;
-			if( firstProducerOffset > 0
-			    && firstProducerOffset < branchOffset
-			    && countEmittableTokens( *loop, firstProducerOffset, branchOffset ) != 0 )
-			{
-				foundSafeCyclicPrefix =
-				    considerMultiQPipelineCandidate( *loop,
-				                                     indexedTokens,
-				                                     opportunity,
-				                                     firstProducerOffset,
-				                                     firstProducerOffset,
-				                                     branchOffset,
-				                                     true,
-				                                     bestMainCycles,
-				                                     bestOpportunity )
-				    || foundSafeCyclicPrefix;
-			}
-			if( firstConsumerOffset < branchOffset
-			    && firstStage.qProducerInsertionGapDeficitCycles == 0
-			    && countEmittableTokens( *loop, firstConsumerOffset, branchOffset ) != 0 )
-			{
-				foundSafeCyclicPrefix =
-				    considerMultiQPipelineCandidate( *loop,
-				                                     indexedTokens,
-				                                     opportunity,
-				                                     firstConsumerOffset,
-				                                     firstConsumerOffset,
-				                                     branchOffset,
-				                                     true,
-				                                     bestMainCycles,
-				                                     bestOpportunity )
-				    || foundSafeCyclicPrefix;
-			}
-
-			unsigned int cyclicPrefixLastConsumerOffset = 0;
-			bool foundFallbackCyclicPrefix = false;
-			for( std::vector<VuLoopQStage>::const_iterator stage = opportunity.qStages.begin();
-			     stage != opportunity.qStages.end(); ++stage )
-			{
-				if( stage->qConsumerTokenIndices.empty() )
-					continue;
-				const unsigned int lastConsumerOffset =
-				    stage->qConsumerTokenIndices.back() - loop->firstBodyTokenIndex;
-				if( lastConsumerOffset >= branchOffset )
-					continue;
-				if( countEmittableTokens( *loop, lastConsumerOffset + 1, branchOffset ) == 0 )
-					continue;
-				cyclicPrefixLastConsumerOffset = lastConsumerOffset;
-				foundFallbackCyclicPrefix = true;
-				foundSafeCyclicPrefix =
-				    considerMultiQPipelineCandidate( *loop,
-				                                     indexedTokens,
-				                                     opportunity,
-				                                     lastConsumerOffset + 1,
-				                                     lastConsumerOffset + 1,
-				                                     branchOffset,
-				                                     true,
-				                                     bestMainCycles,
-				                                     bestOpportunity )
-				    || foundSafeCyclicPrefix;
-			}
-			if( loop->simpleCountedLoop
-			    && !loop->hasXgkick
-			    && !loop->hasMemoryPreOrPostIncrement
-			    && loop->branchTokenIndex < indexedTokens.size()
-			    && branchCanInvertToDrain( *indexedTokens[loop->branchTokenIndex] ) )
-			{
-				for( unsigned int offset = 1; offset < branchOffset; ++offset )
-				{
-					const unsigned int tokenIndex = loop->firstBodyTokenIndex + offset - 1;
-					if( tokenIndex >= indexedTokens.size()
-					    || !tokenHasGuardableMultiQCyclicPrefixSideEffect( *indexedTokens[tokenIndex] ) )
-						continue;
-					if( countEmittableTokens( *loop, offset, branchOffset ) == 0 )
-						continue;
-					foundSafeCyclicPrefix =
-					    considerMultiQPipelineCandidate( *loop,
-					                                     indexedTokens,
-					                                     opportunity,
-					                                     offset,
-					                                     offset,
-					                                     branchOffset,
-					                                     true,
-					                                     bestMainCycles,
-					                                     bestOpportunity )
-					    || foundSafeCyclicPrefix;
-				}
-			}
-			if( foundSafeCyclicPrefix )
-			{
-				opportunity.multiQPrologTokenIndices = bestOpportunity.multiQPrologTokenIndices;
-				opportunity.multiQMainTokenIndices = bestOpportunity.multiQMainTokenIndices;
-				opportunity.multiQCyclicPrefixTokenIndices = bestOpportunity.multiQCyclicPrefixTokenIndices;
-				opportunity.multiQCyclicPrefixRotations = bestOpportunity.multiQCyclicPrefixRotations;
-				opportunity.multiQCyclicPrefixInsertBeforeTokenIndex =
-				    bestOpportunity.multiQCyclicPrefixInsertBeforeTokenIndex;
-				opportunity.multiQCyclicPrefixNeedsGuard =
-				    bestOpportunity.multiQCyclicPrefixNeedsGuard;
-				opportunity.multiQCyclicPrefixLastTokenInBranchDelaySlot =
-				    bestOpportunity.multiQCyclicPrefixLastTokenInBranchDelaySlot;
-				opportunity.drainTokenIndices = bestOpportunity.drainTokenIndices;
-			}
-			else if( foundFallbackCyclicPrefix )
-			{
-				assignMultiQPipelineCandidate( *loop,
-				                               cyclicPrefixLastConsumerOffset + 1,
-				                               cyclicPrefixLastConsumerOffset + 1,
-				                               branchOffset,
-				                               opportunity );
-			}
-		}
-
-		classifySoftwarePipelineEmissionSafety( opportunity, *loop, qProducerOffset, indexedTokens );
-		classifyMultiQSoftwarePipelineOpportunity( opportunity, qProducerCount, indexedTokens );
-		if( opportunity.canEmitMultiQSoftwarePipeline
-		    && !opportunity.multiQMainTokenIndices.empty()
-		    && !opportunity.multiQCyclicPrefixTokenIndices.empty()
-		    && !opportunity.multiQCyclicPrefixNeedsGuard
-		    && !loopUsesLoopExtraDirective( *loop, indexedTokens ) )
-			classifyMultiQCyclicPrefixSuffixStoreDrains( opportunity,
-			                                             *loop,
-			                                             indexedTokens );
-
-		if( std::getenv( "OPENVCL_DUMP_PIPELINE_OPPORTUNITIES" ) != NULL )
-		{
-			std::cerr << "[pipeline-opportunity] loop=" << opportunity.label
-			          << " qProducerCount=" << qProducerCount
-			          << " qProducerLatency=" << opportunity.qProducerLatency
-			          << " gapCycles=" << opportunity.qProducerConsumerGapCycles
-			          << " gapDeficit=" << opportunity.qProducerConsumerGapDeficitCycles
-			          << " loopCarriedQGap=" << opportunity.loopCarriedQGapCycles
-			          << " producerInsertionGap=" << opportunity.qProducerInsertionGapCycles
-			          << " producerInsertionDeficit=" << opportunity.qProducerInsertionGapDeficitCycles
-			          << " sourcePrefix=" << opportunity.sourcePrefixCycles
-			          << " sourceSuffix=" << opportunity.sourceSuffixCycles
-			          << " branchDelaySlots=" << opportunity.branchDelaySlots
-			          << " simpleCounted=" << ( opportunity.simpleCountedLoop ? 1 : 0 )
-			          << " requiresLoopCarried=" << ( opportunity.requiresLoopCarriedRegisters ? 1 : 0 )
-			          << " eligibleSingleQ=" << ( opportunity.eligibleSingleQSoftwarePipeline ? 1 : 0 )
-			          << " hasSwpPlan=" << ( opportunity.hasSoftwarePipelinePlan ? 1 : 0 )
-			          << " canEmitMultiQ=" << ( opportunity.canEmitMultiQSoftwarePipeline ? 1 : 0 )
-			          << " multiQNeedsGuard=" << ( opportunity.multiQCyclicPrefixNeedsGuard ? 1 : 0 )
-			          << " prologSize=" << opportunity.prologTokenIndices.size()
-			          << " mainSize=" << opportunity.mainTokenIndices.size()
-			          << " drainSize=" << opportunity.drainTokenIndices.size()
-			          << " multiQPrologSize=" << opportunity.multiQPrologTokenIndices.size()
-			          << " multiQMainSize=" << opportunity.multiQMainTokenIndices.size()
-			          << " multiQCyclicPrefixSize=" << opportunity.multiQCyclicPrefixTokenIndices.size()
-			          << "\n";
-			if( !opportunity.mainTokenIndices.empty() )
-			{
-				const unsigned int singleQMainEstCycles =
-				    scheduledLoopBodyCycles( opportunity.mainTokenIndices, indexedTokens );
-				std::cerr << "[pipeline-opportunity]   singleQ_main_estimated_cycles="
-				          << singleQMainEstCycles << "\n";
-				if( !opportunity.prologTokenIndices.empty() )
-				{
-					const unsigned int singleQMainInContextCycles =
-					    scheduledLoopBodyCyclesInContext( opportunity.prologTokenIndices,
-					                                      opportunity.mainTokenIndices,
-					                                      indexedTokens );
-					std::cerr << "[pipeline-opportunity]   singleQ_main_in_context_cycles="
-					          << singleQMainInContextCycles << "\n";
-				}
-			}
-			if( !opportunity.multiQMainTokenIndices.empty() )
-			{
-				const unsigned int multiQMainEstCycles =
-				    scheduledLoopBodyCycles( opportunity.multiQMainTokenIndices, indexedTokens );
-				std::cerr << "[pipeline-opportunity]   multiQ_main_estimated_cycles="
-				          << multiQMainEstCycles << "\n";
-				if( !opportunity.multiQPrologTokenIndices.empty() )
-				{
-					const unsigned int multiQMainInContextCycles =
-					    scheduledLoopBodyCyclesInContext( opportunity.multiQPrologTokenIndices,
-					                                      opportunity.multiQMainTokenIndices,
-					                                      indexedTokens );
-					std::cerr << "[pipeline-opportunity]   multiQ_main_in_context_cycles="
-					          << multiQMainInContextCycles << "\n";
-				}
-			}
-		}
-
-		if( std::getenv( "OPENVCL_DUMP_LOOP_DDG" ) != NULL
-		    && opportunity.simpleCountedLoop
-		    && !opportunity.mainTokenIndices.empty() )
-		{
-			// Track 9.G step 1: extract a dependence DAG over the simple-counted
-			// loop body. Nodes = opportunity.mainTokenIndices. Edges encode
-			// (kind, dist, latency, resource):
-			//   kind  in {RAW, WAW, WAR}; intra-iter dist=0 (i<j), loop-carried dist=1 (i>j)
-			//   latency for RAW comes from VuLatencyTracker; WAW/WAR use 1 (ordering only)
-			//   resource = base register key (collapsed via registerBaseKey) or
-			//              implicit pipe tag (@Q, @P, @ACC, @MAC, @CLIP, @R, @I).
-			// Diagnostic-only; planner / emission untouched. Output is gated on
-			// OPENVCL_DUMP_LOOP_DDG; per-edge detail additionally needs
-			// OPENVCL_DUMP_LOOP_DDG_EDGES to avoid drowning the log on large bodies.
-			const std::vector<unsigned int>& mt = opportunity.mainTokenIndices;
-			const unsigned int n = static_cast<unsigned int>( mt.size() );
-			std::vector< std::vector<std::string> > nodeWrites( n ), nodeReads( n );
-			for( unsigned int k = 0; k < n; ++k )
-			{
-				if( mt[k] >= indexedTokens.size() ) continue;
-				VuTokenResourceAccess acc;
-				if( !buildVuTokenResourceAccess( *indexedTokens[mt[k]], acc ) ) continue;
-				for( std::list<std::string>::const_iterator it = acc.registerWrites.begin();
-				     it != acc.registerWrites.end(); ++it )
-					nodeWrites[k].push_back( registerBaseKey( *it ) );
-				for( std::list<std::string>::const_iterator it = acc.registerReads.begin();
-				     it != acc.registerReads.end(); ++it )
-					nodeReads[k].push_back( registerBaseKey( *it ) );
-				const unsigned int iw = acc.implicitWrites;
-				const unsigned int ir = acc.implicitReads;
-				if( iw & VU_RESOURCE_ACC )  nodeWrites[k].push_back( "@ACC" );
-				if( iw & VU_RESOURCE_Q )    nodeWrites[k].push_back( "@Q" );
-				if( iw & VU_RESOURCE_P )    nodeWrites[k].push_back( "@P" );
-				if( iw & VU_RESOURCE_R )    nodeWrites[k].push_back( "@R" );
-				if( iw & VU_RESOURCE_I )    nodeWrites[k].push_back( "@I" );
-				if( iw & VU_RESOURCE_MAC )  nodeWrites[k].push_back( "@MAC" );
-				if( iw & VU_RESOURCE_CLIP ) nodeWrites[k].push_back( "@CLIP" );
-				if( ir & VU_RESOURCE_ACC )  nodeReads[k].push_back( "@ACC" );
-				if( ir & VU_RESOURCE_Q )    nodeReads[k].push_back( "@Q" );
-				if( ir & VU_RESOURCE_P )    nodeReads[k].push_back( "@P" );
-				if( ir & VU_RESOURCE_R )    nodeReads[k].push_back( "@R" );
-				if( ir & VU_RESOURCE_I )    nodeReads[k].push_back( "@I" );
-				if( ir & VU_RESOURCE_MAC )  nodeReads[k].push_back( "@MAC" );
-				if( ir & VU_RESOURCE_CLIP ) nodeReads[k].push_back( "@CLIP" );
-			}
-			const bool dumpEdges = ( std::getenv( "OPENVCL_DUMP_LOOP_DDG_EDGES" ) != NULL );
-			unsigned int edges = 0, intra = 0, carried = 0;
-			unsigned int maxIntraLat = 0, maxCarriedLat = 0;
-			// Track 9.G step 2: collect edges into parallel arrays so we can
-			// compute RecMII (max cycle ratio of lat/dist) once enumeration is done.
-			std::vector<unsigned int> eFrom, eTo, eDist;
-			std::vector<int> eLat;
-			for( unsigned int i = 0; i < n; ++i )
-			{
-				for( unsigned int j = 0; j < n; ++j )
-				{
-					if( i == j ) continue;
-					const unsigned int dist = ( i < j ) ? 0u : 1u;
-					std::string sharedRaw;
-					for( unsigned int a = 0; a < nodeWrites[i].size() && sharedRaw.empty(); ++a )
-						for( unsigned int b = 0; b < nodeReads[j].size() && sharedRaw.empty(); ++b )
-							if( nodeWrites[i][a] == nodeReads[j][b] )
-								sharedRaw = nodeWrites[i][a];
-					if( !sharedRaw.empty()
-					    && mt[i] < indexedTokens.size()
-					    && mt[j] < indexedTokens.size() )
-					{
-						VuLatencyTracker tr;
-						tr.reset();
-						tr.recordWrites( *indexedTokens[mt[i]], 0 );
-						const int d = tr.readHazardDelay( *indexedTokens[mt[j]], NULL, 0 );
-						const unsigned int lat = static_cast<unsigned int>( d > 0 ? d : 1 );
-						if( dumpEdges )
-							std::cerr << "[loop-ddg-edge] loop=" << opportunity.label
-							          << " i=" << mt[i] << " j=" << mt[j]
-							          << " dist=" << dist
-							          << " kind=RAW lat=" << lat
-							          << " res=" << sharedRaw << "\n";
-						++edges;
-						if( dist == 0 ) { ++intra;   if( lat > maxIntraLat   ) maxIntraLat   = lat; }
-						else            { ++carried; if( lat > maxCarriedLat ) maxCarriedLat = lat; }
-						eFrom.push_back( i ); eTo.push_back( j ); eDist.push_back( dist );
-						eLat.push_back( static_cast<int>( lat ) );
-					}
-					std::string sharedWaw;
-					for( unsigned int a = 0; a < nodeWrites[i].size() && sharedWaw.empty(); ++a )
-						for( unsigned int b = 0; b < nodeWrites[j].size() && sharedWaw.empty(); ++b )
-							if( nodeWrites[i][a] == nodeWrites[j][b] )
-								sharedWaw = nodeWrites[i][a];
-					if( !sharedWaw.empty() )
-					{
-						if( dumpEdges )
-							std::cerr << "[loop-ddg-edge] loop=" << opportunity.label
-							          << " i=" << mt[i] << " j=" << mt[j]
-							          << " dist=" << dist
-							          << " kind=WAW lat=1"
-							          << " res=" << sharedWaw << "\n";
-						++edges;
-						if( dist == 0 ) ++intra; else ++carried;
-						eFrom.push_back( i ); eTo.push_back( j ); eDist.push_back( dist );
-						eLat.push_back( 1 );
-					}
-					std::string sharedWar;
-					for( unsigned int a = 0; a < nodeReads[i].size() && sharedWar.empty(); ++a )
-						for( unsigned int b = 0; b < nodeWrites[j].size() && sharedWar.empty(); ++b )
-							if( nodeReads[i][a] == nodeWrites[j][b] )
-								sharedWar = nodeReads[i][a];
-					if( !sharedWar.empty() )
-					{
-						if( dumpEdges )
-							std::cerr << "[loop-ddg-edge] loop=" << opportunity.label
-							          << " i=" << mt[i] << " j=" << mt[j]
-							          << " dist=" << dist
-							          << " kind=WAR lat=1"
-							          << " res=" << sharedWar << "\n";
-						++edges;
-						if( dist == 0 ) ++intra; else ++carried;
-						eFrom.push_back( i ); eTo.push_back( j ); eDist.push_back( dist );
-						eLat.push_back( 1 );
-					}
-				}
-			}
-			std::cerr << "[loop-ddg] loop=" << opportunity.label
-			          << " mainSize=" << n
-			          << " edges=" << edges
-			          << " intra=" << intra
-			          << " carried=" << carried
-			          << " maxIntraLat=" << maxIntraLat
-			          << " maxCarriedLat=" << maxCarriedLat
-			          << "\n";
-
-			// Track 9.G step 2: RecMII = max over cycles C of sum(lat)/sum(dist).
-			// dist in {0,1}; only cycles with at least one dist=1 edge are finite.
-			// Solve via binary search on lambda: a positive cycle in the reweighted
-			// graph w(e) = lat(e) - lambda*dist(e) exists iff max cycle ratio > lambda.
-			// Use Bellman-Ford longest-path detection (init d[v]=0 for all v, relax
-			// n times, then test for one more relaxation).
-			if( n > 0 && carried > 0 && !eFrom.empty() )
-			{
-				double hi = 0.0;
-				for( unsigned int e = 0; e < eLat.size(); ++e ) hi += (double)eLat[e];
-				if( hi < 1.0 ) hi = 1.0;
-				double lo = 0.0;
-				const unsigned int E = static_cast<unsigned int>( eFrom.size() );
-				std::vector<double> d( n, 0.0 );
-				for( int iter = 0; iter < 60; ++iter )
-				{
-					const double mid = 0.5 * ( lo + hi );
-					for( unsigned int v = 0; v < n; ++v ) d[v] = 0.0;
-					// Relax n times.
-					for( unsigned int pass = 0; pass < n; ++pass )
-					{
-						bool changed = false;
-						for( unsigned int e = 0; e < E; ++e )
-						{
-							const double w = (double)eLat[e] - mid * (double)eDist[e];
-							const double nd = d[ eFrom[e] ] + w;
-							if( nd > d[ eTo[e] ] + 1e-12 )
-							{
-								d[ eTo[e] ] = nd;
-								changed = true;
-							}
-						}
-						if( !changed ) break;
-					}
-					// One more pass: if anything still relaxes, positive cycle exists.
-					bool positive = false;
-					for( unsigned int e = 0; e < E && !positive; ++e )
-					{
-						const double w = (double)eLat[e] - mid * (double)eDist[e];
-						if( d[ eFrom[e] ] + w > d[ eTo[e] ] + 1e-9 )
-							positive = true;
-					}
-					if( positive ) lo = mid;
-					else           hi = mid;
-				}
-				const double recmiiFract = lo;
-				unsigned int recmiiInt = static_cast<unsigned int>( recmiiFract );
-				if( (double)recmiiInt + 1e-6 < recmiiFract ) ++recmiiInt;
-				if( recmiiInt < 1 ) recmiiInt = 1;
-				std::cerr << "[loop-recmii] loop=" << opportunity.label
-				          << " recmii_int=" << recmiiInt
-				          << " recmii_fract=" << recmiiFract
-				          << "\n";
-			}
-			else
-			{
-				std::cerr << "[loop-recmii] loop=" << opportunity.label
-				          << " recmii_int=1 recmii_fract=0 (no carried edges)\n";
-			}
-		}
-
-		if( std::getenv( "OPENVCL_DUMP_LOOP_RESMII" ) != NULL
-		    && opportunity.simpleCountedLoop
-		    && !opportunity.mainTokenIndices.empty() )
-		{
-			// Track 9.G step 3: resource MII (ResMII) per VU execution pipe.
-			// Pipeline model (PS2 VU first-order):
-			//   * 1 UPPER issue / cycle  — VU_PIPE_UPPER (FMAC ops)
-			//   * 1 LOWER issue / cycle  — VU_PIPE_LOWER (LSU/IALU/BRU/RANDU
-			//                              plus FDIV/EFU which dispatch from
-			//                              the lower slot)
-			//   * FDIV unit non-pipelined: each FDIV op occupies it for
-			//                              info->throughput cycles
-			//   * EFU  unit non-pipelined: same model, info->throughput cycles
-			// NOPs and waitq/waitp are excluded from issue counts.
-			//
-			// ResMII = max( nUpper, nLower, sum_FDIV(throughput),
-			//               sum_EFU(throughput) )
-			// MII   = max( RecMII, ResMII ); the per-iter cycle count of any
-			//         valid modulo schedule.
-			const std::vector<unsigned int>& mt = opportunity.mainTokenIndices;
-			unsigned int nUpper = 0, nLower = 0, nNop = 0;
-			unsigned int fdivBusy = 0, efuBusy = 0;
-			unsigned int nFmac = 0, nLsu = 0, nIalu = 0, nBru = 0;
-			unsigned int nFdiv = 0, nEfu = 0, nRandu = 0;
-			for( unsigned int k = 0; k < mt.size(); ++k )
-			{
-				if( mt[k] >= indexedTokens.size() ) continue;
-				const Token& tk = *indexedTokens[mt[k]];
-				if( !tk.operand() ) continue;
-				const VuInstructionInfo* info =
-				    findVuInstructionInfo( normalizeVuMnemonic( tk.operand()->name() ) );
-				if( !info ) continue;
-				if( info->pipe == VU_PIPE_NOP ) { ++nNop; continue; }
-				if( info->pipe == VU_PIPE_UPPER ) ++nUpper;
-				else if( info->pipe == VU_PIPE_LOWER ) ++nLower;
-				switch( info->unit )
-				{
-				case VU_EXEC_FMAC:  ++nFmac;  break;
-				case VU_EXEC_LSU:   ++nLsu;   break;
-				case VU_EXEC_IALU:  ++nIalu;  break;
-				case VU_EXEC_BRU:   ++nBru;   break;
-				case VU_EXEC_RANDU: ++nRandu; break;
-				case VU_EXEC_FDIV:  ++nFdiv; fdivBusy += info->throughput; break;
-				case VU_EXEC_EFU:   ++nEfu;  efuBusy  += info->throughput; break;
-				default: break;
-				}
-			}
-			unsigned int resmii = nUpper;
-			if( nLower    > resmii ) resmii = nLower;
-			if( fdivBusy  > resmii ) resmii = fdivBusy;
-			if( efuBusy   > resmii ) resmii = efuBusy;
-			if( resmii < 1 ) resmii = 1;
-			std::cerr << "[loop-resmii] loop=" << opportunity.label
-			          << " mainSize=" << mt.size()
-			          << " nUpper=" << nUpper
-			          << " nLower=" << nLower
-			          << " fdivBusy=" << fdivBusy
-			          << " efuBusy=" << efuBusy
-			          << " nop=" << nNop
-			          << " fmac=" << nFmac
-			          << " lsu=" << nLsu
-			          << " ialu=" << nIalu
-			          << " bru=" << nBru
-			          << " randu=" << nRandu
-			          << " fdiv=" << nFdiv
-			          << " efu=" << nEfu
-			          << " resmii=" << resmii
-			          << "\n";
-		}
-
-		if( std::getenv( "OPENVCL_DUMP_LOOP_MII" ) != NULL
-		    && opportunity.simpleCountedLoop
-		    && !opportunity.mainTokenIndices.empty() )
-		{
-			// Track 9.G step 4a: combined Minimum Initiation Interval.
-			// MII = max(RecMII, ResMII) is the lower bound on any valid modulo
-			// schedule's II. RecMII (recurrence-bound) is computed via the same
-			// Bellman-Ford max-cycle-ratio algorithm used by OPENVCL_DUMP_LOOP_DDG;
-			// ResMII (resource-bound) is the per-pipe count used by
-			// OPENVCL_DUMP_LOOP_RESMII. Step 4b+ will consume this MII as the
-			// starting II for iterative modulo scheduling.
-			const std::vector<unsigned int>& mt = opportunity.mainTokenIndices;
-			const unsigned int recmii = computeLoopRecMII( mt, indexedTokens );
-			const unsigned int resmii = computeLoopResMII( mt, indexedTokens );
-			const unsigned int mii    = ( recmii > resmii ) ? recmii : resmii;
-			std::cerr << "[loop-mii] loop=" << opportunity.label
-			          << " mainSize=" << mt.size()
-			          << " recmii=" << recmii
-			          << " resmii=" << resmii
-			          << " mii=" << mii
-			          << "\n";
-		}
-
-		if( std::getenv( "OPENVCL_DUMP_LOOP_RENAME_RECMII" ) != NULL
-		    && opportunity.simpleCountedLoop
-		    && !opportunity.mainTokenIndices.empty() )
-		{
-			// Track 9.G step 1c-1 (diagnostic): rename-aware RecMII.
-			// Prints baseline RecMII alongside the rename-aware variant
-			// that drops loop-carried RAW edges whose producer is a
-			// kernel-rename splittable FMAC writing a VF base. The
-			// rename machinery (steps 8b-1 / 8b-2x) already redirects
-			// those carried values to scratch registers, so the
-			// corresponding recurrences are not actually iter-to-iter.
-			// Step 1c-1 only reports; step 1c-2 will consume this value
-			// when OPENVCL_USE_GENERIC_KERNEL_REWRITE is set.
-			const std::vector<unsigned int>& mt = opportunity.mainTokenIndices;
-			const unsigned int recmiiBase = computeLoopRecMII( mt, indexedTokens );
-			const unsigned int resmii     = computeLoopResMII( mt, indexedTokens );
-			unsigned int droppedCarried   = 0;
-			const unsigned int recmiiRenamed =
-			    computeLoopRecMIIRenamed( mt, indexedTokens, &droppedCarried );
-			const unsigned int miiBase =
-			    ( recmiiBase    > resmii ) ? recmiiBase    : resmii;
-			const unsigned int miiRenamed =
-			    ( recmiiRenamed > resmii ) ? recmiiRenamed : resmii;
-			std::cerr << "[loop-recmii-renamed] loop=" << opportunity.label
-			          << " mainSize=" << mt.size()
-			          << " recmii_base=" << recmiiBase
-			          << " recmii_renamed=" << recmiiRenamed
-			          << " resmii=" << resmii
-			          << " mii_base=" << miiBase
-			          << " mii_renamed=" << miiRenamed
-			          << " droppedCarriedEdges=" << droppedCarried
-			          << "\n";
-		}
-
-		if( std::getenv( "OPENVCL_DUMP_LOOP_MRT" ) != NULL
-		    && opportunity.simpleCountedLoop
-		    && !opportunity.mainTokenIndices.empty() )
-		{
-			// Track 9.G step 4b: Modulo Reservation Table scaffolding.
-			// Construct an empty MRT sized at the current MII and report its
-			// dimensions. Step 4d will drive reservations from the priority
-			// list; for now this only validates that the resource model
-			// (Upper/Lower issue lanes + FDIV/EFU multi-cycle pipes) wires
-			// through the build and can be sized per loop without affecting
-			// emission.
-			const std::vector<unsigned int>& mt = opportunity.mainTokenIndices;
-			const unsigned int recmii = computeLoopRecMII( mt, indexedTokens );
-			const unsigned int resmii = computeLoopResMII( mt, indexedTokens );
-			const unsigned int mii    = ( recmii > resmii ) ? recmii : resmii;
-			ModuloReservationTable mrt( mii );
-			std::cerr << "[loop-mrt] loop=" << opportunity.label
-			          << " II=" << mrt.initiationInterval()
-			          << " upperCap=" << mrt.initiationInterval()
-			          << " lowerCap=" << mrt.initiationInterval()
-			          << " fdivLanes=1"
-			          << " efuLanes=1"
-			          << " upperOcc=" << mrt.upperOccupancy()
-			          << " lowerOcc=" << mrt.lowerOccupancy()
-			          << " fdivOcc=" << mrt.fdivOccupancy()
-			          << " efuOcc=" << mrt.efuOccupancy()
-			          << "\n";
-		}
-
-		if( std::getenv( "OPENVCL_DUMP_LOOP_PRIORITY" ) != NULL
-		    && opportunity.simpleCountedLoop
-		    && !opportunity.mainTokenIndices.empty() )
-		{
-			// Track 9.G step 4c: node priority for iterative modulo scheduling.
-			// Compute ASAP/ALAP/height/mobility over the intra DDG and print
-			// an aggregate summary plus the priority order. Per-node detail
-			// behind OPENVCL_DUMP_LOOP_PRIORITY_NODES to avoid flooding the
-			// log on large bodies. Step 4d will consume this ordering to
-			// drive insertion into the Modulo Reservation Table.
-			const std::vector<unsigned int>& mt = opportunity.mainTokenIndices;
-			const unsigned int recmii = computeLoopRecMII( mt, indexedTokens );
-			const unsigned int resmii = computeLoopResMII( mt, indexedTokens );
-			const unsigned int mii    = ( recmii > resmii ) ? recmii : resmii;
-			LoopPriorityResult pr;
-			computeLoopPriority( mt, indexedTokens, mii, pr );
-			unsigned int maxHeight = 0, maxMobility = 0, maxAsap = 0, maxAlap = 0;
-			for( unsigned int i = 0; i < pr.height.size(); ++i )
-			{
-				if( pr.height[i]   > maxHeight )   maxHeight   = pr.height[i];
-				if( pr.mobility[i] > maxMobility ) maxMobility = pr.mobility[i];
-				if( pr.asap[i]     > maxAsap )     maxAsap     = pr.asap[i];
-				if( pr.alap[i]     > maxAlap )     maxAlap     = pr.alap[i];
-			}
-			std::cerr << "[loop-priority] loop=" << opportunity.label
-			          << " mainSize=" << mt.size()
-			          << " II=" << mii
-			          << " scheduleLength=" << pr.scheduleLength
-			          << " maxHeight=" << maxHeight
-			          << " maxMobility=" << maxMobility
-			          << " maxAsap=" << maxAsap
-			          << " maxAlap=" << maxAlap
-			          << "\n";
-			if( std::getenv( "OPENVCL_DUMP_LOOP_PRIORITY_NODES" ) != NULL )
-			{
-				for( unsigned int rank = 0; rank < pr.order.size(); ++rank )
-				{
-					const unsigned int i = pr.order[rank];
-					std::cerr << "[loop-priority-node] loop=" << opportunity.label
-					          << " rank=" << rank
-					          << " node=" << i
-					          << " token=" << mt[i]
-					          << " height=" << pr.height[i]
-					          << " mobility=" << pr.mobility[i]
-					          << " asap=" << pr.asap[i]
-					          << " alap=" << pr.alap[i]
-					          << "\n";
-				}
-			}
-		}
-
-		// Track 9.G step 8a: the modulo placer + 6a-6h kernel-rewrite
-		// scaffolding always runs when the loop is a simple counted loop
-		// with a non-empty body. The OPENVCL_DUMP_LOOP_SCHEDULE env var
-		// (and the nested OPENVCL_DUMP_KERNEL_* gates) now only control
-		// the std::cerr writes; the computation itself is unconditional
-		// so OPENVCL_USE_GENERIC_KERNEL_REWRITE can see real scaffolding
-		// on production builds.
-		if( opportunity.simpleCountedLoop
-		    && !opportunity.mainTokenIndices.empty() )
-		{
 			// Track 9.G step 4d: iterative modulo placement (diagnostic).
 			// Drive the priority order into the Modulo Reservation Table.
 			// For each node, classify its pipe (Upper / Lower / FDIV / EFU)
@@ -8505,6 +7724,802 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 					          << "\n";
 				}
 			}
+	}
+}
+
+std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const std::list<Token>& tokens )
+{
+	std::vector<VuLoopPipelineOpportunity> result;
+	std::vector<const Token*> indexedTokens;
+	for( std::list<Token>::const_iterator i = tokens.begin(); i != tokens.end(); ++i )
+		indexedTokens.push_back( &*i );
+
+	std::vector<VuLoopCandidate> loops = findVuLoopCandidates( tokens );
+
+	for( std::vector<VuLoopCandidate>::const_iterator loop = loops.begin(); loop != loops.end(); ++loop )
+	{
+		unsigned int qProducerCount = 0;
+		unsigned int qProducerOffset = 0;
+		std::vector<unsigned int> qProducerOffsets;
+		for( unsigned int i = 0; i < loop->bodyTokens.size(); ++i )
+		{
+			if( vuTokenWritesQ( *loop->bodyTokens[i] ) )
+			{
+				++qProducerCount;
+				qProducerOffset = i;
+				qProducerOffsets.push_back( i );
+			}
+		}
+
+		if( qProducerCount == 0 )
+			continue;
+
+		std::vector<unsigned int> lastQConsumerOffsets;
+		for( unsigned int i = qProducerOffset + 1; i < loop->bodyTokens.size(); ++i )
+		{
+			if( vuTokenReadsQ( *loop->bodyTokens[i] ) )
+				lastQConsumerOffsets.push_back( i );
+		}
+
+		const unsigned int branchDelaySlots = loop->branchToken ? vuTokenBranchDelaySlots( *loop->branchToken ) : 0;
+		const unsigned int branchOffset = loop->bodyTokens.empty()
+		                                ? 0
+		                                : static_cast<unsigned int>( loop->bodyTokens.size() - 1 );
+
+		VuLoopPipelineOpportunity opportunity;
+		opportunity.label = loop->label;
+		opportunity.labelTokenIndex = loop->labelTokenIndex;
+		opportunity.branchTokenIndex = loop->branchTokenIndex;
+		opportunity.qProducerTokenIndex = loop->firstBodyTokenIndex + qProducerOffset;
+		for( std::vector<unsigned int>::const_iterator producer = qProducerOffsets.begin();
+		     producer != qProducerOffsets.end(); ++producer )
+			opportunity.qProducerTokenIndices.push_back( loop->firstBodyTokenIndex + *producer );
+		std::vector<unsigned int> allQConsumerOffsets;
+		for( unsigned int producerIndex = 0; producerIndex < qProducerOffsets.size(); ++producerIndex )
+		{
+			const unsigned int producerOffset = qProducerOffsets[producerIndex];
+			const unsigned int nextProducerOffset =
+			    producerIndex + 1 < qProducerOffsets.size()
+			    ? qProducerOffsets[producerIndex + 1]
+			    : static_cast<unsigned int>( loop->bodyTokens.size() );
+			VuLoopQStage stage;
+			stage.qProducerTokenIndex = loop->firstBodyTokenIndex + producerOffset;
+			stage.qProducerLatency = loop->bodyTokens[producerOffset]->operand()
+			                       ? loop->bodyTokens[producerOffset]->operand()->latency()
+			                       : 0;
+			for( unsigned int consumerOffset = producerOffset + 1;
+			     consumerOffset < nextProducerOffset && consumerOffset < loop->bodyTokens.size();
+			     ++consumerOffset )
+			{
+				if( vuTokenReadsQ( *loop->bodyTokens[consumerOffset] ) )
+				{
+					stage.qConsumerTokenIndices.push_back( loop->firstBodyTokenIndex + consumerOffset );
+					allQConsumerOffsets.push_back( consumerOffset );
+				}
+			}
+			if( !stage.qConsumerTokenIndices.empty() )
+			{
+				const unsigned int firstConsumerOffset =
+				    stage.qConsumerTokenIndices.front() - loop->firstBodyTokenIndex;
+				const unsigned int lastConsumerOffset =
+				    stage.qConsumerTokenIndices.back() - loop->firstBodyTokenIndex;
+				stage.qProducerConsumerGapCycles =
+				    countEmittableTokens( *loop, producerOffset + 1, firstConsumerOffset );
+				stage.qProducerConsumerGapDeficitCycles =
+				    stage.qProducerLatency > stage.qProducerConsumerGapCycles
+				    ? stage.qProducerLatency - stage.qProducerConsumerGapCycles
+				    : 0;
+				stage.loopCarriedQGapCycles =
+				    countEmittableTokens( *loop, firstConsumerOffset + 1, branchOffset )
+				    + branchDelaySlots
+				    + countEmittableTokens( *loop, 0, producerOffset );
+				stage.qProducerInsertionGapCycles =
+				    countEmittableTokens( *loop, lastConsumerOffset + 1, branchOffset )
+				    + branchDelaySlots
+				    + countEmittableTokens( *loop, 0, producerOffset );
+				stage.qProducerInsertionGapDeficitCycles =
+				    stage.qProducerLatency > stage.qProducerInsertionGapCycles
+				    ? stage.qProducerLatency - stage.qProducerInsertionGapCycles
+				    : 0;
+				stage.qSchedulingStrategy =
+				    classifyLoopQSchedulingStrategy( stage.qProducerConsumerGapDeficitCycles,
+				                                     stage.loopCarriedQGapCycles,
+				                                     stage.qProducerLatency );
+			}
+			opportunity.qStages.push_back( stage );
+		}
+		if( allQConsumerOffsets.empty() )
+			continue;
+		const std::vector<unsigned int>& primaryQConsumerOffsets =
+			lastQConsumerOffsets.empty() ? allQConsumerOffsets : lastQConsumerOffsets;
+		opportunity.firstQConsumerTokenIndex = loop->firstBodyTokenIndex + allQConsumerOffsets.front();
+		opportunity.lastQConsumerTokenIndex = loop->firstBodyTokenIndex + allQConsumerOffsets.back();
+		opportunity.qProducerLatency = loop->bodyTokens[qProducerOffset]->operand()
+		                             ? loop->bodyTokens[qProducerOffset]->operand()->latency()
+		                             : 0;
+		opportunity.qProducerConsumerGapCycles = countEmittableTokens( *loop,
+		                                                                qProducerOffset + 1,
+		                                                                primaryQConsumerOffsets.front() );
+		opportunity.sourcePrefixCycles = countEmittableTokens( *loop, 0, qProducerOffset );
+		opportunity.sourceSuffixCycles = countEmittableTokens( *loop,
+		                                                       primaryQConsumerOffsets.front() + 1,
+		                                                       static_cast<unsigned int>( loop->bodyTokens.size() - 1 ) );
+		opportunity.branchDelaySlots = branchDelaySlots;
+		opportunity.loopCsClid = loop->loopCsClid;
+		opportunity.loopCsMlid = loop->loopCsMlid;
+		opportunity.qProducerConsumerGapDeficitCycles =
+			opportunity.qProducerLatency > opportunity.qProducerConsumerGapCycles
+			? opportunity.qProducerLatency - opportunity.qProducerConsumerGapCycles
+			: 0;
+		opportunity.loopCarriedQGapCycles =
+			opportunity.sourceSuffixCycles + opportunity.branchDelaySlots + opportunity.sourcePrefixCycles;
+		opportunity.qProducerInsertionGapCycles =
+			countEmittableTokens( *loop,
+			                      primaryQConsumerOffsets.back() + 1,
+			                      static_cast<unsigned int>( loop->bodyTokens.size() - 1 ) )
+		    + opportunity.branchDelaySlots
+		    + opportunity.sourcePrefixCycles;
+		opportunity.qProducerInsertionGapDeficitCycles =
+			opportunity.qProducerLatency > opportunity.qProducerInsertionGapCycles
+			? opportunity.qProducerLatency - opportunity.qProducerInsertionGapCycles
+			: 0;
+		opportunity.qSchedulingStrategy = classifyLoopQSchedulingStrategy( opportunity );
+		opportunity.simpleCountedLoop = loop->simpleCountedLoop;
+		opportunity.hasSingleQProducer = qProducerCount == 1;
+		opportunity.requiresPrologEpilog = loop->simpleCountedLoop && qProducerCount == 1;
+		opportunity.memoryLoadCount = loop->memoryLoadCount;
+		opportunity.memoryStoreCount = loop->memoryStoreCount;
+		opportunity.hasMemoryPreOrPostIncrement = loop->hasMemoryPreOrPostIncrement;
+		opportunity.hasXgkick = loop->hasXgkick;
+		opportunity.inductionRegisters = loop->inductionRegisters;
+		opportunity.inductionUpdates = loop->inductionUpdates;
+		opportunity.loopReadWriteRegisters = loop->loopReadWriteRegisters;
+
+		for( std::vector<unsigned int>::const_iterator q = allQConsumerOffsets.begin(); q != allQConsumerOffsets.end(); ++q )
+		{
+			opportunity.qConsumerTokenIndices.push_back( loop->firstBodyTokenIndex + *q );
+		}
+
+		for( std::vector<VuLoopQStage>::const_iterator stage = opportunity.qStages.begin();
+		     stage != opportunity.qStages.end(); ++stage )
+		{
+			for( std::vector<unsigned int>::const_iterator q = stage->qConsumerTokenIndices.begin();
+			     q != stage->qConsumerTokenIndices.end(); ++q )
+			{
+				if( *q >= loop->firstBodyTokenIndex )
+				{
+					const unsigned int qOffset = *q - loop->firstBodyTokenIndex;
+					collectLoopCarriedQInputs( *loop, qOffset, opportunity.carriedQInputRegisters );
+					collectLoopCarriedQOutputs( *loop, qOffset, opportunity.carriedQOutputRegisters );
+				}
+			}
+		}
+
+		opportunity.requiresLoopCarriedRegisters = !opportunity.carriedQInputRegisters.empty()
+		                                        || !opportunity.carriedQOutputRegisters.empty();
+		opportunity.eligibleSingleQSoftwarePipeline = opportunity.simpleCountedLoop
+		                                           && opportunity.hasSingleQProducer
+		                                           && opportunity.branchDelaySlots > 0
+		                                           && (opportunity.sourcePrefixCycles + opportunity.sourceSuffixCycles) >= opportunity.qProducerLatency;
+
+		if( opportunity.eligibleSingleQSoftwarePipeline )
+		{
+			const unsigned int firstConsumerOffset = primaryQConsumerOffsets.front();
+			const unsigned int branchOffset = loop->branchTokenIndex - loop->firstBodyTokenIndex;
+			opportunity.hasSoftwarePipelinePlan = true;
+			appendPipelineInstructionIndices( *loop, 0, firstConsumerOffset, opportunity.prologTokenIndices );
+			appendPipelineInstructionIndices( *loop, firstConsumerOffset, branchOffset + 1, opportunity.mainTokenIndices );
+			appendPipelineInstructionIndices( *loop, firstConsumerOffset, branchOffset, opportunity.drainTokenIndices );
+			collectSoftwarePipelineSuffixStoreDescriptors( opportunity.drainTokenIndices,
+			                                               indexedTokens,
+			                                               opportunity );
+		}
+
+		if( qProducerCount > 1
+		    && !opportunity.qStages.empty()
+		    && !opportunity.qStages.front().qConsumerTokenIndices.empty() )
+		{
+			const unsigned int branchOffset = loop->branchTokenIndex - loop->firstBodyTokenIndex;
+			const VuLoopQStage& firstStage = opportunity.qStages.front();
+			const unsigned int firstProducerOffset =
+			    firstStage.qProducerTokenIndex - loop->firstBodyTokenIndex;
+			const unsigned int firstConsumerOffset =
+			    firstStage.qConsumerTokenIndices.front() - loop->firstBodyTokenIndex;
+			bool foundSafeCyclicPrefix = false;
+			unsigned int bestMainCycles = ~0u;
+			VuLoopPipelineOpportunity bestOpportunity = opportunity;
+			if( firstProducerOffset > 0
+			    && firstProducerOffset < branchOffset
+			    && countEmittableTokens( *loop, firstProducerOffset, branchOffset ) != 0 )
+			{
+				foundSafeCyclicPrefix =
+				    considerMultiQPipelineCandidate( *loop,
+				                                     indexedTokens,
+				                                     opportunity,
+				                                     firstProducerOffset,
+				                                     firstProducerOffset,
+				                                     branchOffset,
+				                                     true,
+				                                     bestMainCycles,
+				                                     bestOpportunity )
+				    || foundSafeCyclicPrefix;
+			}
+			if( firstConsumerOffset < branchOffset
+			    && firstStage.qProducerInsertionGapDeficitCycles == 0
+			    && countEmittableTokens( *loop, firstConsumerOffset, branchOffset ) != 0 )
+			{
+				foundSafeCyclicPrefix =
+				    considerMultiQPipelineCandidate( *loop,
+				                                     indexedTokens,
+				                                     opportunity,
+				                                     firstConsumerOffset,
+				                                     firstConsumerOffset,
+				                                     branchOffset,
+				                                     true,
+				                                     bestMainCycles,
+				                                     bestOpportunity )
+				    || foundSafeCyclicPrefix;
+			}
+
+			unsigned int cyclicPrefixLastConsumerOffset = 0;
+			bool foundFallbackCyclicPrefix = false;
+			for( std::vector<VuLoopQStage>::const_iterator stage = opportunity.qStages.begin();
+			     stage != opportunity.qStages.end(); ++stage )
+			{
+				if( stage->qConsumerTokenIndices.empty() )
+					continue;
+				const unsigned int lastConsumerOffset =
+				    stage->qConsumerTokenIndices.back() - loop->firstBodyTokenIndex;
+				if( lastConsumerOffset >= branchOffset )
+					continue;
+				if( countEmittableTokens( *loop, lastConsumerOffset + 1, branchOffset ) == 0 )
+					continue;
+				cyclicPrefixLastConsumerOffset = lastConsumerOffset;
+				foundFallbackCyclicPrefix = true;
+				foundSafeCyclicPrefix =
+				    considerMultiQPipelineCandidate( *loop,
+				                                     indexedTokens,
+				                                     opportunity,
+				                                     lastConsumerOffset + 1,
+				                                     lastConsumerOffset + 1,
+				                                     branchOffset,
+				                                     true,
+				                                     bestMainCycles,
+				                                     bestOpportunity )
+				    || foundSafeCyclicPrefix;
+			}
+			if( loop->simpleCountedLoop
+			    && !loop->hasXgkick
+			    && !loop->hasMemoryPreOrPostIncrement
+			    && loop->branchTokenIndex < indexedTokens.size()
+			    && branchCanInvertToDrain( *indexedTokens[loop->branchTokenIndex] ) )
+			{
+				for( unsigned int offset = 1; offset < branchOffset; ++offset )
+				{
+					const unsigned int tokenIndex = loop->firstBodyTokenIndex + offset - 1;
+					if( tokenIndex >= indexedTokens.size()
+					    || !tokenHasGuardableMultiQCyclicPrefixSideEffect( *indexedTokens[tokenIndex] ) )
+						continue;
+					if( countEmittableTokens( *loop, offset, branchOffset ) == 0 )
+						continue;
+					foundSafeCyclicPrefix =
+					    considerMultiQPipelineCandidate( *loop,
+					                                     indexedTokens,
+					                                     opportunity,
+					                                     offset,
+					                                     offset,
+					                                     branchOffset,
+					                                     true,
+					                                     bestMainCycles,
+					                                     bestOpportunity )
+					    || foundSafeCyclicPrefix;
+				}
+			}
+			if( foundSafeCyclicPrefix )
+			{
+				opportunity.multiQPrologTokenIndices = bestOpportunity.multiQPrologTokenIndices;
+				opportunity.multiQMainTokenIndices = bestOpportunity.multiQMainTokenIndices;
+				opportunity.multiQCyclicPrefixTokenIndices = bestOpportunity.multiQCyclicPrefixTokenIndices;
+				opportunity.multiQCyclicPrefixRotations = bestOpportunity.multiQCyclicPrefixRotations;
+				opportunity.multiQCyclicPrefixInsertBeforeTokenIndex =
+				    bestOpportunity.multiQCyclicPrefixInsertBeforeTokenIndex;
+				opportunity.multiQCyclicPrefixNeedsGuard =
+				    bestOpportunity.multiQCyclicPrefixNeedsGuard;
+				opportunity.multiQCyclicPrefixLastTokenInBranchDelaySlot =
+				    bestOpportunity.multiQCyclicPrefixLastTokenInBranchDelaySlot;
+				opportunity.drainTokenIndices = bestOpportunity.drainTokenIndices;
+			}
+			else if( foundFallbackCyclicPrefix )
+			{
+				assignMultiQPipelineCandidate( *loop,
+				                               cyclicPrefixLastConsumerOffset + 1,
+				                               cyclicPrefixLastConsumerOffset + 1,
+				                               branchOffset,
+				                               opportunity );
+			}
+		}
+
+		classifySoftwarePipelineEmissionSafety( opportunity, *loop, qProducerOffset, indexedTokens );
+		classifyMultiQSoftwarePipelineOpportunity( opportunity, qProducerCount, indexedTokens );
+		if( opportunity.canEmitMultiQSoftwarePipeline
+		    && !opportunity.multiQMainTokenIndices.empty()
+		    && !opportunity.multiQCyclicPrefixTokenIndices.empty()
+		    && !opportunity.multiQCyclicPrefixNeedsGuard
+		    && !loopUsesLoopExtraDirective( *loop, indexedTokens ) )
+			classifyMultiQCyclicPrefixSuffixStoreDrains( opportunity,
+			                                             *loop,
+			                                             indexedTokens );
+
+		if( std::getenv( "OPENVCL_DUMP_PIPELINE_OPPORTUNITIES" ) != NULL )
+		{
+			std::cerr << "[pipeline-opportunity] loop=" << opportunity.label
+			          << " qProducerCount=" << qProducerCount
+			          << " qProducerLatency=" << opportunity.qProducerLatency
+			          << " gapCycles=" << opportunity.qProducerConsumerGapCycles
+			          << " gapDeficit=" << opportunity.qProducerConsumerGapDeficitCycles
+			          << " loopCarriedQGap=" << opportunity.loopCarriedQGapCycles
+			          << " producerInsertionGap=" << opportunity.qProducerInsertionGapCycles
+			          << " producerInsertionDeficit=" << opportunity.qProducerInsertionGapDeficitCycles
+			          << " sourcePrefix=" << opportunity.sourcePrefixCycles
+			          << " sourceSuffix=" << opportunity.sourceSuffixCycles
+			          << " branchDelaySlots=" << opportunity.branchDelaySlots
+			          << " simpleCounted=" << ( opportunity.simpleCountedLoop ? 1 : 0 )
+			          << " requiresLoopCarried=" << ( opportunity.requiresLoopCarriedRegisters ? 1 : 0 )
+			          << " eligibleSingleQ=" << ( opportunity.eligibleSingleQSoftwarePipeline ? 1 : 0 )
+			          << " hasSwpPlan=" << ( opportunity.hasSoftwarePipelinePlan ? 1 : 0 )
+			          << " canEmitMultiQ=" << ( opportunity.canEmitMultiQSoftwarePipeline ? 1 : 0 )
+			          << " multiQNeedsGuard=" << ( opportunity.multiQCyclicPrefixNeedsGuard ? 1 : 0 )
+			          << " prologSize=" << opportunity.prologTokenIndices.size()
+			          << " mainSize=" << opportunity.mainTokenIndices.size()
+			          << " drainSize=" << opportunity.drainTokenIndices.size()
+			          << " multiQPrologSize=" << opportunity.multiQPrologTokenIndices.size()
+			          << " multiQMainSize=" << opportunity.multiQMainTokenIndices.size()
+			          << " multiQCyclicPrefixSize=" << opportunity.multiQCyclicPrefixTokenIndices.size()
+			          << "\n";
+			if( !opportunity.mainTokenIndices.empty() )
+			{
+				const unsigned int singleQMainEstCycles =
+				    scheduledLoopBodyCycles( opportunity.mainTokenIndices, indexedTokens );
+				std::cerr << "[pipeline-opportunity]   singleQ_main_estimated_cycles="
+				          << singleQMainEstCycles << "\n";
+				if( !opportunity.prologTokenIndices.empty() )
+				{
+					const unsigned int singleQMainInContextCycles =
+					    scheduledLoopBodyCyclesInContext( opportunity.prologTokenIndices,
+					                                      opportunity.mainTokenIndices,
+					                                      indexedTokens );
+					std::cerr << "[pipeline-opportunity]   singleQ_main_in_context_cycles="
+					          << singleQMainInContextCycles << "\n";
+				}
+			}
+			if( !opportunity.multiQMainTokenIndices.empty() )
+			{
+				const unsigned int multiQMainEstCycles =
+				    scheduledLoopBodyCycles( opportunity.multiQMainTokenIndices, indexedTokens );
+				std::cerr << "[pipeline-opportunity]   multiQ_main_estimated_cycles="
+				          << multiQMainEstCycles << "\n";
+				if( !opportunity.multiQPrologTokenIndices.empty() )
+				{
+					const unsigned int multiQMainInContextCycles =
+					    scheduledLoopBodyCyclesInContext( opportunity.multiQPrologTokenIndices,
+					                                      opportunity.multiQMainTokenIndices,
+					                                      indexedTokens );
+					std::cerr << "[pipeline-opportunity]   multiQ_main_in_context_cycles="
+					          << multiQMainInContextCycles << "\n";
+				}
+			}
+		}
+
+		if( std::getenv( "OPENVCL_DUMP_LOOP_DDG" ) != NULL
+		    && opportunity.simpleCountedLoop
+		    && !opportunity.mainTokenIndices.empty() )
+		{
+			// Track 9.G step 1: extract a dependence DAG over the simple-counted
+			// loop body. Nodes = opportunity.mainTokenIndices. Edges encode
+			// (kind, dist, latency, resource):
+			//   kind  in {RAW, WAW, WAR}; intra-iter dist=0 (i<j), loop-carried dist=1 (i>j)
+			//   latency for RAW comes from VuLatencyTracker; WAW/WAR use 1 (ordering only)
+			//   resource = base register key (collapsed via registerBaseKey) or
+			//              implicit pipe tag (@Q, @P, @ACC, @MAC, @CLIP, @R, @I).
+			// Diagnostic-only; planner / emission untouched. Output is gated on
+			// OPENVCL_DUMP_LOOP_DDG; per-edge detail additionally needs
+			// OPENVCL_DUMP_LOOP_DDG_EDGES to avoid drowning the log on large bodies.
+			const std::vector<unsigned int>& mt = opportunity.mainTokenIndices;
+			const unsigned int n = static_cast<unsigned int>( mt.size() );
+			std::vector< std::vector<std::string> > nodeWrites( n ), nodeReads( n );
+			for( unsigned int k = 0; k < n; ++k )
+			{
+				if( mt[k] >= indexedTokens.size() ) continue;
+				VuTokenResourceAccess acc;
+				if( !buildVuTokenResourceAccess( *indexedTokens[mt[k]], acc ) ) continue;
+				for( std::list<std::string>::const_iterator it = acc.registerWrites.begin();
+				     it != acc.registerWrites.end(); ++it )
+					nodeWrites[k].push_back( registerBaseKey( *it ) );
+				for( std::list<std::string>::const_iterator it = acc.registerReads.begin();
+				     it != acc.registerReads.end(); ++it )
+					nodeReads[k].push_back( registerBaseKey( *it ) );
+				const unsigned int iw = acc.implicitWrites;
+				const unsigned int ir = acc.implicitReads;
+				if( iw & VU_RESOURCE_ACC )  nodeWrites[k].push_back( "@ACC" );
+				if( iw & VU_RESOURCE_Q )    nodeWrites[k].push_back( "@Q" );
+				if( iw & VU_RESOURCE_P )    nodeWrites[k].push_back( "@P" );
+				if( iw & VU_RESOURCE_R )    nodeWrites[k].push_back( "@R" );
+				if( iw & VU_RESOURCE_I )    nodeWrites[k].push_back( "@I" );
+				if( iw & VU_RESOURCE_MAC )  nodeWrites[k].push_back( "@MAC" );
+				if( iw & VU_RESOURCE_CLIP ) nodeWrites[k].push_back( "@CLIP" );
+				if( ir & VU_RESOURCE_ACC )  nodeReads[k].push_back( "@ACC" );
+				if( ir & VU_RESOURCE_Q )    nodeReads[k].push_back( "@Q" );
+				if( ir & VU_RESOURCE_P )    nodeReads[k].push_back( "@P" );
+				if( ir & VU_RESOURCE_R )    nodeReads[k].push_back( "@R" );
+				if( ir & VU_RESOURCE_I )    nodeReads[k].push_back( "@I" );
+				if( ir & VU_RESOURCE_MAC )  nodeReads[k].push_back( "@MAC" );
+				if( ir & VU_RESOURCE_CLIP ) nodeReads[k].push_back( "@CLIP" );
+			}
+			const bool dumpEdges = ( std::getenv( "OPENVCL_DUMP_LOOP_DDG_EDGES" ) != NULL );
+			unsigned int edges = 0, intra = 0, carried = 0;
+			unsigned int maxIntraLat = 0, maxCarriedLat = 0;
+			// Track 9.G step 2: collect edges into parallel arrays so we can
+			// compute RecMII (max cycle ratio of lat/dist) once enumeration is done.
+			std::vector<unsigned int> eFrom, eTo, eDist;
+			std::vector<int> eLat;
+			for( unsigned int i = 0; i < n; ++i )
+			{
+				for( unsigned int j = 0; j < n; ++j )
+				{
+					if( i == j ) continue;
+					const unsigned int dist = ( i < j ) ? 0u : 1u;
+					std::string sharedRaw;
+					for( unsigned int a = 0; a < nodeWrites[i].size() && sharedRaw.empty(); ++a )
+						for( unsigned int b = 0; b < nodeReads[j].size() && sharedRaw.empty(); ++b )
+							if( nodeWrites[i][a] == nodeReads[j][b] )
+								sharedRaw = nodeWrites[i][a];
+					if( !sharedRaw.empty()
+					    && mt[i] < indexedTokens.size()
+					    && mt[j] < indexedTokens.size() )
+					{
+						VuLatencyTracker tr;
+						tr.reset();
+						tr.recordWrites( *indexedTokens[mt[i]], 0 );
+						const int d = tr.readHazardDelay( *indexedTokens[mt[j]], NULL, 0 );
+						const unsigned int lat = static_cast<unsigned int>( d > 0 ? d : 1 );
+						if( dumpEdges )
+							std::cerr << "[loop-ddg-edge] loop=" << opportunity.label
+							          << " i=" << mt[i] << " j=" << mt[j]
+							          << " dist=" << dist
+							          << " kind=RAW lat=" << lat
+							          << " res=" << sharedRaw << "\n";
+						++edges;
+						if( dist == 0 ) { ++intra;   if( lat > maxIntraLat   ) maxIntraLat   = lat; }
+						else            { ++carried; if( lat > maxCarriedLat ) maxCarriedLat = lat; }
+						eFrom.push_back( i ); eTo.push_back( j ); eDist.push_back( dist );
+						eLat.push_back( static_cast<int>( lat ) );
+					}
+					std::string sharedWaw;
+					for( unsigned int a = 0; a < nodeWrites[i].size() && sharedWaw.empty(); ++a )
+						for( unsigned int b = 0; b < nodeWrites[j].size() && sharedWaw.empty(); ++b )
+							if( nodeWrites[i][a] == nodeWrites[j][b] )
+								sharedWaw = nodeWrites[i][a];
+					if( !sharedWaw.empty() )
+					{
+						if( dumpEdges )
+							std::cerr << "[loop-ddg-edge] loop=" << opportunity.label
+							          << " i=" << mt[i] << " j=" << mt[j]
+							          << " dist=" << dist
+							          << " kind=WAW lat=1"
+							          << " res=" << sharedWaw << "\n";
+						++edges;
+						if( dist == 0 ) ++intra; else ++carried;
+						eFrom.push_back( i ); eTo.push_back( j ); eDist.push_back( dist );
+						eLat.push_back( 1 );
+					}
+					std::string sharedWar;
+					for( unsigned int a = 0; a < nodeReads[i].size() && sharedWar.empty(); ++a )
+						for( unsigned int b = 0; b < nodeWrites[j].size() && sharedWar.empty(); ++b )
+							if( nodeReads[i][a] == nodeWrites[j][b] )
+								sharedWar = nodeReads[i][a];
+					if( !sharedWar.empty() )
+					{
+						if( dumpEdges )
+							std::cerr << "[loop-ddg-edge] loop=" << opportunity.label
+							          << " i=" << mt[i] << " j=" << mt[j]
+							          << " dist=" << dist
+							          << " kind=WAR lat=1"
+							          << " res=" << sharedWar << "\n";
+						++edges;
+						if( dist == 0 ) ++intra; else ++carried;
+						eFrom.push_back( i ); eTo.push_back( j ); eDist.push_back( dist );
+						eLat.push_back( 1 );
+					}
+				}
+			}
+			std::cerr << "[loop-ddg] loop=" << opportunity.label
+			          << " mainSize=" << n
+			          << " edges=" << edges
+			          << " intra=" << intra
+			          << " carried=" << carried
+			          << " maxIntraLat=" << maxIntraLat
+			          << " maxCarriedLat=" << maxCarriedLat
+			          << "\n";
+
+			// Track 9.G step 2: RecMII = max over cycles C of sum(lat)/sum(dist).
+			// dist in {0,1}; only cycles with at least one dist=1 edge are finite.
+			// Solve via binary search on lambda: a positive cycle in the reweighted
+			// graph w(e) = lat(e) - lambda*dist(e) exists iff max cycle ratio > lambda.
+			// Use Bellman-Ford longest-path detection (init d[v]=0 for all v, relax
+			// n times, then test for one more relaxation).
+			if( n > 0 && carried > 0 && !eFrom.empty() )
+			{
+				double hi = 0.0;
+				for( unsigned int e = 0; e < eLat.size(); ++e ) hi += (double)eLat[e];
+				if( hi < 1.0 ) hi = 1.0;
+				double lo = 0.0;
+				const unsigned int E = static_cast<unsigned int>( eFrom.size() );
+				std::vector<double> d( n, 0.0 );
+				for( int iter = 0; iter < 60; ++iter )
+				{
+					const double mid = 0.5 * ( lo + hi );
+					for( unsigned int v = 0; v < n; ++v ) d[v] = 0.0;
+					// Relax n times.
+					for( unsigned int pass = 0; pass < n; ++pass )
+					{
+						bool changed = false;
+						for( unsigned int e = 0; e < E; ++e )
+						{
+							const double w = (double)eLat[e] - mid * (double)eDist[e];
+							const double nd = d[ eFrom[e] ] + w;
+							if( nd > d[ eTo[e] ] + 1e-12 )
+							{
+								d[ eTo[e] ] = nd;
+								changed = true;
+							}
+						}
+						if( !changed ) break;
+					}
+					// One more pass: if anything still relaxes, positive cycle exists.
+					bool positive = false;
+					for( unsigned int e = 0; e < E && !positive; ++e )
+					{
+						const double w = (double)eLat[e] - mid * (double)eDist[e];
+						if( d[ eFrom[e] ] + w > d[ eTo[e] ] + 1e-9 )
+							positive = true;
+					}
+					if( positive ) lo = mid;
+					else           hi = mid;
+				}
+				const double recmiiFract = lo;
+				unsigned int recmiiInt = static_cast<unsigned int>( recmiiFract );
+				if( (double)recmiiInt + 1e-6 < recmiiFract ) ++recmiiInt;
+				if( recmiiInt < 1 ) recmiiInt = 1;
+				std::cerr << "[loop-recmii] loop=" << opportunity.label
+				          << " recmii_int=" << recmiiInt
+				          << " recmii_fract=" << recmiiFract
+				          << "\n";
+			}
+			else
+			{
+				std::cerr << "[loop-recmii] loop=" << opportunity.label
+				          << " recmii_int=1 recmii_fract=0 (no carried edges)\n";
+			}
+		}
+
+		if( std::getenv( "OPENVCL_DUMP_LOOP_RESMII" ) != NULL
+		    && opportunity.simpleCountedLoop
+		    && !opportunity.mainTokenIndices.empty() )
+		{
+			// Track 9.G step 3: resource MII (ResMII) per VU execution pipe.
+			// Pipeline model (PS2 VU first-order):
+			//   * 1 UPPER issue / cycle  — VU_PIPE_UPPER (FMAC ops)
+			//   * 1 LOWER issue / cycle  — VU_PIPE_LOWER (LSU/IALU/BRU/RANDU
+			//                              plus FDIV/EFU which dispatch from
+			//                              the lower slot)
+			//   * FDIV unit non-pipelined: each FDIV op occupies it for
+			//                              info->throughput cycles
+			//   * EFU  unit non-pipelined: same model, info->throughput cycles
+			// NOPs and waitq/waitp are excluded from issue counts.
+			//
+			// ResMII = max( nUpper, nLower, sum_FDIV(throughput),
+			//               sum_EFU(throughput) )
+			// MII   = max( RecMII, ResMII ); the per-iter cycle count of any
+			//         valid modulo schedule.
+			const std::vector<unsigned int>& mt = opportunity.mainTokenIndices;
+			unsigned int nUpper = 0, nLower = 0, nNop = 0;
+			unsigned int fdivBusy = 0, efuBusy = 0;
+			unsigned int nFmac = 0, nLsu = 0, nIalu = 0, nBru = 0;
+			unsigned int nFdiv = 0, nEfu = 0, nRandu = 0;
+			for( unsigned int k = 0; k < mt.size(); ++k )
+			{
+				if( mt[k] >= indexedTokens.size() ) continue;
+				const Token& tk = *indexedTokens[mt[k]];
+				if( !tk.operand() ) continue;
+				const VuInstructionInfo* info =
+				    findVuInstructionInfo( normalizeVuMnemonic( tk.operand()->name() ) );
+				if( !info ) continue;
+				if( info->pipe == VU_PIPE_NOP ) { ++nNop; continue; }
+				if( info->pipe == VU_PIPE_UPPER ) ++nUpper;
+				else if( info->pipe == VU_PIPE_LOWER ) ++nLower;
+				switch( info->unit )
+				{
+				case VU_EXEC_FMAC:  ++nFmac;  break;
+				case VU_EXEC_LSU:   ++nLsu;   break;
+				case VU_EXEC_IALU:  ++nIalu;  break;
+				case VU_EXEC_BRU:   ++nBru;   break;
+				case VU_EXEC_RANDU: ++nRandu; break;
+				case VU_EXEC_FDIV:  ++nFdiv; fdivBusy += info->throughput; break;
+				case VU_EXEC_EFU:   ++nEfu;  efuBusy  += info->throughput; break;
+				default: break;
+				}
+			}
+			unsigned int resmii = nUpper;
+			if( nLower    > resmii ) resmii = nLower;
+			if( fdivBusy  > resmii ) resmii = fdivBusy;
+			if( efuBusy   > resmii ) resmii = efuBusy;
+			if( resmii < 1 ) resmii = 1;
+			std::cerr << "[loop-resmii] loop=" << opportunity.label
+			          << " mainSize=" << mt.size()
+			          << " nUpper=" << nUpper
+			          << " nLower=" << nLower
+			          << " fdivBusy=" << fdivBusy
+			          << " efuBusy=" << efuBusy
+			          << " nop=" << nNop
+			          << " fmac=" << nFmac
+			          << " lsu=" << nLsu
+			          << " ialu=" << nIalu
+			          << " bru=" << nBru
+			          << " randu=" << nRandu
+			          << " fdiv=" << nFdiv
+			          << " efu=" << nEfu
+			          << " resmii=" << resmii
+			          << "\n";
+		}
+
+		if( std::getenv( "OPENVCL_DUMP_LOOP_MII" ) != NULL
+		    && opportunity.simpleCountedLoop
+		    && !opportunity.mainTokenIndices.empty() )
+		{
+			// Track 9.G step 4a: combined Minimum Initiation Interval.
+			// MII = max(RecMII, ResMII) is the lower bound on any valid modulo
+			// schedule's II. RecMII (recurrence-bound) is computed via the same
+			// Bellman-Ford max-cycle-ratio algorithm used by OPENVCL_DUMP_LOOP_DDG;
+			// ResMII (resource-bound) is the per-pipe count used by
+			// OPENVCL_DUMP_LOOP_RESMII. Step 4b+ will consume this MII as the
+			// starting II for iterative modulo scheduling.
+			const std::vector<unsigned int>& mt = opportunity.mainTokenIndices;
+			const unsigned int recmii = computeLoopRecMII( mt, indexedTokens );
+			const unsigned int resmii = computeLoopResMII( mt, indexedTokens );
+			const unsigned int mii    = ( recmii > resmii ) ? recmii : resmii;
+			std::cerr << "[loop-mii] loop=" << opportunity.label
+			          << " mainSize=" << mt.size()
+			          << " recmii=" << recmii
+			          << " resmii=" << resmii
+			          << " mii=" << mii
+			          << "\n";
+		}
+
+		if( std::getenv( "OPENVCL_DUMP_LOOP_RENAME_RECMII" ) != NULL
+		    && opportunity.simpleCountedLoop
+		    && !opportunity.mainTokenIndices.empty() )
+		{
+			// Track 9.G step 1c-1 (diagnostic): rename-aware RecMII.
+			// Prints baseline RecMII alongside the rename-aware variant
+			// that drops loop-carried RAW edges whose producer is a
+			// kernel-rename splittable FMAC writing a VF base. The
+			// rename machinery (steps 8b-1 / 8b-2x) already redirects
+			// those carried values to scratch registers, so the
+			// corresponding recurrences are not actually iter-to-iter.
+			// Step 1c-1 only reports; step 1c-2 will consume this value
+			// when OPENVCL_USE_GENERIC_KERNEL_REWRITE is set.
+			const std::vector<unsigned int>& mt = opportunity.mainTokenIndices;
+			const unsigned int recmiiBase = computeLoopRecMII( mt, indexedTokens );
+			const unsigned int resmii     = computeLoopResMII( mt, indexedTokens );
+			unsigned int droppedCarried   = 0;
+			const unsigned int recmiiRenamed =
+			    computeLoopRecMIIRenamed( mt, indexedTokens, &droppedCarried );
+			const unsigned int miiBase =
+			    ( recmiiBase    > resmii ) ? recmiiBase    : resmii;
+			const unsigned int miiRenamed =
+			    ( recmiiRenamed > resmii ) ? recmiiRenamed : resmii;
+			std::cerr << "[loop-recmii-renamed] loop=" << opportunity.label
+			          << " mainSize=" << mt.size()
+			          << " recmii_base=" << recmiiBase
+			          << " recmii_renamed=" << recmiiRenamed
+			          << " resmii=" << resmii
+			          << " mii_base=" << miiBase
+			          << " mii_renamed=" << miiRenamed
+			          << " droppedCarriedEdges=" << droppedCarried
+			          << "\n";
+		}
+
+		if( std::getenv( "OPENVCL_DUMP_LOOP_MRT" ) != NULL
+		    && opportunity.simpleCountedLoop
+		    && !opportunity.mainTokenIndices.empty() )
+		{
+			// Track 9.G step 4b: Modulo Reservation Table scaffolding.
+			// Construct an empty MRT sized at the current MII and report its
+			// dimensions. Step 4d will drive reservations from the priority
+			// list; for now this only validates that the resource model
+			// (Upper/Lower issue lanes + FDIV/EFU multi-cycle pipes) wires
+			// through the build and can be sized per loop without affecting
+			// emission.
+			const std::vector<unsigned int>& mt = opportunity.mainTokenIndices;
+			const unsigned int recmii = computeLoopRecMII( mt, indexedTokens );
+			const unsigned int resmii = computeLoopResMII( mt, indexedTokens );
+			const unsigned int mii    = ( recmii > resmii ) ? recmii : resmii;
+			ModuloReservationTable mrt( mii );
+			std::cerr << "[loop-mrt] loop=" << opportunity.label
+			          << " II=" << mrt.initiationInterval()
+			          << " upperCap=" << mrt.initiationInterval()
+			          << " lowerCap=" << mrt.initiationInterval()
+			          << " fdivLanes=1"
+			          << " efuLanes=1"
+			          << " upperOcc=" << mrt.upperOccupancy()
+			          << " lowerOcc=" << mrt.lowerOccupancy()
+			          << " fdivOcc=" << mrt.fdivOccupancy()
+			          << " efuOcc=" << mrt.efuOccupancy()
+			          << "\n";
+		}
+
+		if( std::getenv( "OPENVCL_DUMP_LOOP_PRIORITY" ) != NULL
+		    && opportunity.simpleCountedLoop
+		    && !opportunity.mainTokenIndices.empty() )
+		{
+			// Track 9.G step 4c: node priority for iterative modulo scheduling.
+			// Compute ASAP/ALAP/height/mobility over the intra DDG and print
+			// an aggregate summary plus the priority order. Per-node detail
+			// behind OPENVCL_DUMP_LOOP_PRIORITY_NODES to avoid flooding the
+			// log on large bodies. Step 4d will consume this ordering to
+			// drive insertion into the Modulo Reservation Table.
+			const std::vector<unsigned int>& mt = opportunity.mainTokenIndices;
+			const unsigned int recmii = computeLoopRecMII( mt, indexedTokens );
+			const unsigned int resmii = computeLoopResMII( mt, indexedTokens );
+			const unsigned int mii    = ( recmii > resmii ) ? recmii : resmii;
+			LoopPriorityResult pr;
+			computeLoopPriority( mt, indexedTokens, mii, pr );
+			unsigned int maxHeight = 0, maxMobility = 0, maxAsap = 0, maxAlap = 0;
+			for( unsigned int i = 0; i < pr.height.size(); ++i )
+			{
+				if( pr.height[i]   > maxHeight )   maxHeight   = pr.height[i];
+				if( pr.mobility[i] > maxMobility ) maxMobility = pr.mobility[i];
+				if( pr.asap[i]     > maxAsap )     maxAsap     = pr.asap[i];
+				if( pr.alap[i]     > maxAlap )     maxAlap     = pr.alap[i];
+			}
+			std::cerr << "[loop-priority] loop=" << opportunity.label
+			          << " mainSize=" << mt.size()
+			          << " II=" << mii
+			          << " scheduleLength=" << pr.scheduleLength
+			          << " maxHeight=" << maxHeight
+			          << " maxMobility=" << maxMobility
+			          << " maxAsap=" << maxAsap
+			          << " maxAlap=" << maxAlap
+			          << "\n";
+			if( std::getenv( "OPENVCL_DUMP_LOOP_PRIORITY_NODES" ) != NULL )
+			{
+				for( unsigned int rank = 0; rank < pr.order.size(); ++rank )
+				{
+					const unsigned int i = pr.order[rank];
+					std::cerr << "[loop-priority-node] loop=" << opportunity.label
+					          << " rank=" << rank
+					          << " node=" << i
+					          << " token=" << mt[i]
+					          << " height=" << pr.height[i]
+					          << " mobility=" << pr.mobility[i]
+					          << " asap=" << pr.asap[i]
+					          << " alap=" << pr.alap[i]
+					          << "\n";
+				}
+			}
+		}
+
+		// Track 9.G step 8a: the modulo placer + 6a-6h kernel-rewrite
+		// scaffolding always runs when the loop is a simple counted loop
+		// with a non-empty body. The OPENVCL_DUMP_LOOP_SCHEDULE env var
+		// (and the nested OPENVCL_DUMP_KERNEL_* gates) now only control
+		// the std::cerr writes; the computation itself is unconditional
+		// so OPENVCL_USE_GENERIC_KERNEL_REWRITE can see real scaffolding
+		// on production builds.
+		if( opportunity.simpleCountedLoop
+		    && !opportunity.mainTokenIndices.empty() )
+		{
+			runVuKernelPlacerAndScaffolding( opportunity, indexedTokens, tokens );
 		}
 
 		if( std::getenv( "OPENVCL_DUMP_MULTISTAGE_CANDIDATES" ) != NULL )
