@@ -998,6 +998,30 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 	{
 		const std::vector<VuSoftwarePipelineRewritePlan> pipelinePlans =
 			buildVuSoftwarePipelineRewritePlans(workTokens);
+		// Track 9.G-1h step 4b-3b-5: dormant read of shadow-placer refit
+		// metrics. When OPENVCL_USE_EXPANDED_DDG_PLACER=1 the analysis
+		// publishes per-plan refit verdicts (II / stages / conflicts /
+		// mainTokenCount) computed by re-running the modulo placer on
+		// the expanded-DDG shadow opportunity. Today the bake-in always
+		// keeps the original (passthrough) placement; logging only.
+		if( std::getenv("OPENVCL_USE_EXPANDED_DDG_PLACER") != NULL )
+		{
+			for( unsigned int p = 0; p < pipelinePlans.size(); ++p )
+			{
+				const VuSoftwarePipelineRewritePlan& plan = pipelinePlans[p];
+				if( plan.kernelRewriteRefitII == 0u )
+					continue;
+				std::cerr << "[refit-codegen] loop=" << plan.mainLabel
+				          << " refitII=" << plan.kernelRewriteRefitII
+				          << " refitStages=" << plan.kernelRewriteRefitStageCount
+				          << " refitMain=" << plan.kernelRewriteRefitMainTokenCount
+				          << " refitConflicts=" << plan.kernelRewriteRefitConflicts
+				          << " origII=" << plan.kernelRewriteII
+				          << " origStages=" << plan.kernelRewriteStageCount
+				          << " decision=passthrough"
+				          << std::endl;
+			}
+		}
 		if( !pipelinePlans.empty() )
 		{
 			// Track 9.G step 7b: optional SCE-style multi-stage emitter,

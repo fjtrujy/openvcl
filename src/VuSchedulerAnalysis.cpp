@@ -5801,6 +5801,10 @@ VuSoftwarePipelineRewritePlan::VuSoftwarePipelineRewritePlan()
 	kernelEnvelopePrologueCycles = 0;
 	kernelEnvelopeEpilogueCycles = 0;
 	kernelEnvelopeConflicts = 0;
+	kernelRewriteRefitII = 0;
+	kernelRewriteRefitStageCount = 0;
+	kernelRewriteRefitConflicts = 0;
+	kernelRewriteRefitMainTokenCount = 0;
 }
 
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens )
@@ -9221,6 +9225,12 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		plan.kernelEnvelopeEpilogueTokenCounts = i->kernelEnvelopeEpilogueTokenCounts;
 		// Track 9.G step 6h: stageCells VLIW grid.
 		plan.kernelRewriteStageCells           = i->kernelRewriteStageCells;
+		// Track 9.G-1h step 4b-3b-5: mirror refit scalar metrics so
+		// emission-side consumers can see the shadow-placer verdict.
+		plan.kernelRewriteRefitII             = i->kernelRewriteRefitII;
+		plan.kernelRewriteRefitStageCount     = i->kernelRewriteRefitStageCount;
+		plan.kernelRewriteRefitConflicts      = i->kernelRewriteRefitConflicts;
+		plan.kernelRewriteRefitMainTokenCount = i->kernelRewriteRefitMainTokenCount;
 
 		if( i->canEmitMultiQSoftwarePipeline )
 		{

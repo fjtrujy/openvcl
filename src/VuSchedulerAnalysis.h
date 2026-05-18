@@ -444,6 +444,18 @@ struct VuSoftwarePipelineRewritePlan
 	// Track 9.G step 6h — stageCells VLIW grid (diagnostic-only).
 	// Mirrors the opportunity-side stageCells field.
 	std::vector<VuKernelTemplateSlot> kernelRewriteStageCells;
+
+	// Track 9.G-1h step 4b-3b-5 — shadow-opportunity refit metrics,
+	// mirrored from VuLoopPipelineOpportunity by
+	// buildVuSoftwarePipelineRewritePlans so emission-side consumers
+	// (CodeGenerator) can see the placer's shadow verdict without
+	// reaching back into analysis state. All zero unless
+	// OPENVCL_USE_EXPANDED_DDG_PLACER=1. Dormant: no emission path
+	// branches on these yet; the CodeGenerator only logs them.
+	unsigned int kernelRewriteRefitII;
+	unsigned int kernelRewriteRefitStageCount;
+	unsigned int kernelRewriteRefitConflicts;
+	unsigned int kernelRewriteRefitMainTokenCount;
 };
 
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens );
