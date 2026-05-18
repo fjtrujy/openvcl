@@ -6305,7 +6305,8 @@ namespace
 	static void runVuKernelPlacerAndScaffolding(
 	    VuLoopPipelineOpportunity& opportunity,
 	    const std::vector<const Token*>& indexedTokens,
-	    const std::list<Token>& tokens )
+	    const std::list<Token>& tokens,
+	    bool emitExpandedDDGDiagnostic = true )
 	{
 			// Track 9.G step 4d: iterative modulo placement (diagnostic).
 			// Drive the priority order into the Modulo Reservation Table.
@@ -7400,7 +7401,12 @@ namespace
 					// the placer at this same scope. Gated by
 					// OPENVCL_USE_EXPANDED_DDG_PLACER to keep the default
 					// path byte-identical until the refit path lands.
-					if( std::getenv( "OPENVCL_USE_EXPANDED_DDG_PLACER" ) != NULL )
+					// Suppressed when this helper is recursed from
+					// runExpandedDDGRefitDiagnostic on a shadow opportunity
+					// (emitExpandedDDGDiagnostic=false) to avoid duplicate /
+					// misleading diag lines.
+					if( emitExpandedDDGDiagnostic
+					    && std::getenv( "OPENVCL_USE_EXPANDED_DDG_PLACER" ) != NULL )
 					{
 						VuSoftwarePipelineRewritePlan probe;
 						probe.label                        = opportunity.label;
@@ -7724,6 +7730,157 @@ namespace
 					          << "\n";
 				}
 			}
+	}
+
+	// Track 9.G-1h step 4b-3b-3: shadow-opportunity refit diagnostic.
+	//
+	// After the original placer + scaffolding has run on `opportunity`,
+	// build the expanded-DDG node list (split clones + materialize MOVEs
+	// + tail MOVEs) and synthesize a SHADOW VuLoopPipelineOpportunity
+	// whose mainTokenIndices reflect the post-expansion sequence. Real
+	// source-token indices are reused for PASSTHROUGH/SPLIT_CLONE nodes;
+	// MATERIALIZE_MOVE / TAIL_MOVE nodes are backed by synthetic MOVE
+	// tokens (via syntheticMoveOperand()) owned in a local std::list,
+	// then appended to a shadow indexedTokens vector. The shadow run is
+	// invoked with emitExpandedDDGDiagnostic=false so the inner
+	// [expanded-ddg-placer] / [expanded-nodes] gates stay silent for the
+	// shadow, leaving this helper as the single source of the
+	// [expanded-ddg-refit] line.
+	//
+	// Gated on OPENVCL_USE_EXPANDED_DDG_PLACER (same env var as 4b-3a
+	// / 4b-3b-1) so the default code path remains byte-identical. The
+	// shadow opportunity is a value copy with its kernelRewrite* /
+	// kernelEnvelope* fields cleared and then re-populated by
+	// runVuKernelPlacerAndScaffolding; the caller's opportunity is
+	// untouched. tokens (3rd arg) is forwarded as-is because the helper
+	// does not consume the bare std::list (audited at extraction time).
+	static void runExpandedDDGRefitDiagnostic(
+	    const VuLoopPipelineOpportunity& opportunity,
+	    const std::vector<const Token*>& indexedTokens,
+	    const std::list<Token>& tokens )
+	{
+		if( std::getenv( "OPENVCL_USE_EXPANDED_DDG_PLACER" ) == NULL )
+			return;
+		if( !opportunity.simpleCountedLoop )
+			return;
+		if( opportunity.mainTokenIndices.empty() )
+			return;
+		if( opportunity.kernelRewriteMainTokens.empty() )
+			return;
+
+		// Build the shadow probe in the same shape as the existing
+		// [expanded-ddg-placer] / [expanded-nodes] diagnostics consume.
+		VuSoftwarePipelineRewritePlan probe;
+		probe.label                        = opportunity.label;
+		probe.kernelRewriteII              = opportunity.kernelRewriteII;
+		probe.kernelRewriteStageCount      = opportunity.kernelRewriteStageCount;
+		probe.kernelRewriteConflicts       = opportunity.kernelRewriteConflicts;
+		probe.kernelRewriteMainTokens      = opportunity.kernelRewriteMainTokens;
+		probe.kernelRewriteRenameHints     = opportunity.kernelRewriteRenameHints;
+		probe.kernelRewriteRenameDecisions = opportunity.kernelRewriteRenameDecisions;
+		probe.kernelRewriteRenameMoveSlots = opportunity.kernelRewriteRenameMoveSlots;
+
+		std::vector<VuKernelExpandedNode> nodes;
+		buildVuKernelExpandedNodes( probe, indexedTokens, nodes );
+		if( nodes.empty() )
+			return;
+
+		// Pick a donor token (any real token in the loop) to satisfy
+		// Token's `const Line&` reference requirement when copy-
+		// constructing synthetic MOVEs.
+		const Token* donor = NULL;
+		for( unsigned int i = 0; i < opportunity.mainTokenIndices.size(); ++i )
+		{
+			const unsigned int idx = opportunity.mainTokenIndices[i];
+			if( idx < indexedTokens.size() && indexedTokens[idx] != NULL )
+			{
+				donor = indexedTokens[idx];
+				break;
+			}
+		}
+		if( donor == NULL )
+			return;
+
+		std::list<Token>                shadowOwned;
+		std::vector<const Token*>       shadowIndexed = indexedTokens;
+		std::vector<unsigned int>       shadowMainTokenIndices;
+		shadowMainTokenIndices.reserve( nodes.size() );
+
+		unsigned int passCount   = 0;
+		unsigned int splitCount  = 0;
+		unsigned int matMoveCount = 0;
+		unsigned int tailMoveCount = 0;
+
+		for( unsigned int i = 0; i < nodes.size(); ++i )
+		{
+			const VuKernelExpandedNode& n = nodes[i];
+			switch( n.role )
+			{
+				case VuKernelExpandedNode::ROLE_PASSTHROUGH:
+					++passCount;
+					if( n.sourceTokenIndex < indexedTokens.size() )
+						shadowMainTokenIndices.push_back( n.sourceTokenIndex );
+					break;
+				case VuKernelExpandedNode::ROLE_SPLIT_CLONE:
+					++splitCount;
+					if( n.sourceTokenIndex < indexedTokens.size() )
+						shadowMainTokenIndices.push_back( n.sourceTokenIndex );
+					break;
+				case VuKernelExpandedNode::ROLE_MATERIALIZE_MOVE:
+				case VuKernelExpandedNode::ROLE_TAIL_MOVE:
+				{
+					if( n.role == VuKernelExpandedNode::ROLE_MATERIALIZE_MOVE )
+						++matMoveCount;
+					else
+						++tailMoveCount;
+					Token mv( *donor );
+					mv.setLabel( "" );
+					mv.setName( "move" );
+					mv.setOperand( syntheticMoveOperand() );
+					mv.setFlags( Token::PROCESSED );
+					mv.setBroadcast( 0 );
+					mv.setFields( 0 );
+					mv.arguments().clear();
+					shadowOwned.push_back( mv );
+					const unsigned int newIdx = static_cast<unsigned int>( shadowIndexed.size() );
+					shadowIndexed.push_back( &shadowOwned.back() );
+					shadowMainTokenIndices.push_back( newIdx );
+					break;
+				}
+			}
+		}
+
+		if( shadowMainTokenIndices.empty() )
+			return;
+
+		VuLoopPipelineOpportunity shadow = opportunity;
+		shadow.mainTokenIndices = shadowMainTokenIndices;
+		// Clear placer outputs so we measure a fresh shadow placement.
+		shadow.kernelRewriteII             = 0;
+		shadow.kernelRewriteStageCount     = 0;
+		shadow.kernelRewriteConflicts      = 0;
+		shadow.kernelRewritePrologTokens.clear();
+		shadow.kernelRewriteMainTokens.clear();
+		shadow.kernelRewriteDrainTokens.clear();
+		shadow.kernelRewriteEntryStages.clear();
+		shadow.kernelRewriteStageCells.clear();
+
+		runVuKernelPlacerAndScaffolding( shadow, shadowIndexed, tokens,
+		                                 /*emitExpandedDDGDiagnostic=*/false );
+
+		std::cerr << "[expanded-ddg-refit] loop=" << opportunity.label
+		          << " nodes=" << nodes.size()
+		          << " pass=" << passCount
+		          << " split=" << splitCount
+		          << " matMOVE=" << matMoveCount
+		          << " tailMOVE=" << tailMoveCount
+		          << " origII=" << opportunity.kernelRewriteII
+		          << " shadowII=" << shadow.kernelRewriteII
+		          << " origStages=" << opportunity.kernelRewriteStageCount
+		          << " shadowStages=" << shadow.kernelRewriteStageCount
+		          << " origMain=" << opportunity.mainTokenIndices.size()
+		          << " shadowMain=" << shadowMainTokenIndices.size()
+		          << "\n";
 	}
 }
 
@@ -8520,6 +8677,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		    && !opportunity.mainTokenIndices.empty() )
 		{
 			runVuKernelPlacerAndScaffolding( opportunity, indexedTokens, tokens );
+			runExpandedDDGRefitDiagnostic( opportunity, indexedTokens, tokens );
 		}
 
 		if( std::getenv( "OPENVCL_DUMP_MULTISTAGE_CANDIDATES" ) != NULL )
