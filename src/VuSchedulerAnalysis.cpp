@@ -5767,6 +5767,10 @@ VuLoopPipelineOpportunity::VuLoopPipelineOpportunity()
 	kernelEnvelopePrologueCycles = 0;
 	kernelEnvelopeEpilogueCycles = 0;
 	kernelEnvelopeConflicts = 0;
+	kernelRewriteRefitII = 0;
+	kernelRewriteRefitStageCount = 0;
+	kernelRewriteRefitConflicts = 0;
+	kernelRewriteRefitMainTokenCount = 0;
 }
 
 VuSoftwarePipelineRewritePlan::VuSoftwarePipelineRewritePlan()
@@ -7755,7 +7759,7 @@ namespace
 	// untouched. tokens (3rd arg) is forwarded as-is because the helper
 	// does not consume the bare std::list (audited at extraction time).
 	static void runExpandedDDGRefitDiagnostic(
-	    const VuLoopPipelineOpportunity& opportunity,
+	    VuLoopPipelineOpportunity& opportunity,
 	    const std::vector<const Token*>& indexedTokens,
 	    const std::list<Token>& tokens )
 	{
@@ -7867,6 +7871,18 @@ namespace
 
 		runVuKernelPlacerAndScaffolding( shadow, shadowIndexed, tokens,
 		                                 /*emitExpandedDDGDiagnostic=*/false );
+
+		// Track 9.G-1h step 4b-3b-4: publish scalar refit metrics back to
+		// the caller's opportunity so downstream consumers (4b-3b-5
+		// onward) can see the shadow placer's verdict without rerunning
+		// it. Cells are deliberately not published — their layout-entry
+		// indices reference the shadow VuKernelLayout which lives only
+		// inside the helper.
+		opportunity.kernelRewriteRefitII             = shadow.kernelRewriteII;
+		opportunity.kernelRewriteRefitStageCount     = shadow.kernelRewriteStageCount;
+		opportunity.kernelRewriteRefitConflicts      = shadow.kernelRewriteConflicts;
+		opportunity.kernelRewriteRefitMainTokenCount =
+		    static_cast<unsigned int>( shadowMainTokenIndices.size() );
 
 		std::cerr << "[expanded-ddg-refit] loop=" << opportunity.label
 		          << " nodes=" << nodes.size()
