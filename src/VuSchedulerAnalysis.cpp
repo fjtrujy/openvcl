@@ -6179,6 +6179,123 @@ std::vector<VuLoopCandidate> findVuLoopCandidates( const std::list<Token>& token
 	return result;
 }
 
+namespace
+{
+	// Track 9.G-1h step 4b-3b-1: expanded-node descriptor. Mirrors the
+	// rename-emission walk in applyVuGenericKernelRewritePlans (per cell:
+	// either pass-through, materialize-MOVEs + unsplit op, or N split
+	// clones; then per-decision tail MOVEs). Each emitted sub-token
+	// becomes one node here. The refit placer (4b-3b-3 onward) will
+	// consume this node list. Diagnostic-only at 4b-3b-1.
+	struct VuKernelExpandedNode
+	{
+		enum Role
+		{
+			ROLE_PASSTHROUGH,
+			ROLE_SPLIT_CLONE,
+			ROLE_MATERIALIZE_MOVE,
+			ROLE_TAIL_MOVE
+		};
+		Role         role;
+		unsigned int sourceCellIndex;   // index into plan.kernelRewriteMainTokens; -1u for TAIL_MOVE
+		unsigned int sourceTokenIndex;  // index into indexedTokens;                -1u for TAIL_MOVE
+		unsigned int decisionIndex;     // index into plan.kernelRewriteRenameDecisions; -1u for plain passthrough/split
+		unsigned int cloneOrdinal;      // 0-based ordinal within a SPLIT_CLONE group
+	};
+
+	void buildVuKernelExpandedNodes(
+		const VuSoftwarePipelineRewritePlan& plan,
+		const std::vector<const Token*>& indexedTokens,
+		std::vector<VuKernelExpandedNode>& out )
+	{
+		out.clear();
+		const unsigned int NO_CELL = static_cast<unsigned int>( -1 );
+		const unsigned int NO_DEC  = static_cast<unsigned int>( -1 );
+		for( unsigned int m = 0; m < plan.kernelRewriteMainTokens.size(); ++m )
+		{
+			const unsigned int idx = plan.kernelRewriteMainTokens[m];
+			if( idx == VuKernelRewritePlan::NO_TOKEN )
+				continue;
+			if( idx >= indexedTokens.size() )
+				continue;
+			const Token& src = *indexedTokens[idx];
+			if( tokenIsKernelRenameMaterializeCandidate( src, plan ) )
+			{
+				for( unsigned int d = 0; d < plan.kernelRewriteRenameDecisions.size(); ++d )
+				{
+					if( !plan.kernelRewriteRenameDecisions[d].assigned )
+						continue;
+					VuKernelExpandedNode n;
+					n.role             = VuKernelExpandedNode::ROLE_MATERIALIZE_MOVE;
+					n.sourceCellIndex  = m;
+					n.sourceTokenIndex = idx;
+					n.decisionIndex    = d;
+					n.cloneOrdinal     = 0;
+					out.push_back( n );
+				}
+				VuKernelExpandedNode p;
+				p.role             = VuKernelExpandedNode::ROLE_PASSTHROUGH;
+				p.sourceCellIndex  = m;
+				p.sourceTokenIndex = idx;
+				p.decisionIndex    = NO_DEC;
+				p.cloneOrdinal     = 0;
+				out.push_back( p );
+				continue;
+			}
+			std::list<Token> split;
+			splitMultiFieldOpByFieldDecisions( src, plan.kernelRewriteRenameDecisions, split );
+			if( split.size() > 1u )
+			{
+				unsigned int ord = 0;
+				for( std::list<Token>::const_iterator s = split.begin(); s != split.end(); ++s, ++ord )
+				{
+					VuKernelExpandedNode n;
+					n.role             = VuKernelExpandedNode::ROLE_SPLIT_CLONE;
+					n.sourceCellIndex  = m;
+					n.sourceTokenIndex = idx;
+					n.decisionIndex    = NO_DEC;
+					n.cloneOrdinal     = ord;
+					out.push_back( n );
+				}
+			}
+			else
+			{
+				VuKernelExpandedNode p;
+				p.role             = VuKernelExpandedNode::ROLE_PASSTHROUGH;
+				p.sourceCellIndex  = m;
+				p.sourceTokenIndex = idx;
+				p.decisionIndex    = NO_DEC;
+				p.cloneOrdinal     = 0;
+				out.push_back( p );
+			}
+		}
+		for( unsigned int d = 0; d < plan.kernelRewriteRenameDecisions.size(); ++d )
+		{
+			if( !plan.kernelRewriteRenameDecisions[d].assigned )
+				continue;
+			VuKernelExpandedNode n;
+			n.role             = VuKernelExpandedNode::ROLE_TAIL_MOVE;
+			n.sourceCellIndex  = NO_CELL;
+			n.sourceTokenIndex = static_cast<unsigned int>( -1 );
+			n.decisionIndex    = d;
+			n.cloneOrdinal     = 0;
+			out.push_back( n );
+		}
+	}
+
+	const char* vuKernelExpandedNodeRoleName( unsigned int role )
+	{
+		switch( role )
+		{
+		case VuKernelExpandedNode::ROLE_PASSTHROUGH:       return "pass";
+		case VuKernelExpandedNode::ROLE_SPLIT_CLONE:       return "split";
+		case VuKernelExpandedNode::ROLE_MATERIALIZE_MOVE:  return "matMOVE";
+		case VuKernelExpandedNode::ROLE_TAIL_MOVE:         return "tailMOVE";
+		default: return "?";
+		}
+	}
+}
+
 std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const std::list<Token>& tokens )
 {
 	std::vector<VuLoopPipelineOpportunity> result;
@@ -8127,6 +8244,46 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 							          << " passthrough=" << passthrough
 							          << " decision=" << ( needsRefit ? "refit-needed" : "passthrough" )
 							          << "\n";
+
+							// Track 9.G-1h step 4b-3b-1: per-node descriptor dump.
+							// Builds the expanded node list (split clones +
+							// materialize MOVEs + tail MOVEs) and emits one
+							// [expanded-node] line per node. Diagnostic-only;
+							// the refit placer (4b-3b-3 onward) will consume
+							// these descriptors.
+							if( std::getenv( "OPENVCL_DUMP_EXPANDED_NODES" ) != NULL )
+							{
+								std::vector<VuKernelExpandedNode> nodes;
+								buildVuKernelExpandedNodes( probe, indexedTokens, nodes );
+								std::cerr << "[expanded-nodes] loop=" << probe.label
+								          << " count=" << nodes.size() << "\n";
+								for( unsigned int q = 0; q < nodes.size(); ++q )
+								{
+									const VuKernelExpandedNode& en = nodes[q];
+									const char* op = "?";
+									if( en.sourceTokenIndex < indexedTokens.size() )
+									{
+										const Token* st = indexedTokens[ en.sourceTokenIndex ];
+										if( st && st->operand() )
+											op = st->operand()->name().c_str();
+									}
+									std::cerr << "[expanded-node] loop=" << probe.label
+									          << " idx=" << q
+									          << " role=" << vuKernelExpandedNodeRoleName( en.role )
+									          << " cell=";
+									if( en.sourceCellIndex == static_cast<unsigned int>(-1) ) std::cerr << "-";
+									else                                                       std::cerr << en.sourceCellIndex;
+									std::cerr << " srcTok=";
+									if( en.sourceTokenIndex == static_cast<unsigned int>(-1) ) std::cerr << "-";
+									else                                                        std::cerr << en.sourceTokenIndex;
+									std::cerr << " op=" << op
+									          << " decIdx=";
+									if( en.decisionIndex == static_cast<unsigned int>(-1) ) std::cerr << "-";
+									else                                                     std::cerr << en.decisionIndex;
+									std::cerr << " cloneOrd=" << en.cloneOrdinal
+									          << "\n";
+								}
+							}
 						}
 					}
 
