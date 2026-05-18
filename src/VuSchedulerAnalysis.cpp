@@ -12,6 +12,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <algorithm>
 
 namespace vcl
 {
