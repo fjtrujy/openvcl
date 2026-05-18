@@ -7854,7 +7854,10 @@ namespace
 	// kernelRewriteRefit* scalar fields. tokens (3rd arg) is forwarded
 	// as-is because the helper does not consume the bare std::list
 	// (audited at extraction time).
-	static void runExpandedDDGRefitDiagnostic(
+	// Track 9.G-1h step 4b-4b: de-static so makeKernelRenameMoveToken
+	// (non-static member) is accessible for forging DDG-faithful arg lists
+	// on MATERIALIZE_MOVE / TAIL_MOVE shadow tokens.
+	void runExpandedDDGRefitDiagnostic(
 	    VuLoopPipelineOpportunity& opportunity,
 	    const std::vector<const Token*>& indexedTokens,
 	    const std::list<Token>& tokens )
@@ -7877,6 +7880,9 @@ namespace
 		probe.kernelRewriteRenameHints     = opportunity.kernelRewriteRenameHints;
 		probe.kernelRewriteRenameDecisions = opportunity.kernelRewriteRenameDecisions;
 		probe.kernelRewriteRenameMoveSlots = opportunity.kernelRewriteRenameMoveSlots;
+		// 4b-4b: include drain tokens so buildVuKernelExpandedNodes emits
+		// TAIL_MOVE nodes for decisions whose base is live at loop exit.
+		probe.kernelRewriteDrainTokens     = opportunity.kernelRewriteDrainTokens;
 
 		std::vector<VuKernelExpandedNode> nodes;
 		buildVuKernelExpandedNodes( probe, indexedTokens, nodes );
@@ -7990,15 +7996,35 @@ namespace
 						++matMoveCount;
 					else
 						++tailMoveCount;
-					Token mv( *donor );
-					mv.setLabel( "" );
-					mv.setName( "move" );
-					mv.setOperand( syntheticMoveOperand() );
-					mv.setFlags( Token::PROCESSED );
-					mv.setBroadcast( 0 );
-					mv.setFields( 0 );
-					mv.arguments().clear();
-					shadowOwned.push_back( mv );
+					// 4b-4b: forge DDG-faithful arg lists mirroring
+					// makeKernelRenameMoveToken: dst=registerBase WRITE|DEST
+					// + src=scratch, with decision-derived field mask. This
+					// gives the shadow placer proper RAW/WAW/WAR edges so
+					// it can schedule MOVEs relative to their producers and
+					// consumers. Push directly from the factory (copy-ctor
+					// only — Token has no operator=). Falls back to bare
+					// arg-less MOVE only when the decision index is
+					// out-of-range or unassigned.
+					if( n.decisionIndex < opportunity.kernelRewriteRenameDecisions.size()
+					    && opportunity.kernelRewriteRenameDecisions[n.decisionIndex].assigned )
+					{
+						shadowOwned.push_back( makeKernelRenameMoveToken(
+						    *donor,
+						    opportunity.kernelRewriteRenameDecisions[n.decisionIndex] ) );
+					}
+					else
+					{
+						// Bare fallback: no arg list.
+						Token mv( *donor );
+						mv.setLabel( "" );
+						mv.setName( "move" );
+						mv.setOperand( syntheticMoveOperand() );
+						mv.setFlags( Token::PROCESSED );
+						mv.setBroadcast( 0 );
+						mv.setFields( 0 );
+						mv.arguments().clear();
+						shadowOwned.push_back( mv );
+					}
 					const unsigned int newIdx = static_cast<unsigned int>( shadowIndexed.size() );
 					shadowIndexed.push_back( &shadowOwned.back() );
 					shadowIdxToNodeIdx[ newIdx ] = i;
@@ -10005,30 +10031,13 @@ std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& token
 			r.II        = plan.kernelRewriteII;
 			r.placerGridMainTokens = plan.kernelRewriteMainTokens;
 			// Track 9.G-1h step 4b-7a: also publish the refit-grid +
-			// node descriptors. 4b-8c: per-loop rename-profitability
-			// gate — only publish when the shadow placer achieved a
-			// strictly better II than the original placer
-			// (refitII < origII). Loops where the expanded MOVEs
-			// inflate the II keep the legacy non-rename emission path
-			// (empty refitNodes / refitMainTokens signals
-			// buildKernelBakeIns to fall back to placerGridMainTokens).
-			// Tolerance is currently 0 (strict improvement required).
-			const bool refitProfitable =
-			    plan.kernelRewriteRefitII != 0u &&
-			    plan.kernelRewriteRefitII < plan.kernelRewriteII;
-			if( refitProfitable )
-			{
-				r.refitNodes      = plan.kernelRewriteRefitNodes;
-				r.refitMainTokens = plan.kernelRewriteRefitMainTokens;
-			}
-			if( std::getenv("OPENVCL_USE_EXPANDED_DDG_PLACER") != NULL )
-			{
-				std::cerr << "[refit-gate] loop=" << mainLabel
-				          << " origII=" << plan.kernelRewriteII
-				          << " refitII=" << plan.kernelRewriteRefitII
-				          << " decision=" << ( refitProfitable ? "publish" : "reject" )
-				          << std::endl;
-			}
+			// node descriptors (dormant in 4b-7a; CodeGenerator wires
+			// up to these in 4b-7b/c). When the refit placer was not
+			// eligible or reported conflicts, both vectors are empty
+			// and bake-in falls back to the original placerGridMainTokens
+			// path.
+			r.refitNodes      = plan.kernelRewriteRefitNodes;
+			r.refitMainTokens = plan.kernelRewriteRefitMainTokens;
 			outRanges.push_back( r );
 		}
 
