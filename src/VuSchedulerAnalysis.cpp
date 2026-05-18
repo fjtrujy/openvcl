@@ -8051,6 +8051,85 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 					// Track 9.G step 6h: stageCells VLIW grid.
 					opportunity.kernelRewriteStageCells = krRp.stageCells;
 
+					// Track 9.G-1h step 4b-3a: per-loop expanded-DDG placer
+					// decision. After the placer converges and rename
+					// decisions are known, project the rename-emission
+					// expansion (split clones + materialize MOVEs + tail
+					// MOVEs) and compare against the placer grid capacity
+					// (II*4). Emits a [expanded-ddg-placer] verdict per
+					// rename-eligible loop. Today this is diagnostic-only
+					// and always "passthrough" (4b-1 confirmed fits=1 for
+					// all 7 plans). 4b-3b will pivot on "refit-needed" by
+					// rebuilding the DDG with expanded nodes and re-running
+					// the placer at this same scope. Gated by
+					// OPENVCL_USE_EXPANDED_DDG_PLACER to keep the default
+					// path byte-identical until the refit path lands.
+					if( std::getenv( "OPENVCL_USE_EXPANDED_DDG_PLACER" ) != NULL )
+					{
+						VuSoftwarePipelineRewritePlan probe;
+						probe.label                        = opportunity.label;
+						probe.kernelRewriteII              = opportunity.kernelRewriteII;
+						probe.kernelRewriteStageCount      = opportunity.kernelRewriteStageCount;
+						probe.kernelRewriteConflicts       = opportunity.kernelRewriteConflicts;
+						probe.kernelRewriteMainTokens      = opportunity.kernelRewriteMainTokens;
+						probe.kernelRewriteRenameHints     = opportunity.kernelRewriteRenameHints;
+						probe.kernelRewriteRenameDecisions = opportunity.kernelRewriteRenameDecisions;
+						probe.kernelRewriteRenameMoveSlots = opportunity.kernelRewriteRenameMoveSlots;
+						if( isVuPlanEligibleForKernelRenameEmission( probe, indexedTokens ) )
+						{
+							unsigned int assignedDecisions = 0;
+							for( unsigned int d = 0; d < probe.kernelRewriteRenameDecisions.size(); ++d )
+								if( probe.kernelRewriteRenameDecisions[d].assigned )
+									++assignedDecisions;
+							unsigned int splitGroups        = 0;
+							unsigned int expandedFromSplits = 0;
+							unsigned int materializeMOVEs   = 0;
+							unsigned int passthrough        = 0;
+							for( unsigned int m = 0; m < probe.kernelRewriteMainTokens.size(); ++m )
+							{
+								const unsigned int idx = probe.kernelRewriteMainTokens[m];
+								if( idx == VuKernelRewritePlan::NO_TOKEN )
+									continue;
+								if( idx >= indexedTokens.size() )
+									continue;
+								const Token& src = *indexedTokens[idx];
+								if( tokenIsKernelRenameMaterializeCandidate( src, probe ) )
+								{
+									materializeMOVEs += assignedDecisions;
+									++passthrough;
+									continue;
+								}
+								std::list<Token> split;
+								splitMultiFieldOpByFieldDecisions( src, probe.kernelRewriteRenameDecisions, split );
+								const unsigned int sz = static_cast<unsigned int>( split.size() );
+								if( sz > 1u )
+								{
+									++splitGroups;
+									expandedFromSplits += sz;
+								}
+								else
+								{
+									++passthrough;
+								}
+							}
+							const unsigned int tailMOVEs          = assignedDecisions;
+							const unsigned int expandedMainTokens = expandedFromSplits + materializeMOVEs + tailMOVEs + passthrough;
+							const unsigned int gridCapacity       = probe.kernelRewriteII * 4u;
+							const bool         needsRefit         = expandedMainTokens > gridCapacity;
+							std::cerr << "[expanded-ddg-placer] loop=" << probe.label
+							          << " II=" << probe.kernelRewriteII
+							          << " gridCapacity=" << gridCapacity
+							          << " expandedMainTokens=" << expandedMainTokens
+							          << " splitGroups=" << splitGroups
+							          << " expandedFromSplits=" << expandedFromSplits
+							          << " materializeMOVEs=" << materializeMOVEs
+							          << " tailMOVEs=" << tailMOVEs
+							          << " passthrough=" << passthrough
+							          << " decision=" << ( needsRefit ? "refit-needed" : "passthrough" )
+							          << "\n";
+						}
+					}
+
 					// Track 9.G-1h step 2: emission-order vs placer-grid diff.
 					// Walks krRp.mainTokens (the order the rewrite emitter will
 					// hand to the downstream pipe-pair scheduler) and reports
