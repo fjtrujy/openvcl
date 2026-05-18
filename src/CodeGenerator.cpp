@@ -1011,6 +1011,10 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				const VuSoftwarePipelineRewritePlan& plan = pipelinePlans[p];
 				if( plan.kernelRewriteRefitII == 0u )
 					continue;
+				// 4b-8c: gate verdict mirrors applyVuGenericKernelRewritePlans.
+				const bool gatePass =
+				    plan.kernelRewriteRefitII != 0u &&
+				    plan.kernelRewriteRefitII < plan.kernelRewriteII;
 				std::cerr << "[refit-codegen] loop=" << plan.mainLabel
 				          << " refitII=" << plan.kernelRewriteRefitII
 				          << " refitStages=" << plan.kernelRewriteRefitStageCount
@@ -1018,7 +1022,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				          << " refitConflicts=" << plan.kernelRewriteRefitConflicts
 				          << " origII=" << plan.kernelRewriteII
 				          << " origStages=" << plan.kernelRewriteStageCount
-				          << " decision=passthrough"
+				          << " gate=" << ( gatePass ? "publish" : "reject" )
 				          << std::endl;
 			}
 		}

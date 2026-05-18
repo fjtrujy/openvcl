@@ -10005,13 +10005,30 @@ std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& token
 			r.II        = plan.kernelRewriteII;
 			r.placerGridMainTokens = plan.kernelRewriteMainTokens;
 			// Track 9.G-1h step 4b-7a: also publish the refit-grid +
-			// node descriptors (dormant in 4b-7a; CodeGenerator wires
-			// up to these in 4b-7b/c). When the refit placer was not
-			// eligible or reported conflicts, both vectors are empty
-			// and bake-in falls back to the original placerGridMainTokens
-			// path.
-			r.refitNodes      = plan.kernelRewriteRefitNodes;
-			r.refitMainTokens = plan.kernelRewriteRefitMainTokens;
+			// node descriptors. 4b-8c: per-loop rename-profitability
+			// gate — only publish when the shadow placer achieved a
+			// strictly better II than the original placer
+			// (refitII < origII). Loops where the expanded MOVEs
+			// inflate the II keep the legacy non-rename emission path
+			// (empty refitNodes / refitMainTokens signals
+			// buildKernelBakeIns to fall back to placerGridMainTokens).
+			// Tolerance is currently 0 (strict improvement required).
+			const bool refitProfitable =
+			    plan.kernelRewriteRefitII != 0u &&
+			    plan.kernelRewriteRefitII < plan.kernelRewriteII;
+			if( refitProfitable )
+			{
+				r.refitNodes      = plan.kernelRewriteRefitNodes;
+				r.refitMainTokens = plan.kernelRewriteRefitMainTokens;
+			}
+			if( std::getenv("OPENVCL_USE_EXPANDED_DDG_PLACER") != NULL )
+			{
+				std::cerr << "[refit-gate] loop=" << mainLabel
+				          << " origII=" << plan.kernelRewriteII
+				          << " refitII=" << plan.kernelRewriteRefitII
+				          << " decision=" << ( refitProfitable ? "publish" : "reject" )
+				          << std::endl;
+			}
 			outRanges.push_back( r );
 		}
 
