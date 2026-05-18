@@ -4,7 +4,7 @@
 namespace vcl
 {
 
-static const char* const OPENVCL_VERSION = "0.3.3";
+static const char* const OPENVCL_VERSION = "@PROJECT_VERSION@";
 
 }
 

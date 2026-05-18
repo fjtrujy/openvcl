@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.13)
-project(openvcl VERSION 0.3.3 LANGUAGES CXX)
+project(openvcl VERSION 0.4.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -11,6 +11,9 @@ if(DEFINED ENV{PS2DEV} AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
         "Installation prefix (defaults to \$PS2DEV)" FORCE)
 endif()
 
+# Generate the version header from the project() version field.
+configure_file(src/OpenVclVersion.h.in ${CMAKE_CURRENT_BINARY_DIR}/OpenVclVersion.h @ONLY)
+
 # All translation units that form the openvcl binary.
 file(GLOB OPENVCL_SOURCES CONFIGURE_DEPENDS "src/*.cpp")
 
@@ -21,6 +24,9 @@ add_executable(openvcl ${OPENVCL_SOURCES})
 set_target_properties(openvcl PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
+
+# Expose the generated header to all source files.
+target_include_directories(openvcl PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 target_compile_options(openvcl PRIVATE
     -Wall

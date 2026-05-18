@@ -1,5 +1,6 @@
 ## Unreleased
 
+0.4.0
 - Renamed root documentation files to Markdown and consolidated the active
   roadmap into `README.md`, removing the standalone TODO file.
 - Added VSM cost analysis modes:
