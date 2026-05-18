@@ -6218,6 +6218,34 @@ namespace
 		unsigned int cloneOrdinal;      // 0-based ordinal within a SPLIT_CLONE group
 	};
 
+	// Track 9.G-1h step 4b-8a: live-range narrowing for materialize
+	// MOVEs. Returns true iff `token` has any FLOAT_REGISTER argument
+	// whose base register key equals `base`. Used to skip emission of
+	// a per-decision materialize MOVE before a soft-blocker token that
+	// does not actually reference that decision's original base — i.e.
+	// for stores like `sq A, ofs(vi)`, only one of the N rename
+	// decisions touches `A` and the others should not get spurious
+	// scratch->base MOVEs. The materialize-candidate gate already
+	// excludes WRITEs of any decision base, so any match here is a
+	// READ (the only case where a pre-token MOVE is semantically
+	// required).
+	bool tokenReadsDecisionBase( const Token& token, const std::string& decisionReg )
+	{
+		const std::string base = registerBaseKey( decisionReg );
+		for( std::list<Token::Argument>::const_iterator a = token.arguments().begin();
+		     a != token.arguments().end(); ++a )
+		{
+			if( a->type() != Token::Argument::FLOAT_REGISTER )
+				continue;
+			std::string key;
+			if( !vuRegisterKey( *a, key ) )
+				continue;
+			if( registerBaseKey( key ) == base )
+				return true;
+		}
+		return false;
+	}
+
 	void buildVuKernelExpandedNodes(
 		const VuSoftwarePipelineRewritePlan& plan,
 		const std::vector<const Token*>& indexedTokens,
@@ -6239,6 +6267,10 @@ namespace
 				for( unsigned int d = 0; d < plan.kernelRewriteRenameDecisions.size(); ++d )
 				{
 					if( !plan.kernelRewriteRenameDecisions[d].assigned )
+						continue;
+					// 4b-8a: only materialize decisions whose original
+					// base is actually read by this soft-blocker token.
+					if( !tokenReadsDecisionBase( src, plan.kernelRewriteRenameDecisions[d].reg ) )
 						continue;
 					VuKernelExpandedNode n;
 					n.role             = VuKernelExpandedNode::ROLE_MATERIALIZE_MOVE;
@@ -7452,7 +7484,15 @@ namespace
 								const Token& src = *indexedTokens[idx];
 								if( tokenIsKernelRenameMaterializeCandidate( src, probe ) )
 								{
-									materializeMOVEs += assignedDecisions;
+									// 4b-8a: count only decisions whose original
+									// base is actually read by `src`.
+									for( unsigned int d = 0; d < probe.kernelRewriteRenameDecisions.size(); ++d )
+									{
+										if( !probe.kernelRewriteRenameDecisions[d].assigned )
+											continue;
+										if( tokenReadsDecisionBase( src, probe.kernelRewriteRenameDecisions[d].reg ) )
+											++materializeMOVEs;
+									}
 									++passthrough;
 									continue;
 								}
@@ -9721,7 +9761,15 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 				const Token& src = *indexedTokens[idx];
 				if( tokenIsKernelRenameMaterializeCandidate( src, *p ) )
 				{
-					materializeMOVEs += assignedDecisions;
+					// 4b-8a: count only decisions whose original base is
+					// actually read by `src`.
+					for( unsigned int d = 0; d < p->kernelRewriteRenameDecisions.size(); ++d )
+					{
+						if( !p->kernelRewriteRenameDecisions[d].assigned )
+							continue;
+						if( tokenReadsDecisionBase( src, p->kernelRewriteRenameDecisions[d].reg ) )
+							++materializeMOVEs;
+					}
 					++passthrough; // the unsplit op itself
 					continue;
 				}
@@ -9976,6 +10024,13 @@ std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& token
 					     d != plan.kernelRewriteRenameDecisions.end(); ++d )
 					{
 						if( !d->assigned )
+							continue;
+						// 4b-8a: only materialize decisions whose
+						// original base is actually read by this
+						// soft-blocker token (kept in lockstep with
+						// the shadow synthesis in
+						// buildVuKernelExpandedNodes).
+						if( !tokenReadsDecisionBase( src, d->reg ) )
 							continue;
 						output.push_back( makeKernelRenameMoveToken( *i, *d ) );
 					}
