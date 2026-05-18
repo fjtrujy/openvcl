@@ -18,6 +18,13 @@ namespace vcl
 
 extern const unsigned int VU_SCHEDULED_TOKEN_INDEX_NONE = ~0u;
 
+// Track 9.G-1h step 4b-7a: out-of-class definition for the
+// VuKernelRefitNode::NO_INDEX in-class static const (declared in
+// VuSchedulerAnalysis.h). Required because the value is ODR-used
+// (passed to vector::push_back by const reference) at the refit-
+// publish site below.
+const unsigned int VuKernelRefitNode::NO_INDEX;
+
 namespace
 {
 	bool containsKey( const std::list<std::string>& keys, const std::string& key )
@@ -7831,6 +7838,17 @@ namespace
 		// inflating shadowII far above origII.
 		std::map<unsigned int, std::vector<unsigned int> > splitCloneIndexCache;
 
+		// Track 9.G-1h step 4b-7a: inverse map shadowIndexed-idx -> node
+		// index, populated as we push each shadow main token. After the
+		// shadow placer runs we translate shadow.kernelRewriteMainTokens
+		// (a flat II*4 grid with VuKernelRewritePlan::NO_TOKEN sentinels
+		// over shadowIndexed indices) into a refit grid whose non-empty
+		// cells reference the publicly-published
+		// opportunity.kernelRewriteRefitNodes vector. This is the only
+		// way codegen (4b-7b/c) can reconstruct the rewritten MAIN body
+		// since the shadow layout/template lives only inside this helper.
+		std::map<unsigned int, unsigned int> shadowIdxToNodeIdx;
+
 		unsigned int passCount   = 0;
 		unsigned int splitCount  = 0;
 		unsigned int matMoveCount = 0;
@@ -7844,7 +7862,10 @@ namespace
 				case VuKernelExpandedNode::ROLE_PASSTHROUGH:
 					++passCount;
 					if( n.sourceTokenIndex < indexedTokens.size() )
+					{
+						shadowIdxToNodeIdx[ n.sourceTokenIndex ] = i;
 						shadowMainTokenIndices.push_back( n.sourceTokenIndex );
+					}
 					break;
 				case VuKernelExpandedNode::ROLE_SPLIT_CLONE:
 				{
@@ -7875,8 +7896,11 @@ namespace
 						    std::make_pair( n.sourceCellIndex, cloneShadowIndices ) ).first;
 					}
 					if( n.cloneOrdinal < cacheIt->second.size() )
-						shadowMainTokenIndices.push_back(
-						    cacheIt->second[ n.cloneOrdinal ] );
+					{
+						const unsigned int sIdx = cacheIt->second[ n.cloneOrdinal ];
+						shadowIdxToNodeIdx[ sIdx ] = i;
+						shadowMainTokenIndices.push_back( sIdx );
+					}
 					break;
 				}
 				case VuKernelExpandedNode::ROLE_MATERIALIZE_MOVE:
@@ -7897,6 +7921,7 @@ namespace
 					shadowOwned.push_back( mv );
 					const unsigned int newIdx = static_cast<unsigned int>( shadowIndexed.size() );
 					shadowIndexed.push_back( &shadowOwned.back() );
+					shadowIdxToNodeIdx[ newIdx ] = i;
 					shadowMainTokenIndices.push_back( newIdx );
 					break;
 				}
@@ -7932,6 +7957,68 @@ namespace
 		opportunity.kernelRewriteRefitConflicts      = shadow.kernelRewriteConflicts;
 		opportunity.kernelRewriteRefitMainTokenCount =
 		    static_cast<unsigned int>( shadowMainTokenIndices.size() );
+
+		// Track 9.G-1h step 4b-7a: publish the refit node vector and the
+		// translated refit main grid. The grid mirrors
+		// shadow.kernelRewriteMainTokens cell-for-cell but maps each non-
+		// empty shadowIndexed-idx through shadowIdxToNodeIdx so that each
+		// non-empty cell references an entry in
+		// opportunity.kernelRewriteRefitNodes. Empty cells use
+		// VuKernelRefitNode::NO_INDEX (== -1u). Both vectors are left
+		// empty if the refit placer reported conflicts so downstream
+		// consumers (4b-7b/c) can treat (refitConflicts==0 &&
+		// !refitMainTokens.empty()) as the single eligibility predicate.
+		opportunity.kernelRewriteRefitNodes.clear();
+		opportunity.kernelRewriteRefitMainTokens.clear();
+		if( shadow.kernelRewriteConflicts == 0 && !shadow.kernelRewriteMainTokens.empty() )
+		{
+			opportunity.kernelRewriteRefitNodes.reserve( nodes.size() );
+			for( unsigned int ni = 0; ni < nodes.size(); ++ni )
+			{
+				const VuKernelExpandedNode& src = nodes[ni];
+				VuKernelRefitNode dst;
+				switch( src.role )
+				{
+				case VuKernelExpandedNode::ROLE_PASSTHROUGH:
+					dst.role = VuKernelRefitNode::ROLE_PASSTHROUGH; break;
+				case VuKernelExpandedNode::ROLE_SPLIT_CLONE:
+					dst.role = VuKernelRefitNode::ROLE_SPLIT_CLONE; break;
+				case VuKernelExpandedNode::ROLE_MATERIALIZE_MOVE:
+					dst.role = VuKernelRefitNode::ROLE_MATERIALIZE_MOVE; break;
+				case VuKernelExpandedNode::ROLE_TAIL_MOVE:
+					dst.role = VuKernelRefitNode::ROLE_TAIL_MOVE; break;
+				}
+				dst.sourceCellIndex  = src.sourceCellIndex;
+				dst.sourceTokenIndex = src.sourceTokenIndex;
+				dst.decisionIndex    = src.decisionIndex;
+				dst.cloneOrdinal     = src.cloneOrdinal;
+				opportunity.kernelRewriteRefitNodes.push_back( dst );
+			}
+			opportunity.kernelRewriteRefitMainTokens.reserve(
+			    shadow.kernelRewriteMainTokens.size() );
+			for( unsigned int g = 0; g < shadow.kernelRewriteMainTokens.size(); ++g )
+			{
+				const unsigned int sIdx = shadow.kernelRewriteMainTokens[g];
+				if( sIdx == VuKernelRewritePlan::NO_TOKEN )
+				{
+					opportunity.kernelRewriteRefitMainTokens.push_back(
+					    VuKernelRefitNode::NO_INDEX );
+					continue;
+				}
+				std::map<unsigned int, unsigned int>::const_iterator
+				    mit = shadowIdxToNodeIdx.find( sIdx );
+				if( mit == shadowIdxToNodeIdx.end() )
+				{
+					// Inverse map miss: refit placement references a
+					// shadow token we did not push (should not happen,
+					// but stay conservative and drop the publish).
+					opportunity.kernelRewriteRefitNodes.clear();
+					opportunity.kernelRewriteRefitMainTokens.clear();
+					break;
+				}
+				opportunity.kernelRewriteRefitMainTokens.push_back( mit->second );
+			}
+		}
 
 		if( std::getenv( "OPENVCL_USE_EXPANDED_DDG_PLACER" ) != NULL )
 		{
@@ -9279,6 +9366,12 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		plan.kernelRewriteRefitStageCount     = i->kernelRewriteRefitStageCount;
 		plan.kernelRewriteRefitConflicts      = i->kernelRewriteRefitConflicts;
 		plan.kernelRewriteRefitMainTokenCount = i->kernelRewriteRefitMainTokenCount;
+		// Track 9.G-1h step 4b-7a: mirror the refit node vector + grid
+		// so the emission-side bake-in builder (CodeGenerator) can
+		// reconstruct the rewritten MAIN body without reaching back
+		// into analysis state.
+		plan.kernelRewriteRefitNodes          = i->kernelRewriteRefitNodes;
+		plan.kernelRewriteRefitMainTokens     = i->kernelRewriteRefitMainTokens;
 
 		if( i->canEmitMultiQSoftwarePipeline )
 		{
@@ -9814,6 +9907,14 @@ std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& token
 			r.endLabel  = epi0Label;
 			r.II        = plan.kernelRewriteII;
 			r.placerGridMainTokens = plan.kernelRewriteMainTokens;
+			// Track 9.G-1h step 4b-7a: also publish the refit-grid +
+			// node descriptors (dormant in 4b-7a; CodeGenerator wires
+			// up to these in 4b-7b/c). When the refit placer was not
+			// eligible or reported conflicts, both vectors are empty
+			// and bake-in falls back to the original placerGridMainTokens
+			// path.
+			r.refitNodes      = plan.kernelRewriteRefitNodes;
+			r.refitMainTokens = plan.kernelRewriteRefitMainTokens;
 			outRanges.push_back( r );
 		}
 

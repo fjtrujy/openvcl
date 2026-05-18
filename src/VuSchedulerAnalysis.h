@@ -219,6 +219,50 @@ struct VuSoftwarePipelineSuffixStore
 	bool rotateValueAtStore;
 };
 
+// Track 9.G-1h step 4b-7a — public descriptor for one node in the
+// expanded refit DDG sequence. Mirrors the analysis-private
+// VuKernelExpandedNode (anonymous namespace in
+// VuSchedulerAnalysis.cpp) one-for-one so that downstream consumers
+// (codegen bake-in) can reconstruct the rewritten MAIN body without
+// re-deriving the expansion.
+//
+// Roles:
+//   PASSTHROUGH       — emit the source token (indexedTokens[sourceTokenIndex]) verbatim.
+//   SPLIT_CLONE       — synthesize one per-field clone of the source token
+//                       via splitMultiFieldOpByFieldDecisions(), then select
+//                       the cloneOrdinal-th element of the split sequence.
+//   MATERIALIZE_MOVE  — synthesize a MOVE that materializes the rename
+//                       scratch for decisionIndex; emitted BEFORE the
+//                       corresponding cell's PASSTHROUGH op.
+//   TAIL_MOVE         — synthesize the post-iteration write-back MOVE for
+//                       decisionIndex; emitted AFTER all main-body cells.
+//
+// sourceCellIndex / sourceTokenIndex are NO_INDEX (-1u) for TAIL_MOVE.
+// decisionIndex is NO_INDEX for PASSTHROUGH / SPLIT_CLONE.
+struct VuKernelRefitNode
+{
+	static const unsigned int NO_INDEX = static_cast<unsigned int>( -1 );
+	enum Role
+	{
+		ROLE_PASSTHROUGH      = 0,
+		ROLE_SPLIT_CLONE      = 1,
+		ROLE_MATERIALIZE_MOVE = 2,
+		ROLE_TAIL_MOVE        = 3
+	};
+	unsigned int role;
+	unsigned int sourceCellIndex;
+	unsigned int sourceTokenIndex;
+	unsigned int decisionIndex;
+	unsigned int cloneOrdinal;
+
+	VuKernelRefitNode()
+		: role( ROLE_PASSTHROUGH ),
+		  sourceCellIndex( NO_INDEX ),
+		  sourceTokenIndex( NO_INDEX ),
+		  decisionIndex( NO_INDEX ),
+		  cloneOrdinal( 0 ) {}
+};
+
 struct VuLoopPipelineOpportunity
 {
 	VuLoopPipelineOpportunity();
@@ -359,6 +403,18 @@ struct VuLoopPipelineOpportunity
 	unsigned int kernelRewriteRefitStageCount;
 	unsigned int kernelRewriteRefitConflicts;
 	unsigned int kernelRewriteRefitMainTokenCount;
+
+	// Track 9.G-1h step 4b-7a — published refit-grid + node descriptors.
+	// kernelRewriteRefitNodes is the ordered expanded-node sequence the
+	// refit placer was run on. kernelRewriteRefitMainTokens is the
+	// refit placer's main grid (II*4 cells; lane order upper, lower,
+	// fdiv, efu), where each non-NO_INDEX entry is an index into
+	// kernelRewriteRefitNodes. Both vectors are empty when the refit
+	// path was not eligible, when no node was produced, or when the
+	// refit placer reported conflicts. Codegen consumes these in
+	// 4b-7b/c; dormant in 4b-7a.
+	std::vector<VuKernelRefitNode> kernelRewriteRefitNodes;
+	std::vector<unsigned int>      kernelRewriteRefitMainTokens;
 };
 
 struct VuSoftwarePipelineRewritePlan
@@ -458,6 +514,13 @@ struct VuSoftwarePipelineRewritePlan
 	unsigned int kernelRewriteRefitStageCount;
 	unsigned int kernelRewriteRefitConflicts;
 	unsigned int kernelRewriteRefitMainTokenCount;
+
+	// Track 9.G-1h step 4b-7a — mirror of opportunity-side refit-grid
+	// + node descriptors, copied through by
+	// buildVuSoftwarePipelineRewritePlans. See the opportunity field
+	// comment for semantics. Dormant in 4b-7a; consumed by 4b-7b/c.
+	std::vector<VuKernelRefitNode> kernelRewriteRefitNodes;
+	std::vector<unsigned int>      kernelRewriteRefitMainTokens;
 };
 
 std::vector<VuBasicBlock> buildVuBasicBlocks( const std::list<Token>& tokens );
@@ -551,6 +614,18 @@ struct VuKernelBlockRange
 	std::string endLabel;
 	unsigned int II;
 	std::vector<unsigned int> placerGridMainTokens;
+
+	// Track 9.G-1h step 4b-7a — refit-grid + node descriptors, copied
+	// from VuSoftwarePipelineRewritePlan by
+	// applyVuGenericKernelRewritePlans. refitMainTokens is the refit
+	// placer's main grid (II*4 cells; lane order upper, lower, fdiv,
+	// efu) with each non-NO_INDEX entry indexing into refitNodes.
+	// Both are empty when the rewrite did not go through the refit
+	// path (e.g. when the original placer already produced a non-
+	// rename-eligible layout). Dormant in 4b-7a; codegen wires up to
+	// these in 4b-7b/c.
+	std::vector<VuKernelRefitNode> refitNodes;
+	std::vector<unsigned int>      refitMainTokens;
 };
 
 // 9.G-1h-4a-2: same behaviour as the 2-argument overload, but also
