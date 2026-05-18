@@ -6246,6 +6246,29 @@ namespace
 		return false;
 	}
 
+	// Track 9.G-1h step 4b-8b: tail-MOVE coalescing. Returns true iff any
+	// drain token in the plan reads the decision's original base register.
+	// Used to skip emission of the tail scratch->base MOVE for decisions
+	// whose renamed value is dead at loop exit: in-loop reads of the base
+	// are already handled by pre-soft-blocker materialize MOVEs (see
+	// 4b-8a), so the tail MOVE is only required to keep the base live for
+	// drain-stage consumers.
+	bool drainReadsDecisionBase(
+		const VuSoftwarePipelineRewritePlan& plan,
+		const std::vector<const Token*>&     indexedTokens,
+		const std::string&                   decisionReg )
+	{
+		for( std::vector<unsigned int>::const_iterator dt = plan.kernelRewriteDrainTokens.begin();
+		     dt != plan.kernelRewriteDrainTokens.end(); ++dt )
+		{
+			if( *dt >= indexedTokens.size() )
+				continue;
+			if( tokenReadsDecisionBase( *indexedTokens[*dt], decisionReg ) )
+				return true;
+		}
+		return false;
+	}
+
 	void buildVuKernelExpandedNodes(
 		const VuSoftwarePipelineRewritePlan& plan,
 		const std::vector<const Token*>& indexedTokens,
@@ -6319,6 +6342,13 @@ namespace
 		for( unsigned int d = 0; d < plan.kernelRewriteRenameDecisions.size(); ++d )
 		{
 			if( !plan.kernelRewriteRenameDecisions[d].assigned )
+				continue;
+			// 4b-8b: only emit tail MOVE for decisions whose base is
+			// read by a drain token. In-loop reads of the base are
+			// covered by per-soft-blocker materialize MOVEs (4b-8a);
+			// if drain doesn't read the base, the renamed value is
+			// dead at loop exit.
+			if( !drainReadsDecisionBase( plan, indexedTokens, plan.kernelRewriteRenameDecisions[d].reg ) )
 				continue;
 			VuKernelExpandedNode n;
 			n.role             = VuKernelExpandedNode::ROLE_TAIL_MOVE;
@@ -7509,7 +7539,16 @@ namespace
 									++passthrough;
 								}
 							}
-							const unsigned int tailMOVEs          = assignedDecisions;
+							// 4b-8b: count only decisions whose base is read by
+							// a drain token (others' tail MOVEs are skipped).
+							unsigned int tailMOVEs = 0;
+							for( unsigned int d = 0; d < probe.kernelRewriteRenameDecisions.size(); ++d )
+							{
+								if( !probe.kernelRewriteRenameDecisions[d].assigned )
+									continue;
+								if( drainReadsDecisionBase( probe, indexedTokens, probe.kernelRewriteRenameDecisions[d].reg ) )
+									++tailMOVEs;
+							}
 							const unsigned int expandedMainTokens = expandedFromSplits + materializeMOVEs + tailMOVEs + passthrough;
 							const unsigned int gridCapacity       = probe.kernelRewriteII * 4u;
 							const bool         needsRefit         = expandedMainTokens > gridCapacity;
@@ -9786,7 +9825,16 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 					++passthrough;
 				}
 			}
-			const unsigned int tailMOVEs = assignedDecisions;
+			// 4b-8b: count only decisions whose base is read by a drain
+			// token (others' tail MOVEs are skipped).
+			unsigned int tailMOVEs = 0;
+			for( unsigned int d = 0; d < p->kernelRewriteRenameDecisions.size(); ++d )
+			{
+				if( !p->kernelRewriteRenameDecisions[d].assigned )
+					continue;
+				if( drainReadsDecisionBase( *p, indexedTokens, p->kernelRewriteRenameDecisions[d].reg ) )
+					++tailMOVEs;
+			}
 			const unsigned int expandedMainTokens =
 				expandedFromSplits + materializeMOVEs + tailMOVEs + passthrough;
 			const unsigned int gridCapacity = p->kernelRewriteII * 4u;
@@ -10057,6 +10105,11 @@ std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& token
 			     d != plan.kernelRewriteRenameDecisions.end(); ++d )
 			{
 				if( !d->assigned )
+					continue;
+				// 4b-8b: skip tail MOVE if the decision's base is not
+				// read by any drain token. In-loop reads are covered by
+				// pre-soft-blocker materialize MOVEs (4b-8a).
+				if( !drainReadsDecisionBase( plan, indexedTokens, d->reg ) )
 					continue;
 				output.push_back( makeKernelRenameMoveToken( *i, *d ) );
 			}
