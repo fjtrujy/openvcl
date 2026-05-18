@@ -1854,6 +1854,87 @@ void buildKernelBakeIns( const std::list<Token>& tokens,
 		}
 		b.branchTok = lastInRange;
 
+		// 9.G-1h-4b-7b: if the analysis published a refit grid for this
+		// range, prefer it over the original positional grid->body
+		// mapping. The rewrite emitter in applyVuGenericKernelRewritePlans
+		// walks plan.kernelRewriteMainTokens cell-by-cell and emits, per
+		// non-NO_TOKEN cell, either (materializeMOVEs* + src verbatim)
+		// or N split clones; then a tail block of one MOVE per assigned
+		// decision. buildVuKernelExpandedNodes in VuSchedulerAnalysis.cpp
+		// walks the exact same sequence to build the refitNodes vector,
+		// so body[k] (k-th surviving body token) corresponds 1:1 to
+		// refitNodes[k]. refitMainTokens (II*4) holds, per non-empty
+		// cell, the refitNodes index whose body[] token should be placed
+		// at that (cycle, lane). When the count alignment fails we fall
+		// back to the legacy positional path so any size mismatch keeps
+		// bake-in inactive (consumer treats !b.active as "no bake-in").
+		// Only take the refit path when the analysis actually produced
+		// non-PASSTHROUGH nodes (split clones, materialize MOVEs, or
+		// tail MOVEs). All-passthrough refit grids carry the same body
+		// the legacy positional walk does, but the shadow placer may
+		// permute cells inside a cycle, which would silently change
+		// emission for shaders the refit path is not meant to alter.
+		bool refitHasRewrites = false;
+		if( !range.refitMainTokens.empty() && body.size() == range.refitNodes.size() )
+		{
+			for( size_t n = 0; n < range.refitNodes.size(); ++n )
+			{
+				if( range.refitNodes[n].role != VuKernelRefitNode::ROLE_PASSTHROUGH )
+				{
+					refitHasRewrites = true;
+					break;
+				}
+			}
+		}
+		if( refitHasRewrites )
+		{
+			bool refitOk = true;
+			b.cycles.assign( range.II, std::pair<const Token*, const Token*>( NULL, NULL ) );
+			for( unsigned int g = 0; g < range.refitMainTokens.size() && refitOk; ++g )
+			{
+				const unsigned int nodeIdx = range.refitMainTokens[g];
+				if( nodeIdx == VuKernelRefitNode::NO_INDEX )
+					continue;
+				if( nodeIdx >= body.size() ) { refitOk = false; break; }
+				const unsigned int cycle = g / 4;
+				const unsigned int lane  = g % 4;
+				if( cycle >= range.II ) { refitOk = false; break; }
+				const Token* tok = body[nodeIdx];
+				// Map (upper=0, lower=1, fdiv=2, efu=3) onto the
+				// (upper, lower) pair the consumer expects, with the
+				// same fdiv/efu->lower fallback as the legacy path.
+				std::pair<const Token*, const Token*>& slot = b.cycles[cycle];
+				if( lane == 0 )
+				{
+					if( slot.first ) { refitOk = false; break; }
+					slot.first = tok;
+				}
+				else
+				{
+					if( !slot.second )
+						slot.second = tok;
+					// Multiple non-upper lanes can fold into the
+					// single "lower" slot in the consumer's view; the
+					// legacy path silently overwrote earlier picks
+					// only when no later lane filled in, so prefer
+					// the first non-NULL choice (lower > fdiv > efu).
+				}
+			}
+			if( refitOk )
+			{
+				for( size_t k = 0; k < body.size(); ++k )
+					b.bodySkip.insert( body[k] );
+				b.bodySkip.insert( b.branchTok );
+				b.active = true;
+				outBakeIns.push_back(b);
+				continue;
+			}
+			// Refit alignment failed: fall through to legacy positional
+			// path. Reset cycles so the legacy walk starts from a clean
+			// vector.
+			b.cycles.clear();
+		}
+
 		// Map grid cells onto body tokens in placer push order.
 		unsigned int bodyIdx = 0;
 		bool ok = true;
