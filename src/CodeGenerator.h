@@ -104,6 +104,7 @@ private:
 	bool emitsAsUpperMove( const Token& token ) const;
 	bool tokenIsLowerExecutionPath( const Token& token ) const;
 	bool tokenIsUpperExecutionPath( const Token& token ) const;
+	std::string generateInstructionBody( const Token& token );
 	std::string generateUpperMoveInstruction( const Token& token );
 	bool tryEmitKnownLoopOptimization( std::list<Token>& tokens,
 	                                   std::list<Token>::iterator& token );

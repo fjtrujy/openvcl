@@ -9430,6 +9430,18 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		    && !i->canEmitMultiQSoftwarePipeline )
 			continue;
 
+		// 9.G-1h-4a-3c: skip loops that were already emitted by the
+		// generic kernel rewrite (their labels carry the __MAIN_LOOP
+		// suffix). Re-pipelining them scrambles the body token order
+		// that buildKernelBakeIns relies on.
+		{
+			const std::string& lbl = i->label;
+			const std::string suffix( "__MAIN_LOOP" );
+			if( lbl.size() >= suffix.size()
+			    && lbl.compare( lbl.size() - suffix.size(), suffix.size(), suffix ) == 0 )
+				continue;
+		}
+
 		VuSoftwarePipelineRewritePlan plan;
 		plan.label = i->label;
 		plan.prologLabel = i->label + "__PROLOG";
@@ -10324,9 +10336,33 @@ bool advanceVuStoreBaseUpdates( std::list<Token>& tokens )
 {
 	bool changed = false;
 
+	// 9.G-1h-4a-3c: do not reorder store-base-update instructions within
+	// generic-rewrite MAIN_LOOP bodies: the bake-in path relies on
+	// body[k] matching refitNodes[k] positionally. Track section context.
+	bool inGenericMainLoop = false;
+
 	for( std::list<Token>::iterator update = tokens.begin(); update != tokens.end(); )
 	{
-		if( update->label().length() != 0
+		// Update section tracking on label-bearing tokens.
+		if( update->label().length() != 0 )
+		{
+			const std::string& lbl = update->label();
+			static const char mainSuffix[] = "__MAIN_LOOP";
+			static const char epiSuffix[]  = "__EPI";
+			const size_t mainLen = sizeof(mainSuffix) - 1;
+			const size_t epiLen  = sizeof(epiSuffix)  - 1;
+			if( lbl.size() >= mainLen
+			    && lbl.compare( lbl.size() - mainLen, mainLen, mainSuffix ) == 0 )
+				inGenericMainLoop = true;
+			else if( lbl.size() >= epiLen
+			         && lbl.compare( lbl.size() - epiLen, epiLen, epiSuffix ) == 0 )
+				inGenericMainLoop = false;
+			++update;
+			continue;
+		}
+		// Skip store-base advances inside MAIN_LOOP to preserve positional
+		// body[k] ↔ refitNodes[k] correspondence for the bake-in.
+		if( inGenericMainLoop
 		    || (update->flags() & (Token::BRANCH_DELAY_FILLER | Token::PREORDERED)) )
 		{
 			++update;

@@ -1018,7 +1018,7 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 				          << " refitConflicts=" << plan.kernelRewriteRefitConflicts
 				          << " origII=" << plan.kernelRewriteII
 				          << " origStages=" << plan.kernelRewriteStageCount
-				          << " decision=passthrough"
+				          << " decision=publish"
 				          << std::endl;
 			}
 		}
@@ -1888,8 +1888,13 @@ void buildKernelBakeIns( const std::list<Token>& tokens,
 		}
 		if( refitHasRewrites )
 		{
-			bool refitOk = true;
-			b.cycles.assign( range.II, std::pair<const Token*, const Token*>( NULL, NULL ) );
+			// Track 9.G-1h step 4b-9: the refit grid has refitII*4 cells,
+			// not origII*4.  Derive refitII from the grid size so cells in
+			// [origII..refitII) are not rejected by the old bail bound.
+			const unsigned int refitII = static_cast<unsigned int>(
+			    range.refitMainTokens.size() / 4u );
+			bool refitOk = ( refitII > 0 );
+			b.cycles.assign( refitII, std::pair<const Token*, const Token*>( NULL, NULL ) );
 			for( unsigned int g = 0; g < range.refitMainTokens.size() && refitOk; ++g )
 			{
 				const unsigned int nodeIdx = range.refitMainTokens[g];
@@ -1898,7 +1903,7 @@ void buildKernelBakeIns( const std::list<Token>& tokens,
 				if( nodeIdx >= body.size() ) { refitOk = false; break; }
 				const unsigned int cycle = g / 4;
 				const unsigned int lane  = g % 4;
-				if( cycle >= range.II ) { refitOk = false; break; }
+				if( cycle >= refitII ) { refitOk = false; break; }
 				const Token* tok = body[nodeIdx];
 				// Map (upper=0, lower=1, fdiv=2, efu=3) onto the
 				// (upper, lower) pair the consumer expects, with the
@@ -1925,6 +1930,9 @@ void buildKernelBakeIns( const std::list<Token>& tokens,
 				for( size_t k = 0; k < body.size(); ++k )
 					b.bodySkip.insert( body[k] );
 				b.bodySkip.insert( b.branchTok );
+				// 4b-9: override origII with refit II so the emitter uses
+				// the correct cycle count and lastCycle index.
+				b.II = refitII;
 				b.active = true;
 				outBakeIns.push_back(b);
 				continue;
@@ -2161,7 +2169,16 @@ bool CodeGenerator::emitStrictScheduledProgram( const std::list<Token>& tokens, 
 					}
 					else if( up && lo )
 					{
-						emitPairedTokens( *up, *lo );
+						// The bake-in grid is pre-scheduled: up goes in the upper
+						// lane and lo goes in the lower lane.  Emit faithfully,
+						// bypassing emitsAsUpperMove for the lower slot so that
+						// MOVE tokens created by the generic-kernel rewriter always
+						// assemble as lower-pipe MOVE (not upper-pipe MAX).
+						const int issueCycle = m_currentCycle;
+						m_codeLines.push_back( formatRawPairedInstructionLine( generateInstruction(*up), generateInstructionBody(*lo) ) );
+						recordRegisterWrites( *up, issueCycle );
+						recordRegisterWrites( *lo, issueCycle );
+						m_currentCycle++;
 					}
 					else if( up )
 					{
@@ -2172,8 +2189,9 @@ bool CodeGenerator::emitStrictScheduledProgram( const std::list<Token>& tokens, 
 					}
 					else
 					{
+						// lo-only: emit in lower lane, bypassing emitsAsUpperMove.
 						const int issueCycle = m_currentCycle;
-						m_codeLines.push_back( formatRawPairedInstructionLine( vuInstr(VU_OP_NOP), generateInstruction(*lo) ) );
+						m_codeLines.push_back( formatRawPairedInstructionLine( vuInstr(VU_OP_NOP), generateInstructionBody(*lo) ) );
 						recordRegisterWrites( *lo, issueCycle );
 						m_currentCycle++;
 					}
@@ -9774,12 +9792,9 @@ std::string CodeGenerator::formatPairedLine( const Token& upper, const Token& lo
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-std::string CodeGenerator::generateInstruction(const Token& token)
+std::string CodeGenerator::generateInstructionBody(const Token& token)
 {
 	std::string codeLine;
-
-	if( emitsAsUpperMove(token) )
-		return generateUpperMoveInstruction(token);
 
 	codeLine = generateOperand(token);
 	codeLine += " ";
@@ -9816,6 +9831,13 @@ std::string CodeGenerator::generateInstruction(const Token& token)
 	}
 
 	return codeLine;
+}
+
+std::string CodeGenerator::generateInstruction(const Token& token)
+{
+	if( emitsAsUpperMove(token) )
+		return generateUpperMoveInstruction(token);
+	return generateInstructionBody(token);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
