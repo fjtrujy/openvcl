@@ -9096,6 +9096,48 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		{
 			runVuKernelPlacerAndScaffolding( opportunity, indexedTokens, tokens );
 			runExpandedDDGRefitDiagnostic( opportunity, indexedTokens, tokens );
+
+			// Track 9.H step 4 — Q-chain interleaving across iterations.
+			// When the placer produces a multi-stage plan (stageCount >= 2)
+			// for a multi-Q loop, deepen the cyclic-prefix rotation banks
+			// to depth=stageCount so each in-flight iteration has its own
+			// scratch VF for the Q-consumer chain. Default depth=1 leaves
+			// behavior unchanged for single-stage and single-Q paths. Env-
+			// gated so production sweeps (env unset) remain byte-identical.
+			if( opportunity.qProducerTokenIndices.size() >= 2
+			    && opportunity.kernelRewriteStageCount >= 2u
+			    && !opportunity.multiQCyclicPrefixRotations.empty()
+			    && std::getenv( "OPENVCL_USE_GENERIC_KERNEL_REWRITE" ) != NULL )
+			{
+				const unsigned int depthBefore =
+				    opportunity.multiQCyclicPrefixRotations.empty()
+				        ? 0u
+				        : static_cast<unsigned int>(
+				              opportunity.multiQCyclicPrefixRotations[0].rotationBank.size() );
+				assignRotationScratchRegisters( *loop,
+				                                opportunity.multiQCyclicPrefixRotations,
+				                                opportunity.kernelRewriteStageCount );
+				if( std::getenv( "OPENVCL_DUMP_MULTI_Q_ROTATION" ) != NULL )
+				{
+					unsigned int minDepth = static_cast<unsigned int>( -1 );
+					unsigned int maxDepth = 0;
+					for( std::vector<VuSoftwarePipelineRotation>::const_iterator r =
+					         opportunity.multiQCyclicPrefixRotations.begin();
+					     r != opportunity.multiQCyclicPrefixRotations.end(); ++r )
+					{
+						const unsigned int d = static_cast<unsigned int>( r->rotationBank.size() );
+						if( d < minDepth ) minDepth = d;
+						if( d > maxDepth ) maxDepth = d;
+					}
+					std::cerr << "[multi-q-rotation] loop=" << opportunity.label
+					          << " stageCount=" << opportunity.kernelRewriteStageCount
+					          << " rotations=" << opportunity.multiQCyclicPrefixRotations.size()
+					          << " depthBefore=" << depthBefore
+					          << " depthMin=" << minDepth
+					          << " depthMax=" << maxDepth
+					          << "\n";
+				}
+			}
 		}
 
 		if( std::getenv( "OPENVCL_DUMP_MULTISTAGE_CANDIDATES" ) != NULL )
