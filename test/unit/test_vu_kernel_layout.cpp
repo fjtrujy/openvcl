@@ -284,8 +284,8 @@ TEST_CASE("VuKernelRegisterPlan: cross-stage WAW and RAW counted")
 {
     VuKernelLayout layout;
     layout.II = 2; layout.stageCount = 2;
-    { VuKernelLayoutEntry e; e.stage = 0; layout.entries.push_back(e); } // 0: writes VF20
-    { VuKernelLayoutEntry e; e.stage = 1; layout.entries.push_back(e); } // 1: writes+reads VF20
+    { VuKernelLayoutEntry e; e.stage = 0; e.slot = 0; e.modSlot = 0; layout.entries.push_back(e); } // 0: writes VF20
+    { VuKernelLayoutEntry e; e.stage = 1; e.slot = 2; e.modSlot = 0; layout.entries.push_back(e); } // 1: writes+reads VF20
     std::vector<VuKernelEntryRegisters> regs(2);
     regs[0].writes.push_back("VF20");
     regs[1].writes.push_back("VF20");
@@ -319,8 +319,8 @@ TEST_CASE("VuKernelRegisterPlan: WAR counted when reader is in earlier stage")
 {
     VuKernelLayout layout;
     layout.II = 2; layout.stageCount = 2;
-    { VuKernelLayoutEntry e; e.stage = 0; layout.entries.push_back(e); }
-    { VuKernelLayoutEntry e; e.stage = 1; layout.entries.push_back(e); }
+    { VuKernelLayoutEntry e; e.stage = 0; e.slot = 0; e.modSlot = 0; layout.entries.push_back(e); }
+    { VuKernelLayoutEntry e; e.stage = 1; e.slot = 2; e.modSlot = 0; layout.entries.push_back(e); }
     std::vector<VuKernelEntryRegisters> regs(2);
     regs[0].reads.push_back("VF07");
     regs[1].writes.push_back("VF07");
@@ -333,8 +333,42 @@ TEST_CASE("VuKernelRegisterPlan: WAR counted when reader is in earlier stage")
     CHECK(plan.rawCount == 0u);
 }
 
-// ---------------------------------------------------------------------------
-// Track 9.G step 6a — rewrite-plan synthesis tests.
+TEST_CASE("VuKernelRegisterPlan: RAW within one II window does not require rename")
+{
+    // Writer at slot 0 (stage 0), reader at slot 3 (stage 1) with II=4.
+    // Lifetime (3 - 0 = 3) < II (4), so the next iteration's writer at
+    // slot 4 cannot overwrite the value before the reader consumes it.
+    // Lam-style register reuse: skip the hazard.
+    VuKernelLayout layout;
+    layout.II = 4; layout.stageCount = 2;
+    { VuKernelLayoutEntry e; e.stage = 0; e.slot = 0; e.modSlot = 0; layout.entries.push_back(e); }
+    { VuKernelLayoutEntry e; e.stage = 1; e.slot = 3; e.modSlot = 3; layout.entries.push_back(e); }
+    std::vector<VuKernelEntryRegisters> regs(2);
+    regs[0].writes.push_back("VF09");
+    regs[1].reads.push_back("VF09");
+    VuKernelRegisterPlan plan;
+    buildVuKernelRegisterPlan(layout, regs, plan);
+    CHECK(plan.hazards.empty());
+    CHECK(plan.rawCount == 0u);
+}
+
+TEST_CASE("VuKernelRegisterPlan: RAW spanning II boundary still needs rename")
+{
+    // Writer at slot 0, reader at slot 6 with II=4. Lifetime 6 >= II,
+    // so the iter+1 writer at slot 4 would overwrite before the reader
+    // at slot 6 — rename is required.
+    VuKernelLayout layout;
+    layout.II = 4; layout.stageCount = 2;
+    { VuKernelLayoutEntry e; e.stage = 0; e.slot = 0; e.modSlot = 0; layout.entries.push_back(e); }
+    { VuKernelLayoutEntry e; e.stage = 1; e.slot = 6; e.modSlot = 2; layout.entries.push_back(e); }
+    std::vector<VuKernelEntryRegisters> regs(2);
+    regs[0].writes.push_back("VF09");
+    regs[1].reads.push_back("VF09");
+    VuKernelRegisterPlan plan;
+    buildVuKernelRegisterPlan(layout, regs, plan);
+    CHECK(plan.hazards.size() == 1u);
+    CHECK(plan.rawCount == 1u);
+}
 // ---------------------------------------------------------------------------
 
 namespace

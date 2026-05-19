@@ -7,7 +7,7 @@ namespace vcl
 
 namespace
 {
-    struct RegPlanAcc { unsigned int entry; unsigned int stage; int kind; };
+    struct RegPlanAcc { unsigned int entry; unsigned int stage; unsigned int slot; int kind; };
 }
 
 bool vuKernelLayoutEntryLess( const VuKernelLayoutEntry& a,
@@ -132,12 +132,12 @@ void buildVuKernelRegisterPlan(
         const VuKernelEntryRegisters& r = entryRegs[i];
         for( unsigned int k = 0; k < r.reads.size(); ++k )
         {
-            RegPlanAcc a; a.entry = i; a.stage = e.stage; a.kind = 0;
+            RegPlanAcc a; a.entry = i; a.stage = e.stage; a.slot = e.slot; a.kind = 0;
             byReg[r.reads[k]].push_back( a );
         }
         for( unsigned int k = 0; k < r.writes.size(); ++k )
         {
-            RegPlanAcc a; a.entry = i; a.stage = e.stage; a.kind = 1;
+            RegPlanAcc a; a.entry = i; a.stage = e.stage; a.slot = e.slot; a.kind = 1;
             byReg[r.writes[k]].push_back( a );
         }
     }
@@ -154,6 +154,19 @@ void buildVuKernelRegisterPlan(
             {
                 if( v[a].stage == v[b].stage ) continue;
                 if( v[a].kind == 0 && v[b].kind == 0 ) continue;
+                // Lam-style register-reuse gate: when both accesses are
+                // scheduled within a single II window, the same physical
+                // register survives across iterations without overwrite,
+                // so no rename is required. WAW is excluded from the
+                // relaxation because two writes need lifetime analysis
+                // we don't carry through here.
+                if( layout.II > 0 && !( v[a].kind == 1 && v[b].kind == 1 ) )
+                {
+                    const unsigned int sA = v[a].slot;
+                    const unsigned int sB = v[b].slot;
+                    const unsigned int diff = ( sA > sB ) ? ( sA - sB ) : ( sB - sA );
+                    if( diff < layout.II ) continue;
+                }
                 VuKernelRegisterHazard h;
                 h.reg    = it->first;
                 h.entryA = v[a].entry;
