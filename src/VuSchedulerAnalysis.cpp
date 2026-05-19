@@ -8589,6 +8589,30 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			}
 		}
 
+		// Track 9.H step 1: dump every reason multi-Q SWP is rejected. One
+		// line per (loop, reason) so downstream automation can aggregate the
+		// most-prevalent blockers per shader family. Also emits a synthetic
+		// "no_plan" reason when hasMultiQSoftwarePipelinePlan is false (i.e.
+		// the candidate was never even sized).
+		if( std::getenv( "OPENVCL_DUMP_MULTI_Q_REJECT" ) != NULL
+		    && !opportunity.canEmitMultiQSoftwarePipeline )
+		{
+			if( !opportunity.hasMultiQSoftwarePipelinePlan )
+			{
+				std::cerr << "[multi-q-reject] loop=" << opportunity.label
+				          << " qProducerCount=" << qProducerCount
+				          << " reason=no_plan\n";
+			}
+			for( std::list<std::string>::const_iterator it =
+			         opportunity.multiQSoftwarePipelineBlockers.begin();
+			     it != opportunity.multiQSoftwarePipelineBlockers.end(); ++it )
+			{
+				std::cerr << "[multi-q-reject] loop=" << opportunity.label
+				          << " qProducerCount=" << qProducerCount
+				          << " reason=" << *it << "\n";
+			}
+		}
+
 		if( std::getenv( "OPENVCL_DUMP_LOOP_DDG" ) != NULL
 		    && opportunity.simpleCountedLoop
 		    && !opportunity.mainTokenIndices.empty() )
