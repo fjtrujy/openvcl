@@ -45,3 +45,15 @@ include(CTest)
 if(BUILD_TESTING)
     add_subdirectory(test)
 endif()
+
+# PS2 examples – require PS2SDK environment variable and the PS2 toolchain.
+# Enabled automatically when $PS2SDK is set; override with -DBUILD_EXAMPLES=ON/OFF.
+if(DEFINED ENV{PS2SDK})
+    option(BUILD_EXAMPLES "Build PS2 examples (requires PS2SDK toolchain)" ON)
+else()
+    option(BUILD_EXAMPLES "Build PS2 examples (requires PS2SDK toolchain)" OFF)
+endif()
+
+if(BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif()

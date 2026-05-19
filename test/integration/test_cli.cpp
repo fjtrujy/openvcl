@@ -1,7 +1,7 @@
 #include "test_harness.h"
 #include "openvcl_runner.h"
 
-#include "../../src/OpenVclVersion.h"
+#include "OpenVclVersion.h"
 
 #include <string>
 #include <vector>
