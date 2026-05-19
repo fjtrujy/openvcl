@@ -9012,6 +9012,64 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			}
 		}
 
+		// Track 9.H step 2: promote a well-formed multi-Q candidate into
+		// mainTokenIndices so the kernel placer can run on high-DIV loops
+		// (xform_loop_lid with qProducerCount=3). Soft (suffix-drain) blockers
+		// are tolerated because the kernel-rewrite emission path is distinct
+		// from the legacy suffix-drain SWP path they were designed to gate.
+		// Production .vsm output is unchanged: applyVuGenericKernelRewritePlans
+		// is env-gated at CodeGenerator.cpp:1032, so the populated scaffolding
+		// here cannot reach emission until Track 9.H step 6 flips that gate.
+		if( opportunity.simpleCountedLoop
+		    && opportunity.mainTokenIndices.empty()
+		    && !opportunity.multiQMainTokenIndices.empty()
+		    && opportunity.qProducerTokenIndices.size() >= 2
+		    && opportunity.hasMultiQSoftwarePipelinePlan )
+		{
+			static const char* kHardBlockers[] = {
+			    "not_simple_counted_loop",
+			    "missing_branch_delay_slot",
+			    "pre_or_post_increment_memory",
+			    "xgkick_barrier",
+			    "missing_induction_register",
+			    "cyclic_prefix_side_effect",
+			    "cyclic_prefix_or_main_label",
+			    "cyclic_prefix_reads_suffix_clobber",
+			    "cyclic_prefix_clobbers_branch",
+			    "stage_without_consumers",
+			    "missing_cyclic_prefix",
+			    "q_live_out",
+			    "insufficient_q_insertion_gap",
+			    NULL
+			};
+			bool hasHardBlocker = false;
+			for( std::list<std::string>::const_iterator it =
+			         opportunity.multiQSoftwarePipelineBlockers.begin();
+			     it != opportunity.multiQSoftwarePipelineBlockers.end() && !hasHardBlocker;
+			     ++it )
+			{
+				for( unsigned int i = 0; kHardBlockers[i] != NULL; ++i )
+				{
+					if( *it == kHardBlockers[i] ) { hasHardBlocker = true; break; }
+				}
+			}
+			if( !hasHardBlocker )
+			{
+				opportunity.mainTokenIndices = opportunity.multiQMainTokenIndices;
+				opportunity.prologTokenIndices = opportunity.multiQPrologTokenIndices;
+				if( std::getenv( "OPENVCL_DUMP_MULTI_Q_PROMOTE" ) != NULL )
+				{
+					std::cerr << "[multi-q-promote] loop=" << opportunity.label
+					          << " qProducerCount=" << opportunity.qProducerTokenIndices.size()
+					          << " mainSize=" << opportunity.mainTokenIndices.size()
+					          << " prologSize=" << opportunity.prologTokenIndices.size()
+					          << " softBlockers="
+					          << opportunity.multiQSoftwarePipelineBlockers.size()
+					          << "\n";
+				}
+			}
+		}
+
 		// Track 9.G step 8a: the modulo placer + 6a-6h kernel-rewrite
 		// scaffolding always runs when the loop is a simple counted loop
 		// with a non-empty body. The OPENVCL_DUMP_LOOP_SCHEDULE env var
