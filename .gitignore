@@ -3,6 +3,7 @@ openvcl
 t2-output
 
 *.o
+*.vo
 *.elf
 *.vsm
 !test/fixtures/

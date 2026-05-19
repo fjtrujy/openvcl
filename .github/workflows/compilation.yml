@@ -18,17 +18,9 @@ jobs:
         apk update
         apk add build-base make git cmake
 
-    - name: Compile masp
+    - name: Compile OpenVCL and examples
       run: |
-        git clone https://github.com/fjtrujy/masp.git
-        cd masp
-        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PS2DEV"
-        cmake --build build -j $(getconf _NPROCESSORS_ONLN)
-        cmake --install build
-
-    - name: Compile OpenVCL
-      run: |
-        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PS2DEV"
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PS2DEV" -DBUILD_EXAMPLES=ON
         cmake --build build -j $(getconf _NPROCESSORS_ONLN)
 
     - name: Run OpenVCL tests
@@ -38,10 +30,6 @@ jobs:
     - name: Install OpenVCL
       run: |
         cmake --install build
-
-    - name: Build PS2 examples
-      run: |
-        make -C examples all
 
     - name: Get short SHA
       id: slug
