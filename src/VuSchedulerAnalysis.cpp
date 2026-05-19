@@ -6582,11 +6582,43 @@ namespace
 					if( stageOf[i] > maxStage ) maxStage = stageOf[i];
 					continue;
 				}
-				const unsigned int lo = pr.asap[i];
+				// Track 9.G step 4h: Lam-style dynamic ASAP/ALAP. Static
+				// pr.asap[i] is the topological lower bound; the actual
+				// realizable lower bound depends on where already-placed
+				// predecessors landed (they may sit above their static asap
+				// because of their own predecessor chains). Recompute lo
+				// from placed neighbours under the current II:
+				//   for dist=0 in-edges p->i: lo >= slot[p] + L
+				//   for dist=1 out-edges i->q (q already placed): lo >= slot[q] + L - II
+				// This converts the loop from a pure ASAP scan to a true
+				// modulo scheduler. Also extend hi by up to K_STAGE_MAX
+				// modulo rings so stage-2/3 wrapping is reachable when
+				// predecessors push lo well above asap.
+				int dynLo = static_cast<int>( pr.asap[i] );
+				for( unsigned int e = 0; e < totalEdges; ++e )
+				{
+					const int Lat = static_cast<int>( dLat[e] );
+					const int Dii = static_cast<int>( dDist[e] ) * static_cast<int>( tryII );
+					if( dTo[e] == i && placed[ dFrom[e] ] )
+					{
+						const int cand = static_cast<int>( slotOf[ dFrom[e] ] ) + Lat - Dii;
+						if( cand > dynLo ) dynLo = cand;
+					}
+					else if( dFrom[e] == i && placed[ dTo[e] ] )
+					{
+						// slot[to] - slot[i] >= L - d*II  =>  slot[i] <= slot[to] - L + d*II
+						// (handled implicitly by the edge re-check below; no lo update here)
+					}
+				}
+				if( dynLo < 0 ) dynLo = 0;
+				const unsigned int lo = static_cast<unsigned int>( dynLo );
 				unsigned int hi = pr.alap[i];
 				if( hi < lo ) hi = lo;
 				if( hi < pr.scheduleLength ) hi = pr.scheduleLength;
-				if( hi < lo + tryII ) hi = lo + tryII; // ensure full mod ring is exercised
+				// Allow up to 4 modulo stages of wrap so deep recurrences
+				// can be scheduled. 4 is conservative; SCE rarely exceeds 3.
+				const unsigned int kStageMax = 4u;
+				if( hi < lo + kStageMax * tryII ) hi = lo + kStageMax * tryII;
 				bool ok = false;
 				for( unsigned int s = lo; s <= hi && !ok; ++s )
 				{
@@ -6658,11 +6690,26 @@ namespace
 					const unsigned int f = pr.order[rank];
 					if( placed[f] ) continue;
 					if( pipeOf[f] == 0 ) continue;
-					const unsigned int loF = pr.asap[f];
+					// Track 9.G step 4h: dynamic-lo + kStageMax-extended hi
+					// (mirrors the main placement loop above).
+					int dynLoF = static_cast<int>( pr.asap[f] );
+					for( unsigned int e = 0; e < totalEdges; ++e )
+					{
+						const int Lat = static_cast<int>( dLat[e] );
+						const int Dii = static_cast<int>( dDist[e] ) * static_cast<int>( tryII );
+						if( dTo[e] == f && placed[ dFrom[e] ] )
+						{
+							const int cand = static_cast<int>( slotOf[ dFrom[e] ] ) + Lat - Dii;
+							if( cand > dynLoF ) dynLoF = cand;
+						}
+					}
+					if( dynLoF < 0 ) dynLoF = 0;
+					const unsigned int loF = static_cast<unsigned int>( dynLoF );
 					unsigned int hiF = pr.alap[f];
 					if( hiF < loF ) hiF = loF;
 					if( hiF < pr.scheduleLength ) hiF = pr.scheduleLength;
-					if( hiF < loF + tryII ) hiF = loF + tryII;
+					const unsigned int kStageMaxF = 4u;
+					if( hiF < loF + kStageMaxF * tryII ) hiF = loF + kStageMaxF * tryII;
 					bool swapped = false;
 					for( unsigned int rb = 0; rb < pr.order.size() && !swapped; ++rb )
 					{
@@ -6745,11 +6792,25 @@ namespace
 							continue;
 						}
 						// Try to re-place b somewhere in its range.
-						const unsigned int loB = pr.asap[b];
+						// Track 9.G step 4h: dynamic-lo + extended hi.
+						int dynLoB = static_cast<int>( pr.asap[b] );
+						for( unsigned int e = 0; e < totalEdges; ++e )
+						{
+							const int Lat = static_cast<int>( dLat[e] );
+							const int Dii = static_cast<int>( dDist[e] ) * static_cast<int>( tryII );
+							if( dTo[e] == b && placed[ dFrom[e] ] )
+							{
+								const int cand = static_cast<int>( slotOf[ dFrom[e] ] ) + Lat - Dii;
+								if( cand > dynLoB ) dynLoB = cand;
+							}
+						}
+						if( dynLoB < 0 ) dynLoB = 0;
+						const unsigned int loB = static_cast<unsigned int>( dynLoB );
 						unsigned int hiB = pr.alap[b];
 						if( hiB < loB ) hiB = loB;
 						if( hiB < pr.scheduleLength ) hiB = pr.scheduleLength;
-						if( hiB < loB + tryII ) hiB = loB + tryII;
+						const unsigned int kStageMaxB = 4u;
+						if( hiB < loB + kStageMaxB * tryII ) hiB = loB + kStageMaxB * tryII;
 						bool bPlaced = false;
 						for( unsigned int s = loB; s <= hiB && !bPlaced; ++s )
 						{
