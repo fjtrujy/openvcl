@@ -52,6 +52,19 @@ public:
     bool canReserveEfu( unsigned int cycle, unsigned int duration ) const;
     bool reserveEfu( unsigned int cycle, unsigned int duration, unsigned int tokenIndex );
 
+    // Track 9.H step 3: Q-register in-flight gate. Mirrors fdivBusy but with
+    // an independent hold duration set per-loop so multi-Q opportunities can
+    // model the architectural single-Q resource. When the hold duration is 0
+    // (the default), reserveFdiv/canReserveFdiv/releaseFdiv touch only the
+    // FDIV throughput lane — current behavior. When set to a non-zero value
+    // (typically qProducerLatency), every DIV/SQRT/RSQRT issue additionally
+    // reserves the Q lane for `qHoldDuration` cycles so a second issue
+    // cannot start until the architectural Q register is no longer needed.
+    void setQHoldDuration( unsigned int duration ) { m_qHoldDuration = duration; }
+    unsigned int qHoldDuration() const { return m_qHoldDuration; }
+    unsigned int qOccupancy() const { return m_qOccupancy; }
+    unsigned int qAt( unsigned int cycle ) const;
+
     // Track 9.G step 4g: release a reservation so the placer can evict an
     // already-placed instruction during backtracking. Single-cycle lanes
     // ignore 'duration'; multi-cycle pipes free the same span the matching
@@ -93,10 +106,13 @@ private:
     std::vector< unsigned int > m_lower;
     std::vector< unsigned int > m_fdiv;
     std::vector< unsigned int > m_efu;
+    std::vector< unsigned int > m_q;
     unsigned int m_upperOccupancy;
     unsigned int m_lowerOccupancy;
     unsigned int m_fdivOccupancy;
     unsigned int m_efuOccupancy;
+    unsigned int m_qOccupancy;
+    unsigned int m_qHoldDuration;
 };
 
 } // namespace vcl

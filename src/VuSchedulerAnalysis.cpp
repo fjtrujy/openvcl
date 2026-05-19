@@ -6525,6 +6525,20 @@ namespace
 			while( true )
 			{
 				ModuloReservationTable mrt( tryII );
+				// Track 9.H step 3: gate the architectural Q register on
+				// multi-Q opportunities when the kernel-rewrite path is
+				// enabled. Hold duration = qProducerLatency ensures a
+				// second DIV/SQRT/RSQRT cannot reserve the Q lane while a
+				// prior issue's result is still required by an as-yet
+				// un-placed MULq/ADDq/SUBq/DIVq consumer. Production builds
+				// (env-var unset) keep m_qHoldDuration=0, so behavior of
+				// single-Q loops is unchanged.
+				if( opportunity.qProducerTokenIndices.size() >= 2
+				    && opportunity.qProducerLatency > 0
+				    && std::getenv( "OPENVCL_USE_GENERIC_KERNEL_REWRITE" ) != NULL )
+				{
+					mrt.setQHoldDuration( opportunity.qProducerLatency );
+				}
 				for( unsigned int k = 0; k < n; ++k )
 				{
 					slotOf[k]  = static_cast<unsigned int>( -1 );

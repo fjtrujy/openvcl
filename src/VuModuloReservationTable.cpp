@@ -9,10 +9,13 @@ ModuloReservationTable::ModuloReservationTable( unsigned int initiationInterval 
       m_lower( m_ii, static_cast< unsigned int >( SLOT_FREE ) ),
       m_fdiv ( m_ii, static_cast< unsigned int >( SLOT_FREE ) ),
       m_efu  ( m_ii, static_cast< unsigned int >( SLOT_FREE ) ),
+      m_q    ( m_ii, static_cast< unsigned int >( SLOT_FREE ) ),
       m_upperOccupancy( 0 ),
       m_lowerOccupancy( 0 ),
       m_fdivOccupancy( 0 ),
-      m_efuOccupancy( 0 )
+      m_efuOccupancy( 0 ),
+      m_qOccupancy( 0 ),
+      m_qHoldDuration( 0 )
 {
 }
 
@@ -104,7 +107,11 @@ bool ModuloReservationTable::reserveLower( unsigned int cycle, unsigned int toke
 
 bool ModuloReservationTable::canReserveFdiv( unsigned int cycle, unsigned int duration ) const
 {
-    return laneIsClear( m_fdiv, cycle, duration );
+    if( !laneIsClear( m_fdiv, cycle, duration ) )
+        return false;
+    if( m_qHoldDuration > 0 && !laneIsClear( m_q, cycle, m_qHoldDuration ) )
+        return false;
+    return true;
 }
 
 bool ModuloReservationTable::reserveFdiv( unsigned int cycle, unsigned int duration, unsigned int tokenIndex )
@@ -112,6 +119,8 @@ bool ModuloReservationTable::reserveFdiv( unsigned int cycle, unsigned int durat
     if( !canReserveFdiv( cycle, duration ) )
         return false;
     markLane( m_fdiv, cycle, duration, tokenIndex, m_fdivOccupancy );
+    if( m_qHoldDuration > 0 )
+        markLane( m_q, cycle, m_qHoldDuration, tokenIndex, m_qOccupancy );
     return true;
 }
 
@@ -141,6 +150,8 @@ void ModuloReservationTable::releaseLower( unsigned int cycle )
 void ModuloReservationTable::releaseFdiv( unsigned int cycle, unsigned int duration )
 {
     clearLane( m_fdiv, cycle, duration, m_fdivOccupancy );
+    if( m_qHoldDuration > 0 )
+        clearLane( m_q, cycle, m_qHoldDuration, m_qOccupancy );
 }
 
 void ModuloReservationTable::releaseEfu( unsigned int cycle, unsigned int duration )
@@ -166,6 +177,11 @@ unsigned int ModuloReservationTable::fdivAt( unsigned int cycle ) const
 unsigned int ModuloReservationTable::efuAt( unsigned int cycle ) const
 {
     return m_efu[ cycle % m_ii ];
+}
+
+unsigned int ModuloReservationTable::qAt( unsigned int cycle ) const
+{
+    return m_q[ cycle % m_ii ];
 }
 
 } // namespace vcl
