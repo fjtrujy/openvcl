@@ -9625,8 +9625,25 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 	std::map<unsigned int, bool> plannedLabelIndices;
 	for( std::vector<VuLoopPipelineOpportunity>::const_iterator i = opportunities.begin(); i != opportunities.end(); ++i )
 	{
+		// Track 9.H step 5 — accept promoted multi-Q opportunities under
+		// the kernel-rewrite env gate so the placer's plan can flow into
+		// emission. Pre-9.H gating only let canEmit{SoftwarePipeline,
+		// MultiQSoftwarePipeline}=true opportunities through. Promoted
+		// multi-Q (step 2) has a non-empty mainTokenIndices and a
+		// feasible kernel-rewrite plan (kernelRewriteII>0,
+		// stageCount>=2) but canEmitMultiQ stays false because of the
+		// legacy suffix-drain blockers. Env-gated to preserve
+		// byte-identity in the production sweep.
+		const bool promotedMultiQ =
+		    i->qProducerTokenIndices.size() >= 2
+		    && i->hasMultiQSoftwarePipelinePlan
+		    && !i->mainTokenIndices.empty()
+		    && i->kernelRewriteII > 0u
+		    && i->kernelRewriteStageCount >= 2u
+		    && std::getenv( "OPENVCL_USE_GENERIC_KERNEL_REWRITE" ) != NULL;
 		if( !i->canEmitSoftwarePipeline
-		    && !i->canEmitMultiQSoftwarePipeline )
+		    && !i->canEmitMultiQSoftwarePipeline
+		    && !promotedMultiQ )
 			continue;
 
 		// 9.G-1h-4a-3c: skip loops that were already emitted by the
@@ -9690,7 +9707,7 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		plan.kernelRewriteRefitNodes          = i->kernelRewriteRefitNodes;
 		plan.kernelRewriteRefitMainTokens     = i->kernelRewriteRefitMainTokens;
 
-		if( i->canEmitMultiQSoftwarePipeline )
+		if( i->canEmitMultiQSoftwarePipeline || promotedMultiQ )
 		{
 			if( !i->qProducerTokenIndices.empty() )
 				plan.qProducerTokenIndex = i->qProducerTokenIndices.front();
