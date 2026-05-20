@@ -6528,11 +6528,25 @@ namespace
 			    && std::getenv( "OPENVCL_DISABLE_RECURRENCE_PRIORITY" ) == NULL )
 			{
 				std::vector< unsigned int > carriedOut( n, 0u );
+				// Track 9.M-1: also tally intra-iter (dist=0) out-edge
+				// fan-out per node. High-fanout nodes (e.g. IOR / MFIR on
+				// the integer xform body) constrain many downstream slots;
+				// placing them early gives the placer more slack on the
+				// rest. Default-on; kill-switch OPENVCL_DISABLE_FANOUT_BOOST.
+				// Effect on 13-shader sweep: general_nospec_quad -5c,
+				// general_quad -8c (net -13c), zero regressions.
+				std::vector< unsigned int > intraOut( n, 0u );
 				for( unsigned int e = 0; e < totalEdges; ++e )
 				{
-					if( dDist[e] == 1u && dFrom[e] < n )
-						++carriedOut[ dFrom[e] ];
+					if( dFrom[e] < n )
+					{
+						if( dDist[e] == 1u ) ++carriedOut[ dFrom[e] ];
+						else if( dDist[e] == 0u ) ++intraOut[ dFrom[e] ];
+					}
 				}
+				const bool useFanoutBoost =
+				    std::getenv( "OPENVCL_DISABLE_FANOUT_BOOST" ) == NULL;
+				const unsigned int fanoutMin = 4u;
 				std::vector< unsigned int > boosted, rest;
 				boosted.reserve( pr.order.size() );
 				rest.reserve( pr.order.size() );
@@ -6545,7 +6559,9 @@ namespace
 					// (IADDIU, MFIR) — FMACs have nonzero intra-iter height
 					// and stay in their normal position.
 					const bool zeroHeight = ( node < pr.height.size() && pr.height[node] == 0u );
-					if( zeroHeight && node < n && carriedOut[node] >= 2u )
+					const bool boostByCarried = zeroHeight && node < n && carriedOut[node] >= 2u;
+					const bool boostByFanout  = useFanoutBoost && node < n && intraOut[node] >= fanoutMin;
+					if( boostByCarried || boostByFanout )
 						boosted.push_back( node );
 					else
 						rest.push_back( node );
