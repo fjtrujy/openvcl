@@ -9182,6 +9182,15 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		// main, and an 18-token suffix -- expose the full visible body
 		// span [labelTokenIndex+1, branchTokenIndex) to the placer.
 		// Kill-switch OPENVCL_DISABLE_WIDE_BODY_REWRITE mirrors 9.H-6.
+		// Note: this alias produces a SINGLE-Q plan (no cyclic prefix,
+		// no rotations), so it remains safe even when the multi-Q plan
+		// is blocked by a multi-Q-shape-specific blocker such as
+		// cyclic_prefix_reads_suffix_clobber, cyclic_prefix_side_effect,
+		// or pre_or_post_increment_memory; those blockers only forbid
+		// the multi-Q rewrite, not in-body placer reordering. The
+		// promoted-multi-Q gate in buildVuSoftwarePipelineRewritePlans
+		// must also check that mainTokenIndices == multiQMainTokenIndices
+		// so the wide body here never gets routed into a multi-Q plan.
 		if( opportunity.simpleCountedLoop
 		    && opportunity.mainTokenIndices.empty()
 		    && std::getenv( "OPENVCL_DISABLE_WIDE_BODY_REWRITE" ) == NULL
@@ -9742,6 +9751,15 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		    i->qProducerTokenIndices.size() >= 2
 		    && i->hasMultiQSoftwarePipelinePlan
 		    && !i->mainTokenIndices.empty()
+		    // Track 9.L (fix): the wide-body alias (9.K-2) also fills
+		    // mainTokenIndices for blocked multi-Q loops, but with the
+		    // full visible body span -- NOT the multi-Q-shape main. Only
+		    // honor promotion when mainTokenIndices originated from the
+		    // earlier 9117 multi-Q promotion (i.e. equals
+		    // multiQMainTokenIndices); otherwise emitting a multi-Q plan
+		    // with the wide body produces a malformed plan and bypasses
+		    // hard blockers such as cyclic_prefix_reads_suffix_clobber.
+		    && i->mainTokenIndices == i->multiQMainTokenIndices
 		    && i->kernelRewriteII > 0u
 		    && i->kernelRewriteStageCount >= 2u
 		    && isVuGenericKernelRewriteEnabled();
