@@ -9144,6 +9144,20 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		// the std::cerr writes; the computation itself is unconditional
 		// so OPENVCL_USE_GENERIC_KERNEL_REWRITE can see real scaffolding
 		// on production builds.
+		// Track 9.J-1 probe: multi-Q-only loops (pt_light_vert_loop_lid,
+		// indexed xform_loop_lid) have empty mainTokenIndices because
+		// the single-Q legacy planner declines them on Q-gap deficit.
+		// Under OPENVCL_REWRITE_LIGHT_LOOPS, alias multiQMainTokenIndices
+		// into mainTokenIndices so the placer (and the 9.H-5 promote-
+		// multi-Q rewrite gate below) sees a non-empty body. Default
+		// unset = byte-identical to HEAD.
+		if( opportunity.simpleCountedLoop
+		    && opportunity.mainTokenIndices.empty()
+		    && !opportunity.multiQMainTokenIndices.empty()
+		    && std::getenv( "OPENVCL_REWRITE_LIGHT_LOOPS" ) != NULL )
+		{
+			opportunity.mainTokenIndices = opportunity.multiQMainTokenIndices;
+		}
 		if( opportunity.simpleCountedLoop
 		    && !opportunity.mainTokenIndices.empty() )
 		{
