@@ -9144,19 +9144,36 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 		// the std::cerr writes; the computation itself is unconditional
 		// so OPENVCL_USE_GENERIC_KERNEL_REWRITE can see real scaffolding
 		// on production builds.
-		// Track 9.J-1 probe: multi-Q-only loops (pt_light_vert_loop_lid,
+		// Track 9.J-2: multi-Q-only loops (pt_light_vert_loop_lid,
 		// indexed xform_loop_lid) have empty mainTokenIndices because
-		// the single-Q legacy planner declines them on Q-gap deficit.
-		// Under OPENVCL_REWRITE_LIGHT_LOOPS, alias multiQMainTokenIndices
-		// into mainTokenIndices so the placer (and the 9.H-5 promote-
-		// multi-Q rewrite gate below) sees a non-empty body. Default
-		// unset = byte-identical to HEAD.
+		// the single-Q legacy planner declines on Q-gap deficit. Alias
+		// multiQMainTokenIndices into mainTokenIndices so the placer
+		// (and the 9.H-5 promote-multi-Q rewrite gate below) sees a
+		// non-empty body. Only applied when the multi-Q body is large
+		// enough that legacy multi-Q rotation suffers; the 9.J-1 sweep
+		// showed entries=39 pt_light_vert won -36c while the tiny
+		// entries=3 indexed xform_loop_lid took a +1c regression. The
+		// body-size floor protects the tiny-body case; refinements
+		// land in 9.J-3 once per-body characterization is in. Threshold
+		// is tunable via OPENVCL_LIGHT_LOOP_MIN_BODY; kill-switch via
+		// OPENVCL_DISABLE_LIGHT_LOOP_REWRITE mirrors 9.H-6.
 		if( opportunity.simpleCountedLoop
 		    && opportunity.mainTokenIndices.empty()
 		    && !opportunity.multiQMainTokenIndices.empty()
-		    && std::getenv( "OPENVCL_REWRITE_LIGHT_LOOPS" ) != NULL )
+		    && std::getenv( "OPENVCL_DISABLE_LIGHT_LOOP_REWRITE" ) == NULL )
 		{
-			opportunity.mainTokenIndices = opportunity.multiQMainTokenIndices;
+			unsigned int minBody = 20u;
+			if( const char* env = std::getenv( "OPENVCL_LIGHT_LOOP_MIN_BODY" ) )
+			{
+				int v = std::atoi( env );
+				if( v >= 0 )
+					minBody = static_cast<unsigned int>( v );
+			}
+			// OPENVCL_REWRITE_LIGHT_LOOPS=1 overrides the body floor
+			// (preserves 9.J-1 probe behavior for diagnostics).
+			const bool forceAll = std::getenv( "OPENVCL_REWRITE_LIGHT_LOOPS" ) != NULL;
+			if( forceAll || opportunity.multiQMainTokenIndices.size() >= minBody )
+				opportunity.mainTokenIndices = opportunity.multiQMainTokenIndices;
 		}
 		if( opportunity.simpleCountedLoop
 		    && !opportunity.mainTokenIndices.empty() )
