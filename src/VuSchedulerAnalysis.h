@@ -561,6 +561,25 @@ std::list<Token> applyVuSoftwarePipelinePlansWithSafeStoreBaseAdvance( const std
 // Diagnostic-only; no consumer yet.
 bool isVuPlanEligibleForGenericKernelRewrite( const VuSoftwarePipelineRewritePlan& plan );
 
+// Track 9.H step 6 — master gate for the generic kernel-rewrite path.
+// Default OFF (the default-on configuration miscompiled ps2gl/logo.elf;
+// the per-plan cost guard cannot detect that whole-shader interaction).
+// Opt-in via OPENVCL_USE_GENERIC_KERNEL_REWRITE=<non-empty, !="0">.
+// Explicit disable still honored: OPENVCL_DISABLE_GENERIC_KERNEL_REWRITE
+// =<anything non-empty>. Replaces the prior opt-in env-var checks
+// scattered through the analysis and codegen.
+bool isVuGenericKernelRewriteEnabled();
+
+// Track 9.H step 6 — per-plan cost guard. Permissive structural check
+// applied alongside the eligibility predicates before the rewrite is
+// emitted. Returns false to suppress the rewrite (the loop falls back
+// to applyVuSoftwarePipelinePlans). Current bar: II > 0, stageCount
+// >= 2, mainTokens.size() >= stageCount (the body must amortize the
+// stage envelope). Hook for future cycle-estimator refinements; the
+// per-plan signal cannot distinguish whole-shader interaction effects
+// (see Track 9.H notes on general_tri vs general_nospec_tri parity).
+bool isVuRewriteCostGuardSatisfied( const VuSoftwarePipelineRewritePlan& plan );
+
 // Track 9.G step 7b: SCE-style multi-stage emitter.
 // For each VuSoftwarePipelineRewritePlan that passes
 // isVuPlanEligibleForGenericKernelRewrite, splice the loop body into

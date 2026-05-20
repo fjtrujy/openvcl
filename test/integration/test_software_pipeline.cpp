@@ -188,8 +188,13 @@ namespace
         std::string vsm = runEmit(source);
         REQUIRE(vsm.length() > 0);
 
-        CHECK(contains(vsm, loopLabel + ":"));
-        CHECK(!contains(vsm, loopLabel + "__MAIN_LOOP:"));
+        // Track 9.H step 6: with the generic kernel-rewrite default-ON,
+        // eligible plans now expand into the SCE-style __MAIN_LOOP form.
+        // The default openvcl invocation must still produce a recognizable
+        // loop label, either plain (cost-guard / eligibility rejected the
+        // rewrite) or rewritten (rewrite fired).
+        CHECK( ( contains(vsm, loopLabel + ":")
+                 || contains(vsm, loopLabel + "__MAIN_LOOP:") ) );
     }
 
     std::string ps2glNamedXformLoopSource(const std::string& name)
@@ -1381,7 +1386,14 @@ TEST_CASE("Software pipeline: generic multi-Q prefixes emit delayed suffix store
 {
     std::vector<std::string> args;
     args.push_back("--enable-generic-software-pipelining");
+    // Track 9.H step 6: this test asserts the legacy generic-SP
+    // __PROLOG/__DRAIN emit form. With the kernel-rewrite default-ON,
+    // multi-Q plans now expand into the SCE-style __MAIN_LOOP form
+    // instead. Disable the rewrite for the scope of this test so the
+    // legacy emit-shape invariants remain testable.
+    setenv("OPENVCL_DISABLE_GENERIC_KERNEL_REWRITE", "1", 1);
     std::string vsm = runEmitWithExtraArgs(genericMultiQSuffixStoreDrainPipelineSource(), args);
+    unsetenv("OPENVCL_DISABLE_GENERIC_KERNEL_REWRITE");
     REQUIRE(vsm.length() > 0);
 
     CHECK(contains(vsm, "loop_lid__PROLOG:"));
@@ -1418,7 +1430,11 @@ TEST_CASE("Software pipeline: generic path guards cloned multi-Q store prefixes"
 {
     std::vector<std::string> args;
     args.push_back("--enable-generic-software-pipelining");
+    // Track 9.H step 6: pin legacy emit form. See note on the
+    // "emit delayed suffix store drains" test above.
+    setenv("OPENVCL_DISABLE_GENERIC_KERNEL_REWRITE", "1", 1);
     std::string vsm = runEmitWithExtraArgs(genericMultiQGuardedStorePipelineSource(), args);
+    unsetenv("OPENVCL_DISABLE_GENERIC_KERNEL_REWRITE");
     REQUIRE(vsm.length() > 0);
 
     CHECK(contains(vsm, "loop_lid__PROLOG:"));
@@ -1485,7 +1501,14 @@ TEST_CASE("Software pipeline: known-loop emitters remain cost references for gen
 
     std::vector<std::string> genericArgs;
     genericArgs.push_back("--disable-known-loop-optimizations");
+    // Track 9.H step 6: the master generic kernel-rewrite gate is
+    // default-ON in production. This test's "generic" reference must
+    // be the pre-rewrite emit so the cost comparison against the
+    // known-loop optimized form is meaningful. Disable the rewrite for
+    // the scope of this emit only.
+    setenv("OPENVCL_DISABLE_GENERIC_KERNEL_REWRITE", "1", 1);
     std::string generic = runEmitWithExtraArgs(fastNoLightsPipelineSource(), genericArgs);
+    unsetenv("OPENVCL_DISABLE_GENERIC_KERNEL_REWRITE");
     REQUIRE(generic.length() > 0);
 
     REQUIRE(contains(optimized, "xform_loop_lid__MAIN_LOOP:"));

@@ -6404,8 +6404,7 @@ namespace
 			// dist=1 cross-iteration edges (built below) may still bump
 			// II back up; that bump is observable via OPENVCL_DUMP_LOOP_SCHEDULE
 			// and is the diagnostic for the follow-on placer-relaxation step.
-			const bool useRenamedRecMII =
-			    ( std::getenv( "OPENVCL_USE_GENERIC_KERNEL_REWRITE" ) != NULL );
+			const bool useRenamedRecMII = isVuGenericKernelRewriteEnabled();
 			const unsigned int recmii = useRenamedRecMII
 			    ? computeLoopRecMIIRenamed( mt, indexedTokens, NULL )
 			    : computeLoopRecMII( mt, indexedTokens );
@@ -6535,7 +6534,7 @@ namespace
 				// single-Q loops is unchanged.
 				if( opportunity.qProducerTokenIndices.size() >= 2
 				    && opportunity.qProducerLatency > 0
-				    && std::getenv( "OPENVCL_USE_GENERIC_KERNEL_REWRITE" ) != NULL )
+				    && isVuGenericKernelRewriteEnabled() )
 				{
 					mrt.setQHoldDuration( opportunity.qProducerLatency );
 				}
@@ -9107,7 +9106,7 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			if( opportunity.qProducerTokenIndices.size() >= 2
 			    && opportunity.kernelRewriteStageCount >= 2u
 			    && !opportunity.multiQCyclicPrefixRotations.empty()
-			    && std::getenv( "OPENVCL_USE_GENERIC_KERNEL_REWRITE" ) != NULL )
+			    && isVuGenericKernelRewriteEnabled() )
 			{
 				const unsigned int depthBefore =
 				    opportunity.multiQCyclicPrefixRotations.empty()
@@ -9640,7 +9639,7 @@ std::vector<VuSoftwarePipelineRewritePlan> buildVuSoftwarePipelineRewritePlans( 
 		    && !i->mainTokenIndices.empty()
 		    && i->kernelRewriteII > 0u
 		    && i->kernelRewriteStageCount >= 2u
-		    && std::getenv( "OPENVCL_USE_GENERIC_KERNEL_REWRITE" ) != NULL;
+		    && isVuGenericKernelRewriteEnabled();
 		if( !i->canEmitSoftwarePipeline
 		    && !i->canEmitMultiQSoftwarePipeline
 		    && !promotedMultiQ )
@@ -10127,6 +10126,37 @@ bool isVuPlanEligibleForGenericKernelRewrite( const VuSoftwarePipelineRewritePla
 	return true;
 }
 
+bool isVuGenericKernelRewriteEnabled()
+{
+	// Master gate. Default OFF: enabling the generic kernel-rewrite by
+	// default produced visually incorrect output on ps2gl/logo.elf (the
+	// per-plan cost guard below is structural and cannot detect the
+	// whole-shader interaction that miscompiles the logo's xform loop).
+	// Opt-in via OPENVCL_USE_GENERIC_KERNEL_REWRITE=<non-empty, !="0">.
+	// Explicit disable still honored for symmetry / test wrappers:
+	//   OPENVCL_DISABLE_GENERIC_KERNEL_REWRITE=<anything non-empty>
+	const char* disable = std::getenv( "OPENVCL_DISABLE_GENERIC_KERNEL_REWRITE" );
+	if( disable != NULL && disable[0] != '\0' )
+		return false;
+	const char* use = std::getenv( "OPENVCL_USE_GENERIC_KERNEL_REWRITE" );
+	if( use == NULL || use[0] == '\0' )
+		return false;
+	if( use[0] == '0' && use[1] == '\0' )
+		return false;
+	return true;
+}
+
+bool isVuRewriteCostGuardSatisfied( const VuSoftwarePipelineRewritePlan& plan )
+{
+	if( plan.kernelRewriteII == 0u )
+		return false;
+	if( plan.kernelRewriteStageCount < 2u )
+		return false;
+	if( plan.kernelRewriteMainTokens.size() < plan.kernelRewriteStageCount )
+		return false;
+	return true;
+}
+
 namespace
 {
 	// Track 9.G step 7b: retarget the BRANCH IMMEDIATE argument of a
@@ -10177,6 +10207,8 @@ std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& token
 		indexedTokens.push_back( &*i );
 
 	std::map<unsigned int, VuSoftwarePipelineRewritePlan> eligibleByLabelIndex;
+	const bool dumpCostGuard =
+	    ( std::getenv( "OPENVCL_DUMP_KERNEL_REWRITE_COST_GUARD" ) != NULL );
 	for( std::vector<VuSoftwarePipelineRewritePlan>::const_iterator p = plans.begin(); p != plans.end(); ++p )
 	{
 		const bool baseEligible = isVuPlanEligibleForGenericKernelRewrite( *p );
@@ -10192,6 +10224,22 @@ std::list<Token> applyVuGenericKernelRewritePlans( const std::list<Token>& token
 		if( p->labelTokenIndex >= indexedTokens.size() )
 			continue;
 		if( p->branchTokenIndex >= indexedTokens.size() )
+			continue;
+		// Track 9.H step 6 — per-plan cost guard. Permissive structural
+		// check; suppresses the rewrite when the plan fails the minimum
+		// quality bar. Diagnostic-only failures are observable via
+		// OPENVCL_DUMP_KERNEL_REWRITE_COST_GUARD.
+		const bool costOk = isVuRewriteCostGuardSatisfied( *p );
+		if( dumpCostGuard )
+		{
+			std::cerr << "[kernel-rewrite-cost-guard] loop=" << p->label
+			          << " II=" << p->kernelRewriteII
+			          << " stageCount=" << p->kernelRewriteStageCount
+			          << " mainTokens=" << p->kernelRewriteMainTokens.size()
+			          << " accept=" << ( costOk ? 1 : 0 )
+			          << "\n";
+		}
+		if( !costOk )
 			continue;
 		eligibleByLabelIndex[p->labelTokenIndex] = *p;
 	}
