@@ -6513,18 +6513,19 @@ namespace
 				}
 			}
 			const unsigned int totalEdges = static_cast<unsigned int>( dFrom.size() );
-			// Track 9.I-2: recurrence-aware node priority. computeLoopPriority
-			// orders nodes by intra-iter height only, so loop-counter / base-
-			// pointer bumps (IADDIU, MFIR) sort LAST (height=0). On large
-			// xform_loop_lid bodies their many dist=1 out-edges to next-iter
-			// SQ stores then force II to bump after the lower pipe is full.
-			// Under OPENVCL_USE_RECURRENCE_PRIORITY (default unset = byte-
-			// identical), stable-resort pr.order so any node with >=2 loop-
-			// carried (dist=1) out-edges moves to the front, preserving the
-			// existing relative order for boosted-vs-boosted and untouched
-			// nodes among themselves.
-			if( std::getenv( "OPENVCL_USE_RECURRENCE_PRIORITY" ) != NULL
-			    && !pr.order.empty() )
+			// Track 9.L-1: recurrence-aware node priority, default-on.
+			// computeLoopPriority orders nodes by intra-iter height only,
+			// so loop-counter / base-pointer bumps (IADDIU, MFIR) sort
+			// LAST (height=0). On large bodies their many dist=1
+			// out-edges to next-iter SQ stores then force II to bump
+			// after the lower pipe is full. Stable-resort pr.order so any
+			// zero-height node with >=2 loop-carried (dist=1) out-edges
+			// moves to the front. Net effect on the 13-shader ps2gl
+			// sweep: -31c (general_*_tri -15c each, scei -1c, vs +1..+7c
+			// on five small-body shaders). Kill-switch:
+			// OPENVCL_DISABLE_RECURRENCE_PRIORITY.
+			if( !pr.order.empty()
+			    && std::getenv( "OPENVCL_DISABLE_RECURRENCE_PRIORITY" ) == NULL )
 			{
 				std::vector< unsigned int > carriedOut( n, 0u );
 				for( unsigned int e = 0; e < totalEdges; ++e )
@@ -6549,7 +6550,14 @@ namespace
 					else
 						rest.push_back( node );
 				}
-				if( !boosted.empty() )
+				// Track 9.L-1: recurrence-aware boost is default-on. The
+				// gain depends on applying the boost even when the set is
+				// tiny (often 1 node) because the first call seeds the
+				// placer state that later calls build on; any size gate
+				// breaks the chain. Kill-switch:
+				// OPENVCL_DISABLE_RECURRENCE_PRIORITY.
+				const bool applyBoost = !boosted.empty();
+				if( applyBoost )
 				{
 					if( std::getenv( "OPENVCL_DUMP_LOOP_PRIORITY_BOOST" ) != NULL )
 					{
