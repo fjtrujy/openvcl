@@ -6410,6 +6410,15 @@ namespace
 			    : computeLoopRecMII( mt, indexedTokens );
 			const unsigned int resmii = computeLoopResMII( mt, indexedTokens );
 			const unsigned int mii    = ( recmii > resmii ) ? recmii : resmii;
+			if( std::getenv( "OPENVCL_DUMP_PLACER_MII" ) != NULL )
+			{
+				std::cerr << "[placer-mii] loop=" << opportunity.label
+				          << " recmii=" << recmii
+				          << " resmii=" << resmii
+				          << " mii=" << mii
+				          << " bodyNodes=" << mt.size()
+				          << "\n";
+			}
 			LoopPriorityResult pr;
 			computeLoopPriority( mt, indexedTokens, mii, pr );
 			const unsigned int n = static_cast<unsigned int>( mt.size() );
