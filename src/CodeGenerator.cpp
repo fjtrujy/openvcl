@@ -1081,7 +1081,14 @@ bool CodeGenerator::beginProcess(const std::list<Token>& tokens)
 
 		//handle label
 		if(token.label().length()>0)
-			m_codeLines.push_back(token.label() + ":");
+		{
+			const std::string& lbl = token.label();
+			const std::string suffix = "__PRO1";
+			if( lbl.size() > suffix.size() &&
+			    lbl.compare( lbl.size() - suffix.size(), suffix.size(), suffix ) == 0 )
+				m_codeLines.push_back( lbl.substr( 0, lbl.size() - suffix.size() ) + ":" );
+			m_codeLines.push_back(lbl + ":");
+		}
 
 		if(!token.operand())
 		{
@@ -1986,7 +1993,14 @@ bool CodeGenerator::prepareStrictScheduledToken( const Token& token,
                                                  bool allowBranchDelayFiller )
 {
 	if( token.label().length() > 0 )
-		m_codeLines.push_back(token.label() + ":");
+	{
+		const std::string& lbl = token.label();
+		const std::string suffix = "__PRO1";
+		if( lbl.size() > suffix.size() &&
+		    lbl.compare( lbl.size() - suffix.size(), suffix.size(), suffix ) == 0 )
+			m_codeLines.push_back( lbl.substr( 0, lbl.size() - suffix.size() ) + ":" );
+		m_codeLines.push_back(lbl + ":");
+	}
 
 	if( !token.operand() )
 		return false;
@@ -2136,8 +2150,17 @@ bool CodeGenerator::emitStrictScheduledProgram( const std::list<Token>& tokens, 
 			}
 			if( bake )
 			{
+				// Emit the bare source label as an alias for MAIN_LOOP so
+				// external callers branching to the source name still resolve.
+				const std::string mainLabelStr = bake->mainLabelTok->label();
+				const std::string suffix = "__MAIN_LOOP";
+				if( mainLabelStr.size() > suffix.size() &&
+				    mainLabelStr.compare( mainLabelStr.size() - suffix.size(), suffix.size(), suffix ) == 0 )
+				{
+					m_codeLines.push_back( mainLabelStr.substr( 0, mainLabelStr.size() - suffix.size() ) + ":" );
+				}
 				// Emit the MAIN_LOOP label.
-				m_codeLines.push_back( bake->mainLabelTok->label() + ":" );
+				m_codeLines.push_back( mainLabelStr + ":" );
 
 				// Smart-tail substitution: if the last cycle has an empty
 				// lower lane, place the back-edge branch there to save a
@@ -3169,6 +3192,7 @@ void CodeGenerator::emitFastNoLightsSoftwarePipelineLoop( const FastNoLightsLoop
 	emitRawPairedLine(vuInstrFields(VU_OP_MULQ, "xyz", tex + ", " + tex + ", q"),
 	                  vuInstr(VU_OP_DIV, std::string("q, ") + fieldArg(vf00, "w") + ", " + fieldArg(x, "w")));
 
+	m_codeLines.push_back(p.sourceLabel + ":");
 	m_codeLines.push_back(p.mainLabel + ":");
 	emitRawPairedLine(vuInstrFields(VU_OP_FTOI4, "xyz", gs + ", " + gs),
 	                  vuInstrFields(VU_OP_LQ, "xyz", vert + ", " + offsetBase(0, in)));
@@ -3798,6 +3822,7 @@ void CodeGenerator::emitFastLitSoftwarePipelineLoop( const FastLitLoopPipelinePa
 	emitRawPairedLine(p.lightColorMaddayOp + " ACC, " + p.lightColor1Reg + ", " + fieldArg(clamped, "y"),
 	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + texIn + ", " + offsetBase(-4, in));
 
+	m_codeLines.push_back(p.sourceLabel + ":");
 	m_codeLines.push_back(p.mainLabel + ":");
 	emitRawPairedLine(p.lightColorMaddzOp + " " + colorRaw + ", " + p.lightColor2Reg + ", " + fieldArg(clamped, "z"),
 	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + normal + ", " + offsetBase(1, in));
@@ -4535,6 +4560,7 @@ void CodeGenerator::emitSceiSoftwarePipelineLoop( const SceiLoopPipelinePattern&
 	emitRawPairedLine(vuInstrFields(VU_OP_MULQ, "xyz", xQ + ", " + x + ", q"),
 	                  vuInstr(VU_OP_IADDIU, adc + ", " + adc + ", " + p.adcImmediate));
 
+	m_codeLines.push_back(p.sourceLabel + ":");
 	m_codeLines.push_back(p.mainLabel + ":");
 	emitRawPairedLine(vuInstr(p.lightColorMulaxInstr, "ACC, " + p.lightColor0Reg + ", " + fieldArg(clamped, "x")),
 	                  vuInstrFields(VU_OP_LQ, "xyz", vert + ", " + offsetBase(0, in)));
@@ -4723,6 +4749,7 @@ void CodeGenerator::emitPs2glTriXformSoftwarePipelineLoop( bool pvDiff )
 	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF16xyz, VF07w", vuInstrPrefix(VU_OP_IBEQ) + "VI03, VI06, " + epiLabel);
 	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF13xyz, VF07w", vuInstrPrefix(VU_OP_IADDIU) + "VI09, VI04, 0");
 
+	m_codeLines.push_back("xform_loop_lid:");
 	m_codeLines.push_back(mainLabel + ":");
 	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF12, VF10", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF11, " + offsetBase(secondVertexOffset, "VI03"));
 	emitRawPairedLine(vuInstrPrefixFields(VU_OP_SUB, "xyz") + "VF10, VF07, VF08", vuInstr(VU_OP_NOP));
@@ -4891,6 +4918,7 @@ void CodeGenerator::emitPs2glQuadXformSoftwarePipelineLoop()
 	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF22, VF07", vuInstrPrefix(VU_OP_IBEQ) + "VI03, VI06, " + epi0Label);
 	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF16, VF16, q", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF22, VI01");
 
+	m_codeLines.push_back("xform_loop_lid:");
 	m_codeLines.push_back(mainLabel + ":");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_SQ) + "VF19, 8(VI04)");
 	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MULQ, "xyz") + "VF19, VF20, q", vuInstrPrefix(VU_OP_SQ) + "VF18, 5(VI04)");
@@ -5228,6 +5256,7 @@ void CodeGenerator::emitPs2glPvDiffQuadXformSoftwarePipelineLoop()
 	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + "VF08, VF08, VF05", vuInstrPrefix(VU_OP_IBEQ) + "VI03, VI06, " + epiLabel);
 	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF17xyz, VF07w", vuInstrPrefixFields(VU_OP_MFIR, "w") + "VF10, VI08");
 
+	m_codeLines.push_back("xform_loop_lid:");
 	m_codeLines.push_back(mainLabel + ":");
 	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + "VF19, VF14", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF16, 0(VI03)");
 	emitRawPairedLine(vuInstrPrefixFields(VU_OP_OPMULA, "xyz") + "ACCxyz, VF22xyz, VF20xyz", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF17, 8(VI03)");
@@ -5408,6 +5437,7 @@ void CodeGenerator::emitPs2glIndexedXformSoftwarePipelineLoop()
 	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI0, "xyz") + "VF11, VF11", vuInstrPrefix(VU_OP_IBEQ) + "VI06, VI08, " + epi0Label);
 	emitRawPairedLine(vuInstrPrefixFields(VU_OP_CLIPW, "xyz") + "VF08xyz, VF07w", vuInstrPrefixFields(VU_OP_LQ, "xyz") + "VF08, 2(VI11)");
 
+	m_codeLines.push_back("xform_loop_lid:");
 	m_codeLines.push_back(mainLabel + ":");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_ILW, "w") + "VI11, 0(VI06)");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQI, "w") + "VF05, (VI06++)");
@@ -6274,6 +6304,7 @@ void CodeGenerator::emitLinearXformSoftwarePipelineLoop( const LinearXformLoopPi
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.epilogLabel);
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
 
+	m_codeLines.push_back(p.sourceLabel + ":");
 	m_codeLines.push_back(p.mainLabel + ":");
 	emitRawPairedLine(vuInstrPrefixFields(VU_OP_FTOI4, "xyz") + gs + ", " + gs,
 	                  vuInstrPrefix(VU_OP_IAND) + clipResult + ", " + clipResult + ", " + p.doClippingReg);
@@ -6951,6 +6982,7 @@ void CodeGenerator::emitDirLightSpecSoftwarePipelineLoop( const DirLightSpecLoop
 	                  vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.fallbackThreeLabel);
 	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "x", "w") + "ACC, " + specSwizzle + ", " + fieldArg(specSwizzle, "x"), vuInstr(VU_OP_NOP));
 
+	m_codeLines.push_back(p.sourceLabel + ":");
 	m_codeLines.push_back(p.mainLabel + ":");
 	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MADD, "y", "w") + specScratch + ", " + vf00 + ", " + fieldArg(specSwizzle, "y"),
 	                  mainOutputStep);
@@ -7460,6 +7492,7 @@ void CodeGenerator::emitDirLightNoSpecSoftwarePipelineLoop( const DirLightNoSpec
 	                  vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.fallbackFourLabel);
 	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "z") + dot + ", " + dotNext + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
 
+	m_codeLines.push_back(p.sourceLabel + ":");
 	m_codeLines.push_back(p.mainLabel + ":");
 	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_ADDA, "y", "z") + "ACC, " + product + ", " + fieldArg(product, "y"),
 	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + normal + ", " + offsetBase(1, in));
@@ -8373,6 +8406,7 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 		emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(r20, "x"),
 		                  vuInstrPrefixFields(VU_OP_MFP, "w") + r06 + ", p");
 
+		m_codeLines.push_back(p.sourceLabel + ":");
 		m_codeLines.push_back(p.mainLabel + ":");
 		emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + r17 + ", " + p.viewDirReg + ", " + r16,
 		                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + r22 + ", " + offsetBase(0, in));
@@ -8557,6 +8591,7 @@ void CodeGenerator::emitPtLightSpecSoftwarePipelineLoop( const PtLightSpecLoopPi
 	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MULA, "x", "w") + "ACC, " + vf00 + ", " + fieldArg(r21, "x"),
 	                  vuInstrPrefixFields(VU_OP_MFP, "w") + r06 + ", p");
 
+	m_codeLines.push_back(p.sourceLabel + ":");
 	m_codeLines.push_back(p.mainLabel + ":");
 	emitRawPairedLine(vuInstrPrefixFields(VU_OP_ADD, "xyz") + r18 + ", " + p.viewDirReg + ", " + r17,
 	                  vuInstrPrefixFields(VU_OP_LQ, "xyz") + r23 + ", " + offsetBase(0, in));
@@ -9345,6 +9380,7 @@ void CodeGenerator::emitPtLightNoSpecSoftwarePipelineLoop( const PtLightNoSpecLo
 	emitRawPairedLine(vuInstrPrefixBroadcastFields(VU_OP_MAX, "x", "w") + p.materialDiffReg + ", " + p.materialDiffReg + ", " + fieldArg(vf00, "x"), vuInstr(VU_OP_NOP));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + out + ", " + out + ", 6");
 
+	m_codeLines.push_back(p.sourceLabel + ":");
 	m_codeLines.push_back(p.mainLabel + ":");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + vertex + ", " + offsetBase(0, in));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstr(VU_OP_NOP));
@@ -9715,6 +9751,7 @@ void CodeGenerator::emitFinalColorSoftwarePipelineLoop( const FinalColorLoopPipe
 	                  vuInstrPrefix(VU_OP_IBEQ) + in + ", " + last + ", " + p.epilogTwoLabel);
 	emitRawPairedLine(vuInstrPrefixFields(VU_OP_MINII, "xyz") + minReg + ", " + load + ", i", vuInstr(VU_OP_NOP));
 
+	m_codeLines.push_back(p.sourceLabel + ":");
 	m_codeLines.push_back(p.mainLabel + ":");
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefixFields(VU_OP_LQ, "xyz") + load + ", " + offsetBase(1, in));
 	emitRawPairedLine(vuInstr(VU_OP_NOP), vuInstrPrefix(VU_OP_IADDIU) + in + ", " + in + ", 3");
