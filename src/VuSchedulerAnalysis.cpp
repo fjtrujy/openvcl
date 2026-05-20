@@ -9175,6 +9175,27 @@ std::vector<VuLoopPipelineOpportunity> findVuLoopPipelineOpportunities( const st
 			if( forceAll || opportunity.multiQMainTokenIndices.size() >= minBody )
 				opportunity.mainTokenIndices = opportunity.multiQMainTokenIndices;
 		}
+		// Track 9.K-1 probe: for simple counted loops where neither the
+		// single-Q nor the multi-Q alias (9.J-2) populated mainTokenIndices
+		// — typically because the source body has only a few multi-Q tokens
+		// surrounded by a large FMAC-only prefix/suffix — feed the placer
+		// the entire visible body span [labelTokenIndex+1, branchTokenIndex)
+		// under OPENVCL_REWRITE_WIDE_BODY=1. This matches the body view that
+		// general_nospec_tri's xform naturally gets through the single-Q
+		// path. Env-gated; default unset is byte-identical to 9.J-2.
+		if( opportunity.simpleCountedLoop
+		    && opportunity.mainTokenIndices.empty()
+		    && std::getenv( "OPENVCL_REWRITE_WIDE_BODY" ) != NULL
+		    && opportunity.labelTokenIndex + 1u < opportunity.branchTokenIndex
+		    && opportunity.branchTokenIndex <= indexedTokens.size() )
+		{
+			std::vector<unsigned int> wide;
+			wide.reserve( opportunity.branchTokenIndex - opportunity.labelTokenIndex - 1u );
+			for( unsigned int t = opportunity.labelTokenIndex + 1u;
+			     t < opportunity.branchTokenIndex; ++t )
+				wide.push_back( t );
+			opportunity.mainTokenIndices = wide;
+		}
 		if( opportunity.simpleCountedLoop
 		    && !opportunity.mainTokenIndices.empty() )
 		{
