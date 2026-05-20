@@ -6513,6 +6513,60 @@ namespace
 				}
 			}
 			const unsigned int totalEdges = static_cast<unsigned int>( dFrom.size() );
+			// Track 9.I-2: recurrence-aware node priority. computeLoopPriority
+			// orders nodes by intra-iter height only, so loop-counter / base-
+			// pointer bumps (IADDIU, MFIR) sort LAST (height=0). On large
+			// xform_loop_lid bodies their many dist=1 out-edges to next-iter
+			// SQ stores then force II to bump after the lower pipe is full.
+			// Under OPENVCL_USE_RECURRENCE_PRIORITY (default unset = byte-
+			// identical), stable-resort pr.order so any node with >=2 loop-
+			// carried (dist=1) out-edges moves to the front, preserving the
+			// existing relative order for boosted-vs-boosted and untouched
+			// nodes among themselves.
+			if( std::getenv( "OPENVCL_USE_RECURRENCE_PRIORITY" ) != NULL
+			    && !pr.order.empty() )
+			{
+				std::vector< unsigned int > carriedOut( n, 0u );
+				for( unsigned int e = 0; e < totalEdges; ++e )
+				{
+					if( dDist[e] == 1u && dFrom[e] < n )
+						++carriedOut[ dFrom[e] ];
+				}
+				std::vector< unsigned int > boosted, rest;
+				boosted.reserve( pr.order.size() );
+				rest.reserve( pr.order.size() );
+				for( unsigned int rank = 0; rank < pr.order.size(); ++rank )
+				{
+					const unsigned int node = pr.order[rank];
+					// Boost only nodes the height-based sort would place LAST
+					// (height==0) yet that feed many next-iter consumers.
+					// These are the loop-counter / base-pointer bumps
+					// (IADDIU, MFIR) — FMACs have nonzero intra-iter height
+					// and stay in their normal position.
+					const bool zeroHeight = ( node < pr.height.size() && pr.height[node] == 0u );
+					if( zeroHeight && node < n && carriedOut[node] >= 2u )
+						boosted.push_back( node );
+					else
+						rest.push_back( node );
+				}
+				if( !boosted.empty() )
+				{
+					if( std::getenv( "OPENVCL_DUMP_LOOP_PRIORITY_BOOST" ) != NULL )
+					{
+						for( unsigned int k = 0; k < boosted.size(); ++k )
+						{
+							std::cerr << "[loop-priority-boost] loop=" << opportunity.label
+							          << " node=" << boosted[k]
+							          << " carriedOut=" << carriedOut[ boosted[k] ]
+							          << " token=" << ( boosted[k] < mt.size() ? mt[ boosted[k] ] : 0u )
+							          << "\n";
+						}
+					}
+					pr.order.clear();
+					pr.order.insert( pr.order.end(), boosted.begin(), boosted.end() );
+					pr.order.insert( pr.order.end(), rest.begin(),    rest.end()    );
+				}
+			}
 			unsigned int edgeViolations = 0;
 			// Track 9.G step 1d-1: per-node placement failure reason
 			// counters (edge-bound vs MRT-bound) used by the
