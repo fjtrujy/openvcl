@@ -6547,6 +6547,30 @@ namespace
 				const bool useFanoutBoost =
 				    std::getenv( "OPENVCL_DISABLE_FANOUT_BOOST" ) == NULL;
 				const unsigned int fanoutMin = 4u;
+				// Track 9.M-3: pipe-pressure boost, default-on. Tally
+				// per-pipe node counts; when the body is heavily
+				// lower-pipe-biased (lowerN >= upperN + 4), boost
+				// zero-height lower-pipe nodes so they get placed before
+				// the upper-pipe FMACs lock up slots. Net effect on the
+				// 13-shader ps2gl sweep: -3c (general_nospec, general,
+				// general_pv_diff each -1c), zero regressions.
+				// Kill-switch: OPENVCL_DISABLE_PIPE_PRESSURE_BOOST.
+				const bool usePipePressureBoost =
+				    std::getenv( "OPENVCL_DISABLE_PIPE_PRESSURE_BOOST" ) == NULL;
+				std::vector< unsigned char > nodeIsLower( n, 0u );
+				unsigned int lowerN = 0u, upperN = 0u;
+				if( usePipePressureBoost )
+				{
+					for( unsigned int k = 0; k < n; ++k )
+					{
+						if( mt[k] >= indexedTokens.size() ) continue;
+						const bool low = isVuLowerPipe( *indexedTokens[ mt[k] ] );
+						nodeIsLower[k] = low ? 1u : 0u;
+						if( low ) ++lowerN; else ++upperN;
+					}
+				}
+				const bool pipePressureLowerHeavy =
+				    usePipePressureBoost && ( lowerN >= upperN + 4u );
 				std::vector< unsigned int > boosted, rest;
 				boosted.reserve( pr.order.size() );
 				rest.reserve( pr.order.size() );
@@ -6561,7 +6585,9 @@ namespace
 					const bool zeroHeight = ( node < pr.height.size() && pr.height[node] == 0u );
 					const bool boostByCarried = zeroHeight && node < n && carriedOut[node] >= 2u;
 					const bool boostByFanout  = useFanoutBoost && node < n && intraOut[node] >= fanoutMin;
-					if( boostByCarried || boostByFanout )
+					const bool boostByPipe    = pipePressureLowerHeavy
+					                            && zeroHeight && node < n && nodeIsLower[node];
+					if( boostByCarried || boostByFanout || boostByPipe )
 						boosted.push_back( node );
 					else
 						rest.push_back( node );
