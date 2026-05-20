@@ -6617,6 +6617,35 @@ namespace
 					pr.order.insert( pr.order.end(), rest.begin(),    rest.end()    );
 				}
 			}
+			// Track 9.N-1: placement-order diagnostic. Dumps the final
+			// priority listing (rank/node/op/pipe/height/asap/alap) once
+			// per scheduler call. Combined with [place-step] (see below)
+			// it answers: "is node X scheduled early because of priority,
+			// or starved because something placed before it pinned its
+			// slot?" Gate: OPENVCL_DUMP_PLACEMENT_ORDER.
+			const bool dumpPlace = std::getenv( "OPENVCL_DUMP_PLACEMENT_ORDER" ) != NULL;
+			if( dumpPlace )
+			{
+				for( unsigned int rank = 0; rank < pr.order.size(); ++rank )
+				{
+					const unsigned int node = pr.order[rank];
+					const unsigned int tokIdx = ( node < mt.size() ) ? mt[node] : 0u;
+					const char* opName = "?";
+					if( tokIdx < indexedTokens.size() && indexedTokens[tokIdx]->operand() )
+						opName = indexedTokens[tokIdx]->operand()->name().c_str();
+					const unsigned int h = ( node < pr.height.size() ) ? pr.height[node] : 0u;
+					const unsigned int a = ( node < pr.asap.size() ) ? pr.asap[node] : 0u;
+					const unsigned int l = ( node < pr.alap.size() ) ? pr.alap[node] : 0u;
+					std::cerr << "[place-order] loop=" << opportunity.label
+					          << " rank=" << rank
+					          << " node=" << node
+					          << " op=" << opName
+					          << " height=" << h
+					          << " asap=" << a
+					          << " alap=" << l
+					          << "\n";
+				}
+			}
 			unsigned int edgeViolations = 0;
 			// Track 9.G step 1d-1: per-node placement failure reason
 			// counters (edge-bound vs MRT-bound) used by the
@@ -6789,6 +6818,24 @@ namespace
 				}
 				if( ok ) ++placedCount;
 				else     ++failedCount;
+				if( dumpPlace )
+				{
+					const char* opName = "?";
+					if( tokIdx < indexedTokens.size() && indexedTokens[tokIdx]->operand() )
+						opName = indexedTokens[tokIdx]->operand()->name().c_str();
+					std::cerr << "[place-step] loop=" << opportunity.label
+					          << " II=" << tryII
+					          << " rank=" << rank
+					          << " node=" << i
+					          << " op=" << opName
+					          << " lo=" << lo
+					          << " hi=" << hi
+					          << " ok=" << ( ok ? 1 : 0 )
+					          << " slot=" << ( ok ? static_cast<int>( slotOf[i] ) : -1 )
+					          << " edgeFails=" << edgeFailsN[i]
+					          << " mrtFails=" << mrtFailsN[i]
+					          << "\n";
+				}
 			}
 				upperOccFinal = mrt.upperOccupancy();
 				lowerOccFinal = mrt.lowerOccupancy();
