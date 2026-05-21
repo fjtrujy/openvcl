@@ -6541,9 +6541,10 @@ namespace
 				// fan-out per node. High-fanout nodes (e.g. IOR / MFIR on
 				// the integer xform body) constrain many downstream slots;
 				// placing them early gives the placer more slack on the
-				// rest. Default-on; kill-switch OPENVCL_DISABLE_FANOUT_BOOST.
-				// Effect on 13-shader sweep: general_nospec_quad -5c,
-				// general_quad -8c (net -13c), zero regressions.
+				// rest. Default-off (caused ps2gl box.elf to render
+				// incorrectly in PCSX2); opt-in via OPENVCL_ENABLE_FANOUT_BOOST.
+				// Effect on 13-shader sweep when enabled:
+				// general_nospec_quad -5c, general_quad -8c (net -13c).
 				std::vector< unsigned int > intraOut( n, 0u );
 				for( unsigned int e = 0; e < totalEdges; ++e )
 				{
@@ -6554,7 +6555,7 @@ namespace
 					}
 				}
 				const bool useFanoutBoost =
-				    std::getenv( "OPENVCL_DISABLE_FANOUT_BOOST" ) == NULL;
+				    std::getenv( "OPENVCL_ENABLE_FANOUT_BOOST" ) != NULL;
 				const unsigned int fanoutMin = 4u;
 				// Track 9.M-3: pipe-pressure boost, default-on. Tally
 				// per-pipe node counts; when the body is heavily
